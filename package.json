@@ -8,7 +8,7 @@
     "node": ">=18.0.0"
   },
   "scripts": {
-    "start": "node index.js",
+    "start": "node src/bot.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [
@@ -29,6 +29,8 @@
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "form-data": "^4.0.0",
+    "lodash-es": "^4.17.22",
+    "lowdb": "^7.0.1",
     "node-fetch": "^3.3.2",
     "sentiment": "^5.0.2",
     "sharp": "^0.33.5"
@@ -40,5 +42,8 @@
   "bugs": {
     "url": "https://github.com/UtopianFuturist/dearest-llama/issues"
   },
-  "homepage": "https://github.com/UtopianFuturist/dearest-llama#readme"
+  "homepage": "https://github.com/UtopianFuturist/dearest-llama#readme",
+  "devDependencies": {
+    "vitest": "^4.0.16"
+  }
 }

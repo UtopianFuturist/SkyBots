@@ -3,8 +3,8 @@ services:
     name: dearest-llama
     runtime: node
     plan: starter
-    buildCommand: npm install
-    startCommand: npm start
+    buildCommand: pnpm install
+    startCommand: pnpm start
     envVars:
       - key: NODE_ENV
         value: production

@@ -1,9 +1,11 @@
 import { JSONFilePreset } from 'lowdb/node';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DB_PATH = path.resolve(__dirname, '../../src/data/db.json');
+const DATA_DIR = path.resolve(__dirname, '../../src/data');
+const DB_PATH = path.resolve(DATA_DIR, 'db.json');
 
 const defaultData = {
   repliedPosts: [],
@@ -20,6 +22,10 @@ class DataStore {
   }
 
   async init() {
+    // Ensure the data directory exists
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
     this.db = await JSONFilePreset(DB_PATH, defaultData);
     await this.db.read();
   }

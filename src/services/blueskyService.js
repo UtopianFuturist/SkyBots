@@ -17,10 +17,11 @@ class BlueskyService {
   }
 
   async getNotifications(cursor) {
-    const { data } = await this.agent.listNotifications({
-      limit: 50,
-      cursor
-    });
+    const params = { limit: 50 };
+    if (cursor) {
+      params.cursor = cursor;
+    }
+    const { data } = await this.agent.listNotifications(params);
     return data;
   }
 

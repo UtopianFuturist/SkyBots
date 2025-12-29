@@ -4,7 +4,7 @@ import { dataStore } from './services/dataStore.js';
 import { handleCommand } from './utils/commandHandler.js';
 import config from '../config.js';
 
-class Bot {
+export class Bot {
   constructor() {
     this.cursor = null;
   }
@@ -110,5 +110,3 @@ class Bot {
   }
 }
 
-const bot = new Bot();
-bot.init().then(() => bot.run());

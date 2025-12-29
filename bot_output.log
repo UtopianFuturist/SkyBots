@@ -1,0 +1,44 @@
+
+> dearest-llama@1.0.0 start /app
+> node index.js
+
+[Config] Loaded TOGETHER_AI_API_KEY: Exists
+[Config] Loaded NVIDIA_NIM_API_KEY: Exists
+[Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: Exists
+[Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: Exists
+[Config] Loaded IMGFLIP_USERNAME: Exists
+[Config] Loaded IMGFLIP_PASSWORD: Exists (presence will be checked)
+[Config] Loaded YOUTUBE_API_KEY: Exists
+[Config] Loaded GIPHY_API_KEY: Exists
+[Express] Server is running on port 10000
+/app/node_modules/.pnpm/@atproto+xrpc@0.7.7/node_modules/@atproto/xrpc/dist/xrpc-client.js:76
+                throw new types_1.XRPCError(resCode, error, message, resHeaders);
+                      ^
+
+XRPCError: Invalid identifier or password
+    at XrpcClient.call (/app/node_modules/.pnpm/@atproto+xrpc@0.7.7/node_modules/@atproto/xrpc/dist/xrpc-client.js:76:23)
+    at process.processTicksAndRejections (node:internal/process/task_queues:105:5)
+    at async CredentialSession.login (/app/node_modules/.pnpm/@atproto+api@0.18.8/node_modules/@atproto/api/dist/atp-agent.js:257:25)
+    at async BlueskyService.authenticate (file:///app/src/services/blueskyService.js:12:5)
+    at async Bot.init (file:///app/src/bot.js:14:5) {
+  error: 'AuthenticationRequired',
+  headers: {
+    'access-control-allow-origin': '*',
+    connection: 'keep-alive',
+    'content-length': '77',
+    'content-type': 'application/json; charset=utf-8',
+    date: 'Mon, 29 Dec 2025 22:42:27 GMT',
+    etag: 'W/"4d-98r3hvgolnybv7tgksQiZbSE7Zg"',
+    'ratelimit-limit': '10',
+    'ratelimit-policy': '10;w=86400',
+    'ratelimit-remaining': '9',
+    'ratelimit-reset': '1767134547',
+    vary: 'Accept-Encoding',
+    'x-powered-by': 'Express'
+  },
+  success: false,
+  status: 401
+}
+
+Node.js v22.21.1
+ ELIFECYCLE  Command failed with exit code 1.

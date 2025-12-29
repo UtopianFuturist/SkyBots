@@ -36,7 +36,8 @@ class LLMService {
       }
 
       const data = await response.json();
-      return data.choices[0].message.content.trim();
+      const content = data.choices[0]?.message?.content;
+      return content ? content.trim() : null;
     } catch (error) {
       console.error('[LLMService] Error generating response:', error);
       return null;

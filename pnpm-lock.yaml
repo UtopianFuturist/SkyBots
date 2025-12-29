@@ -9,7 +9,7 @@ importers:
   .:
     dependencies:
       '@atproto/api':
-        specifier: latest
+        specifier: 0.18.8
         version: 0.18.8
       axios:
         specifier: ^1.7.7

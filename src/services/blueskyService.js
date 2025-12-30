@@ -1,4 +1,4 @@
-import { AtpAgent } from '@atproto/api';
+import { AtpAgent, RichText } from '@atproto/api';
 import fetch from 'node-fetch';
 import config from '../../config.js';
 import { splitText } from '../utils/textUtils.js';
@@ -55,6 +55,9 @@ class BlueskyService {
 
     for (let i = 0; i < textChunks.length; i++) {
       const chunk = textChunks[i];
+      const rt = new RichText({ text: chunk });
+      await rt.detectFacets(this.agent);
+
       const reply = {
         root: rootPost,
         parent: { uri: currentParent.uri, cid: currentParent.cid },
@@ -62,14 +65,26 @@ class BlueskyService {
 
       const postData = {
         $type: 'app.bsky.feed.post',
-        text: chunk,
+        text: rt.text,
+        facets: rt.facets,
         reply,
         createdAt: new Date().toISOString(),
       };
 
       // Only add the embed to the first post in the chain
-      if (i === 0 && embed) {
-        postData.embed = embed;
+      if (i === 0) {
+        let finalEmbed = embed;
+        if (!finalEmbed) {
+          const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
+            ?.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link')?.uri;
+          
+          if (firstUrl) {
+            finalEmbed = await this.getExternalEmbed(firstUrl);
+          }
+        }
+        if (finalEmbed) {
+          postData.embed = finalEmbed;
+        }
       }
 
       const { uri, cid } = await this.agent.post(postData);
@@ -153,18 +168,68 @@ class BlueskyService {
   async post(text, embed = null) {
     console.log('[BlueskyService] Creating new post...');
     try {
+      const rt = new RichText({ text });
+      await rt.detectFacets(this.agent);
+
       const postData = {
         $type: 'app.bsky.feed.post',
-        text,
+        text: rt.text,
+        facets: rt.facets,
         createdAt: new Date().toISOString(),
       };
-      if (embed) {
-        postData.embed = embed;
+
+      // If no embed is provided, try to generate a link card from the first URL in the text
+      let finalEmbed = embed;
+      if (!finalEmbed) {
+        const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
+          ?.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link')?.uri;
+        
+        if (firstUrl) {
+          finalEmbed = await this.getExternalEmbed(firstUrl);
+        }
       }
+
+      if (finalEmbed) {
+        postData.embed = finalEmbed;
+      }
+
       await this.agent.post(postData);
       console.log('[BlueskyService] New post created successfully.');
     } catch (error) {
       console.error('[BlueskyService] Error creating new post:', error);
+    }
+  }
+
+  async getExternalEmbed(url) {
+    try {
+      console.log(`[BlueskyService] Generating external embed for: ${url}`);
+      // In a real scenario, we'd fetch the page metadata (title, description, thumb)
+      // For now, we'll use a simple implementation or a helper if available
+      // Since we don't have a full metadata scraper here, we'll provide a basic structure
+      // or just return null if we can't get good metadata.
+      // However, to make it "work properly" as requested, let's try a simple fetch.
+      
+      const response = await fetch(url);
+      const html = await response.text();
+      
+      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
+      const title = titleMatch ? titleMatch[1] : url;
+      
+      const descMatch = html.match(/<meta name="description" content="(.*?)"/i) || 
+                        html.match(/<meta property="og:description" content="(.*?)"/i);
+      const description = descMatch ? descMatch[1] : '';
+
+      return {
+        $type: 'app.bsky.embed.external',
+        external: {
+          uri: url,
+          title: title,
+          description: description,
+        }
+      };
+    } catch (error) {
+      console.error('[BlueskyService] Error generating external embed:', error);
+      return null;
     }
   }
 }

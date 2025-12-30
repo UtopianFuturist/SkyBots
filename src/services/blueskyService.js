@@ -41,6 +41,7 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, embed = null) {
+    console.log(`[BlueskyService] LLM Response: "${text}"`);
     console.log('[BlueskyService] Posting reply...');
     const textChunks = splitText(text);
     let currentParent = parentPost;

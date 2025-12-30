@@ -3,6 +3,7 @@ import { llmService } from './services/llmService.js';
 import { dataStore } from './services/dataStore.js';
 import { googleSearchService } from './services/googleSearchService.js';
 import { handleCommand } from './utils/commandHandler.js';
+import { sanitizeDuplicateText } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 
@@ -260,9 +261,10 @@ export class Bot {
     }
 
     if (responseText) {
-      await blueskyService.postReply(notif, responseText);
+      const sanitizedResponse = sanitizeDuplicateText(responseText);
+      await blueskyService.postReply(notif, sanitizedResponse);
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
-      await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
+      await dataStore.saveInteraction({ userHandle: handle, text, response: sanitizedResponse });
 
       // Rate user and like post if rating is high
       const interactionHistory = dataStore.getInteractionsByUser(handle);

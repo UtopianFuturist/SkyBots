@@ -46,7 +46,7 @@ class BlueskyService {
     }
   }
 
-  async postReply(parentPost, text, embed = null) {
+  async postReply(parentPost, text, options = {}) {
     console.log(`[BlueskyService] LLM Response: "${text}"`);
     console.log('[BlueskyService] Posting reply...');
     const textChunks = splitText(text);
@@ -73,11 +73,13 @@ class BlueskyService {
 
       // Only add the embed to the first post in the chain
       if (i === 0) {
-        let finalEmbed = embed;
-        if (!finalEmbed) {
+        let finalEmbed = options.embed; // The original embed object if it exists
+        if (options.imagesToEmbed && options.imagesToEmbed.length > 0) {
+          finalEmbed = await this.uploadImages(options.imagesToEmbed);
+        } else if (!finalEmbed) {
           const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
             ?.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link')?.uri;
-          
+
           if (firstUrl) {
             finalEmbed = await this.getExternalEmbed(firstUrl);
           }
@@ -148,26 +150,41 @@ class BlueskyService {
     }
   }
 
-  async uploadImage(url, altText = '') {
+  async uploadImages(imagesToUpload) {
     try {
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
-      const arrayBuffer = await response.arrayBuffer();
-      const uint8Array = new Uint8Array(arrayBuffer);
-      
-      const { data } = await this.agent.uploadBlob(uint8Array, {
-        encoding: response.headers.get('content-type') || 'image/jpeg',
-      });
-      
-      return {
-        $type: 'app.bsky.embed.images',
-        images: [{
-          image: data.blob,
-          alt: altText,
-        }],
-      };
+      const uploadedImages = [];
+      for (const image of imagesToUpload) {
+        try {
+          const response = await fetch(image.link);
+          if (!response.ok) {
+            console.error(`[BlueskyService] Failed to fetch image ${image.link}: ${response.statusText}`);
+            continue; // Skip this image
+          }
+          const arrayBuffer = await response.arrayBuffer();
+          const uint8Array = new Uint8Array(arrayBuffer);
+
+          const { data } = await this.agent.uploadBlob(uint8Array, {
+            encoding: response.headers.get('content-type') || 'image/jpeg',
+          });
+
+          uploadedImages.push({
+            image: data.blob,
+            alt: image.title || '',
+          });
+        } catch (fetchError) {
+          console.error(`[BlueskyService] Error fetching or uploading image ${image.link}:`, fetchError);
+        }
+      }
+
+      if (uploadedImages.length > 0) {
+        return {
+          $type: 'app.bsky.embed.images',
+          images: uploadedImages,
+        };
+      }
+      return null;
     } catch (error) {
-      console.error('[BlueskyService] Error uploading image:', error);
+      console.error('[BlueskyService] Error in uploadImages:', error);
       return null;
     }
   }

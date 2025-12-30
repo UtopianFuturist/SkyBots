@@ -72,10 +72,27 @@ describe('Command Handler', () => {
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 
-  it('should handle vetted image search command', async () => {
-    googleSearchService.searchImages.mockResolvedValue([{ title: 'Vetted Image', link: 'https://vetted.com', snippet: 'A vetted image.' }]);
+  it('should handle singular image search command', async () => {
+    const mockImages = [{ title: 'Image 1' }, { title: 'Image 2' }];
+    googleSearchService.searchImages.mockResolvedValue(mockImages);
     await handleCommand(mockBot, mockPost, 'find image of a dog');
     expect(googleSearchService.searchImages).toHaveBeenCalledWith('a dog');
-    expect(blueskyService.postReply).toHaveBeenCalled();
+    expect(blueskyService.postReply).toHaveBeenCalledWith(
+      expect.anything(),
+      "Here's an image I found for \"a dog\":",
+      { imagesToEmbed: mockImages.slice(0, 1) }
+    );
+  });
+
+  it('should handle plural image search command', async () => {
+    const mockImages = [{ title: 'Image 1' }, { title: 'Image 2' }, { title: 'Image 3' }, { title: 'Image 4' }, { title: 'Image 5' }];
+    googleSearchService.searchImages.mockResolvedValue(mockImages);
+    await handleCommand(mockBot, mockPost, 'find images of cats');
+    expect(googleSearchService.searchImages).toHaveBeenCalledWith('cats');
+    expect(blueskyService.postReply).toHaveBeenCalledWith(
+      expect.anything(),
+      'Here are the top 4 images I found for "cats":',
+      { imagesToEmbed: mockImages.slice(0, 4) }
+    );
   });
 });

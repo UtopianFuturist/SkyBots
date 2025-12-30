@@ -131,8 +131,15 @@ export const handleCommand = async (bot, post, text) => {
     const imageResults = await googleSearchService.searchImages(imageQuery);
 
     if (imageResults && imageResults.length > 0) {
-      const imagesToEmbed = imageResults.slice(0, 4);
-      const replyText = `Here are the top ${imagesToEmbed.length} images I found for "${imageQuery}":`;
+      // Check original text for "images" (plural) vs "image" (singular)
+      const isPlural = lowerText.includes('images');
+      const numImagesToEmbed = isPlural ? 4 : 1;
+      const imagesToEmbed = imageResults.slice(0, numImagesToEmbed);
+
+      const replyText = imagesToEmbed.length > 1
+        ? `Here are the top ${imagesToEmbed.length} images I found for "${imageQuery}":`
+        : `Here's an image I found for "${imageQuery}":`;
+
       await blueskyService.postReply(post, replyText, { imagesToEmbed: imagesToEmbed });
       return; // Command handled
     }

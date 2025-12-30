@@ -214,7 +214,7 @@ export class Bot {
 
     // 6. Semantic Loop and Safety Check for Bot's Response
     if (responseText) {
-      const recentBotReplies = history.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
+      const recentBotReplies = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
       if (await llmService.checkSemanticLoop(responseText, recentBotReplies)) {
         console.log('[Bot] Semantic loop detected. Generating a new response.');
         responseText = await llmService.generateResponse([...messages, { role: 'system', content: "Your previous response was too similar to a recent one. Please provide a fresh, different perspective." }]);

@@ -107,17 +107,36 @@ export const handleCommand = async (bot, post, text) => {
     return "I wasn't able to create an image for that. Please try another prompt.";
   }
 
-  if (lowerText.startsWith('find image') || lowerText.startsWith('search for image')) {
-    const query = lowerText.replace('find image', '').replace('search for image', '').trim();
-    const imageResults = await googleSearchService.searchImages(query);
+  const imageSearchTriggers = [
+    'do a google search for images of',
+    'google search for images of',
+    'search for images of',
+    'search for image of',
+    'search for image',
+    'find images of',
+    'find image of',
+    'find image',
+  ];
+
+  let imageQuery = null;
+
+  for (const trigger of imageSearchTriggers) {
+    if (lowerText.startsWith(trigger)) {
+      imageQuery = lowerText.substring(trigger.length).trim();
+      break;
+    }
+  }
+
+  if (imageQuery) {
+    const imageResults = await googleSearchService.searchImages(imageQuery);
 
     if (imageResults && imageResults.length > 0) {
       const imagesToEmbed = imageResults.slice(0, 4);
-      const replyText = `Here are the top ${imagesToEmbed.length} images I found for "${query}":`;
+      const replyText = `Here are the top ${imagesToEmbed.length} images I found for "${imageQuery}":`;
       await blueskyService.postReply(post, replyText, { imagesToEmbed: imagesToEmbed });
       return; // Command handled
     }
-    return `I couldn't find any images for "${query}".`;
+    return `I couldn't find any images for "${imageQuery}".`;
   }
 
   return null;

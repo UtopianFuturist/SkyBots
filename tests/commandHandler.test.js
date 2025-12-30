@@ -75,7 +75,7 @@ describe('Command Handler', () => {
   it('should handle vetted image search command', async () => {
     googleSearchService.searchImages.mockResolvedValue([{ title: 'Vetted Image', link: 'https://vetted.com', snippet: 'A vetted image.' }]);
     await handleCommand(mockBot, mockPost, 'find image of a dog');
-    expect(googleSearchService.searchImages).toHaveBeenCalledWith('of a dog');
+    expect(googleSearchService.searchImages).toHaveBeenCalledWith('a dog');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 });

@@ -95,6 +95,20 @@ class BlueskyService {
       return [];
     }
   }
+
+  async postAlert(text) {
+    console.log('[BlueskyService] Posting alert to admin...');
+    try {
+      await this.agent.post({
+        $type: 'app.bsky.feed.post',
+        text: `@${config.ADMIN_BLUESKY_HANDLE} ${text}`,
+        createdAt: new Date().toISOString(),
+      });
+      console.log('[BlueskyService] Alert posted successfully.');
+    } catch (error) {
+      console.error('[BlueskyService] Error posting alert:', error);
+    }
+  }
 }
 
 export const blueskyService = new BlueskyService();

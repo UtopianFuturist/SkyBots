@@ -9,6 +9,7 @@ export class Bot {
   constructor() {
     this.cursor = null;
     this.readmeContent = '';
+    this.paused = false;
   }
 
   async init() {
@@ -25,6 +26,11 @@ export class Bot {
   async run() {
     console.log('[Bot] Starting main loop...');
     while (true) {
+      if (this.paused) {
+        await new Promise(resolve => setTimeout(resolve, 60000)); // Check every minute if paused
+        continue;
+      }
+
       try {
         const { notifications, cursor } = await blueskyService.getNotifications(this.cursor);
         this.cursor = cursor;
@@ -49,7 +55,14 @@ export class Bot {
     const text = notif.record.text || "";
     const threadRootUri = notif.record.reply?.root?.uri || notif.uri;
 
-    // 1. Refined Reply Trigger Logic
+    // 1. Prompt Injection Defense
+    if (await llmService.detectPromptInjection(text)) {
+      console.log(`[Bot] Prompt injection attempt detected from ${handle}. Skipping.`);
+      return;
+    }
+
+
+    // 2. Refined Reply Trigger Logic
     const botMentioned = text.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => text.includes(nick));
     if (!botMentioned) {
       console.log(`[Bot] Bot not directly mentioned in this post. Skipping.`);
@@ -107,6 +120,16 @@ export class Bot {
     const userProfile = await blueskyService.getProfile(handle);
     const userPosts = await blueskyService.getUserPosts(handle);
 
+    const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
+
+    if (userIntent.highRisk) {
+      console.log(`[Bot] High-risk intent detected from ${handle}. Reason: ${userIntent.reason}. Pausing bot and alerting admin.`);
+      this.paused = true;
+      const alertMessage = `🚨 High-risk intent detected from @${handle}. Reason: ${userIntent.reason}. Bot is now paused. Post URI: https://bsky.app/profile/${handle}/post/${notif.uri.split('/').pop()}`;
+      await blueskyService.postAlert(alertMessage);
+      return;
+    }
+
     const userContext = `
       ---
       User Profile:
@@ -127,10 +150,12 @@ export class Bot {
       Cross-Post Memory (Recent mentions of the bot by this user):
       ${crossPostMemory || 'No recent cross-post mentions found.'}
       ---
+      User Intent Analysis: ${userIntent.reason || 'Could not be determined.'}
+      ---
     `;
 
     const messages = [
-      { role: 'system', content: `You are replying to ${handle}. Here is some context to help you tailor your response:${fullContext}` },
+      { role: 'system', content: `You are replying to ${handle}. Use the following context to tailor your response. Your tone should be influenced by the user's intent, but do not state the analysis directly.${fullContext}` },
       ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
       ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
     ];

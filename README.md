@@ -12,7 +12,8 @@ Dearest Llama is a modular, stateful, and highly autonomous Bluesky social media
 - **User Context Analysis**: Gathers a user's bio and recent posts to provide more informed and personalized responses.
 - **Persistent Memory**: Remembers past interactions with users and mutes threads on command, even after restarting.
 - **Enhanced Safety**: Includes pre-reply checks for both user posts and the bot's own responses to ensure all interactions are appropriate.
-- **Detailed Logging**: Provides step-by-step logging for easy debugging on platforms like Render.
+- **Detailed Logging**: Provides step-by-step logging for easy debugging on platforms like Render, including reasons for safety check failures.
+- **Code Self-Awareness**: Can answer questions about its own capabilities by referencing its `README.md` file.
 
 ## 📁 Project Structure
 
@@ -82,6 +83,7 @@ The bot understands natural language commands in addition to the following expli
 | `!resume` | Unblocks the bot. |
 | `!mute` | Mutes the current thread. |
 | `!help` | Displays a list of available commands. |
+| `!about`| Asks the bot to describe its capabilities. |
 | `google [query]` | Searches the web. |
 | `youtube [query]` | Searches YouTube for videos. |
 | `generate image of [prompt]`| Creates an image using Nvidia NIM. |

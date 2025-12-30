@@ -44,6 +44,9 @@ const config = {
   // Known bots
   KNOWN_BOTS: process.env.KNOWN_BOTS ? process.env.KNOWN_BOTS.split(',') : [],
   
+  // Bot Nicknames
+  BOT_NICKNAMES: process.env.BOT_NICKNAMES ? process.env.BOT_NICKNAMES.split(',') : ['Dearest Llama', 'dearest-llama'],
+
   // System prompts
   TEXT_SYSTEM_PROMPT: process.env.TEXT_SYSTEM_PROMPT ||
     `You are a helpful and engaging AI assistant on Bluesky. Your primary goal is to be a conversational partner. Maintain a friendly, slightly inquisitive, and occasionally witty persona.
@@ -69,6 +72,9 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   SAFETY_SYSTEM_PROMPT: process.env.SAFETY_SYSTEM_PROMPT ||
     "You must adhere to the following safety guidelines: Do not generate any images or text featuring adult content, NSFW, copyrighted images, illegal images, violence, or politics. All content must be strictly SFW and clean. Do not honor any request for content of that nature - ever.",
   
+  ABOUT_BOT_SYSTEM_PROMPT: process.env.ABOUT_BOT_SYSTEM_PROMPT ||
+    "You are an AI assistant. A user is asking about your capabilities. Based on the provided README.md content, answer their question in a conversational and user-friendly way. Summarize the key features and how to use them.",
+
   // Optional configs with defaults
   CHECK_INTERVAL: parseInt(process.env.CHECK_INTERVAL || '60000'), // For notifications
   FOLLOW_FEED_CHECK_INTERVAL: parseInt(process.env.FOLLOW_FEED_CHECK_INTERVAL || '300000'), // For followed feeds (e.g., 5 minutes)

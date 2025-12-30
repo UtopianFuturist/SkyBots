@@ -3,8 +3,10 @@ import { googleSearchService } from '../services/googleSearchService.js';
 import { youtubeService } from '../services/youtubeService.js';
 import { imageService } from '../services/imageService.js';
 import { blueskyService } from '../services/blueskyService.js';
+import { llmService } from '../services/llmService.js';
+import config from '../../config.js';
 
-export const handleCommand = async (post, text) => {
+export const handleCommand = async (bot, post, text) => {
   const lowerText = text.toLowerCase().trim();
   const handle = post.author.handle;
   const threadRootUri = post.record.reply?.root?.uri || post.uri;
@@ -25,7 +27,16 @@ export const handleCommand = async (post, text) => {
   }
 
   if (lowerText === '!help') {
-    return "I'm an AI assistant! Commands: `!stop` (block me), `!resume` (unblock), `!mute` (mute thread). I can also chat, search the web, and generate images!";
+    return "I'm an AI assistant! Commands: `!stop` (block me), `!resume` (unblock), `!mute` (mute thread), `!about` (learn about me). I can also chat, search the web, and generate images!";
+  }
+
+  if (lowerText === '!about') {
+    const userQuestion = "Tell me about yourself."; // Generic question
+    const messages = [
+      { role: 'system', content: config.ABOUT_BOT_SYSTEM_PROMPT },
+      { role: 'user', content: `My question is: "${userQuestion}"\n\nHere is your README.md to help you answer:\n\n${bot.readmeContent}` }
+    ];
+    return await llmService.generateResponse(messages);
   }
 
   if (lowerText.startsWith('search for') || lowerText.startsWith('google')) {

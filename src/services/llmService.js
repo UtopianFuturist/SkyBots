@@ -78,26 +78,30 @@ class LLMService {
 
   async isPostSafe(postText) {
     const systemPrompt = `
-      You are a safety filter for a social media bot. Your task is to determine if a user's post is safe to reply to.
-      The post must be checked for violations of the safety policy: no adult content, NSFW, copyrighted material, illegal acts, violence, or politics.
-      If the content is safe, respond with "safe". If it violates the policy, respond with "unsafe".
-      Respond with only "safe" or "unsafe".
+      You are a safety filter. Check the user's post for violations: no adult content, NSFW, copyrighted material, illegal acts, violence, or politics.
+      If safe, respond with "safe".
+      If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The post contains political content."
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 3 });
-    return response?.toLowerCase().includes('safe');
+    const response = await this.generateResponse(messages, { max_tokens: 50 });
+    if (response?.toLowerCase().startsWith('unsafe')) {
+      return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
+    }
+    return { safe: true, reason: null };
   }
 
   async isResponseSafe(responseText) {
     const systemPrompt = `
-      You are a safety filter for a social media bot. Your task is to determine if the bot's own generated response is appropriate for social media.
-      The response must be checked for violations of the safety policy: no adult content, NSFW, copyrighted material, illegal acts, violence, or politics.
-      If the content is safe, respond with "safe". If it violates the policy, respond with "unsafe".
-      Respond with only "safe" or "unsafe".
+      You are a safety filter. Check the bot's own response for violations: no adult content, NSFW, copyrighted material, illegal acts, violence, or politics.
+      If safe, respond with "safe".
+      If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The response contains sensitive information."
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: responseText }];
-    const response = await this.generateResponse(messages, { max_tokens: 3 });
-    return response?.toLowerCase().includes('safe');
+    const response = await this.generateResponse(messages, { max_tokens: 50 });
+    if (response?.toLowerCase().startsWith('unsafe')) {
+      return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
+    }
+    return { safe: true, reason: null };
   }
 }
 

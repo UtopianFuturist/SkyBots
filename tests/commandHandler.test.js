@@ -32,6 +32,7 @@ const { imageService } = await import('../src/services/imageService.js');
 const { blueskyService } = await import('../src/services/blueskyService.js');
 
 describe('Command Handler', () => {
+  const mockBot = { readmeContent: 'This is a test readme.' };
   const mockPost = {
     author: { handle: 'test.bsky.social' },
     uri: 'at://did:plc:123/app.bsky.feed.post/456',
@@ -51,14 +52,14 @@ describe('Command Handler', () => {
 
   it('should handle google search command', async () => {
     googleSearchService.search.mockResolvedValue([{ title: 'Test Title', link: 'https://test.com', snippet: 'Test snippet.' }]);
-    await handleCommand(mockPost, 'google test query');
+    await handleCommand(mockBot, mockPost, 'google test query');
     expect(googleSearchService.search).toHaveBeenCalledWith('test query');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 
   it('should handle youtube search command', async () => {
     youtubeService.search.mockResolvedValue([{ videoId: '123', title: 'Test Video' }]);
-    await handleCommand(mockPost, 'youtube test query');
+    await handleCommand(mockBot, mockPost, 'youtube test query');
     expect(youtubeService.search).toHaveBeenCalledWith('test query');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
@@ -66,14 +67,14 @@ describe('Command Handler', () => {
   it('should handle image generation command', async () => {
     imageService.generateImage.mockResolvedValue(Buffer.from('test-image-data'));
     blueskyService.agent = { uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'test-blob-ref' } }) };
-    await handleCommand(mockPost, 'generate image of a cat');
+    await handleCommand(mockBot, mockPost, 'generate image of a cat');
     expect(imageService.generateImage).toHaveBeenCalledWith('of a cat');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 
   it('should handle vetted image search command', async () => {
     googleSearchService.searchImages.mockResolvedValue([{ title: 'Vetted Image', link: 'https://vetted.com', snippet: 'A vetted image.' }]);
-    await handleCommand(mockPost, 'find image of a dog');
+    await handleCommand(mockBot, mockPost, 'find image of a dog');
     expect(googleSearchService.searchImages).toHaveBeenCalledWith('of a dog');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });

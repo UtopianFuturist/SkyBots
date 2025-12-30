@@ -78,7 +78,7 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
     "You are an AI assistant. A user is asking about your capabilities. Based on the provided README.md content, answer their question in a conversational and user-friendly way. Summarize the key features and how to use them.",
 
   // Optional configs with defaults
-  CHECK_INTERVAL: parseInt(process.env.CHECK_INTERVAL || '60000'), // For notifications
+  CHECK_INTERVAL: parseInt(process.env.CHECK_INTERVAL || '120000'), // For notifications
   FOLLOW_FEED_CHECK_INTERVAL: parseInt(process.env.FOLLOW_FEED_CHECK_INTERVAL || '300000'), // For followed feeds (e.g., 5 minutes)
   MAX_RETRIES: parseInt(process.env.MAX_RETRIES || '5'),
   BACKOFF_DELAY: parseInt(process.env.BACKOFF_DELAY || '60000'),

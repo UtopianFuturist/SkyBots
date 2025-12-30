@@ -1,4 +1,4 @@
-import { AtpAgent } from '@atproto/api';
+import { AtpAgent, RichText } from '@atproto/api';
 import config from '../../config.js';
 import { splitText } from '../utils/textUtils.js';
 
@@ -41,6 +41,7 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, embed = null) {
+    console.log(`[BlueskyService] LLM Response: "${text}"`);
     console.log('[BlueskyService] Posting reply...');
     const textChunks = splitText(text);
     let currentParent = parentPost;
@@ -99,9 +100,12 @@ class BlueskyService {
   async postAlert(text) {
     console.log('[BlueskyService] Posting alert to admin...');
     try {
+      const richText = new RichText({ text: `@${config.ADMIN_BLUESKY_HANDLE} ${text}` });
+      await richText.detectFacets(this.agent);
       await this.agent.post({
         $type: 'app.bsky.feed.post',
-        text: `@${config.ADMIN_BLUESKY_HANDLE} ${text}`,
+        text: richText.text,
+        facets: richText.facets,
         createdAt: new Date().toISOString(),
       });
       console.log('[BlueskyService] Alert posted successfully.');

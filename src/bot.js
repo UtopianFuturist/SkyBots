@@ -69,6 +69,14 @@ export class Bot {
       return;
     }
 
+    // 1. Duplicate Reply Check
+    const threadHistory = await this._getThreadHistory(notif.uri);
+    const botReplies = threadHistory.filter(p => p.author === config.BLUESKY_IDENTIFIER);
+    if (botReplies.length > 0) {
+      console.log(`[Bot] Already replied to this thread. Skipping.`);
+      return;
+    }
+
     // 1. Prompt Injection Defense
     if (await llmService.detectPromptInjection(text)) {
       console.log(`[Bot] Prompt injection attempt detected from ${handle}.`);
@@ -161,7 +169,23 @@ export class Bot {
       }
     }
 
+    // 6. Image Recognition
+    let imageAnalysisResult = '';
+    const embed = notif.record.embed;
+    if (embed && embed.$type === 'app.bsky.embed.images') {
+      for (const image of embed.images) {
+        const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${notif.author.did}&cid=${image.image.ref.$link}`;
+        console.log(`[Bot] Image detected: ${image.image.ref.$link}`);
+        console.log(`[Bot] Alt text: ${image.alt}`);
+        const analysis = await llmService.analyzeImage(imageUrl, image.alt);
+        if (analysis) {
+          imageAnalysisResult += analysis + ' ';
+        }
+      }
+    }
+
     // 6. Generate Response with User Context and Memory
+    console.log(`[Bot] Responding to post from ${handle}: "${text}"`);
     console.log(`[Bot] Generating response for ${handle}...`);
     const threadContext = await this._getThreadHistory(notif.uri);
     const userMemory = dataStore.getInteractionsByUser(handle);
@@ -201,6 +225,8 @@ export class Bot {
       ${crossPostMemory || 'No recent cross-post mentions found.'}
       ---
       User Intent Analysis: ${userIntent.reason || 'Could not be determined.'}
+      ---
+      Image Analysis: ${imageAnalysisResult || 'No image provided.'}
       ---
     `;
 

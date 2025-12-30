@@ -5,7 +5,7 @@ import fs from 'fs';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, '../../src/data');
-const DB_PATH = path.resolve(DATA_DIR, 'db.json');
+const DB_PATH = process.env.DATA_PATH || path.resolve(DATA_DIR, 'db.json');
 
 const defaultData = {
   repliedPosts: [],

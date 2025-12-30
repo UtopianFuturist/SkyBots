@@ -34,7 +34,13 @@ services:
         value: "60000"
       - key: MAX_REPLIED_POSTS
         value: "1000"
+      - key: DATA_PATH
+        value: /data/db.json
     healthCheckPath: /health
     scaling:
       minInstances: 1
       maxInstances: 1
+    disks:
+      - name: data
+        mountPath: /data
+        sizeGB: 1

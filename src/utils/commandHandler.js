@@ -16,9 +16,18 @@ export const handleCommand = async (bot, post, text) => {
     return "You have been added to my blocklist. Use `!resume` to receive messages again.";
   }
 
-  if (lowerText.includes('!resume')) {
+  if (lowerText.includes('!unblock')) {
     await dataStore.unblockUser(handle);
     return "Welcome back! You've been removed from my blocklist.";
+  }
+
+  // Admin-only commands
+  if (handle === config.ADMIN_BLUESKY_HANDLE) {
+    if (lowerText === '!resume') {
+      bot.paused = false;
+      console.log('[Bot] Bot has been resumed by admin.');
+      return 'Bot operations have been resumed.';
+    }
   }
 
   if (lowerText.includes('!mute')) {

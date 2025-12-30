@@ -19,7 +19,7 @@ export const truncateText = (text, maxLength = 300) => {
   return truncatedText + '…';
 };
 
-export const splitText = (text, maxLength = 290) => {
+export const splitText = (text, maxLength = 300) => {
   const segmenter = new Intl.Segmenter();
   const graphemes = [...segmenter.segment(text)].map(s => s.segment);
 
@@ -28,24 +28,24 @@ export const splitText = (text, maxLength = 290) => {
   }
 
   const chunks = [];
-  let currentChunk = '';
+  let remainingText = text;
 
-  for (const grapheme of graphemes) {
-    if ((currentChunk + grapheme).length > maxLength) {
-      // Find the last space to avoid cutting words
-      const lastSpaceIndex = currentChunk.lastIndexOf(' ');
-      if (lastSpaceIndex > 0) {
-        chunks.push(currentChunk.slice(0, lastSpaceIndex) + '…');
-        currentChunk = currentChunk.slice(lastSpaceIndex + 1);
-      } else {
-        chunks.push(currentChunk + '…');
-        currentChunk = '';
-      }
+  while (remainingText.length > 0 && chunks.length < 3) {
+    if (remainingText.length <= maxLength) {
+      chunks.push(remainingText);
+      break;
     }
-    currentChunk += grapheme;
-  }
-  chunks.push(currentChunk);
 
-  // Limit to 3 chunks as per the requirement
-  return chunks.slice(0, 3);
+    let chunk = remainingText.slice(0, maxLength);
+    let lastSpaceIndex = chunk.lastIndexOf(' ');
+
+    if (lastSpaceIndex > 0) {
+      chunk = chunk.slice(0, lastSpaceIndex);
+    }
+
+    chunks.push(chunk + '…');
+    remainingText = '…' + remainingText.slice(chunk.length).trim();
+  }
+
+  return chunks;
 };

@@ -9,7 +9,6 @@ import fs from 'fs/promises';
 
 export class Bot {
   constructor() {
-    this.cursor = null;
     this.readmeContent = '';
     this.paused = false;
     this.proposedPosts = [];
@@ -41,20 +40,25 @@ export class Bot {
       }
 
       try {
-        console.log('[Bot] Fetching notifications...');
-        const { notifications, cursor } = await blueskyService.getNotifications(this.cursor);
-        console.log(`[Bot] Fetched ${notifications.length} notifications.`);
-        this.cursor = cursor;
+        let localCursor;
+        do {
+          console.log('[Bot] Fetching notifications...');
+          const { notifications, cursor } = await blueskyService.getNotifications(localCursor);
+          console.log(`[Bot] Fetched ${notifications.length} notifications.`);
+          localCursor = cursor;
 
-        for (const notif of notifications) {
-          if (notif.isRead || dataStore.hasReplied(notif.uri)) continue;
-          if (notif.reason !== 'mention' && notif.reason !== 'reply' && notif.reason !== 'quote') continue;
-          if (notif.record.$type !== 'app.bsky.feed.post') continue;
+          // Notifications are already in reverse chronological order (most recent first)
+          for (const notif of notifications) {
+            if (notif.isRead || dataStore.hasReplied(notif.uri)) continue;
+            if (notif.reason !== 'mention' && notif.reason !== 'reply' && notif.reason !== 'quote') continue;
+            if (notif.record.$type !== 'app.bsky.feed.post') continue;
 
-          await this.processNotification(notif);
-          await dataStore.addRepliedPost(notif.uri);
-        }
-        console.log('[Bot] Finished processing notifications for this batch.');
+            await this.processNotification(notif);
+            await dataStore.addRepliedPost(notif.uri);
+          }
+        } while (localCursor);
+
+        console.log('[Bot] Finished processing all notifications for this cycle.');
       } catch (error) {
         console.error('[Bot] Error in main loop:', error);
       }

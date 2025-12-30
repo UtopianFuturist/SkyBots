@@ -1,0 +1,80 @@
+import { jest } from '@jest/globals';
+
+jest.unstable_mockModule('../src/services/googleSearchService.js', () => ({
+  googleSearchService: {
+    search: jest.fn(),
+    searchImages: jest.fn(),
+  },
+}));
+jest.unstable_mockModule('../src/services/youtubeService.js', () => ({
+  youtubeService: {
+    search: jest.fn(),
+  },
+}));
+jest.unstable_mockModule('../src/services/imageService.js', () => ({
+  imageService: {
+    generateImage: jest.fn(),
+  },
+}));
+jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
+  blueskyService: {
+    postReply: jest.fn(),
+    agent: {
+      uploadBlob: jest.fn(),
+    },
+  },
+}));
+
+const { handleCommand } = await import('../src/utils/commandHandler.js');
+const { googleSearchService } = await import('../src/services/googleSearchService.js');
+const { youtubeService } = await import('../src/services/youtubeService.js');
+const { imageService } = await import('../src/services/imageService.js');
+const { blueskyService } = await import('../src/services/blueskyService.js');
+
+describe('Command Handler', () => {
+  const mockPost = {
+    author: { handle: 'test.bsky.social' },
+    uri: 'at://did:plc:123/app.bsky.feed.post/456',
+    cid: 'bafy...',
+    record: {
+      text: 'a command!',
+      reply: {
+        root: { uri: 'at://did:plc:123/app.bsky.feed.post/111', cid: 'bafyroot...' },
+        parent: { uri: 'at://did:plc:123/app.bsky.feed.post/222', cid: 'bafyparent...' }
+      }
+    }
+  };
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+  });
+
+  it('should handle google search command', async () => {
+    googleSearchService.search.mockResolvedValue([{ title: 'Test Title', link: 'https://test.com', snippet: 'Test snippet.' }]);
+    await handleCommand(mockPost, 'google test query');
+    expect(googleSearchService.search).toHaveBeenCalledWith('test query');
+    expect(blueskyService.postReply).toHaveBeenCalled();
+  });
+
+  it('should handle youtube search command', async () => {
+    youtubeService.search.mockResolvedValue([{ videoId: '123', title: 'Test Video' }]);
+    await handleCommand(mockPost, 'youtube test query');
+    expect(youtubeService.search).toHaveBeenCalledWith('test query');
+    expect(blueskyService.postReply).toHaveBeenCalled();
+  });
+
+  it('should handle image generation command', async () => {
+    imageService.generateImage.mockResolvedValue(Buffer.from('test-image-data'));
+    blueskyService.agent = { uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'test-blob-ref' } }) };
+    await handleCommand(mockPost, 'generate image of a cat');
+    expect(imageService.generateImage).toHaveBeenCalledWith('of a cat');
+    expect(blueskyService.postReply).toHaveBeenCalled();
+  });
+
+  it('should handle vetted image search command', async () => {
+    googleSearchService.searchImages.mockResolvedValue([{ title: 'Vetted Image', link: 'https://vetted.com', snippet: 'A vetted image.' }]);
+    await handleCommand(mockPost, 'find image of a dog');
+    expect(googleSearchService.searchImages).toHaveBeenCalledWith('of a dog');
+    expect(blueskyService.postReply).toHaveBeenCalled();
+  });
+});

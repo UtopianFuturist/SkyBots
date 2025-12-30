@@ -47,9 +47,6 @@ class LLMService {
   async checkSemanticLoop(newResponse, recentResponses) {
     if (!recentResponses || recentResponses.length === 0) return false;
     
-    // Simple semantic check: if the new response is too similar to recent ones
-    // In a full implementation, we'd use embeddings and cosine similarity.
-    // For now, we'll use a basic word-overlap or string similarity check.
     const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
     const normalizedNew = normalize(newResponse);
 
@@ -57,7 +54,6 @@ class LLMService {
       const normalizedOld = normalize(old);
       if (normalizedNew === normalizedOld) return true;
       
-      // Basic overlap check
       const wordsNew = new Set(normalizedNew.split(' '));
       const wordsOld = new Set(normalizedOld.split(' '));
       const intersection = new Set([...wordsNew].filter(x => wordsOld.has(x)));
@@ -65,8 +61,43 @@ class LLMService {
       
       if (similarity > 0.85) return true;
     }
-
     return false;
+  }
+
+  async isReplyRelevant(postText) {
+    const systemPrompt = `
+      You are a content moderator for a social media bot. Your task is to determine if a mention requires a response.
+      The bot should only reply to genuine questions, comments that invite discussion, or direct commands.
+      Ignore simple greetings (e.g., "gm @bot"), tags in long unrelated posts, or mentions that don't ask for interaction.
+      Respond with only "yes" or "no".
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
+    const response = await this.generateResponse(messages, { max_tokens: 3 });
+    return response?.toLowerCase().includes('yes');
+  }
+
+  async isPostSafe(postText) {
+    const systemPrompt = `
+      You are a safety filter for a social media bot. Your task is to determine if a user's post is safe to reply to.
+      The post must be checked for violations of the safety policy: no adult content, NSFW, copyrighted material, illegal acts, violence, or politics.
+      If the content is safe, respond with "safe". If it violates the policy, respond with "unsafe".
+      Respond with only "safe" or "unsafe".
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
+    const response = await this.generateResponse(messages, { max_tokens: 3 });
+    return response?.toLowerCase().includes('safe');
+  }
+
+  async isResponseSafe(responseText) {
+    const systemPrompt = `
+      You are a safety filter for a social media bot. Your task is to determine if the bot's own generated response is appropriate for social media.
+      The response must be checked for violations of the safety policy: no adult content, NSFW, copyrighted material, illegal acts, violence, or politics.
+      If the content is safe, respond with "safe". If it violates the policy, respond with "unsafe".
+      Respond with only "safe" or "unsafe".
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: responseText }];
+    const response = await this.generateResponse(messages, { max_tokens: 3 });
+    return response?.toLowerCase().includes('safe');
   }
 }
 

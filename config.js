@@ -1,7 +1,9 @@
 import dotenv from 'dotenv';
 
-// Only load .env file in development
-if (process.env.NODE_ENV !== 'production') {
+// Load .env files based on NODE_ENV
+if (process.env.NODE_ENV === 'test') {
+  dotenv.config({ path: '.env.test' });
+} else if (process.env.NODE_ENV !== 'production') {
   dotenv.config();
 }
 
@@ -9,7 +11,6 @@ if (process.env.NODE_ENV !== 'production') {
 const validateConfig = (config) => {
   const required = [
     'NVIDIA_NIM_API_KEY',
-    'TOGETHER_AI_API_KEY', // Added Together AI API key
     'BLUESKY_IDENTIFIER',
     'BLUESKY_APP_PASSWORD',
     'ADMIN_BLUESKY_HANDLE',
@@ -30,7 +31,6 @@ const validateConfig = (config) => {
 // Configuration object
 const config = {
   NVIDIA_NIM_API_KEY: process.env.NVIDIA_NIM_API_KEY,
-  TOGETHER_AI_API_KEY: process.env.TOGETHER_AI_API_KEY, // Added Together AI API key
   BLUESKY_IDENTIFIER: process.env.BLUESKY_IDENTIFIER,
   BLUESKY_APP_PASSWORD: process.env.BLUESKY_APP_PASSWORD,
   ADMIN_BLUESKY_HANDLE: process.env.ADMIN_BLUESKY_HANDLE,
@@ -81,7 +81,6 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
 validateConfig(config);
 
 // Log specific critical environment variables for diagnostics
-console.log(`[Config] Loaded TOGETHER_AI_API_KEY: ${config.TOGETHER_AI_API_KEY ? 'Exists' : 'MISSING!'}`);
 console.log(`[Config] Loaded NVIDIA_NIM_API_KEY: ${config.NVIDIA_NIM_API_KEY ? 'Exists' : 'MISSING!'}`);
 console.log(`[Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: ${config.GOOGLE_CUSTOM_SEARCH_API_KEY ? 'Exists' : 'MISSING!'}`);
 console.log(`[Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: ${config.GOOGLE_CUSTOM_SEARCH_CX_ID ? 'Exists' : 'MISSING!'}`);

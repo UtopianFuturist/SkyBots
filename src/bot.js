@@ -42,12 +42,30 @@ export class Bot {
     const threadRootUri = notif.record.reply?.root?.uri || notif.uri;
 
     // 1. Check Blocklist
-    if (dataStore.isBlocked(handle)) return;
+    if (dataStore.isBlocked(handle)) {
+      console.log(`[Bot] User ${handle} is blocked. Skipping.`);
+      return;
+    }
 
     // 2. Check Muted Thread
-    if (dataStore.isThreadMuted(threadRootUri)) return;
+    if (dataStore.isThreadMuted(threadRootUri)) {
+      console.log(`[Bot] Thread ${threadRootUri} is muted. Skipping.`);
+      return;
+    }
 
-    // 3. Handle Commands
+    // 3. Pre-reply safety and relevance checks
+    if (!(await llmService.isPostSafe(text))) {
+      console.log(`[Bot] Post by ${handle} failed safety check. Skipping.`);
+      // Optionally, you could reply with a generic message or take other action.
+      return;
+    }
+
+    if (!(await llmService.isReplyRelevant(text))) {
+      console.log(`[Bot] Post by ${handle} not relevant for a reply. Skipping.`);
+      return;
+    }
+
+    // 4. Handle Commands
     const commandResponse = await handleCommand(notif, text);
     if (commandResponse) {
       await blueskyService.postReply(notif, commandResponse);
@@ -65,22 +83,44 @@ export class Bot {
       return;
     }
 
-    // 5. Generate Response with Memory
+    // 5. Generate Response with User Context and Memory
+    console.log(`[Bot] Generating response for ${handle}...`);
     const history = await this.getThreadHistory(notif.uri);
     const userMemory = dataStore.getInteractionsByUser(handle);
     
+    // Fetch user profile for additional context
+    const userProfile = await blueskyService.getProfile(handle);
+    const userPosts = await blueskyService.getUserPosts(handle);
+
+    const userContext = `
+      ---
+      User Profile:
+      - Bio: ${userProfile.description?.replace(/\n/g, ' ') || 'Not available.'}
+      - Recent Posts:
+        ${userPosts.length > 0 ? userPosts.map(p => `- "${p.substring(0, 80)}..."`).join('\n') : 'No recent posts found.'}
+      ---
+    `;
+
     const messages = [
+      { role: 'system', content: `You are replying to ${handle}. Here is some context about them to help you tailor your response:${userContext}` },
       ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
       ...history.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
     ];
 
     let responseText = await llmService.generateResponse(messages);
 
-    // 6. Semantic Loop Check
+    // 6. Semantic Loop and Safety Check for Bot's Response
     if (responseText) {
       const recentBotReplies = history.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
       if (await llmService.checkSemanticLoop(responseText, recentBotReplies)) {
+        console.log('[Bot] Semantic loop detected. Generating a new response.');
         responseText = await llmService.generateResponse([...messages, { role: 'system', content: "Your previous response was too similar to a recent one. Please provide a fresh, different perspective." }]);
+      }
+
+      if (responseText && !(await llmService.isResponseSafe(responseText))) {
+        console.log(`[Bot] Bot's response failed safety check. Aborting reply.`);
+        // Do not reply if the bot's own message is unsafe
+        return;
       }
     }
 

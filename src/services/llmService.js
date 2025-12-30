@@ -5,6 +5,7 @@ class LLMService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = 'nvidia/nemotron-3-nano-30b-a3b';
+    this.visionModel = 'nvidia/kosmos-2';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
@@ -156,6 +157,44 @@ class LLMService {
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
     return await this.generateResponse(messages, { max_tokens: 20 });
+  }
+
+  async analyzeImage(imageUrl, altText) {
+    const messages = [
+      {
+        "role": "user",
+        "content": `Describe the image in detail. ${altText ? `The user has provided the following alt text: "${altText}"` : ""}`,
+        "image_url": imageUrl
+      }
+    ];
+
+    try {
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify({
+          model: this.visionModel,
+          messages: messages,
+          max_tokens: 1024,
+          stream: false
+        })
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content;
+      return content ? content.trim() : null;
+    } catch (error) {
+      console.error('[LLMService] Error analyzing image:', error);
+      return null;
+    }
   }
 
   async rateUserInteraction(interactionHistory) {

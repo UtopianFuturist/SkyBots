@@ -177,7 +177,10 @@ export class Bot {
         const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${notif.author.did}&cid=${image.image.ref.$link}`;
         console.log(`[Bot] Image detected: ${image.image.ref.$link}`);
         console.log(`[Bot] Alt text: ${image.alt}`);
-        imageAnalysisResult += await llmService.analyzeImage(imageUrl, image.alt) + ' ';
+        const analysis = await llmService.analyzeImage(imageUrl, image.alt);
+        if (analysis) {
+          imageAnalysisResult += analysis + ' ';
+        }
       }
     }
 

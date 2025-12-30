@@ -12,6 +12,16 @@ class LLMService {
   async generateResponse(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 300 } = options;
 
+    // Consolidate system prompts
+    const systemPrompts = messages.filter(m => m.role === 'system').map(m => m.content).join(' ');
+    const finalSystemPrompt = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT} ${systemPrompts}`.trim();
+    const userMessages = messages.filter(m => m.role !== 'system');
+
+    const finalMessages = [
+      { role: "system", content: finalSystemPrompt },
+      ...userMessages
+    ];
+
     try {
       const response = await fetch(this.baseUrl, {
         method: 'POST',
@@ -21,10 +31,7 @@ class LLMService {
         },
         body: JSON.stringify({
           model: this.model,
-          messages: [
-            { role: "system", content: `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}` },
-            ...messages
-          ],
+          messages: finalMessages,
           temperature,
           max_tokens,
           stream: false

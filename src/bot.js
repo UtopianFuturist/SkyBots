@@ -32,13 +32,17 @@ export class Bot {
     setInterval(() => this.proposeNewPost(), 3600000); // Every hour
 
     while (true) {
+      console.log(`[Bot] --- Loop iteration starting at ${new Date().toISOString()} ---`);
       if (this.paused) {
+        console.log('[Bot] Bot is paused. Waiting...');
         await new Promise(resolve => setTimeout(resolve, 60000)); // Check every minute if paused
         continue;
       }
 
       try {
+        console.log('[Bot] Fetching notifications...');
         const { notifications, cursor } = await blueskyService.getNotifications(this.cursor);
+        console.log(`[Bot] Fetched ${notifications.length} notifications.`);
         this.cursor = cursor;
 
         for (const notif of notifications) {
@@ -49,9 +53,11 @@ export class Bot {
           await this.processNotification(notif);
           await dataStore.addRepliedPost(notif.uri);
         }
+        console.log('[Bot] Finished processing notifications for this batch.');
       } catch (error) {
         console.error('[Bot] Error in main loop:', error);
       }
+      console.log(`[Bot] Waiting for ${config.CHECK_INTERVAL}ms before next loop.`);
       await new Promise(resolve => setTimeout(resolve, config.CHECK_INTERVAL));
     }
   }

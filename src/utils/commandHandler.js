@@ -109,18 +109,12 @@ export const handleCommand = async (bot, post, text) => {
 
   if (lowerText.startsWith('find image') || lowerText.startsWith('search for image')) {
     const query = lowerText.replace('find image', '').replace('search for image', '').trim();
-    const results = await googleSearchService.searchImages(query);
-    if (results.length > 0) {
-      const topResult = results[0];
-      const replyText = `Here's an image I found for "${query}":\n\n${topResult.title}`;
-      await blueskyService.postReply(post, replyText, {
-        $type: 'app.bsky.embed.external',
-        external: {
-          uri: topResult.link,
-          title: topResult.title,
-          description: topResult.snippet,
-        },
-      });
+    const imageResults = await googleSearchService.searchImages(query);
+
+    if (imageResults && imageResults.length > 0) {
+      const imagesToEmbed = imageResults.slice(0, 4);
+      const replyText = `Here are the top ${imagesToEmbed.length} images I found for "${query}":`;
+      await blueskyService.postReply(post, replyText, { imagesToEmbed: imagesToEmbed });
       return; // Command handled
     }
     return `I couldn't find any images for "${query}".`;

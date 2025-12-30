@@ -49,3 +49,33 @@ export const splitText = (text, maxLength = 300) => {
 
   return chunks;
 };
+
+export const sanitizeDuplicateText = (text) => {
+  if (!text) {
+    return text;
+  }
+  const trimmed = text.trim();
+  // Check for exact duplication, e.g., "abc abc"
+  if (trimmed.length > 10 && trimmed.length % 2 === 0) {
+    const mid = trimmed.length / 2;
+    const firstHalf = trimmed.substring(0, mid);
+    const secondHalf = trimmed.substring(mid);
+    if (firstHalf === secondHalf) {
+      console.log(`[TextUtils] Sanitized exact duplicate text. Original length: ${trimmed.length}`);
+      return firstHalf;
+    }
+  }
+
+  // Check for duplication with a single character separator, e.g., "abc abc" or "abc!abc!"
+  if (trimmed.length > 11 && trimmed.length % 2 !== 0) {
+    const mid = Math.floor(trimmed.length / 2);
+    const firstHalf = trimmed.substring(0, mid);
+    const secondHalf = trimmed.substring(mid + 1);
+    if (firstHalf === secondHalf) {
+        console.log(`[TextUtils] Sanitized duplicate text with separator. Original length: ${trimmed.length}`);
+        return firstHalf;
+    }
+  }
+
+  return text;
+};

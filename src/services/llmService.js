@@ -44,8 +44,17 @@ class LLMService {
       }
 
       const data = await response.json();
-      const content = data.choices[0]?.message?.content;
-      return content ? content.trim() : null;
+      let content = data.choices[0]?.message?.content;
+
+      if (content) {
+        const thinkTag = '</think>';
+        const lastIndex = content.lastIndexOf(thinkTag);
+        if (lastIndex !== -1) {
+          content = content.substring(lastIndex + thinkTag.length);
+        }
+        return content.trim();
+      }
+      return null;
     } catch (error) {
       console.error('[LLMService] Error generating response:', error);
       return null;

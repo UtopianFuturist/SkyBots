@@ -77,9 +77,11 @@ export class Bot {
     let responseText = await llmService.generateResponse(messages);
 
     // 6. Semantic Loop Check
-    const recentBotReplies = history.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
-    if (await llmService.checkSemanticLoop(responseText, recentBotReplies)) {
-      responseText = await llmService.generateResponse([...messages, { role: 'system', content: "Your previous response was too similar to a recent one. Please provide a fresh, different perspective." }]);
+    if (responseText) {
+      const recentBotReplies = history.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
+      if (await llmService.checkSemanticLoop(responseText, recentBotReplies)) {
+        responseText = await llmService.generateResponse([...messages, { role: 'system', content: "Your previous response was too similar to a recent one. Please provide a fresh, different perspective." }]);
+      }
     }
 
     if (responseText) {

@@ -1,5 +1,5 @@
 {
-  "name": "dearest-llama",
+  "name": "skybots",
   "version": "1.0.0",
   "type": "module",
   "description": "A Bluesky bot that responds to mentions with Llama 4 Maverick and generates images with Nvidia NIM Flux Dev",
@@ -37,12 +37,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/UtopianFuturist/dearest-llama.git"
+    "url": "https://github.com/UtopianFuturist/skybots.git"
   },
   "bugs": {
-    "url": "https://github.com/UtopianFuturist/dearest-llama/issues"
+    "url": "https://github.com/UtopianFuturist/skybots/issues"
   },
-  "homepage": "https://github.com/UtopianFuturist/dearest-llama#readme",
+  "homepage": "https://github.com/UtopianFuturist/skybots#readme",
   "devDependencies": {
     "jest": "^30.2.0"
   }

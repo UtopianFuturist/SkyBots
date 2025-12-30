@@ -1,6 +1,6 @@
 services:
   - type: web
-    name: dearest-llama
+    name: skybots
     runtime: node
     plan: starter
     preInstallCommand: npm install -g pnpm

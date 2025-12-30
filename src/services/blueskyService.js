@@ -121,9 +121,16 @@ class BlueskyService {
   async postAlert(text) {
     console.log('[BlueskyService] Posting alert to admin...');
     try {
+      // Construct the full text first, *then* detect facets.
+      // This ensures all byte offsets for mentions and links are correct.
+      const fullText = `@${config.ADMIN_BLUESKY_HANDLE} ${text}`;
+      const rt = new RichText({ text: fullText });
+      await rt.detectFacets(this.agent);
+
       await this.agent.post({
         $type: 'app.bsky.feed.post',
-        text: `@${config.ADMIN_BLUESKY_HANDLE} ${text}`,
+        text: rt.text,
+        facets: rt.facets,
         createdAt: new Date().toISOString(),
       });
       console.log('[BlueskyService] Alert posted successfully.');

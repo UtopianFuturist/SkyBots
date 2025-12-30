@@ -26,13 +26,18 @@ class BlueskyService {
     return data;
   }
 
-  async getPostThread(uri) {
-    const { data } = await this.agent.getPostThread({
-      uri,
-      depth: 5,
-      parentHeight: 5
-    });
-    return data.thread;
+  async getDetailedThread(uri) {
+    try {
+      const { data } = await this.agent.getPostThread({
+        uri,
+        depth: 20,
+        parentHeight: 20,
+      });
+      return data.thread;
+    } catch (error) {
+      console.error('[BlueskyService] Error fetching detailed thread:', error);
+      return null;
+    }
   }
 
   async postReply(parentPost, text, embed = null) {

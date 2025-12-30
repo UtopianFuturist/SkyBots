@@ -3,15 +3,23 @@ import { llmService } from './services/llmService.js';
 import { dataStore } from './services/dataStore.js';
 import { handleCommand } from './utils/commandHandler.js';
 import config from '../config.js';
+import fs from 'fs/promises';
 
 export class Bot {
   constructor() {
     this.cursor = null;
+    this.readmeContent = '';
   }
 
   async init() {
     await dataStore.init();
     await blueskyService.authenticate();
+    try {
+      this.readmeContent = await fs.readFile('README.md', 'utf-8');
+      console.log('[Bot] README.md loaded for self-awareness.');
+    } catch (error) {
+      console.error('[Bot] Error loading README.md:', error);
+    }
   }
 
   async run() {
@@ -41,7 +49,14 @@ export class Bot {
     const text = notif.record.text || "";
     const threadRootUri = notif.record.reply?.root?.uri || notif.uri;
 
-    // 1. Check Blocklist
+    // 1. Refined Reply Trigger Logic
+    const botMentioned = text.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => text.includes(nick));
+    if (!botMentioned) {
+      console.log(`[Bot] Bot not directly mentioned in this post. Skipping.`);
+      return;
+    }
+
+    // 2. Check Blocklist
     if (dataStore.isBlocked(handle)) {
       console.log(`[Bot] User ${handle} is blocked. Skipping.`);
       return;
@@ -54,9 +69,9 @@ export class Bot {
     }
 
     // 3. Pre-reply safety and relevance checks
-    if (!(await llmService.isPostSafe(text))) {
-      console.log(`[Bot] Post by ${handle} failed safety check. Skipping.`);
-      // Optionally, you could reply with a generic message or take other action.
+    const postSafetyCheck = await llmService.isPostSafe(text);
+    if (!postSafetyCheck.safe) {
+      console.log(`[Bot] Post by ${handle} failed safety check. Reason: ${postSafetyCheck.reason}. Skipping.`);
       return;
     }
 
@@ -66,7 +81,7 @@ export class Bot {
     }
 
     // 4. Handle Commands
-    const commandResponse = await handleCommand(notif, text);
+    const commandResponse = await handleCommand(this, notif, text);
     if (commandResponse) {
       await blueskyService.postReply(notif, commandResponse);
       return;
@@ -85,7 +100,7 @@ export class Bot {
 
     // 5. Generate Response with User Context and Memory
     console.log(`[Bot] Generating response for ${handle}...`);
-    const history = await this.getThreadHistory(notif.uri);
+    const threadContext = await this._getThreadHistory(notif.uri);
     const userMemory = dataStore.getInteractionsByUser(handle);
     
     // Fetch user profile for additional context
@@ -101,10 +116,23 @@ export class Bot {
       ---
     `;
 
+    const crossPostMemory = userPosts
+      .filter(p => p.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => p.includes(nick)))
+      .map(p => `- (From another thread) "${p.substring(0, 100)}..."`)
+      .join('\n');
+
+    const fullContext = `
+      ${userContext}
+      ---
+      Cross-Post Memory (Recent mentions of the bot by this user):
+      ${crossPostMemory || 'No recent cross-post mentions found.'}
+      ---
+    `;
+
     const messages = [
-      { role: 'system', content: `You are replying to ${handle}. Here is some context about them to help you tailor your response:${userContext}` },
+      { role: 'system', content: `You are replying to ${handle}. Here is some context to help you tailor your response:${fullContext}` },
       ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
-      ...history.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
+      ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
     ];
 
     let responseText = await llmService.generateResponse(messages);
@@ -117,10 +145,12 @@ export class Bot {
         responseText = await llmService.generateResponse([...messages, { role: 'system', content: "Your previous response was too similar to a recent one. Please provide a fresh, different perspective." }]);
       }
 
-      if (responseText && !(await llmService.isResponseSafe(responseText))) {
-        console.log(`[Bot] Bot's response failed safety check. Aborting reply.`);
-        // Do not reply if the bot's own message is unsafe
-        return;
+      if (responseText) {
+        const responseSafetyCheck = await llmService.isResponseSafe(responseText);
+        if (!responseSafetyCheck.safe) {
+          console.log(`[Bot] Bot's response failed safety check. Reason: ${responseSafetyCheck.reason}. Aborting reply.`);
+          return;
+        }
       }
     }
 
@@ -131,12 +161,14 @@ export class Bot {
     }
   }
 
-  async getThreadHistory(uri) {
+  async _getThreadHistory(uri) {
     try {
-      const thread = await blueskyService.getPostThread(uri);
+      const thread = await blueskyService.getDetailedThread(uri);
+      if (!thread) return [];
+
       const history = [];
       let current = thread;
-      
+
       while (current && current.post) {
         history.unshift({
           author: current.post.author.handle,

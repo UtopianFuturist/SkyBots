@@ -79,12 +79,8 @@ export class Bot {
     // 1. Thread History Fetching (Centralized)
     const threadContext = await this._getThreadHistory(notif.uri);
 
-    // 1. Duplicate Reply Check
-    const botReplies = threadContext.filter(p => p.author === config.BLUESKY_IDENTIFIER);
-    if (botReplies.length > 0) {
-      console.log(`[Bot] Already replied to this thread. Skipping.`);
-      return;
-    }
+    // A check for the bot's own replies is now handled by the isReplyToBot logic
+    // and the dataStore check for previously processed notifications.
 
     // 1. Prompt Injection Defense
     if (await llmService.detectPromptInjection(text)) {
@@ -102,8 +98,13 @@ export class Bot {
 
     // 2. Refined Reply Trigger Logic
     const botMentioned = text.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => text.includes(nick));
-    if (!botMentioned) {
-      console.log(`[Bot] Bot not directly mentioned in this post. Skipping.`);
+
+    // Check if the reply is to one of the bot's own posts.
+    const parentPost = threadContext.length > 1 ? threadContext[threadContext.length - 2] : null;
+    const isReplyToBot = parentPost && parentPost.author === config.BLUESKY_IDENTIFIER;
+
+    if (!botMentioned && !isReplyToBot) {
+      console.log(`[Bot] Bot not mentioned and not a reply to self. Skipping.`);
       return;
     }
 
@@ -126,7 +127,7 @@ export class Bot {
       return;
     }
 
-    if (!text.includes(config.BLUESKY_IDENTIFIER)) {
+    if (!text.includes(config.BLUESKY_IDENTIFIER) && !isReplyToBot) {
       if (!(await llmService.isReplyRelevant(text))) {
         console.log(`[Bot] Post by ${handle} not relevant for a reply. Skipping.`);
         return;

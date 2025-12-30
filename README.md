@@ -1,6 +1,6 @@
-# Dearest Llama: Autonomous & Stateful Bluesky Agent
+# SkyBots: Autonomous & Stateful Bluesky Agent
 
-Dearest Llama is a modular, stateful, and highly autonomous Bluesky social media bot, powered by Nvidia NIM for cutting-edge language and image generation. It's designed for robust, long-term interaction, featuring smart response filtering, persistent memory, and a suite of powerful API-driven tools.
+SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, powered by Nvidia NIM for cutting-edge language and image generation. It's designed for robust, long-term interaction, featuring smart response filtering, persistent memory, and a suite of powerful API-driven tools.
 
 ## ✨ Key Features
 

@@ -1,4 +1,5 @@
 import { AtpAgent } from '@atproto/api';
+import fetch from 'node-fetch';
 import config from '../../config.js';
 import { splitText } from '../utils/textUtils.js';
 
@@ -18,12 +19,17 @@ class BlueskyService {
   }
 
   async getNotifications(cursor) {
-    const params = { limit: 50 };
-    if (cursor) {
-      params.cursor = cursor;
+    try {
+      const params = { limit: 50 };
+      if (cursor) {
+        params.cursor = cursor;
+      }
+      const { data } = await this.agent.listNotifications(params);
+      return data;
+    } catch (error) {
+      console.error('[BlueskyService] Error fetching notifications:', error);
+      return { notifications: [], cursor: cursor };
     }
-    const { data } = await this.agent.listNotifications(params);
-    return data;
   }
 
   async getDetailedThread(uri) {
@@ -117,6 +123,30 @@ class BlueskyService {
       console.log(`[BlueskyService] Liked post: ${uri}`);
     } catch (error) {
       console.error('[BlueskyService] Error liking post:', error);
+    }
+  }
+
+  async uploadImage(url, altText = '') {
+    try {
+      const response = await fetch(url);
+      if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+      const arrayBuffer = await response.arrayBuffer();
+      const uint8Array = new Uint8Array(arrayBuffer);
+      
+      const { data } = await this.agent.uploadBlob(uint8Array, {
+        encoding: response.headers.get('content-type') || 'image/jpeg',
+      });
+      
+      return {
+        $type: 'app.bsky.embed.images',
+        images: [{
+          image: data.blob,
+          alt: altText,
+        }],
+      };
+    } catch (error) {
+      console.error('[BlueskyService] Error uploading image:', error);
+      return null;
     }
   }
 

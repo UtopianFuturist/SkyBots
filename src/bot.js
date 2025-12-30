@@ -69,9 +69,11 @@ export class Bot {
       return;
     }
 
+    // 1. Thread History Fetching (Centralized)
+    const threadContext = await this._getThreadHistory(notif.uri);
+
     // 1. Duplicate Reply Check
-    const threadHistory = await this._getThreadHistory(notif.uri);
-    const botReplies = threadHistory.filter(p => p.author === config.BLUESKY_IDENTIFIER);
+    const botReplies = threadContext.filter(p => p.author === config.BLUESKY_IDENTIFIER);
     if (botReplies.length > 0) {
       console.log(`[Bot] Already replied to this thread. Skipping.`);
       return;
@@ -184,7 +186,6 @@ export class Bot {
     // 6. Generate Response with User Context and Memory
     console.log(`[Bot] Responding to post from ${handle}: "${text}"`);
     console.log(`[Bot] Generating response for ${handle}...`);
-    const threadContext = await this._getThreadHistory(notif.uri);
     const userMemory = dataStore.getInteractionsByUser(handle);
     
     // Fetch user profile for additional context
@@ -293,7 +294,7 @@ export class Bot {
     if (this.paused) return;
     console.log('[Bot] Proposing new post...');
     const interactions = dataStore.db.data.interactions.slice(-10);
-    if (interactions.length < 10) return;
+    if (interactions.length < 3) return;
 
     const topics = interactions.map(i => i.text).join('\n');
     const systemPrompt = `
@@ -328,14 +329,8 @@ export class Bot {
         const imageResults = await googleSearchService.searchImages(topic);
         if (imageResults.length > 0) {
           const image = imageResults[0];
-          await blueskyService.post(postContent, {
-            $type: 'app.bsky.embed.external',
-            external: {
-              uri: image.link,
-              title: image.title,
-              description: image.snippet,
-            },
-          });
+          const embed = await blueskyService.uploadImage(image.link, image.title || topic);
+          await blueskyService.post(postContent, embed);
         } else {
           await blueskyService.post(postContent);
         }

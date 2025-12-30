@@ -3,6 +3,7 @@ services:
     name: dearest-llama
     runtime: node
     plan: starter
+    preInstallCommand: npm install -g pnpm
     buildCommand: pnpm install
     startCommand: pnpm start
     envVars:

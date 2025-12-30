@@ -1,5 +1,6 @@
 import { AtpAgent } from '@atproto/api';
 import config from '../../config.js';
+import { truncateText } from '../utils/textUtils.js';
 
 class BlueskyService {
   constructor() {
@@ -42,7 +43,7 @@ class BlueskyService {
 
     const postData = {
       $type: 'app.bsky.feed.post',
-      text,
+      text: truncateText(text, 299),
       reply,
       createdAt: new Date().toISOString(),
     };

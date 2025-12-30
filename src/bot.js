@@ -109,9 +109,11 @@ export class Bot {
       return;
     }
 
-    if (!(await llmService.isReplyRelevant(text))) {
-      console.log(`[Bot] Post by ${handle} not relevant for a reply. Skipping.`);
-      return;
+    if (!text.includes(config.BLUESKY_IDENTIFIER)) {
+      if (!(await llmService.isReplyRelevant(text))) {
+        console.log(`[Bot] Post by ${handle} not relevant for a reply. Skipping.`);
+        return;
+      }
     }
 
     // 4. Handle Commands

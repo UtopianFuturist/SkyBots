@@ -16,6 +16,9 @@ Dearest Llama is a modular, stateful, and highly autonomous Bluesky social media
 - **Code Self-Awareness**: Can answer questions about its own capabilities by referencing its `README.md` file.
 - **Intent-Based Escalation**: Uses an LLM to analyze user intent. If high-risk intentions are detected, the bot will pause and alert the admin.
 - **Prompt Injection Defense**: Includes a security check to detect and ignore prompt injection attempts.
+- **Fact-Checking**: Can detect when a user is making a verifiable claim and perform a Google search to validate it before responding.
+- **User Rating System**: Rates users on a 1-5 scale based on their interaction history and will "like" posts from users with a high rating.
+- **Proactive Posting**: Periodically proposes new post ideas to the admin and, upon approval, will create and publish new content.
 
 ## 📁 Project Structure
 
@@ -85,6 +88,7 @@ The bot understands natural language commands in addition to the following expli
 | `!unblock` | Unblocks the bot. |
 | `!mute` | Mutes the current thread. |
 | `!resume`| (Admin-only) Resumes bot operations after a high-risk escalation. |
+| `!approve-post [number]`| (Admin-only) Approves a proposed post, causing the bot to create and publish it. |
 | `!help` | Displays a list of available commands. |
 | `!about`| Asks the bot to describe its capabilities. |
 | `google [query]` | Searches the web. |

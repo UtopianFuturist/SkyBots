@@ -13,6 +13,7 @@ const defaultData = {
   mutedThreads: [],
   conversationLengths: {},
   userProfiles: {},
+  userRatings: {},
   interactions: [] // For long-term memory
 };
 
@@ -95,6 +96,15 @@ class DataStore {
 
   getInteractionsByUser(handle) {
     return this.db.data.interactions.filter(i => i.userHandle === handle);
+  }
+
+  async updateUserRating(handle, rating) {
+    this.db.data.userRatings[handle] = rating;
+    await this.db.write();
+  }
+
+  getUserRating(handle) {
+    return this.db.data.userRatings[handle] || 3; // Default to a neutral rating
   }
 }
 

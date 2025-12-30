@@ -135,6 +135,48 @@ class LLMService {
     }
     return { highRisk: false, reason: response };
   }
+
+  async isFactCheckNeeded(inputText) {
+    const systemPrompt = `
+      You are a text analyst. Your task is to determine if a user's post requires fact-checking.
+      Analyze the post for any verifiable claims or direct questions about the validity of a fact (e.g., "Is it true that...", "I heard that...", "Studies show...").
+      If a fact-check is needed, respond with "yes". Otherwise, respond with "no".
+      Respond with only "yes" or "no".
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
+    const response = await this.generateResponse(messages, { max_tokens: 3 });
+    return response?.toLowerCase().includes('yes');
+  }
+
+  async extractClaim(inputText) {
+    const systemPrompt = `
+      You are a text analyst. Your task is to extract the core verifiable claim from a user's post.
+      Summarize the claim in a concise, searchable phrase.
+      Example: "I heard that the sky is actually green." -> "sky is green"
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
+    return await this.generateResponse(messages, { max_tokens: 20 });
+  }
+
+  async rateUserInteraction(interactionHistory) {
+    const systemPrompt = `
+      You are a social media analyst. Based on the user's interaction history, rate their relationship with the bot on a scale of 1 to 5.
+      1: Hostile or spammy
+      2: Negative
+      3: Neutral
+      4: Positive
+      5: Very positive and friendly
+      Respond with only a single number.
+    `;
+    const historyText = interactionHistory.map(i => `User: "${i.text}"\nBot: "${i.response}"`).join('\n\n');
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Interaction History:\n${historyText}` }
+    ];
+    const response = await this.generateResponse(messages, { max_tokens: 2 });
+    const rating = parseInt(response, 10);
+    return isNaN(rating) ? 3 : Math.max(1, Math.min(5, rating));
+  }
 }
 
 export const llmService = new LLMService();

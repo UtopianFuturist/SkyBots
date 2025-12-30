@@ -1,6 +1,7 @@
 import { blueskyService } from './services/blueskyService.js';
 import { llmService } from './services/llmService.js';
 import { dataStore } from './services/dataStore.js';
+import { googleSearchService } from './services/googleSearchService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import config from '../config.js';
 import fs from 'fs/promises';
@@ -10,6 +11,7 @@ export class Bot {
     this.cursor = null;
     this.readmeContent = '';
     this.paused = false;
+    this.proposedPosts = [];
   }
 
   async init() {
@@ -25,6 +27,10 @@ export class Bot {
 
   async run() {
     console.log('[Bot] Starting main loop...');
+
+    // Proactive post proposal on a timer
+    setInterval(() => this.proposeNewPost(), 3600000); // Every hour
+
     while (true) {
       if (this.paused) {
         await new Promise(resolve => setTimeout(resolve, 60000)); // Check every minute if paused
@@ -55,9 +61,24 @@ export class Bot {
     const text = notif.record.text || "";
     const threadRootUri = notif.record.reply?.root?.uri || notif.uri;
 
+    // Time-Based Reply Filter
+    const postDate = new Date(notif.indexedAt);
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+    if (postDate < thirtyDaysAgo) {
+      console.log(`[Bot] Skipping notification older than 30 days.`);
+      return;
+    }
+
     // 1. Prompt Injection Defense
     if (await llmService.detectPromptInjection(text)) {
-      console.log(`[Bot] Prompt injection attempt detected from ${handle}. Skipping.`);
+      console.log(`[Bot] Prompt injection attempt detected from ${handle}.`);
+      const userProfile = await blueskyService.getProfile(handle);
+      const userPosts = await blueskyService.getUserPosts(handle);
+      const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
+      if (userIntent.highRisk) {
+        console.log(`[Bot] High-risk intent detected with prompt injection. Responding with refusal.`);
+        await blueskyService.postReply(notif, "I can't comply with that request.");
+      }
       return;
     }
 
@@ -111,7 +132,34 @@ export class Bot {
       return;
     }
 
-    // 5. Generate Response with User Context and Memory
+    // 5. Fact-Checking
+    if (await llmService.isFactCheckNeeded(text)) {
+      console.log(`[Bot] Fact-check needed for post by ${handle}.`);
+      const claim = await llmService.extractClaim(text);
+      if (claim) {
+        const searchResults = await googleSearchService.search(claim);
+        if (searchResults.length > 0) {
+          const searchContext = searchResults.map(r => `- ${r.title}: ${r.snippet}`).join('\n');
+          const factCheckPrompt = `
+            A user has made the following claim: "${claim}".
+            Here are some search results to help you verify it:
+            ${searchContext}
+            Please analyze these results and provide an informed response to the user.
+          `;
+          const messages = [
+            { role: 'system', content: factCheckPrompt },
+            ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
+          ];
+          const responseText = await llmService.generateResponse(messages);
+          if (responseText) {
+            await blueskyService.postReply(notif, responseText);
+            return;
+          }
+        }
+      }
+    }
+
+    // 6. Generate Response with User Context and Memory
     console.log(`[Bot] Generating response for ${handle}...`);
     const threadContext = await this._getThreadHistory(notif.uri);
     const userMemory = dataStore.getInteractionsByUser(handle);
@@ -183,6 +231,14 @@ export class Bot {
       await blueskyService.postReply(notif, responseText);
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
+
+      // Rate user and like post if rating is high
+      const interactionHistory = dataStore.getInteractionsByUser(handle);
+      const rating = await llmService.rateUserInteraction(interactionHistory);
+      await dataStore.updateUserRating(handle, rating);
+      if (rating > 3) {
+        await blueskyService.likePost(notif.uri, notif.cid);
+      }
     }
   }
 
@@ -206,6 +262,63 @@ export class Bot {
       console.error('[Bot] Error fetching thread history:', error);
       return [];
     }
+  }
+
+  async proposeNewPost() {
+    if (this.paused) return;
+    console.log('[Bot] Proposing new post...');
+    const interactions = dataStore.db.data.interactions.slice(-10);
+    if (interactions.length < 10) return;
+
+    const topics = interactions.map(i => i.text).join('\n');
+    const systemPrompt = `
+      Based on the following recent topics of conversation, synthesize 3 interesting and relevant topics for a new post.
+      The topics should be in line with the bot's persona: friendly, inquisitive, and occasionally witty.
+      Format the topics as a numbered list.
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: topics }];
+    const proposedTopics = await llmService.generateResponse(messages);
+
+    if (proposedTopics) {
+      this.proposedPosts = proposedTopics.split('\n').map(t => t.replace(/^\d+\.\s*/, ''));
+      const approvalMessage = `I've come up with a few ideas for a new post. Please review and approve one:\n${this.proposedPosts.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\nTo approve, reply with \`!approve-post [number]\`.`;
+      await blueskyService.postAlert(approvalMessage);
+    }
+  }
+
+  async createApprovedPost(topicIndex) {
+    if (this.paused || topicIndex < 0 || topicIndex >= this.proposedPosts.length) return;
+
+    const topic = this.proposedPosts[topicIndex];
+    const systemPrompt = `
+      Create a new, standalone Bluesky post about the following topic: "${topic}".
+      The post should be engaging, under 300 characters, and in line with a friendly, inquisitive persona.
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }];
+    const postContent = await llmService.generateResponse(messages);
+
+    if (postContent) {
+      // 50% chance of adding an image
+      if (Math.random() < 0.5) {
+        const imageResults = await googleSearchService.searchImages(topic);
+        if (imageResults.length > 0) {
+          const image = imageResults[0];
+          await blueskyService.post(postContent, {
+            $type: 'app.bsky.embed.external',
+            external: {
+              uri: image.link,
+              title: image.title,
+              description: image.snippet,
+            },
+          });
+        } else {
+          await blueskyService.post(postContent);
+        }
+      } else {
+        await blueskyService.post(postContent);
+      }
+    }
+    this.proposedPosts = []; // Clear proposals after posting
   }
 }
 

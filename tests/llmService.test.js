@@ -79,4 +79,28 @@ describe('LLM Service', () => {
       expect(result).toEqual({ highRisk: false, reason: intent });
     });
   });
+
+  describe('rateUserInteraction', () => {
+    it('should return the rating from the API', async () => {
+      llmService.generateResponse.mockResolvedValue('4');
+      const result = await llmService.rateUserInteraction([{ text: 'Post', response: 'Response' }]);
+      expect(result).toBe(4);
+    });
+  });
+
+  describe('isFactCheckNeeded', () => {
+    it('should return true when the API response is "yes"', async () => {
+      llmService.generateResponse.mockResolvedValue('yes');
+      const result = await llmService.isFactCheckNeeded('Is it true that...?');
+      expect(result).toBe(true);
+    });
+  });
+
+  describe('extractClaim', () => {
+    it('should return the claim from the API', async () => {
+      llmService.generateResponse.mockResolvedValue('sky is green');
+      const result = await llmService.extractClaim('I heard that the sky is actually green.');
+      expect(result).toBe('sky is green');
+    });
+  });
 });

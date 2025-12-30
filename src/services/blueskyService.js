@@ -109,6 +109,33 @@ class BlueskyService {
       console.error('[BlueskyService] Error posting alert:', error);
     }
   }
+
+  async likePost(uri, cid) {
+    try {
+      await this.agent.like(uri, cid);
+      console.log(`[BlueskyService] Liked post: ${uri}`);
+    } catch (error) {
+      console.error('[BlueskyService] Error liking post:', error);
+    }
+  }
+
+  async post(text, embed = null) {
+    console.log('[BlueskyService] Creating new post...');
+    try {
+      const postData = {
+        $type: 'app.bsky.feed.post',
+        text,
+        createdAt: new Date().toISOString(),
+      };
+      if (embed) {
+        postData.embed = embed;
+      }
+      await this.agent.post(postData);
+      console.log('[BlueskyService] New post created successfully.');
+    } catch (error) {
+      console.error('[BlueskyService] Error creating new post:', error);
+    }
+  }
 }
 
 export const blueskyService = new BlueskyService();

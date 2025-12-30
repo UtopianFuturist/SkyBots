@@ -28,6 +28,11 @@ export const handleCommand = async (bot, post, text) => {
       console.log('[Bot] Bot has been resumed by admin.');
       return 'Bot operations have been resumed.';
     }
+    if (lowerText.startsWith('!approve-post')) {
+      const index = parseInt(lowerText.split(' ')[1], 10) - 1;
+      await bot.createApprovedPost(index);
+      return 'Post approved and created!';
+    }
   }
 
   if (lowerText.includes('!mute')) {

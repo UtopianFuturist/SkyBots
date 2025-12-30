@@ -98,10 +98,11 @@ export const handleCommand = async (bot, post, text) => {
     const imageBuffer = await imageService.generateImage(prompt);
     if (imageBuffer) {
       const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
-      await blueskyService.postReply(post, `Here's an image of "${prompt}":`, {
+      const embed = {
         $type: 'app.bsky.embed.images',
         images: [{ image: uploadData.blob, alt: prompt }],
-      });
+      };
+      await blueskyService.postReply(post, `Here's an image of "${prompt}":`, { embed });
       return; // Command handled
     }
     return "I wasn't able to create an image for that. Please try another prompt.";
@@ -140,7 +141,8 @@ export const handleCommand = async (bot, post, text) => {
         ? `Here are the top ${imagesToEmbed.length} images I found for "${imageQuery}":`
         : `Here's an image I found for "${imageQuery}":`;
 
-      await blueskyService.postReply(post, replyText, { imagesToEmbed: imagesToEmbed });
+      const embed = await blueskyService.uploadImages(imagesToEmbed);
+      await blueskyService.postReply(post, replyText, { embed });
       return; // Command handled
     }
     return `I couldn't find any images for "${imageQuery}".`;

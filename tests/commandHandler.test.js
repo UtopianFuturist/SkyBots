@@ -19,6 +19,7 @@ jest.unstable_mockModule('../src/services/imageService.js', () => ({
 jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
   blueskyService: {
     postReply: jest.fn(),
+    uploadImages: jest.fn(),
     agent: {
       uploadBlob: jest.fn(),
     },
@@ -73,26 +74,30 @@ describe('Command Handler', () => {
   });
 
   it('should handle singular image search command', async () => {
-    const mockImages = [{ title: 'Image 1' }, { title: 'Image 2' }];
+    const mockImages = [{ title: 'Image 1' }];
     googleSearchService.searchImages.mockResolvedValue(mockImages);
+    blueskyService.uploadImages.mockResolvedValue({ $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }] });
     await handleCommand(mockBot, mockPost, 'find image of a dog');
     expect(googleSearchService.searchImages).toHaveBeenCalledWith('a dog');
+    expect(blueskyService.uploadImages).toHaveBeenCalledWith(mockImages);
     expect(blueskyService.postReply).toHaveBeenCalledWith(
       expect.anything(),
       "Here's an image I found for \"a dog\":",
-      { imagesToEmbed: mockImages.slice(0, 1) }
+      { embed: { $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }] } }
     );
   });
 
   it('should handle plural image search command', async () => {
-    const mockImages = [{ title: 'Image 1' }, { title: 'Image 2' }, { title: 'Image 3' }, { title: 'Image 4' }, { title: 'Image 5' }];
+    const mockImages = [{ title: 'Image 1' }, { title: 'Image 2' }, { title: 'Image 3' }, { title: 'Image 4' }];
     googleSearchService.searchImages.mockResolvedValue(mockImages);
+    blueskyService.uploadImages.mockResolvedValue({ $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }, { image: 'blob2', alt: 'Image 2' }] });
     await handleCommand(mockBot, mockPost, 'find images of cats');
     expect(googleSearchService.searchImages).toHaveBeenCalledWith('cats');
+    expect(blueskyService.uploadImages).toHaveBeenCalledWith(mockImages);
     expect(blueskyService.postReply).toHaveBeenCalledWith(
       expect.anything(),
       'Here are the top 4 images I found for "cats":',
-      { imagesToEmbed: mockImages.slice(0, 4) }
+      { embed: { $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }, { image: 'blob2', alt: 'Image 2' }] } }
     );
   });
 });

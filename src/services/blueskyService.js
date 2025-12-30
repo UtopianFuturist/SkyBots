@@ -1,6 +1,6 @@
 import { AtpAgent } from '@atproto/api';
 import config from '../../config.js';
-import { truncateText } from '../utils/textUtils.js';
+import { splitText } from '../utils/textUtils.js';
 
 class BlueskyService {
   constructor() {
@@ -36,28 +36,59 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, embed = null) {
-    const reply = {
-      root: parentPost.record.reply?.root || { uri: parentPost.uri, cid: parentPost.cid },
-      parent: { uri: parentPost.uri, cid: parentPost.cid }
-    };
+    console.log('[BlueskyService] Posting reply...');
+    const textChunks = splitText(text);
+    let currentParent = parentPost;
+    let rootPost = parentPost.record.reply?.root || { uri: parentPost.uri, cid: parentPost.cid };
 
-    const postData = {
-      $type: 'app.bsky.feed.post',
-      text: truncateText(text, 299),
-      reply,
-      createdAt: new Date().toISOString(),
-    };
+    for (let i = 0; i < textChunks.length; i++) {
+      const chunk = textChunks[i];
+      const reply = {
+        root: rootPost,
+        parent: { uri: currentParent.uri, cid: currentParent.cid },
+      };
 
-    if (embed) {
-      postData.embed = embed;
+      const postData = {
+        $type: 'app.bsky.feed.post',
+        text: chunk,
+        reply,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Only add the embed to the first post in the chain
+      if (i === 0 && embed) {
+        postData.embed = embed;
+      }
+
+      const { uri, cid } = await this.agent.post(postData);
+      console.log(`[BlueskyService] Posted chunk ${i + 1}/${textChunks.length}: ${uri}`);
+
+      // The new post becomes the parent for the next chunk
+      currentParent = { uri, cid };
+      if (i === 0) {
+        // After the first post, the root remains the same
+        rootPost = reply.root;
+      }
     }
-
-    return await this.agent.post(postData);
+    console.log('[BlueskyService] Finished posting reply chain.');
   }
 
   async getProfile(actor) {
     const { data } = await this.agent.getProfile({ actor });
     return data;
+  }
+
+  async getUserPosts(actor) {
+    try {
+      const { data } = await this.agent.getAuthorFeed({
+        actor,
+        limit: 15,
+      });
+      return data.feed.map(item => item.post.record.text);
+    } catch (error) {
+      console.error(`[BlueskyService] Error fetching posts for ${actor}:`, error);
+      return [];
+    }
   }
 }
 

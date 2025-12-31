@@ -53,14 +53,14 @@ describe('Command Handler', () => {
 
   it('should handle google search command', async () => {
     googleSearchService.search.mockResolvedValue([{ title: 'Test Title', link: 'https://test.com', snippet: 'Test snippet.' }]);
-    await handleCommand(mockBot, mockPost, 'google test query');
+    await handleCommand(mockBot, mockPost, '!google test query');
     expect(googleSearchService.search).toHaveBeenCalledWith('test query');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 
   it('should handle youtube search command', async () => {
     youtubeService.search.mockResolvedValue([{ videoId: '123', title: 'Test Video' }]);
-    await handleCommand(mockBot, mockPost, 'youtube test query');
+    await handleCommand(mockBot, mockPost, '!youtube test query');
     expect(youtubeService.search).toHaveBeenCalledWith('test query');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
@@ -68,7 +68,7 @@ describe('Command Handler', () => {
   it('should handle image generation command', async () => {
     imageService.generateImage.mockResolvedValue(Buffer.from('test-image-data'));
     blueskyService.agent = { uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'test-blob-ref' } }) };
-    await handleCommand(mockBot, mockPost, 'generate image of a cat');
+    await handleCommand(mockBot, mockPost, '!generate-image a cat');
     expect(imageService.generateImage).toHaveBeenCalledWith('a cat');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
@@ -77,7 +77,7 @@ describe('Command Handler', () => {
     const mockImages = [{ title: 'Image 1' }];
     googleSearchService.searchImages.mockResolvedValue(mockImages);
     blueskyService.uploadImages.mockResolvedValue({ $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }] });
-    await handleCommand(mockBot, mockPost, 'find image of a dog');
+    await handleCommand(mockBot, mockPost, '!image-search a dog');
     expect(googleSearchService.searchImages).toHaveBeenCalledWith('a dog');
     expect(blueskyService.uploadImages).toHaveBeenCalledWith(mockImages);
     expect(blueskyService.postReply).toHaveBeenCalledWith(
@@ -91,12 +91,12 @@ describe('Command Handler', () => {
     const mockImages = [{ title: 'Image 1' }, { title: 'Image 2' }, { title: 'Image 3' }, { title: 'Image 4' }];
     googleSearchService.searchImages.mockResolvedValue(mockImages);
     blueskyService.uploadImages.mockResolvedValue({ $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }, { image: 'blob2', alt: 'Image 2' }] });
-    await handleCommand(mockBot, mockPost, 'find images of cats');
-    expect(googleSearchService.searchImages).toHaveBeenCalledWith('cats');
+    await handleCommand(mockBot, mockPost, '!image-search images of cats');
+    expect(googleSearchService.searchImages).toHaveBeenCalledWith('images of cats');
     expect(blueskyService.uploadImages).toHaveBeenCalledWith(mockImages);
     expect(blueskyService.postReply).toHaveBeenCalledWith(
       expect.anything(),
-      'Here are the top 4 images I found for "cats":',
+      'Here are the top 4 images I found for "images of cats":',
       { embed: { $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }, { image: 'blob2', alt: 'Image 2' }] } }
     );
   });

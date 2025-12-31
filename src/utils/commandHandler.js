@@ -53,8 +53,8 @@ export const handleCommand = async (bot, post, text) => {
     return await llmService.generateResponse(messages);
   }
 
-  if (lowerText.startsWith('search for') || lowerText.startsWith('google')) {
-    const query = lowerText.replace('search for', '').replace('google', '').trim();
+  if (lowerText.startsWith('!search') || lowerText.startsWith('!google')) {
+    const query = lowerText.replace('!search', '').replace('!google', '').trim();
     const results = await googleSearchService.search(query);
     if (results.length > 0) {
       const topResult = results[0];
@@ -75,14 +75,19 @@ export const handleCommand = async (bot, post, text) => {
     return `I couldn't find anything for "${query}".`;
   }
 
-  if (lowerText.startsWith('find a video about') || lowerText.startsWith('youtube')) {
-    const query = lowerText.replace('find a video about', '').replace('youtube', '').trim();
+  if (lowerText.startsWith('!video') || lowerText.startsWith('!youtube')) {
+    const query = lowerText.replace('!video', '').replace('!youtube', '').trim();
     const results = await youtubeService.search(query);
     if (results.length > 0) {
       const topResult = results[0];
       const videoUrl = `https://www.youtube.com/watch?v=${topResult.videoId}`;
+
+      // First, post the text-only reply
       const replyText = `Here's a video I found for "${query}":\n\n${topResult.title}`;
-      await blueskyService.postReply(post, replyText, {
+      await blueskyService.postReply(post, replyText);
+
+      // Then, post the embed-only reply to the same original post
+      await blueskyService.postReply(post, '', {
         embed: {
           $type: 'app.bsky.embed.external',
           external: {
@@ -97,27 +102,8 @@ export const handleCommand = async (bot, post, text) => {
     return `I couldn't find any videos for "${query}".`;
   }
 
-  const imageGenerationTriggers = [
-    'generate an image of',
-    'generate an image',
-    'generate image of',
-    'generate image',
-    'create a picture of',
-    'create a picture',
-    'create an image of',
-    'create an image',
-  ];
-
-  let imageGenerationPrompt = null;
-  for (const trigger of imageGenerationTriggers) {
-    if (lowerText.startsWith(trigger)) {
-      imageGenerationPrompt = lowerText.substring(trigger.length).trim();
-      break;
-    }
-  }
-
-  if (imageGenerationPrompt) {
-    const prompt = imageGenerationPrompt;
+  if (lowerText.startsWith('!generate-image')) {
+    const prompt = lowerText.replace('!generate-image', '').trim();
     const imageBuffer = await imageService.generateImage(prompt);
     if (imageBuffer) {
       const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
@@ -131,27 +117,8 @@ export const handleCommand = async (bot, post, text) => {
     return "I wasn't able to create an image for that. Please try another prompt.";
   }
 
-  const imageSearchTriggers = [
-    'do a google search for images of',
-    'google search for images of',
-    'search for images of',
-    'search for image of',
-    'search for image',
-    'find images of',
-    'find image of',
-    'find image',
-  ];
-
-  let imageQuery = null;
-
-  for (const trigger of imageSearchTriggers) {
-    if (lowerText.startsWith(trigger)) {
-      imageQuery = lowerText.substring(trigger.length).trim();
-      break;
-    }
-  }
-
-  if (imageQuery) {
+  if (lowerText.startsWith('!image-search')) {
+    const imageQuery = lowerText.replace('!image-search', '').trim();
     const imageResults = await googleSearchService.searchImages(imageQuery);
 
     if (imageResults && imageResults.length > 0) {

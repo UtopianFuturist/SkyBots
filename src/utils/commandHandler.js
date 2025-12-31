@@ -61,12 +61,14 @@ export const handleCommand = async (bot, post, text) => {
       const replyText = `Here's what I found for "${query}":\n\n${topResult.title}\n${topResult.snippet}`;
       // This is a simplified version. A full implementation would create a card embed.
       await blueskyService.postReply(post, replyText, {
-        $type: 'app.bsky.embed.external',
-        external: {
-          uri: topResult.link,
-          title: topResult.title,
-          description: topResult.snippet,
-        },
+        embed: {
+          $type: 'app.bsky.embed.external',
+          external: {
+            uri: topResult.link,
+            title: topResult.title,
+            description: topResult.snippet,
+          },
+        }
       });
       return; // Command handled
     }
@@ -81,20 +83,41 @@ export const handleCommand = async (bot, post, text) => {
       const videoUrl = `https://www.youtube.com/watch?v=${topResult.videoId}`;
       const replyText = `Here's a video I found for "${query}":\n\n${topResult.title}`;
       await blueskyService.postReply(post, replyText, {
-        $type: 'app.bsky.embed.external',
-        external: {
-          uri: videoUrl,
-          title: topResult.title,
-          description: `A video by ${topResult.channel}.`,
-        },
+        embed: {
+          $type: 'app.bsky.embed.external',
+          external: {
+            uri: videoUrl,
+            title: topResult.title,
+            description: `A video by ${topResult.channel}.`,
+          },
+        }
       });
       return; // Command handled
     }
     return `I couldn't find any videos for "${query}".`;
   }
 
-  if (lowerText.startsWith('generate image') || lowerText.startsWith('create a picture of')) {
-    const prompt = lowerText.replace('generate image', '').replace('create a picture of', '').trim();
+  const imageGenerationTriggers = [
+    'generate an image of',
+    'generate an image',
+    'generate image of',
+    'generate image',
+    'create a picture of',
+    'create a picture',
+    'create an image of',
+    'create an image',
+  ];
+
+  let imageGenerationPrompt = null;
+  for (const trigger of imageGenerationTriggers) {
+    if (lowerText.startsWith(trigger)) {
+      imageGenerationPrompt = lowerText.substring(trigger.length).trim();
+      break;
+    }
+  }
+
+  if (imageGenerationPrompt) {
+    const prompt = imageGenerationPrompt;
     const imageBuffer = await imageService.generateImage(prompt);
     if (imageBuffer) {
       const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });

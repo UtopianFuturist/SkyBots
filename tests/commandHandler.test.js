@@ -69,7 +69,7 @@ describe('Command Handler', () => {
     imageService.generateImage.mockResolvedValue(Buffer.from('test-image-data'));
     blueskyService.agent = { uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'test-blob-ref' } }) };
     await handleCommand(mockBot, mockPost, 'generate image of a cat');
-    expect(imageService.generateImage).toHaveBeenCalledWith('of a cat');
+    expect(imageService.generateImage).toHaveBeenCalledWith('a cat');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 

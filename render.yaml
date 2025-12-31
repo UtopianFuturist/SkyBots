@@ -27,7 +27,7 @@ services:
       - key: IMAGE_PROMPT_SYSTEM_PROMPT
         value: "Create a prompt for an image model based on the following question and answer. If the prompt doesn't already have animals in it, add cats."
       - key: CHECK_INTERVAL
-        value: "60000"
+        value: "120000"
       - key: MAX_RETRIES
         value: "5"
       - key: BACKOFF_DELAY

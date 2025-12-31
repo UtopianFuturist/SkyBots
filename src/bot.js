@@ -6,12 +6,14 @@ import { handleCommand } from './utils/commandHandler.js';
 import { sanitizeDuplicateText } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
+import { spawn } from 'child_process';
 
 export class Bot {
   constructor() {
     this.readmeContent = '';
     this.paused = false;
     this.proposedPosts = [];
+    this.firehoseProcess = null;
   }
 
   async init() {
@@ -25,8 +27,55 @@ export class Bot {
     }
   }
 
+  startFirehose() {
+    console.log('[Bot] Starting Firehose monitor...');
+    this.firehoseProcess = spawn('python3', ['firehose_monitor.py']);
+
+    this.firehoseProcess.stdout.on('data', async (data) => {
+      const lines = data.toString().split('\n');
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const event = JSON.parse(line);
+          if (event.type === 'firehose_mention') {
+            console.log(`[Bot] Firehose mention detected: ${event.uri}`);
+            if (dataStore.hasReplied(event.uri)) continue;
+            
+            // Resolve handle for the author DID
+            const profile = await blueskyService.getProfile(event.author.did);
+            const notif = {
+              uri: event.uri,
+              cid: event.cid,
+              author: profile,
+              record: event.record,
+              reason: event.reason,
+              indexedAt: new Date().toISOString()
+            };
+            
+            await this.processNotification(notif);
+            await dataStore.addRepliedPost(notif.uri);
+          }
+        } catch (e) {
+          // Ignore non-JSON output
+        }
+      }
+    });
+
+    this.firehoseProcess.stderr.on('data', (data) => {
+      console.error(`[Firehose Monitor] ${data.toString().trim()}`);
+    });
+
+    this.firehoseProcess.on('close', (code) => {
+      console.log(`[Bot] Firehose monitor exited with code ${code}. Restarting in 10s...`);
+      setTimeout(() => this.startFirehose(), 10000);
+    });
+  }
+
   async run() {
     console.log('[Bot] Starting main loop...');
+
+    // Start Firehose for real-time DID mentions
+    this.startFirehose();
 
     // Proactive post proposal on a timer
     setInterval(() => this.proposeNewPost(), 3600000); // Every hour
@@ -286,10 +335,12 @@ export class Bot {
     }
 
     if (responseText) {
-      const sanitizedResponse = sanitizeDuplicateText(responseText);
-      await blueskyService.postReply(notif, sanitizedResponse);
+      // Sanitize the response to avoid duplicate sentences
+      responseText = sanitizeDuplicateText(responseText);
+      
+      await blueskyService.postReply(notif, responseText);
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
-      await dataStore.saveInteraction({ userHandle: handle, text, response: sanitizedResponse });
+      await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
 
       // Rate user and like post if rating is high
       const interactionHistory = dataStore.getInteractionsByUser(handle);
@@ -374,4 +425,3 @@ export class Bot {
     this.proposedPosts = []; // Clear proposals after posting
   }
 }
-

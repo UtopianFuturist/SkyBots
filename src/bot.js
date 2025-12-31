@@ -50,11 +50,14 @@ export class Bot {
           // Notifications are already in reverse chronological order (most recent first)
           for (const notif of notifications) {
             if (notif.isRead || dataStore.hasReplied(notif.uri)) continue;
+
+            // Immediately mark as replied to prevent reprocessing on crash/restart
+            await dataStore.addRepliedPost(notif.uri);
+
             if (notif.reason !== 'mention' && notif.reason !== 'reply' && notif.reason !== 'quote') continue;
             if (notif.record.$type !== 'app.bsky.feed.post') continue;
 
             await this.processNotification(notif);
-            await dataStore.addRepliedPost(notif.uri);
           }
         } while (localCursor);
 
@@ -140,12 +143,29 @@ export class Bot {
 
     // 4. Handle Commands
     const commandResponse = await handleCommand(this, notif, text);
-    if (commandResponse) {
-      await blueskyService.postReply(notif, commandResponse);
+    if (commandResponse !== null) {
+      // A command was matched. Check if the handler returned a simple string to post.
+      if (typeof commandResponse === 'string') {
+        await blueskyService.postReply(notif, commandResponse);
+      }
+      // If not a string, the handler managed its own reply (e.g., for embeds).
+      // In either case, command processing is done.
       return;
     }
 
-    // 4. Bot-to-Bot Loop Prevention
+    // 5. Pre-reply LLM check to avoid unnecessary responses
+    const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+    const gatekeeperMessages = [
+      { role: 'system', content: `You are a gatekeeper for an AI assistant. Analyze the user's latest post in the context of the conversation. Respond with only "true" if a direct reply is helpful or expected, or "false" if the post is a simple statement, agreement, or otherwise doesn't need a response. Your answer must be a single word: true or false.` },
+      { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${text}"` }
+    ];
+    const replyCheckResponse = await llmService.generateResponse(gatekeeperMessages);
+    if (replyCheckResponse && replyCheckResponse.toLowerCase().trim().includes('false')) {
+      console.log(`[Bot] LLM gatekeeper decided no reply is needed for: "${text}". Skipping.`);
+      return;
+    }
+
+    // 6. Bot-to-Bot Loop Prevention
     const profile = await blueskyService.getProfile(handle);
     const isBot = handle.includes('bot') || profile.description?.toLowerCase().includes('bot');
     const convLength = dataStore.getConversationLength(threadRootUri);

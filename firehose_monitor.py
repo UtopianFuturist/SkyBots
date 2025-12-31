@@ -2,7 +2,7 @@ import asyncio
 import os
 import json
 import sys
-from atproto import AsyncFirehoseSubscribeReposClient, parse_subscribe_repos_message, models, Client
+from atproto import AsyncFirehoseSubscribeReposClient, parse_subscribe_repos_message, models, Client, CAR
 from atproto.exceptions import AtProtocolError
 
 # Load environment variables
@@ -61,7 +61,6 @@ async def main():
                 
                 # atproto-python's parse_subscribe_repos_message handles 
                 # the basic structure. To get the actual record:
-                from atproto import CAR
                 car = CAR.from_bytes(commit.blocks)
                 record_raw = car.blocks.get(op.cid)
                 

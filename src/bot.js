@@ -4,6 +4,7 @@ import { dataStore } from './services/dataStore.js';
 import { googleSearchService } from './services/googleSearchService.js';
 import { youtubeService } from './services/youtubeService.js';
 import { handleCommand } from './utils/commandHandler.js';
+import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
@@ -265,7 +266,7 @@ export class Bot {
     }
 
     // 6. YouTube Search Integration
-    let youtubeContext = '';
+    let youtubeResult = null; // Will hold the video object if found
     const youtubeCheckPrompt = `
       Analyze the user's post: "${text}"
       Does the user want to see a video, or is a video highly relevant to their request?
@@ -278,19 +279,13 @@ export class Bot {
     if (youtubeCheckResponse?.toLowerCase().startsWith('search')) {
       const query = youtubeCheckResponse.split('|')[1]?.trim();
       if (query) {
-        console.log(`[Bot] Searching YouTube for: ${query}`);
+        console.log(`[Bot] Conversational flow triggered YouTube search for: "${query}"`);
         const youtubeResults = await youtubeService.search(query);
         if (youtubeResults.length > 0) {
-          const topResult = youtubeResults[0];
-          const videoUrl = `https://www.youtube.com/watch?v=${topResult.videoId}`;
-          youtubeContext = `
-            ---
-            YouTube Search Result for "${query}":
-            - Title: ${topResult.title}
-            - Channel: ${topResult.channel}
-            - URL: ${videoUrl}
-            ---
-          `;
+          youtubeResult = youtubeResults[0]; // Store the whole result object
+          console.log(`[Bot] Found YouTube video: https://www.youtube.com/watch?v=${youtubeResult.videoId}`);
+        } else {
+          console.log(`[Bot] YouTube search for "${query}" yielded no results.`);
         }
       }
     }
@@ -351,7 +346,7 @@ export class Bot {
       ---
       Image Analysis: ${imageAnalysisResult || 'No image provided.'}
       ---
-      ${youtubeContext}
+      ${youtubeResult ? `YouTube Search Result for "${youtubeResult.title}": A video will be embedded in the reply.` : ''}
     `;
 
     const messages = [

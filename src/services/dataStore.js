@@ -23,28 +23,37 @@ class DataStore {
   }
 
   async init() {
+    console.log(`[DataStore] Initializing database at ${DB_PATH}`);
     // Ensure the directory for the database file exists
     const dbDir = path.dirname(DB_PATH);
     if (!fs.existsSync(dbDir)) {
+      console.log(`[DataStore] Creating data directory at ${dbDir}`);
       fs.mkdirSync(dbDir, { recursive: true });
     }
     this.db = await JSONFilePreset(DB_PATH, defaultData);
     await this.db.read();
+    console.log(`[DataStore] Database loaded. Found ${this.db.data.repliedPosts.length} replied posts.`);
   }
 
   async addRepliedPost(uri) {
     if (!this.db.data.repliedPosts.includes(uri)) {
+      console.log(`[DataStore] Adding replied post URI: ${uri}`);
       this.db.data.repliedPosts.push(uri);
       // Keep only last 2000 to prevent file bloat
       if (this.db.data.repliedPosts.length > 2000) {
         this.db.data.repliedPosts.shift();
       }
       await this.db.write();
+      console.log(`[DataStore] Database write complete. Total replied posts: ${this.db.data.repliedPosts.length}`);
+    } else {
+      console.log(`[DataStore] URI already exists, not adding: ${uri}`);
     }
   }
 
   hasReplied(uri) {
-    return this.db.data.repliedPosts.includes(uri);
+    const replied = this.db.data.repliedPosts.includes(uri);
+    console.log(`[DataStore] Checking for URI ${uri}. Found: ${replied}`);
+    return replied;
   }
 
   async blockUser(handle) {

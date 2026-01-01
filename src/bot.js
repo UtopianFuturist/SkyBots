@@ -249,10 +249,20 @@ export class Bot {
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
     const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 100 });
 
-    if (imageGenCheckResponse?.toLowerCase().startsWith('generate')) {
-      const prompt = imageGenCheckResponse.split('|')[1]?.trim();
+    console.log(`[Bot] Image generation check LLM response: "${imageGenCheckResponse}"`);
+
+    const imageGenRegex = /generate\s*[|:]\s*(.+)/i;
+    const match = imageGenCheckResponse?.match(imageGenRegex);
+
+    if (match && match[1]) {
+      const prompt = match[1].trim();
       if (prompt) {
         console.log(`[Bot] Conversational flow triggered Image Generation with prompt: "${prompt}"`);
+
+        // Let the user know we're working on it
+        const generatingMessage = `Sure thing! *Generated ${prompt}* coming right up. Check it out below.`;
+        await blueskyService.postReply(notif, generatingMessage);
+
         const imageBuffer = await imageService.generateImage(prompt);
         if (imageBuffer) {
           const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });

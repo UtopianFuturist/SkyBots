@@ -3,8 +3,8 @@ services:
     name: skybots
     runtime: node
     plan: starter
-    preInstallCommand: npm install -g pnpm
-    buildCommand: pnpm install && python3 -m pip install -r requirements.txt
+    preInstallCommand: npm install -g pnpm && python3 -m pip install -r requirements.txt
+    buildCommand: pnpm install
     startCommand: pnpm start
     envVars:
       - key: NODE_ENV

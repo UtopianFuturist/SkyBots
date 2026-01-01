@@ -32,7 +32,7 @@ export class Bot {
 
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
-    this.firehoseProcess = spawn('python3', ['firehose_monitor.py']);
+    this.firehoseProcess = spawn('./venv/bin/python', ['firehose_monitor.py']);
 
     this.firehoseProcess.stdout.on('data', async (data) => {
       const lines = data.toString().split('\n');

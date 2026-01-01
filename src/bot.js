@@ -259,10 +259,6 @@ export class Bot {
       if (prompt) {
         console.log(`[Bot] Conversational flow triggered Image Generation with prompt: "${prompt}"`);
 
-        // Let the user know we're working on it
-        const generatingMessage = `Sure thing! *Generated ${prompt}* coming right up. Check it out below.`;
-        await blueskyService.postReply(notif, generatingMessage);
-
         const imageBuffer = await imageService.generateImage(prompt);
         if (imageBuffer) {
           const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });

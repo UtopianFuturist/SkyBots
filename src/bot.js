@@ -2,6 +2,7 @@ import { blueskyService } from './services/blueskyService.js';
 import { llmService } from './services/llmService.js';
 import { dataStore } from './services/dataStore.js';
 import { googleSearchService } from './services/googleSearchService.js';
+import { imageService } from './services/imageService.js';
 import { youtubeService } from './services/youtubeService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
@@ -236,6 +237,36 @@ export class Bot {
       await blueskyService.postReply(notif, "This conversation has been great, but I'll step away now to avoid looping! Feel free to tag me elsewhere.");
       await dataStore.muteThread(threadRootUri);
       return;
+    }
+
+    // 5. Conversational Image Generation
+    const imageGenCheckPrompt = `
+      Analyze the user's post: "${text}"
+      Does the user want to generate an image?
+      If yes, respond with "generate | [a concise image prompt based on the user's text]".
+      If no, respond with "no".
+    `;
+    const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
+    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 100 });
+
+    if (imageGenCheckResponse?.toLowerCase().startsWith('generate')) {
+      const prompt = imageGenCheckResponse.split('|')[1]?.trim();
+      if (prompt) {
+        console.log(`[Bot] Conversational flow triggered Image Generation with prompt: "${prompt}"`);
+        const imageBuffer = await imageService.generateImage(prompt);
+        if (imageBuffer) {
+          const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
+          const embed = {
+            $type: 'app.bsky.embed.images',
+            images: [{ image: uploadData.blob, alt: prompt }],
+          };
+          // The text reply is simple and direct.
+          await blueskyService.postReply(notif, `Here's an image of "${prompt}":`, { embed });
+          return; // End processing here as the request is fulfilled.
+        }
+        // If image generation fails, fall through to the normal response flow.
+        console.log(`[Bot] Image generation failed for prompt: "${prompt}", continuing with text-based response.`);
+      }
     }
 
     // 5. Fact-Checking

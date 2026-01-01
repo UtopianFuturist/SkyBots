@@ -2,8 +2,9 @@ import { blueskyService } from './services/blueskyService.js';
 import { llmService } from './services/llmService.js';
 import { dataStore } from './services/dataStore.js';
 import { googleSearchService } from './services/googleSearchService.js';
+import { youtubeService } from './services/youtubeService.js';
 import { handleCommand } from './utils/commandHandler.js';
-import { sanitizeDuplicateText } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -135,8 +136,19 @@ export class Bot {
     // 1. Thread History Fetching (Centralized)
     const threadContext = await this._getThreadHistory(notif.uri);
 
-    // A check for the bot's own replies is now handled by the isReplyToBot logic
-    // and the dataStore check for previously processed notifications.
+    // Check if the bot has already replied to this specific post
+    // We check if the last message in the thread history (which is the current post)
+    // is followed by a message from the bot.
+    const botAlreadyReplied = threadContext.some((h, index) => 
+      h.author === handle && 
+      index < threadContext.length - 1 && 
+      threadContext[index + 1].author === config.BLUESKY_IDENTIFIER
+    );
+
+    if (botAlreadyReplied) {
+      console.log(`[Bot] Bot has already replied to this post from ${handle}. Skipping to avoid duplicates.`);
+      return;
+    }
 
     // 1. Prompt Injection Defense
     if (await llmService.detectPromptInjection(text)) {
@@ -252,6 +264,37 @@ export class Bot {
       }
     }
 
+    // 6. YouTube Search Integration
+    let youtubeContext = '';
+    const youtubeCheckPrompt = `
+      Analyze the user's post: "${text}"
+      Does the user want to see a video, or is a video highly relevant to their request?
+      If yes, respond with "search | [search query]".
+      If no, respond with "no".
+    `;
+    const youtubeCheckMessages = [{ role: 'system', content: youtubeCheckPrompt }];
+    const youtubeCheckResponse = await llmService.generateResponse(youtubeCheckMessages, { max_tokens: 50 });
+    
+    if (youtubeCheckResponse?.toLowerCase().startsWith('search')) {
+      const query = youtubeCheckResponse.split('|')[1]?.trim();
+      if (query) {
+        console.log(`[Bot] Searching YouTube for: ${query}`);
+        const youtubeResults = await youtubeService.search(query);
+        if (youtubeResults.length > 0) {
+          const topResult = youtubeResults[0];
+          const videoUrl = `https://www.youtube.com/watch?v=${topResult.videoId}`;
+          youtubeContext = `
+            ---
+            YouTube Search Result for "${query}":
+            - Title: ${topResult.title}
+            - Channel: ${topResult.channel}
+            - URL: ${videoUrl}
+            ---
+          `;
+        }
+      }
+    }
+
     // 6. Image Recognition
     let imageAnalysisResult = '';
     const embed = notif.record.embed;
@@ -292,9 +335,10 @@ export class Bot {
       ---
     `;
 
+    // Filter out the current post's text from cross-post memory to avoid self-contamination
     const crossPostMemory = userPosts
-      .filter(p => p.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => p.includes(nick)))
-      .map(p => `- (From another thread) "${p.substring(0, 100)}..."`)
+      .filter(p => (p.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => p.includes(nick))) && p !== text)
+      .map(p => `- (Previous mention in a DIFFERENT thread) "${p.substring(0, 100)}..."`)
       .join('\n');
 
     const fullContext = `
@@ -307,6 +351,7 @@ export class Bot {
       ---
       Image Analysis: ${imageAnalysisResult || 'No image provided.'}
       ---
+      ${youtubeContext}
     `;
 
     const messages = [
@@ -335,8 +380,18 @@ export class Bot {
     }
 
     if (responseText) {
+      // Remove thinking tags and any leftover fragments
+      responseText = sanitizeThinkingTags(responseText);
+      // Handle cases where the model might output </think> without the opening tag
+      responseText = responseText.replace(/<\/think>/gi, '').trim();
+      
       // Sanitize the response to avoid duplicate sentences
       responseText = sanitizeDuplicateText(responseText);
+      
+      if (!responseText) {
+        console.log('[Bot] Response was empty after sanitization. Aborting reply.');
+        return;
+      }
       
       await blueskyService.postReply(notif, responseText);
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);

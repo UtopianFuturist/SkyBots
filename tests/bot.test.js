@@ -83,10 +83,13 @@ describe('Bot', () => {
     };
 
     const mockThreadContext = [
-      { author: 'user.bsky.social', text: 'Original post' },
+      { author: 'another.user', text: 'Original post' },
       { author: config.BLUESKY_IDENTIFIER, text: 'Bot reply' },
       { author: 'user.bsky.social', text: 'This is a follow-up comment.' }
     ];
+    // The current post being processed is the last one in the context.
+    // To simulate that the bot HAS NOT replied to THIS specific comment yet,
+    // we ensure there's no bot reply AFTER the last user comment.
 
     dataStore.hasReplied.mockReturnValue(false);
     bot._getThreadHistory = jest.fn().mockResolvedValue(mockThreadContext);

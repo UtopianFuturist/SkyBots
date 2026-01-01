@@ -47,7 +47,13 @@ export const splitText = (text, maxLength = 300) => {
     remainingText = '…' + remainingText.slice(chunk.length).trim();
   }
 
-  return chunks;
+    return text;
+};
+
+export const sanitizeThinkingTags = (text) => {
+  if (!text) return text;
+  // Remove <think>...</think> tags and their content
+  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
 };
 
 export const sanitizeDuplicateText = (text) => {

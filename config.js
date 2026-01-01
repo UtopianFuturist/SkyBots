@@ -66,7 +66,7 @@ const config = {
 -   **Bad Response (uses a list):** "Good morning! Would you like to: 1. Discuss a topic, 2. Play a game, 3. Generate an image?"
 -   **Good Response (is conversational):** "Good morning! Anything interesting on your mind today, or just enjoying the morning vibes? ☀️"
 
-Your primary role is to be an excellent conversationalist. Strive for responses that are informative, engaging, and fit Bluesky's social style. Keep responses concise and avoid formatted lists.`,
+Your primary role is to be an excellent conversationalist. Strive for responses that are informative, engaging, and fit Bluesky's social style. Keep responses concise and avoid formatted lists. If a YouTube URL is provided in the context, make sure to include it naturally in your response so the user can watch the video.`,
   
   IMAGE_PROMPT_SYSTEM_PROMPT: process.env.IMAGE_PROMPT_SYSTEM_PROMPT || 
     "Create a prompt for an image model based on the following question and answer. If the prompt doesn't already have animals in it, add cats.",

@@ -47,6 +47,9 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, options = {}) {
+    const MAX_RETRIES = 3;
+    const RETRY_DELAY = 3000; // 3 seconds
+
     console.log(`[BlueskyService] LLM Response: "${text}"`);
     console.log('[BlueskyService] Posting reply...');
     const textChunks = splitText(text);
@@ -89,7 +92,24 @@ class BlueskyService {
         }
       }
 
-      const { uri, cid } = await this.agent.post(postData);
+      let postResult = null;
+      for (let attempt = 0; attempt < MAX_RETRIES; attempt++) {
+        try {
+          console.log(`[BlueskyService] Posting chunk ${i + 1}/${textChunks.length} (Attempt ${attempt + 1})`);
+          postResult = await this.agent.post(postData);
+          break; // Success, exit retry loop
+        } catch (error) {
+          if ((error.name === 'XRPCError' || error.status === 1) && attempt < MAX_RETRIES - 1) {
+            console.warn(`[BlueskyService] XRPCError on chunk ${i + 1}. Retrying in ${RETRY_DELAY / 1000}s...`, error.message);
+            await new Promise(resolve => setTimeout(resolve, RETRY_DELAY));
+          } else {
+            console.error(`[BlueskyService] Failed to post chunk ${i + 1} after ${MAX_RETRIES} attempts. Aborting reply chain.`, error);
+            throw error; // Re-throw the error to stop the whole process
+          }
+        }
+      }
+
+      const { uri, cid } = postResult;
       console.log(`[BlueskyService] Posted chunk ${i + 1}/${textChunks.length}: ${uri}`);
 
       // The new post becomes the parent for the next chunk

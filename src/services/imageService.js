@@ -5,20 +5,28 @@ import { llmService } from './llmService.js';
 class ImageService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    // The user specified Flux Schnell, which is a specific model.
-    // The API endpoint might be different from the text generation one.
-    // I will assume a similar structure and model name for now.
-    this.model = 'nvidia/flux-schnell';
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1/images/generations';
+    this.model = 'black-forest-labs/flux_1-schnell';
+    this.baseUrl = 'https://ai.api.nvidia.com/v1/genai/images/base';
   }
 
   async generateImage(prompt) {
-    console.log(`[ImageService] Generating image with prompt: "${prompt}"`);
+    console.log(`[ImageService] Generating image with initial prompt: "${prompt}"`);
     try {
       const revisedPrompt = await llmService.generateResponse([
         { role: 'system', content: config.IMAGE_PROMPT_SYSTEM_PROMPT },
         { role: 'user', content: prompt }
       ], { max_tokens: 150 });
+
+      console.log(`[ImageService] Revised prompt: "${revisedPrompt}"`);
+
+      const payload = {
+        prompt: revisedPrompt || prompt,
+        size: '1024x1024',
+        response_format: 'b64_json',
+        model: this.model
+      };
+
+      console.log('[ImageService] Sending request to Nvidia NIM API with payload:', JSON.stringify(payload, null, 2));
 
       const response = await fetch(this.baseUrl, {
         method: 'POST',
@@ -26,18 +34,13 @@ class ImageService {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
         },
-        body: JSON.stringify({
-          model: this.model,
-          prompt: revisedPrompt || prompt,
-          n: 1,
-          size: '1024x1024',
-          response_format: 'b64_json',
-        }),
+        body: JSON.stringify(payload),
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Nvidia NIM Image API error (${response.status}): ${errorText}`);
+        const errorBody = await response.text();
+        console.error(`[ImageService] Nvidia NIM Image API error (${response.status}):`, errorBody);
+        throw new Error(`Nvidia NIM Image API error (${response.status}): ${errorBody}`);
       }
 
       const data = await response.json();

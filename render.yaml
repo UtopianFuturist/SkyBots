@@ -4,7 +4,7 @@ services:
     runtime: node
     plan: starter
     preInstallCommand: npm install -g pnpm
-    buildCommand: pnpm install && pip install atproto python-dotenv
+    buildCommand: pnpm install && pip3 install atproto python-dotenv
     startCommand: pnpm start
     envVars:
       - key: NODE_ENV

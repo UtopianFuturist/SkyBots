@@ -5,8 +5,8 @@ import { llmService } from './llmService.js';
 class ImageService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    this.model = 'black-forest-labs/flux_1-schnell';
-    this.baseUrl = 'https://ai.api.nvidia.com/v1/genai/images/base';
+    this.model = 'black-forest-labs/flux.1-schnell';
+    this.baseUrl = 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell';
   }
 
   async generateImage(prompt) {

@@ -10,27 +10,14 @@ class ImageService {
   }
 
   async generateImage(prompt) {
-    console.log(`[ImageService] Generating image with initial prompt: "${prompt}"`);
+    console.log(`[ImageService] Generating image with prompt: "${prompt}"`);
     try {
-      const revisedPrompt = await llmService.generateResponse([
-        { role: 'system', content: config.IMAGE_PROMPT_SYSTEM_PROMPT },
-        { role: 'user', content: prompt }
-      ], { max_tokens: 150 });
-
-      console.log(`[ImageService] Revised prompt: "${revisedPrompt}"`);
-
-      let finalPrompt = prompt;
-      if (revisedPrompt && revisedPrompt.toLowerCase() !== 'null') {
-        finalPrompt = revisedPrompt;
-      } else {
-        console.log(`[ImageService] Revised prompt was null or "null", falling back to original prompt.`);
-      }
-
+      // The prompt revision has been removed to simplify the process and avoid potential errors.
+      // We now use the user's original prompt directly.
       const payload = {
-        prompt: finalPrompt,
+        prompt: prompt,
         size: '1024x1024',
         response_format: 'b64_json',
-        model: this.model
       };
 
       console.log('[ImageService] Sending request to Nvidia NIM API with payload:', JSON.stringify(payload, null, 2));

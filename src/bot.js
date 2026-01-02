@@ -111,11 +111,18 @@ export class Bot {
 
           for (const notif of notificationsToProcess) {
             console.log(`[Bot] Processing notification from ${notif.author.handle} at ${notif.indexedAt}`);
+
+            if (notif.reason !== 'mention' && notif.reason !== 'reply' && notif.reason !== 'quote') {
+              console.log(`[Bot] Skipping notification with reason: ${notif.reason}`);
+              continue;
+            }
+            if (notif.record.$type !== 'app.bsky.feed.post') {
+              console.log(`[Bot] Skipping notification of type: ${notif.record.$type}`);
+              continue;
+            }
+
             // Immediately mark as replied to prevent reprocessing on crash/restart
             await dataStore.addRepliedPost(notif.uri);
-
-            if (notif.reason !== 'mention' && notif.reason !== 'reply' && notif.reason !== 'quote') continue;
-            if (notif.record.$type !== 'app.bsky.feed.post') continue;
 
             await this.processNotification(notif);
           }

@@ -260,28 +260,21 @@ export class Bot {
     }
 
     // 5. Conversational Image Generation
-    const imageGenCheckPrompt = `
-      Analyze the user's post: "${text}"
-      Does the user want to generate an image?
-      If yes, respond with "generate | [a concise image prompt based on the user's text]".
-      If no, respond with "no".
-    `;
+    const imageGenCheckPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking for an image to be generated. The user's post is: "${text}". Respond with only "yes" or "no".`;
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
-    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 100, preface_system_prompt: false });
-
-    // --- Detailed Logging for Image Generation ---
+    console.log(`[Bot] Image Gen Check Prompt: ${imageGenCheckPrompt}`);
+    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 5, preface_system_prompt: false });
     console.log(`[Bot] Raw Image Gen Check Response: "${imageGenCheckResponse}"`);
-    const imageGenRegex = /generate\s*[|:]\s*(.+)/i;
-    const match = imageGenCheckResponse?.match(imageGenRegex);
-    console.log(`[Bot] Regex Match for Image Gen: ${match ? `Success - "${match[1]}"` : 'Failed'}`);
-    // --- End Detailed Logging ---
 
-    if (match && match[1]) {
-      const prompt = match[1].trim();
-      if (prompt) {
-        console.log(`[Bot] User comment: "${text}"`);
+    if (imageGenCheckResponse && imageGenCheckResponse.toLowerCase().includes('yes')) {
+      const imagePromptExtractionPrompt = `You are an AI assistant that extracts image prompts. Based on the user's post, create a concise, literal, and descriptive prompt for an image generation model. The user's post is: "${text}". Respond with only the prompt.`;
+      const imagePromptExtractionMessages = [{ role: 'system', content: imagePromptExtractionPrompt }];
+      console.log(`[Bot] Image Prompt Extraction Prompt: ${imagePromptExtractionPrompt}`);
+      const prompt = await llmService.generateResponse(imagePromptExtractionMessages, { max_tokens: 100, preface_system_prompt: false });
+      console.log(`[Bot] Raw Image Gen Extraction Response: "${prompt}"`);
+
+      if (prompt && prompt.toLowerCase() !== 'null' && prompt.toLowerCase() !== 'no') {
         console.log(`[Bot] Final image generation prompt: "${prompt}"`);
-
         const imageBuffer = await imageService.generateImage(prompt);
         if (imageBuffer) {
           console.log('[Bot] Image generation successful, posting reply...');
@@ -332,13 +325,11 @@ export class Bot {
 
     if (videoIntentRegex.test(text)) {
       console.log(`[Bot] Video intent detected in post: "${text}"`);
-      const queryExtractionPrompt = `
-        The user wants a video. Extract the core search query from their post.
-        User's post: "${text}"
-        Respond with only the search query.
-      `;
+      const queryExtractionPrompt = `You are a search query extractor. The user wants to find a YouTube video. Extract the core search query from their post. The user's post is: "${text}". Respond with only the search query itself. For example, if the post is "find a video about cats", you should respond with "cats".`;
       const queryExtractionMessages = [{ role: 'system', content: queryExtractionPrompt }];
+      console.log(`[Bot] YouTube Query Extraction Prompt: ${queryExtractionPrompt}`);
       const query = await llmService.generateResponse(queryExtractionMessages, { max_tokens: 50 });
+      console.log(`[Bot] Raw YouTube Query Extraction Response: "${query}"`);
 
       if (query && query.toLowerCase() !== 'null' && query.toLowerCase() !== 'no') {
         console.log(`[Bot] Extracted YouTube search query: "${query}"`);

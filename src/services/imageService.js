@@ -19,8 +19,15 @@ class ImageService {
 
       console.log(`[ImageService] Revised prompt: "${revisedPrompt}"`);
 
+      let finalPrompt = prompt;
+      if (revisedPrompt && revisedPrompt.toLowerCase() !== 'null') {
+        finalPrompt = revisedPrompt;
+      } else {
+        console.log(`[ImageService] Revised prompt was null or "null", falling back to original prompt.`);
+      }
+
       const payload = {
-        prompt: revisedPrompt || prompt,
+        prompt: finalPrompt,
         size: '1024x1024',
         response_format: 'b64_json',
         model: this.model

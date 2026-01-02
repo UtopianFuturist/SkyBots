@@ -10,12 +10,24 @@ class ImageService {
   }
 
   async generateImage(prompt) {
-    console.log(`[ImageService] Generating image with prompt: "${prompt}"`);
+    console.log(`[ImageService] Generating image with initial prompt: "${prompt}"`);
     try {
-      // The prompt revision has been removed to simplify the process and avoid potential errors.
-      // We now use the user's original prompt directly.
+      const revisedPrompt = await llmService.generateResponse([
+        { role: 'system', content: config.IMAGE_PROMPT_SYSTEM_PROMPT },
+        { role: 'user', content: prompt }
+      ], { max_tokens: 150 });
+
+      console.log(`[ImageService] Revised prompt: "${revisedPrompt}"`);
+
+      let finalPrompt = prompt;
+      if (revisedPrompt && revisedPrompt.toLowerCase() !== 'null') {
+        finalPrompt = revisedPrompt;
+      } else {
+        console.log(`[ImageService] Revised prompt was null or "null", falling back to original prompt.`);
+      }
+
       const payload = {
-        prompt: prompt,
+        prompt: finalPrompt,
         size: '1024x1024',
         response_format: 'b64_json',
       };

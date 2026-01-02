@@ -326,26 +326,29 @@ export class Bot {
 
     // 6. YouTube Search Integration
     let youtubeResult = null; // Will hold the video object if found
-    const youtubeCheckPrompt = `
-      Analyze the user's post: "${text}"
-      Does the user want to see a video, or is a video highly relevant to their request?
-      If yes, respond with "search | [search query]".
-      If no, respond with "no".
-    `;
-    const youtubeCheckMessages = [{ role: 'system', content: youtubeCheckPrompt }];
-    const youtubeCheckResponse = await llmService.generateResponse(youtubeCheckMessages, { max_tokens: 50 });
-    
-    if (youtubeCheckResponse?.toLowerCase().startsWith('search')) {
-      const query = youtubeCheckResponse.split('|')[1]?.trim();
-      if (query) {
-        console.log(`[Bot] Conversational flow triggered YouTube search for: "${query}"`);
+    const videoIntentRegex = /video|youtube/i;
+
+    if (videoIntentRegex.test(text)) {
+      console.log(`[Bot] Video intent detected in post: "${text}"`);
+      const queryExtractionPrompt = `
+        The user wants a video. Extract the core search query from their post.
+        User's post: "${text}"
+        Respond with only the search query.
+      `;
+      const queryExtractionMessages = [{ role: 'system', content: queryExtractionPrompt }];
+      const query = await llmService.generateResponse(queryExtractionMessages, { max_tokens: 50 });
+
+      if (query && query.toLowerCase() !== 'null' && query.toLowerCase() !== 'no') {
+        console.log(`[Bot] Extracted YouTube search query: "${query}"`);
         const youtubeResults = await youtubeService.search(query);
         if (youtubeResults.length > 0) {
-          youtubeResult = youtubeResults[0]; // Store the whole result object
+          youtubeResult = youtubeResults[0];
           console.log(`[Bot] Found YouTube video: https://www.youtube.com/watch?v=${youtubeResult.videoId}`);
         } else {
           console.log(`[Bot] YouTube search for "${query}" yielded no results.`);
         }
+      } else {
+        console.log(`[Bot] Could not extract a valid search query from the post.`);
       }
     }
 
@@ -405,7 +408,11 @@ export class Bot {
       ---
       Image Analysis: ${imageAnalysisResult || 'No image provided.'}
       ---
-      ${youtubeResult ? `YouTube Search Result for "${youtubeResult.title}": A video will be embedded in the reply.` : ''}
+      ${
+        youtubeResult
+          ? `YouTube Search Result for "${youtubeResult.title}": A video will be embedded in the reply.`
+          : (/video|youtube/i.test(text) ? 'The user may have asked for a video, but no relevant YouTube video was found. Please inform the user that you could not find a video for their request.' : '')
+      }
     `;
 
     const messages = [

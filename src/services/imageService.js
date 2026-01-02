@@ -54,7 +54,13 @@ class ImageService {
       return Buffer.from(imageBase64, 'base64');
 
     } catch (error) {
-      console.error('[ImageService] Error generating image:', error);
+      console.error('[ImageService] Error generating image:', error.message);
+      if (error.response) {
+        // Log the full response body if available
+        error.response.text().then(text => {
+          console.error('[ImageService] Full API Error Response:', text);
+        });
+      }
       return null;
     }
   }

@@ -41,17 +41,20 @@ class YouTubeService {
       }
 
       console.log(`[YouTubeService] Found ${data.items.length} potential videos for "${query}".`);
+      const results = [];
       for (const item of data.items) {
         const videoId = item.id.videoId;
         const details = await this.getVideoDetails(videoId);
         if (details && details.status.uploadStatus === 'processed' && details.status.embeddable) {
           console.log(`[YouTubeService] Found available video: "${details.snippet.title}" (ID: ${videoId})`);
-          return [{
+          results.push({
             title: details.snippet.title,
             videoId: videoId,
             thumbnail: details.snippet.thumbnails.default.url,
             channel: details.snippet.channelTitle,
-          }];
+          });
+          // Return the first valid result for now, but we could return more
+          return results;
         }
         console.log(`[YouTubeService] Skipping unavailable video: ID ${videoId}`);
       }

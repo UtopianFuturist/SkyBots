@@ -426,7 +426,11 @@ export class Bot {
         return;
       }
       
-      await blueskyService.postReply(notif, responseText);
+      if (youtubeResult) {
+        await postYouTubeReply(notif, youtubeResult, responseText);
+      } else {
+        await blueskyService.postReply(notif, responseText);
+      }
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
 

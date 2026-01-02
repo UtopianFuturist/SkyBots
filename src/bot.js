@@ -109,10 +109,8 @@ export class Bot {
         if (notificationsToProcess.length > 0) {
           console.log(`[Bot] Total new notifications to process: ${notificationsToProcess.length}`);
 
-          // Process notifications in chronological order (oldest to newest) to make sense in context
-          notificationsToProcess.reverse();
-
           for (const notif of notificationsToProcess) {
+            console.log(`[Bot] Processing notification from ${notif.author.handle} at ${notif.indexedAt}`);
             // Immediately mark as replied to prevent reprocessing on crash/restart
             await dataStore.addRepliedPost(notif.uri);
 

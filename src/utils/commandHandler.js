@@ -104,8 +104,10 @@ export const handleCommand = async (bot, post, text) => {
 
   if (lowerText.startsWith('!generate-image')) {
     const prompt = lowerText.replace('!generate-image', '').trim();
+    console.log(`[CommandHandler] Received !generate-image command with prompt: "${prompt}"`);
     const imageBuffer = await imageService.generateImage(prompt);
     if (imageBuffer) {
+      console.log('[CommandHandler] Image generation successful, uploading to Bluesky...');
       const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
       const embed = {
         $type: 'app.bsky.embed.images',

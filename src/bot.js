@@ -269,10 +269,12 @@ export class Bot {
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
     const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 100, preface_system_prompt: false });
 
-    console.log(`[Bot] Image generation check LLM response: "${imageGenCheckResponse}"`);
-
+    // --- Detailed Logging for Image Generation ---
+    console.log(`[Bot] Raw Image Gen Check Response: "${imageGenCheckResponse}"`);
     const imageGenRegex = /generate\s*[|:]\s*(.+)/i;
     const match = imageGenCheckResponse?.match(imageGenRegex);
+    console.log(`[Bot] Regex Match for Image Gen: ${match ? `Success - "${match[1]}"` : 'Failed'}`);
+    // --- End Detailed Logging ---
 
     if (match && match[1]) {
       const prompt = match[1].trim();

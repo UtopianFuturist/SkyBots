@@ -210,12 +210,12 @@ export class Bot {
       return;
     }
 
-    if (!text.includes(config.BLUESKY_IDENTIFIER) && !isReplyToBot) {
-      if (!(await llmService.isReplyRelevant(text))) {
-        console.log(`[Bot] Post by ${handle} not relevant for a reply. Skipping.`);
-        return;
-      }
-    }
+    // if (!text.includes(config.BLUESKY_IDENTIFIER) && !isReplyToBot) {
+    //   if (!(await llmService.isReplyRelevant(text))) {
+    //     console.log(`[Bot] Post by ${handle} not relevant for a reply. Skipping.`);
+    //     return;
+    //   }
+    // }
 
     // 4. Handle Commands
     const commandResponse = await handleCommand(this, notif, text);
@@ -235,11 +235,11 @@ export class Bot {
       { role: 'system', content: `You are a gatekeeper for an AI assistant. Analyze the user's latest post in the context of the conversation. Respond with only "true" if a direct reply is helpful or expected, or "false" if the post is a simple statement, agreement, or otherwise doesn't need a response. Your answer must be a single word: true or false.` },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${text}"` }
     ];
-    const replyCheckResponse = await llmService.generateResponse(gatekeeperMessages);
-    if (replyCheckResponse && replyCheckResponse.toLowerCase().trim().includes('false')) {
-      console.log(`[Bot] LLM gatekeeper decided no reply is needed for: "${text}". Skipping.`);
-      return;
-    }
+    // const replyCheckResponse = await llmService.generateResponse(gatekeeperMessages);
+    // if (replyCheckResponse && replyCheckResponse.toLowerCase().trim().includes('false')) {
+    //   console.log(`[Bot] LLM gatekeeper decided no reply is needed for: "${text}". Skipping.`);
+    //   return;
+    // }
 
     // 6. Bot-to-Bot Loop Prevention
     const profile = await blueskyService.getProfile(handle);
@@ -440,6 +440,7 @@ export class Bot {
         return;
       }
       
+      console.log(`[Bot] Replying to @${handle} with: "${responseText}"`);
       if (youtubeResult) {
         await postYouTubeReply(notif, youtubeResult, responseText);
       } else {

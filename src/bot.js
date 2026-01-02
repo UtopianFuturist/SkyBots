@@ -262,7 +262,7 @@ export class Bot {
       If no, respond with "no".
     `;
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
-    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 100 });
+    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 100, preface_system_prompt: false });
 
     console.log(`[Bot] Image generation check LLM response: "${imageGenCheckResponse}"`);
 
@@ -272,10 +272,12 @@ export class Bot {
     if (match && match[1]) {
       const prompt = match[1].trim();
       if (prompt) {
-        console.log(`[Bot] Conversational flow triggered Image Generation with prompt: "${prompt}"`);
+        console.log(`[Bot] User comment: "${text}"`);
+        console.log(`[Bot] Final image generation prompt: "${prompt}"`);
 
         const imageBuffer = await imageService.generateImage(prompt);
         if (imageBuffer) {
+          console.log('[Bot] Image generation successful, posting reply...');
           const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
           const embed = {
             $type: 'app.bsky.embed.images',

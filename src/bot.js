@@ -114,6 +114,8 @@ export class Bot {
           }
         } while (localCursor);
 
+        await blueskyService.updateSeen();
+
         console.log('[Bot] Finished processing all notifications for this cycle.');
       } catch (error) {
         console.error('[Bot] Error in main loop:', error);

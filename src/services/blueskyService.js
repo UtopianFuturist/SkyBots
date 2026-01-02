@@ -32,6 +32,15 @@ class BlueskyService {
     }
   }
 
+  async updateSeen() {
+    try {
+      await this.agent.updateSeenNotifications();
+      console.log('[BlueskyService] Updated notification seen status.');
+    } catch (error) {
+      console.error('[BlueskyService] Error updating notification seen status:', error);
+    }
+  }
+
   async getDetailedThread(uri) {
     try {
       const { data } = await this.agent.getPostThread({

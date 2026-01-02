@@ -20,7 +20,7 @@ class BlueskyService {
 
   async getNotifications(cursor) {
     try {
-      const params = { limit: 20 };
+      const params = { limit: 10 };
       if (cursor) {
         params.cursor = cursor;
       }

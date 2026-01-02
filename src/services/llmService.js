@@ -10,7 +10,14 @@ class LLMService {
   }
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 300 } = options;
+    const { temperature = 0.7, max_tokens = 300, preface_system_prompt = true } = options;
+
+    const finalMessages = preface_system_prompt
+      ? [
+          { role: "system", content: `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}` },
+          ...messages
+        ]
+      : messages;
 
     try {
       const response = await fetch(this.baseUrl, {
@@ -21,10 +28,7 @@ class LLMService {
         },
         body: JSON.stringify({
           model: this.model,
-          messages: [
-            { role: "system", content: `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}` },
-            ...messages
-          ],
+          messages: finalMessages,
           temperature,
           max_tokens,
           stream: false

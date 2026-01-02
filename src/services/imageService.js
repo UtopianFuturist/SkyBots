@@ -47,8 +47,11 @@ class ImageService {
       const imageBase64 = data.data[0]?.b64_json;
 
       if (!imageBase64) {
+        console.error('[ImageService] No image data in API response:', JSON.stringify(data, null, 2));
         throw new Error('No image data returned from API.');
       }
+
+      console.log(`[ImageService] Successfully received image data from API.`);
 
       // We need to upload the image to Bluesky, which requires a buffer.
       return Buffer.from(imageBase64, 'base64');

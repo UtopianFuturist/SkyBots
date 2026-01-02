@@ -94,15 +94,23 @@ export class Bot {
 
       try {
         let localCursor;
+        const allNotifications = [];
         do {
           console.log('[Bot] Fetching notifications...');
           const { notifications, cursor } = await blueskyService.getNotifications(localCursor);
           console.log(`[Bot] Fetched ${notifications.length} notifications.`);
+          allNotifications.push(...notifications.filter(n => !n.isRead));
           localCursor = cursor;
+        } while (localCursor);
 
-          // Notifications are already in reverse chronological order (most recent first)
-          for (const notif of notifications) {
-            if (notif.isRead || dataStore.hasReplied(notif.uri)) continue;
+        if (allNotifications.length > 0) {
+          console.log(`[Bot] Total unread notifications to process: ${allNotifications.length}`);
+          // Mark all as seen immediately to prevent re-fetching.
+          await blueskyService.updateSeen();
+
+          // Process all fetched notifications.
+          for (const notif of allNotifications) {
+            if (dataStore.hasReplied(notif.uri)) continue;
 
             // Immediately mark as replied to prevent reprocessing on crash/restart
             await dataStore.addRepliedPost(notif.uri);
@@ -112,9 +120,9 @@ export class Bot {
 
             await this.processNotification(notif);
           }
-        } while (localCursor);
-
-        await blueskyService.updateSeen();
+        } else {
+          console.log('[Bot] No new notifications to process.');
+        }
 
         console.log('[Bot] Finished processing all notifications for this cycle.');
       } catch (error) {

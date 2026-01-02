@@ -30,7 +30,6 @@ class ImageService {
         prompt: finalPrompt,
         size: '1024x1024',
         response_format: 'b64_json',
-        model: this.model
       };
 
       console.log('[ImageService] Sending request to Nvidia NIM API with payload:', JSON.stringify(payload, null, 2));

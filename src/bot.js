@@ -32,8 +32,7 @@ export class Bot {
 
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
-    const command = 'python3 -m pip install -r requirements.txt && python3 firehose_monitor.py';
-    this.firehoseProcess = spawn(command, { shell: true });
+    this.firehoseProcess = spawn('./.venv/bin/python', ['firehose_monitor.py']);
 
     this.firehoseProcess.stdout.on('data', async (data) => {
       const lines = data.toString().split('\n');

@@ -99,19 +99,20 @@ export class Bot {
           console.log('[Bot] Fetching notifications...');
           const { notifications, cursor } = await blueskyService.getNotifications(localCursor);
           console.log(`[Bot] Fetched ${notifications.length} notifications.`);
-          allNotifications.push(...notifications.filter(n => !n.isRead));
+          allNotifications.push(...notifications); // Get all notifications, regardless of read status
           localCursor = cursor;
         } while (localCursor);
 
-        if (allNotifications.length > 0) {
-          console.log(`[Bot] Total unread notifications to process: ${allNotifications.length}`);
-          // Mark all as seen immediately to prevent re-fetching.
-          await blueskyService.updateSeen();
+        // Filter out notifications we've already replied to, relying on our persistent datastore
+        const notificationsToProcess = allNotifications.filter(notif => !dataStore.hasReplied(notif.uri));
 
-          // Process all fetched notifications.
-          for (const notif of allNotifications) {
-            if (dataStore.hasReplied(notif.uri)) continue;
+        if (notificationsToProcess.length > 0) {
+          console.log(`[Bot] Total new notifications to process: ${notificationsToProcess.length}`);
 
+          // Process notifications in chronological order (oldest to newest) to make sense in context
+          notificationsToProcess.reverse();
+
+          for (const notif of notificationsToProcess) {
             // Immediately mark as replied to prevent reprocessing on crash/restart
             await dataStore.addRepliedPost(notif.uri);
 
@@ -120,6 +121,9 @@ export class Bot {
 
             await this.processNotification(notif);
           }
+
+          // Mark as seen on the server *after* processing is complete
+          await blueskyService.updateSeen();
         } else {
           console.log('[Bot] No new notifications to process.');
         }

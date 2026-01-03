@@ -375,7 +375,7 @@ export class Bot {
 
     const userContext = `
       ---
-      User Profile:
+      User Profile (for context only, DO NOT reference these posts in your reply):
       - Bio: ${userProfile.description?.replace(/\n/g, ' ') || 'Not available.'}
       - Recent Posts:
         ${userPosts.length > 0 ? userPosts.map(p => `- "${p.substring(0, 80)}..."`).join('\n') : 'No recent posts found.'}

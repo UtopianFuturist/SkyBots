@@ -88,7 +88,27 @@ class BlueskyService {
         let finalEmbed = options.embed; // The original embed object if it exists
 
         // New logic to handle direct image buffer uploads
-        if (options.imageBuffer && options.imageAltText) {
+        if (options.imageUrl && options.imageAltText) {
+          try {
+            console.log(`[BlueskyService] Uploading image from URL: ${options.imageUrl}`);
+            const response = await fetch(options.imageUrl);
+            if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+            const arrayBuffer = await response.arrayBuffer();
+            const imageBuffer = new Uint8Array(arrayBuffer);
+
+            const { data: uploadData } = await this.agent.uploadBlob(imageBuffer, {
+              encoding: response.headers.get('content-type') || 'image/gif',
+            });
+
+            finalEmbed = {
+              $type: 'app.bsky.embed.images',
+              images: [{ image: uploadData.blob, alt: options.imageAltText }],
+            };
+            console.log('[BlueskyService] Image from URL uploaded successfully.');
+          } catch (uploadError) {
+            console.error('[BlueskyService] Error uploading image from URL:', uploadError);
+          }
+        } else if (options.imageBuffer && options.imageAltText) {
           try {
             console.log('[BlueskyService] Uploading image from buffer...');
             const { data: uploadData } = await this.agent.uploadBlob(options.imageBuffer, { encoding: 'image/jpeg' });

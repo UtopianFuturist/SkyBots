@@ -159,13 +159,14 @@ export class Bot {
 
     // 2. Refined Reply Trigger Logic
     const botMentioned = text.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => text.includes(nick));
+    const isQuoteRepost = notif.reason === 'quote';
 
     // Check if the reply is to one of the bot's own posts.
     const parentPost = threadContext.length > 1 ? threadContext[threadContext.length - 2] : null;
     const isReplyToBot = parentPost && parentPost.author === config.BLUESKY_IDENTIFIER;
 
-    if (!botMentioned && !isReplyToBot) {
-      console.log(`[Bot] Bot not mentioned and not a reply to self. Skipping.`);
+    if (!botMentioned && !isReplyToBot && !isQuoteRepost) {
+      console.log(`[Bot] Not a mention, reply to self, or quote repost. Skipping.`);
       return;
     }
 

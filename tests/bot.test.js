@@ -133,9 +133,18 @@ describe('Bot', () => {
           record: { text: 'Nice post' },
           indexedAt: new Date().toISOString()
         },
-        // 3. A notification that has already been replied to - SHOULD be skipped
+        // 3. An unread quote repost - SHOULD be processed
         {
           uri: 'at://did:plc:3/app.bsky.feed.post/3',
+          isRead: false,
+          reason: 'quote',
+          author: { handle: 'user3.bsky.social' },
+          record: { text: 'Cool bot' },
+          indexedAt: new Date().toISOString()
+        },
+        // 4. A notification that has already been replied to - SHOULD be skipped
+        {
+          uri: 'at://did:plc:4/app.bsky.feed.post/4',
           isRead: false,
           reason: 'mention',
           author: { handle: 'user3.bsky.social' },
@@ -168,8 +177,8 @@ describe('Bot', () => {
         cursor: undefined, // Simulate end of notifications
       });
 
-      // Mock hasReplied: true for the third notification
-      dataStore.hasReplied.mockImplementation(uri => uri === 'at://did:plc:3/app.bsky.feed.post/3');
+      // Mock hasReplied: true for the fourth notification
+      dataStore.hasReplied.mockImplementation(uri => uri === 'at://did:plc:4/app.bsky.feed.post/4');
 
       // Mock processNotification to avoid its internal logic, just track calls
       bot.processNotification = jest.fn().mockResolvedValue(true);
@@ -178,20 +187,22 @@ describe('Bot', () => {
       await bot.catchUpNotifications();
 
       // Assertions
-      // It should try to process the two valid notifications
-      expect(bot.processNotification).toHaveBeenCalledTimes(2);
+      // It should try to process the three valid notifications
+      expect(bot.processNotification).toHaveBeenCalledTimes(3);
       expect(bot.processNotification).toHaveBeenCalledWith(mockNotifications[0]);
       expect(bot.processNotification).toHaveBeenCalledWith(mockNotifications[1]);
+      expect(bot.processNotification).toHaveBeenCalledWith(mockNotifications[2]);
 
       // It should NOT try to process the others
-      expect(bot.processNotification).not.toHaveBeenCalledWith(mockNotifications[2]);
       expect(bot.processNotification).not.toHaveBeenCalledWith(mockNotifications[3]);
       expect(bot.processNotification).not.toHaveBeenCalledWith(mockNotifications[4]);
+      expect(bot.processNotification).not.toHaveBeenCalledWith(mockNotifications[5]);
 
-      // It should add the two processed URIs to the datastore
-      expect(dataStore.addRepliedPost).toHaveBeenCalledTimes(2);
+      // It should add the three processed URIs to the datastore
+      expect(dataStore.addRepliedPost).toHaveBeenCalledTimes(3);
       expect(dataStore.addRepliedPost).toHaveBeenCalledWith('at://did:plc:1/app.bsky.feed.post/1');
       expect(dataStore.addRepliedPost).toHaveBeenCalledWith('at://did:plc:2/app.bsky.feed.post/2');
+      expect(dataStore.addRepliedPost).toHaveBeenCalledWith('at://did:plc:3/app.bsky.feed.post/3');
 
       // It should update the seen status since notifications were processed
       expect(blueskyService.updateSeen).toHaveBeenCalledTimes(1);

@@ -4,6 +4,7 @@ import { dataStore } from './services/dataStore.js';
 import { googleSearchService } from './services/googleSearchService.js';
 import { imageService } from './services/imageService.js';
 import { youtubeService } from './services/youtubeService.js';
+import { giphyService } from './services/giphyService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags } from './utils/textUtils.js';
@@ -447,7 +448,45 @@ export class Bot {
       if (youtubeResult) {
         await postYouTubeReply(notif, youtubeResult, responseText);
       } else {
-        await blueskyService.postReply(notif, responseText);
+        // Autonomous GIF decision-making
+        const gifDecisionPrompt = `You are a social media AI. Your generated response is: "${responseText}". Would adding a culturally relevant GIF (e.g., from a movie, TV show, or meme) enhance this response? Your answer must be a single word: "yes" or "no".`;
+        const gifDecisionMessages = [{ role: 'system', content: gifDecisionPrompt }];
+        const gifDecision = await llmService.generateResponse(gifDecisionMessages, { max_tokens: 5 });
+
+        if (gifDecision && gifDecision.toLowerCase().includes('yes')) {
+          console.log('[Bot] Decided to add a GIF. Generating culturally relevant query...');
+          const gifQueryPrompt = `You are a pop culture expert AI. Based on the following conversation and the bot's final response, generate a short, iconic quote from a movie, TV show, song lyric, or meme that captures the vibe of the bot's response. The quote should be suitable as a Giphy search query.
+
+Conversation History:
+${historyText}
+
+Bot's Response: "${responseText}"
+
+Your answer must be only the quote itself.`;
+          const gifQueryMessages = [{ role: 'system', content: gifQueryPrompt }];
+          const gifQuery = await llmService.generateResponse(gifQueryMessages, { max_tokens: 20 });
+
+          if (gifQuery && gifQuery.trim()) {
+            console.log(`[Bot] Generated GIF query: "${gifQuery}"`);
+            const gifResult = await giphyService.search(gifQuery);
+            if (gifResult) {
+              console.log(`[Bot] Posting with GIF: ${gifResult.url}`);
+              await blueskyService.postReply(notif, responseText, {
+                imageUrl: gifResult.url,
+                imageAltText: gifResult.alt,
+              });
+            } else {
+              console.log('[Bot] Giphy search failed. Posting text only.');
+              await blueskyService.postReply(notif, responseText);
+            }
+          } else {
+            console.log('[Bot] Could not generate a GIF query. Posting text only.');
+            await blueskyService.postReply(notif, responseText);
+          }
+        } else {
+          console.log('[Bot] Decided not to add a GIF. Posting text only.');
+          await blueskyService.postReply(notif, responseText);
+        }
       }
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });

@@ -86,7 +86,21 @@ class BlueskyService {
       // Only add the embed to the first post in the chain
       if (i === 0) {
         let finalEmbed = options.embed; // The original embed object if it exists
-        if (options.imagesToEmbed && options.imagesToEmbed.length > 0) {
+
+        // New logic to handle direct image buffer uploads
+        if (options.imageBuffer && options.imageAltText) {
+          try {
+            console.log('[BlueskyService] Uploading image from buffer...');
+            const { data: uploadData } = await this.agent.uploadBlob(options.imageBuffer, { encoding: 'image/jpeg' });
+            finalEmbed = {
+              $type: 'app.bsky.embed.images',
+              images: [{ image: uploadData.blob, alt: options.imageAltText }],
+            };
+            console.log('[BlueskyService] Image buffer uploaded successfully.');
+          } catch (uploadError) {
+            console.error('[BlueskyService] Error uploading image blob from buffer:', uploadError);
+          }
+        } else if (options.imagesToEmbed && options.imagesToEmbed.length > 0) {
           finalEmbed = await this.uploadImages(options.imagesToEmbed);
         } else if (!finalEmbed) {
           const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))

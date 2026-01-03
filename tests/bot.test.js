@@ -26,6 +26,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     isResponseSafe: jest.fn(),
     rateUserInteraction: jest.fn(),
     analyzeImage: jest.fn(),
+    shouldLikePost: jest.fn(),
   },
 }));
 
@@ -95,6 +96,7 @@ describe('Bot', () => {
     bot._getThreadHistory = jest.fn().mockResolvedValue(mockThreadContext);
     llmService.isPostSafe.mockResolvedValue({ safe: true });
     llmService.generateResponse.mockResolvedValue('This is a test response.');
+    llmService.shouldLikePost.mockResolvedValue(false);
     llmService.isResponseSafe.mockResolvedValue({ safe: true });
     llmService.rateUserInteraction.mockResolvedValue(4);
     blueskyService.getProfile.mockResolvedValue({ description: 'A test user' });

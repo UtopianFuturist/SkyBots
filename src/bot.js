@@ -115,13 +115,13 @@ export class Bot {
         }
 
         console.log(`[Bot] Found missed notification: ${notif.uri}`);
-        // Process notifications concurrently but in a controlled way
-        processingPromises.push(
-          this.processNotification(notif).then(() => {
-            dataStore.addRepliedPost(notif.uri);
-            notificationsCaughtUp++;
-          })
-        );
+        // Mark the notification as "replied" immediately to prevent a race condition
+        // with the real-time Firehose stream.
+        await dataStore.addRepliedPost(notif.uri);
+        notificationsCaughtUp++;
+
+        // Now, process the notification.
+        processingPromises.push(this.processNotification(notif));
       }
       cursor = response.cursor;
     } while (cursor);

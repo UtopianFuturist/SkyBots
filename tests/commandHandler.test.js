@@ -22,6 +22,7 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     uploadImages: jest.fn(),
     agent: {
       uploadBlob: jest.fn(),
+      post: jest.fn(),
     },
   },
 }));
@@ -57,7 +58,7 @@ describe('Command Handler', () => {
     jest.clearAllMocks();
   });
 
-  it('should handle search command with multiple results', async () => {
+  it('should handle search command with multiple results as a nested chain', async () => {
     const mockResults = [
       { title: 'Test Title 1', link: 'https://test.com/1', snippet: 'Test snippet 1.' },
       { title: 'Test Title 2', link: 'https://test.com/2', snippet: 'Test snippet 2.' },
@@ -66,18 +67,40 @@ describe('Command Handler', () => {
     googleSearchService.search.mockResolvedValue(mockResults);
     llmService.generateResponse.mockResolvedValue('This is a test summary.');
 
+    // Mock the agent.post method to simulate returning new post URIs/CIDs
+    blueskyService.agent.post
+      .mockResolvedValueOnce({ uri: 'at://summary-uri', cid: 'summary-cid' })
+      .mockResolvedValueOnce({ uri: 'at://result1-uri', cid: 'result1-cid' })
+      .mockResolvedValueOnce({ uri: 'at://result2-uri', cid: 'result2-cid' })
+      .mockResolvedValueOnce({ uri: 'at://result3-uri', cid: 'result3-cid' });
+
     await handleCommand(mockBot, mockPost, '!search test query');
 
     expect(googleSearchService.search).toHaveBeenCalledWith('test query');
     expect(llmService.generateResponse).toHaveBeenCalled();
-    expect(blueskyService.postReply).toHaveBeenCalledTimes(4);
+    expect(blueskyService.agent.post).toHaveBeenCalledTimes(4);
 
-    // Check summary post
-    expect(blueskyService.postReply).toHaveBeenCalledWith(mockPost, 'This is a test summary.');
-    // Check individual result posts
-    expect(blueskyService.postReply).toHaveBeenCalledWith(mockPost, 'Test Title 1\nhttps://test.com/1');
-    expect(blueskyService.postReply).toHaveBeenCalledWith(mockPost, 'Test Title 2\nhttps://test.com/2');
-    expect(blueskyService.postReply).toHaveBeenCalledWith(mockPost, 'Test Title 3\nhttps://test.com/3');
+    const calls = blueskyService.agent.post.mock.calls;
+
+    // 1. Summary post should reply to the original post
+    expect(calls[0][0].reply.parent.uri).toBe(mockPost.uri);
+    expect(calls[0][0].reply.root.uri).toBe(mockPost.uri);
+    expect(calls[0][0].text).toBe('This is a test summary.');
+
+    // 2. First result should reply to the summary post
+    expect(calls[1][0].reply.parent.uri).toBe('at://summary-uri');
+    expect(calls[1][0].reply.root.uri).toBe(mockPost.uri);
+    expect(calls[1][0].text).toBe('Test Title 1\nhttps://test.com/1');
+
+    // 3. Second result should reply to the first result
+    expect(calls[2][0].reply.parent.uri).toBe('at://result1-uri');
+    expect(calls[2][0].reply.root.uri).toBe(mockPost.uri);
+    expect(calls[2][0].text).toBe('Test Title 2\nhttps://test.com/2');
+
+    // 4. Third result should reply to the second result
+    expect(calls[3][0].reply.parent.uri).toBe('at://result2-uri');
+    expect(calls[3][0].reply.root.uri).toBe(mockPost.uri);
+    expect(calls[3][0].text).toBe('Test Title 3\nhttps://test.com/3');
   });
 
   it('should handle youtube search command', async () => {

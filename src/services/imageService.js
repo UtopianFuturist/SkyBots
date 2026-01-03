@@ -5,7 +5,7 @@ import { llmService } from './llmService.js';
 class ImageService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    this.model = config.IMAGE_GENERATION_MODEL || 'black-forest-labs/flux.1-schnell';
+    this.model = config.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-3-medium';
     this.baseUrl = `https://ai.api.nvidia.com/v1/genai/${this.model}`;
   }
 

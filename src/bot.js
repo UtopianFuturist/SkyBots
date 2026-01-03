@@ -97,29 +97,34 @@ export class Bot {
         const { notifications } = await blueskyService.getNotifications();
         console.log(`[Bot] Fetched ${notifications.length} notifications.`);
 
-        // Filter out notifications we've already replied to, and non-actionable notifications
-        const notificationsToProcess = notifications.filter(notif =>
-          !dataStore.hasReplied(notif.uri) &&
-          (notif.reason === 'mention' || notif.reason === 'reply' || notif.reason === 'quote') &&
-          notif.record.$type === 'app.bsky.feed.post'
-        );
-
-        if (notificationsToProcess.length > 0) {
-          console.log(`[Bot] Total new notifications to process: ${notificationsToProcess.length}`);
-
-          for (const notif of notificationsToProcess) {
-            console.log(`[Bot] Processing notification from ${notif.author.handle} at ${notif.indexedAt}`);
-
-            // Immediately mark as replied to prevent reprocessing on crash/restart
-            await dataStore.addRepliedPost(notif.uri);
-
-            await this.processNotification(notif);
-          }
-
-          // Mark this batch as seen on the server *after* processing is complete
+        if (notifications.length > 0) {
+          // Mark this batch as seen on the server *immediately* after fetching.
+          // This prevents the bot from getting stuck on old notifications it has already processed.
           await blueskyService.updateSeen();
+
+          // Filter out notifications we've already replied to, and non-actionable notifications
+          const notificationsToProcess = notifications.filter(notif =>
+            !dataStore.hasReplied(notif.uri) &&
+            (notif.reason === 'mention' || notif.reason === 'reply' || notif.reason === 'quote') &&
+            notif.record.$type === 'app.bsky.feed.post'
+          );
+
+          if (notificationsToProcess.length > 0) {
+            console.log(`[Bot] Total new notifications to process: ${notificationsToProcess.length}`);
+
+            for (const notif of notificationsToProcess) {
+              console.log(`[Bot] Processing notification from ${notif.author.handle} at ${notif.indexedAt}`);
+
+              // Immediately mark as replied to prevent reprocessing on crash/restart
+              await dataStore.addRepliedPost(notif.uri);
+
+              await this.processNotification(notif);
+            }
+          } else {
+            console.log('[Bot] No new notifications to process in this batch.');
+          }
         } else {
-          console.log('[Bot] No new notifications to process in this batch.');
+          console.log('[Bot] No notifications in this batch from the server.');
         }
 
         console.log('[Bot] Finished processing all notifications for this cycle.');

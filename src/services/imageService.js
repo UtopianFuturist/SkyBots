@@ -28,9 +28,11 @@ class ImageService {
 
       const payload = {
         prompt: finalPrompt,
-        n: 1,
-        size: '512x512',
-        response_format: 'url',
+        cfg_scale: 5,
+        aspect_ratio: "1:1",
+        seed: 0,
+        steps: 50,
+        negative_prompt: ""
       };
 
       console.log('[ImageService] Sending request to Nvidia NIM API with payload:', JSON.stringify(payload, null, 2));
@@ -40,6 +42,7 @@ class ImageService {
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`,
+          'Accept': 'application/json',
         },
         body: JSON.stringify(payload),
       });
@@ -51,22 +54,30 @@ class ImageService {
       }
 
       const data = await response.json();
-      const imageUrl = data.data[0]?.url;
+      
+      // The API returns an object with a 'artifacts' array containing base64 images
+      // or sometimes a different structure. Based on the screenshot, it was 422.
+      // Let's handle the response based on the standard NIM visual API format.
+      const imageAsset = data.artifacts?.[0]?.base64 || data.data?.[0]?.url || data.data?.[0]?.b64_json;
 
-      if (!imageUrl) {
-        console.error('[ImageService] No image URL in API response:', JSON.stringify(data, null, 2));
+      if (!imageAsset) {
+        console.error('[ImageService] No image data in API response:', JSON.stringify(data, null, 2));
         throw new Error('No image data returned from API.');
       }
 
-      console.log(`[ImageService] Successfully received image URL from API: ${imageUrl}`);
+      console.log(`[ImageService] Successfully received image data from API.`);
 
-      // Fetch the image from the URL and return it as a buffer
-      const imageResponse = await fetch(imageUrl);
-      if (!imageResponse.ok) {
-        throw new Error(`Failed to fetch image from URL: ${imageResponse.statusText}`);
+      if (imageAsset.startsWith('http')) {
+        const imageResponse = await fetch(imageAsset);
+        if (!imageResponse.ok) {
+          throw new Error(`Failed to fetch image from URL: ${imageResponse.statusText}`);
+        }
+        const arrayBuffer = await imageResponse.arrayBuffer();
+        return Buffer.from(arrayBuffer);
+      } else {
+        // Assume base64
+        return Buffer.from(imageAsset, 'base64');
       }
-      const arrayBuffer = await imageResponse.arrayBuffer();
-      return Buffer.from(arrayBuffer);
 
     } catch (error) {
       console.error('[ImageService] Full error object during image generation:', error);

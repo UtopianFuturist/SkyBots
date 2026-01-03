@@ -166,19 +166,7 @@ export class Bot {
       return;
     }
 
-    // 1. Prompt Injection Defense
-    if (await llmService.detectPromptInjection(text)) {
-      console.log(`[Bot] Prompt injection attempt detected from ${handle}.`);
-      const userProfile = await blueskyService.getProfile(handle);
-      const userPosts = await blueskyService.getUserPosts(handle);
-      const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
-      if (userIntent.highRisk) {
-        console.log(`[Bot] High-risk intent detected with prompt injection. Responding with refusal and stopping processing.`);
-        await blueskyService.postReply(notif, "I can't comply with that request.");
-        return; // Stop processing only for high-risk cases
-      }
-      console.log(`[Bot] Low-risk prompt injection detected. Proceeding with normal processing.`);
-    }
+    // Prompt injection filter removed per user request.
 
 
     // 2. Refined Reply Trigger Logic
@@ -452,13 +440,16 @@ export class Bot {
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
 
-      // Rate user and like post if rating is high
+      // Like post if it matches the bot's persona
+      if (await llmService.shouldLikePost(text)) {
+        console.log(`[Bot] Post by ${handle} matches persona. Liking...`);
+        await blueskyService.likePost(notif.uri, notif.cid);
+      }
+
+      // Rate user based on interaction history
       const interactionHistory = dataStore.getInteractionsByUser(handle);
       const rating = await llmService.rateUserInteraction(interactionHistory);
       await dataStore.updateUserRating(handle, rating);
-      if (rating > 3) {
-        await blueskyService.likePost(notif.uri, notif.cid);
-      }
     }
   }
 

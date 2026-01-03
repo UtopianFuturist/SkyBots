@@ -220,6 +220,24 @@ class LLMService {
     const rating = parseInt(response, 10);
     return isNaN(rating) ? 3 : Math.max(1, Math.min(5, rating));
   }
+
+  async shouldLikePost(postText) {
+    const systemPrompt = `
+      You are an AI persona evaluator. Your task is to determine if a given social media post aligns with the following persona:
+      
+      "${config.TEXT_SYSTEM_PROMPT}"
+      
+      If the post content is similar in tone, interest, or style to this persona, respond with "yes". 
+      Otherwise, respond with "no".
+      Respond with only "yes" or "no".
+    `;
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Post content: "${postText}"` }
+    ];
+    const response = await this.generateResponse(messages, { max_tokens: 5 });
+    return response?.toLowerCase().includes('yes');
+  }
 }
 
 export const llmService = new LLMService();

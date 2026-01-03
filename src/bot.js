@@ -356,6 +356,16 @@ export class Bot {
 
     // 6. Generate Response with User Context and Memory
     console.log(`[Bot] Responding to post from ${handle}: "${text}"`);
+
+    // Step 6a: Check if the user is asking a question that requires their profile context.
+    const contextIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking a question that requires their own profile or post history as context. This includes questions like "give me recommendations", "summarize my profile", "what do you think of me?", etc. Your answer must be a single word: "yes" or "no".`;
+    const contextIntentMessages = [
+      { role: 'system', content: contextIntentSystemPrompt },
+      { role: 'user', content: `The user's post is: "${text}"` }
+    ];
+    const contextIntentResponse = await llmService.generateResponse(contextIntentMessages, { max_tokens: 5 });
+    let useContext = contextIntentResponse && contextIntentResponse.toLowerCase().includes('yes');
+
     console.log(`[Bot] Generating response for ${handle}...`);
     const userMemory = dataStore.getInteractionsByUser(handle);
     
@@ -375,7 +385,7 @@ export class Bot {
 
     const userContext = `
       ---
-      User Profile (for context only, DO NOT reference these posts in your reply):
+      User Profile:
       - Bio: ${userProfile.description?.replace(/\n/g, ' ') || 'Not available.'}
       - Recent Posts:
         ${userPosts.length > 0 ? userPosts.map(p => `- "${p.substring(0, 80)}..."`).join('\n') : 'No recent posts found.'}
@@ -389,7 +399,7 @@ export class Bot {
       .join('\n');
 
     const fullContext = `
-      ${userContext}
+      ${useContext ? userContext : ''}
       ---
       Cross-Post Memory (Recent mentions of the bot by this user):
       ${crossPostMemory || 'No recent cross-post mentions found.'}

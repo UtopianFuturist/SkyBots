@@ -89,7 +89,23 @@ async def main():
                     if is_mention_of_bot:
                         break
                 
-                if is_reply_to_bot or is_mention_of_bot:
+                # Check for quote reposts of the bot's posts
+                embed = record_raw.get('embed', {})
+                is_quote_of_bot = False
+                if embed.get('$type') == 'app.bsky.embed.record':
+                    record_uri = embed.get('record', {}).get('uri', '')
+                    if bot_did in record_uri:
+                        is_quote_of_bot = True
+
+                if is_reply_to_bot or is_mention_of_bot or is_quote_of_bot:
+                    # Determine the reason for the event
+                    if is_mention_of_bot:
+                        reason = "mention"
+                    elif is_quote_of_bot:
+                        reason = "quote"
+                    else:
+                        reason = "reply"
+
                     # Construct a notification-like object to send to the Node.js bot
                     event = {
                         "type": "firehose_mention",
@@ -100,7 +116,7 @@ async def main():
                             "handle": None # We'll need to resolve this in Node.js if needed
                         },
                         "record": record_raw,
-                        "reason": "mention" if is_mention_of_bot else "reply"
+                        "reason": reason
                     }
                     print(json.dumps(event), flush=True)
 

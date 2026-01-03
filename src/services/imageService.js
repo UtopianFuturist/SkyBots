@@ -28,9 +28,6 @@ class ImageService {
 
       const payload = {
         prompt: finalPrompt,
-        n: 1,
-        size: '512x512',
-        response_format: 'url',
       };
 
       console.log('[ImageService] Sending request to Nvidia NIM API with payload:', JSON.stringify(payload, null, 2));
@@ -50,22 +47,7 @@ class ImageService {
         throw new Error(`Nvidia NIM Image API error (${response.status}): ${errorBody}`);
       }
 
-      const data = await response.json();
-      const imageUrl = data.data[0]?.url;
-
-      if (!imageUrl) {
-        console.error('[ImageService] No image URL in API response:', JSON.stringify(data, null, 2));
-        throw new Error('No image data returned from API.');
-      }
-
-      console.log(`[ImageService] Successfully received image URL from API: ${imageUrl}`);
-
-      // Fetch the image from the URL and return it as a buffer
-      const imageResponse = await fetch(imageUrl);
-      if (!imageResponse.ok) {
-        throw new Error(`Failed to fetch image from URL: ${imageResponse.statusText}`);
-      }
-      const arrayBuffer = await imageResponse.arrayBuffer();
+      const arrayBuffer = await response.arrayBuffer();
       return Buffer.from(arrayBuffer);
 
     } catch (error) {

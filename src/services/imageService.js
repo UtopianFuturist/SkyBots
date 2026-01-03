@@ -6,7 +6,7 @@ class ImageService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.IMAGE_GENERATION_MODEL || 'black-forest-labs/flux.1-schnell';
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1/images/generations';
+    this.baseUrl = `https://ai.api.nvidia.com/v1/genai/${this.model}`;
   }
 
   async generateImage(prompt) {
@@ -27,7 +27,6 @@ class ImageService {
       }
 
       const payload = {
-        model: this.model,
         prompt: finalPrompt,
         n: 1,
         size: '512x512',

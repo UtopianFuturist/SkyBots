@@ -28,19 +28,23 @@ class GoogleSearchService {
     }
   }
 
-  async searchImages(query) {
-    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(query)}&searchType=image&num=4`;
+  async searchImages(query, num = 4) {
+    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(query)}&searchType=image&num=${num}`;
     try {
       const response = await fetch(url);
       if (!response.ok) {
         throw new Error(`Google Image Search API error (${response.status})`);
       }
       const data = await response.json();
-      return data.items?.map(item => ({
+      if (!data.items) {
+        console.warn(`[GoogleSearchService] No image results found for "${query}".`);
+        return [];
+      }
+      return data.items.map(item => ({
         title: item.title,
         link: item.link,
         snippet: item.snippet,
-      })) || [];
+      }));
     } catch (error) {
       console.error('[GoogleSearchService] Error performing image search:', error);
       return [];

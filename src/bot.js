@@ -84,56 +84,9 @@ export class Bot {
     // Proactive post proposal on a timer
     setInterval(() => this.proposeNewPost(), 3600000); // Every hour
 
-    while (true) {
-      console.log(`[Bot] --- Loop iteration starting at ${new Date().toISOString()} ---`);
-      if (this.paused) {
-        console.log('[Bot] Bot is paused. Waiting...');
-        await new Promise(resolve => setTimeout(resolve, 60000)); // Check every minute if paused
-        continue;
-      }
-
-      try {
-        console.log('[Bot] Fetching a batch of notifications...');
-        const { notifications } = await blueskyService.getNotifications();
-        console.log(`[Bot] Fetched ${notifications.length} notifications.`);
-
-        if (notifications.length > 0) {
-          // Mark this batch as seen on the server *immediately* after fetching.
-          // This prevents the bot from getting stuck on old notifications it has already processed.
-          await blueskyService.updateSeen();
-
-          // Filter out notifications we've already replied to, and non-actionable notifications
-          const notificationsToProcess = notifications.filter(notif =>
-            !dataStore.hasReplied(notif.uri) &&
-            (notif.reason === 'mention' || notif.reason === 'reply' || notif.reason === 'quote') &&
-            notif.record.$type === 'app.bsky.feed.post'
-          );
-
-          if (notificationsToProcess.length > 0) {
-            console.log(`[Bot] Total new notifications to process: ${notificationsToProcess.length}`);
-
-            for (const notif of notificationsToProcess) {
-              console.log(`[Bot] Processing notification from ${notif.author.handle} at ${notif.indexedAt}`);
-
-              // Immediately mark as replied to prevent reprocessing on crash/restart
-              await dataStore.addRepliedPost(notif.uri);
-
-              await this.processNotification(notif);
-            }
-          } else {
-            console.log('[Bot] No new notifications to process in this batch.');
-          }
-        } else {
-          console.log('[Bot] No notifications in this batch from the server.');
-        }
-
-        console.log('[Bot] Finished processing all notifications for this cycle.');
-      } catch (error) {
-        console.error('[Bot] Error in main loop:', error);
-      }
-      console.log(`[Bot] Waiting for ${config.CHECK_INTERVAL}ms before next loop.`);
-      await new Promise(resolve => setTimeout(resolve, config.CHECK_INTERVAL));
-    }
+    // The main notification polling loop has been removed.
+    // The bot will now only process mentions and replies via the Firehose.
+    console.log('[Bot] Notification polling disabled. Relying on Firehose for real-time events.');
   }
 
   async processNotification(notif) {
@@ -262,13 +215,11 @@ export class Bot {
         const imageBuffer = await imageService.generateImage(prompt);
         if (imageBuffer) {
           console.log('[Bot] Image generation successful, posting reply...');
-          const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
-          const embed = {
-            $type: 'app.bsky.embed.images',
-            images: [{ image: uploadData.blob, alt: prompt }],
-          };
           // The text reply is simple and direct.
-          await blueskyService.postReply(notif, `Here's an image of "${prompt}":`, { embed });
+          await blueskyService.postReply(notif, `Here's an image of "${prompt}":`, {
+            imageBuffer,
+            imageAltText: prompt,
+          });
           return; // End processing here as the request is fulfilled.
         }
         // If image generation fails, fall through to the normal response flow.

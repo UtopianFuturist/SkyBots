@@ -105,20 +105,6 @@ export class Bot {
     // 1. Thread History Fetching (Centralized)
     const threadContext = await this._getThreadHistory(notif.uri);
 
-    // Check if the bot has already replied to this specific post
-    // We check if the last message in the thread history (which is the current post)
-    // is followed by a message from the bot.
-    const botAlreadyReplied = threadContext.some((h, index) => 
-      h.author === handle && 
-      index < threadContext.length - 1 && 
-      threadContext[index + 1].author === config.BLUESKY_IDENTIFIER
-    );
-
-    if (botAlreadyReplied) {
-      console.log(`[Bot] Bot has already replied to this post from ${handle}. Skipping to avoid duplicates.`);
-      return;
-    }
-
     // Prompt injection filter removed per user request.
 
 

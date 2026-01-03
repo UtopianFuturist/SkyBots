@@ -5,8 +5,8 @@ import { llmService } from './llmService.js';
 class ImageService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    this.model = 'black-forest-labs/flux.1-schnell';
-    this.baseUrl = 'https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.1-schnell';
+    this.model = config.IMAGE_GENERATION_MODEL || 'black-forest-labs/flux.1-schnell';
+    this.baseUrl = 'https://integrate.api.nvidia.com/v1/images/generations';
   }
 
   async generateImage(prompt) {
@@ -21,15 +21,17 @@ class ImageService {
 
       let finalPrompt = prompt;
       if (revisedPrompt && revisedPrompt.toLowerCase() !== 'null') {
-        finalPrompt = revisedPrompt;
+        finalPrompt = revisedPrompt.trim().replace(/[^\x20-\x7E]/g, '');
       } else {
         console.log(`[ImageService] Revised prompt was null or "null", falling back to original prompt.`);
       }
 
       const payload = {
+        model: this.model,
         prompt: finalPrompt,
-        size: '1024x1024',
-        response_format: 'b64_json',
+        n: 1,
+        size: '512x512',
+        response_format: 'url',
       };
 
       console.log('[ImageService] Sending request to Nvidia NIM API with payload:', JSON.stringify(payload, null, 2));
@@ -50,17 +52,22 @@ class ImageService {
       }
 
       const data = await response.json();
-      const imageBase64 = data.data[0]?.b64_json;
+      const imageUrl = data.data[0]?.url;
 
-      if (!imageBase64) {
-        console.error('[ImageService] No image data in API response:', JSON.stringify(data, null, 2));
+      if (!imageUrl) {
+        console.error('[ImageService] No image URL in API response:', JSON.stringify(data, null, 2));
         throw new Error('No image data returned from API.');
       }
 
-      console.log(`[ImageService] Successfully received image data from API.`);
+      console.log(`[ImageService] Successfully received image URL from API: ${imageUrl}`);
 
-      // We need to upload the image to Bluesky, which requires a buffer.
-      return Buffer.from(imageBase64, 'base64');
+      // Fetch the image from the URL and return it as a buffer
+      const imageResponse = await fetch(imageUrl);
+      if (!imageResponse.ok) {
+        throw new Error(`Failed to fetch image from URL: ${imageResponse.statusText}`);
+      }
+      const arrayBuffer = await imageResponse.arrayBuffer();
+      return Buffer.from(arrayBuffer);
 
     } catch (error) {
       console.error('[ImageService] Full error object during image generation:', error);

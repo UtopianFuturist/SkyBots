@@ -22,11 +22,18 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     uploadImages: jest.fn(),
     agent: {
       uploadBlob: jest.fn(),
+      post: jest.fn(),
     },
+  },
+}));
+jest.unstable_mockModule('../src/services/llmService.js', () => ({
+  llmService: {
+    generateResponse: jest.fn(),
   },
 }));
 
 const { handleCommand } = await import('../src/utils/commandHandler.js');
+const { llmService } = await import('../src/services/llmService.js');
 const { googleSearchService } = await import('../src/services/googleSearchService.js');
 const { youtubeService } = await import('../src/services/youtubeService.js');
 const { imageService } = await import('../src/services/imageService.js');
@@ -51,11 +58,49 @@ describe('Command Handler', () => {
     jest.clearAllMocks();
   });
 
-  it('should handle google search command', async () => {
-    googleSearchService.search.mockResolvedValue([{ title: 'Test Title', link: 'https://test.com', snippet: 'Test snippet.' }]);
-    await handleCommand(mockBot, mockPost, '!google test query');
+  it('should handle search command with multiple results as a nested chain', async () => {
+    const mockResults = [
+      { title: 'Test Title 1', link: 'https://test.com/1', snippet: 'Test snippet 1.' },
+      { title: 'Test Title 2', link: 'https://test.com/2', snippet: 'Test snippet 2.' },
+      { title: 'Test Title 3', link: 'https://test.com/3', snippet: 'Test snippet 3.' },
+    ];
+    googleSearchService.search.mockResolvedValue(mockResults);
+    llmService.generateResponse.mockResolvedValue('This is a test summary.');
+
+    // Mock the agent.post method to simulate returning new post URIs/CIDs
+    blueskyService.agent.post
+      .mockResolvedValueOnce({ uri: 'at://summary-uri', cid: 'summary-cid' })
+      .mockResolvedValueOnce({ uri: 'at://result1-uri', cid: 'result1-cid' })
+      .mockResolvedValueOnce({ uri: 'at://result2-uri', cid: 'result2-cid' })
+      .mockResolvedValueOnce({ uri: 'at://result3-uri', cid: 'result3-cid' });
+
+    await handleCommand(mockBot, mockPost, '!search test query');
+
     expect(googleSearchService.search).toHaveBeenCalledWith('test query');
-    expect(blueskyService.postReply).toHaveBeenCalled();
+    expect(llmService.generateResponse).toHaveBeenCalled();
+    expect(blueskyService.agent.post).toHaveBeenCalledTimes(4);
+
+    const calls = blueskyService.agent.post.mock.calls;
+
+    // 1. Summary post should reply to the original post
+    expect(calls[0][0].reply.parent.uri).toBe(mockPost.uri);
+    expect(calls[0][0].reply.root.uri).toBe(mockPost.uri);
+    expect(calls[0][0].text).toBe('This is a test summary.');
+
+    // 2. First result should reply to the summary post
+    expect(calls[1][0].reply.parent.uri).toBe('at://summary-uri');
+    expect(calls[1][0].reply.root.uri).toBe(mockPost.uri);
+    expect(calls[1][0].text).toBe('Test Title 1\nhttps://test.com/1');
+
+    // 3. Second result should reply to the first result
+    expect(calls[2][0].reply.parent.uri).toBe('at://result1-uri');
+    expect(calls[2][0].reply.root.uri).toBe(mockPost.uri);
+    expect(calls[2][0].text).toBe('Test Title 2\nhttps://test.com/2');
+
+    // 4. Third result should reply to the second result
+    expect(calls[3][0].reply.parent.uri).toBe('at://result2-uri');
+    expect(calls[3][0].reply.root.uri).toBe(mockPost.uri);
+    expect(calls[3][0].text).toBe('Test Title 3\nhttps://test.com/3');
   });
 
   it('should handle youtube search command', async () => {

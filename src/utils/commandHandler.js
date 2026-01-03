@@ -55,23 +55,59 @@ export const handleCommand = async (bot, post, text) => {
 
   if (lowerText.startsWith('!search') || lowerText.startsWith('!google')) {
     const query = lowerText.replace('!search', '').replace('!google', '').trim();
-    const results = await googleSearchService.search(query);
-    if (results.length > 0) {
-      const topResult = results[0];
-      const replyText = `Here's what I found for "${query}":\n\n${topResult.title}\n${topResult.snippet}`;
-      // This is a simplified version. A full implementation would create a card embed.
-      await blueskyService.postReply(post, replyText, {
-        embed: {
-          $type: 'app.bsky.embed.external',
-          external: {
-            uri: topResult.link,
-            title: topResult.title,
-            description: topResult.snippet,
-          },
-        }
-      });
-      return; // Command handled
+    if (!query) {
+      return "Please provide a search term. Example: `!search Bluesky status`";
     }
+
+    console.log(`[CommandHandler] Received !search command with query: "${query}"`);
+    const results = await googleSearchService.search(query);
+
+    if (results && results.length > 0) {
+      const topResults = results.slice(0, 3);
+      const searchContext = topResults.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join('\n');
+
+      // 1. Generate and post the summary
+      const summaryPrompt = `Based on the following search results for "${query}", write a concise summary (max 280 characters) of the findings.\n\n${searchContext}`;
+      const summary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }]);
+      let lastPost = post; // Start the chain from the original post
+
+      if (summary) {
+        // The postReply function is async but we need the URI/CID of the *new* post,
+        // which the current implementation doesn't return.
+        // We need to call the agent directly to get the result.
+        const summaryResult = await blueskyService.agent.post({
+          $type: 'app.bsky.feed.post',
+          text: summary,
+          reply: {
+            root: { uri: post.uri, cid: post.cid },
+            parent: { uri: post.uri, cid: post.cid }
+          },
+          createdAt: new Date().toISOString(),
+        });
+        lastPost = { uri: summaryResult.uri, cid: summaryResult.cid, record: { reply: { root: { uri: post.uri, cid: post.cid } } } }; // Update lastPost to the summary post
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Stagger posts
+      }
+
+      // 2. Post each of the top 3 results as a separate, nested reply
+      for (const result of topResults) {
+        const headlineText = `${result.title}\n${result.link}`;
+        const replyResult = await blueskyService.agent.post({
+          $type: 'app.bsky.feed.post',
+          text: headlineText,
+          reply: {
+            root: lastPost.record.reply.root,
+            parent: { uri: lastPost.uri, cid: lastPost.cid }
+          },
+          createdAt: new Date().toISOString(),
+        });
+        // The new post is now the parent for the next one in the chain
+        lastPost = { uri: replyResult.uri, cid: replyResult.cid, record: { reply: { root: lastPost.record.reply.root } } };
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Stagger posts
+      }
+
+      return; // Command handled, no further reply needed
+    }
+
     return `I couldn't find anything for "${query}".`;
   }
 

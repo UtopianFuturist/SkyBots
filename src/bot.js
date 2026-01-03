@@ -290,30 +290,55 @@ export class Bot {
       }
     }
 
-    // 6. YouTube Search Integration
+    // 6. YouTube Search Integration (with improved intent detection)
     let youtubeResult = null; // Will hold the video object if found
-    const videoIntentRegex = /video|youtube/i;
 
-    if (videoIntentRegex.test(text)) {
-      console.log(`[Bot] Video intent detected in post: "${text}"`);
+    // Stage 1: Use a reliable LLM to check for video search intent.
+    const videoIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking for a YouTube video to be found. Your answer must be a single word: "yes" or "no".`;
+    const videoIntentMessages = [
+      { role: 'system', content: videoIntentSystemPrompt },
+      { role: 'user', content: `The user's post is: "${text}"` }
+    ];
+    console.log(`[Bot] Checking for YouTube video intent in post: "${text}"`);
+    const videoIntentResponse = await llmService.generateResponse(videoIntentMessages, { max_tokens: 5 });
+    console.log(`[Bot] Raw video intent response: "${videoIntentResponse}"`);
+
+    if (videoIntentResponse && videoIntentResponse.toLowerCase().includes('yes')) {
+      console.log(`[Bot] Video intent confirmed. Extracting search query...`);
+      // Stage 2: If intent is confirmed, extract the search query.
       const queryExtractionPrompt = `You are a search query extractor. The user wants to find a YouTube video. Extract the core search query from their post. The user's post is: "${text}". Respond with only the search query itself. For example, if the post is "find a video about cats", you should respond with "cats".`;
       const queryExtractionMessages = [{ role: 'system', content: queryExtractionPrompt }];
-      console.log(`[Bot] YouTube Query Extraction Prompt: ${queryExtractionPrompt}`);
       const query = await llmService.generateResponse(queryExtractionMessages, { max_tokens: 50 });
       console.log(`[Bot] Raw YouTube Query Extraction Response: "${query}"`);
 
-      if (query && query.toLowerCase() !== 'null' && query.toLowerCase() !== 'no') {
+      if (query && query.toLowerCase().trim() && query.toLowerCase() !== 'null' && query.toLowerCase() !== 'no') {
         console.log(`[Bot] Extracted YouTube search query: "${query}"`);
         const youtubeResults = await youtubeService.search(query);
+
         if (youtubeResults.length > 0) {
-          youtubeResult = youtubeResults[0];
-          console.log(`[Bot] Found YouTube video: https://www.youtube.com/watch?v=${youtubeResult.videoId}`);
+          const topResult = youtubeResults[0];
+          // Stage 3: Validate the relevance of the top search result.
+          const validationPrompt = `You are a relevance validation AI. A user requested a video with the post: "${text}". The top YouTube search result is a video titled "${topResult.title}". Is this video relevant to the user's request? Your answer must be a single word: "yes" or "no".`;
+          const validationMessages = [{ role: 'system', content: validationPrompt }];
+          console.log(`[Bot] Validating YouTube result: "${topResult.title}"`);
+          const validationResponse = await llmService.generateResponse(validationMessages, { max_tokens: 5 });
+          console.log(`[Bot] Raw validation response: "${validationResponse}"`);
+
+          if (validationResponse && validationResponse.toLowerCase().includes('yes')) {
+            console.log(`[Bot] YouTube result validated as relevant.`);
+            youtubeResult = topResult;
+            console.log(`[Bot] Found YouTube video: https://www.youtube.com/watch?v=${youtubeResult.videoId}`);
+          } else {
+            console.log(`[Bot] Top YouTube result "${topResult.title}" was deemed irrelevant. Discarding.`);
+          }
         } else {
           console.log(`[Bot] YouTube search for "${query}" yielded no results.`);
         }
       } else {
         console.log(`[Bot] Could not extract a valid search query from the post.`);
       }
+    } else {
+      console.log(`[Bot] No video intent detected.`);
     }
 
     // 6. Image Recognition

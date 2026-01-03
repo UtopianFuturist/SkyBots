@@ -55,19 +55,18 @@ class ImageService {
 
       const data = await response.json();
       
-      // The API returns an object with a 'artifacts' array containing base64 images
-      // or sometimes a different structure. Based on the screenshot, it was 422.
-      // Let's handle the response based on the standard NIM visual API format.
-      const imageAsset = data.artifacts?.[0]?.base64 || data.data?.[0]?.url || data.data?.[0]?.b64_json;
+      // Based on the documentation and user feedback, the image is in the 'image' field
+      // and the status is in 'finish_reason'.
+      const imageAsset = data.image || data.artifacts?.[0]?.base64 || data.data?.[0]?.url || data.data?.[0]?.b64_json;
 
       if (!imageAsset) {
         console.error('[ImageService] No image data in API response:', JSON.stringify(data, null, 2));
         throw new Error('No image data returned from API.');
       }
 
-      console.log(`[ImageService] Successfully received image data from API.`);
+      console.log(`[ImageService] Successfully received image data from API. Finish reason: ${data.finish_reason}`);
 
-      if (imageAsset.startsWith('http')) {
+      if (typeof imageAsset === 'string' && imageAsset.startsWith('http')) {
         const imageResponse = await fetch(imageAsset);
         if (!imageResponse.ok) {
           throw new Error(`Failed to fetch image from URL: ${imageResponse.statusText}`);
@@ -75,7 +74,7 @@ class ImageService {
         const arrayBuffer = await imageResponse.arrayBuffer();
         return Buffer.from(arrayBuffer);
       } else {
-        // Assume base64
+        // Assume base64 string
         return Buffer.from(imageAsset, 'base64');
       }
 

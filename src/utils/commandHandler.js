@@ -55,23 +55,37 @@ export const handleCommand = async (bot, post, text) => {
 
   if (lowerText.startsWith('!search') || lowerText.startsWith('!google')) {
     const query = lowerText.replace('!search', '').replace('!google', '').trim();
-    const results = await googleSearchService.search(query);
-    if (results.length > 0) {
-      const topResult = results[0];
-      const replyText = `Here's what I found for "${query}":\n\n${topResult.title}\n${topResult.snippet}`;
-      // This is a simplified version. A full implementation would create a card embed.
-      await blueskyService.postReply(post, replyText, {
-        embed: {
-          $type: 'app.bsky.embed.external',
-          external: {
-            uri: topResult.link,
-            title: topResult.title,
-            description: topResult.snippet,
-          },
-        }
-      });
-      return; // Command handled
+    if (!query) {
+      return "Please provide a search term. Example: `!search Bluesky status`";
     }
+
+    console.log(`[CommandHandler] Received !search command with query: "${query}"`);
+    const results = await googleSearchService.search(query);
+
+    if (results && results.length > 0) {
+      const topResults = results.slice(0, 3);
+      const searchContext = topResults.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join('\n');
+
+      // 1. Generate and post the summary
+      const summaryPrompt = `Based on the following search results for "${query}", write a concise summary (max 280 characters) of the findings.\n\n${searchContext}`;
+      const summary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }]);
+
+      if (summary) {
+        await blueskyService.postReply(post, summary);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Stagger posts
+      }
+
+      // 2. Post each of the top 3 results as a separate reply
+      for (const result of topResults) {
+        const headlineText = `${result.title}\n${result.link}`;
+        // Reply to the *original* post to keep the thread clean
+        await blueskyService.postReply(post, headlineText);
+        await new Promise(resolve => setTimeout(resolve, 1000)); // Stagger posts
+      }
+
+      return; // Command handled, no further reply needed
+    }
+
     return `I couldn't find anything for "${query}".`;
   }
 

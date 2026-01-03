@@ -25,8 +25,14 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     },
   },
 }));
+jest.unstable_mockModule('../src/services/llmService.js', () => ({
+  llmService: {
+    generateResponse: jest.fn(),
+  },
+}));
 
 const { handleCommand } = await import('../src/utils/commandHandler.js');
+const { llmService } = await import('../src/services/llmService.js');
 const { googleSearchService } = await import('../src/services/googleSearchService.js');
 const { youtubeService } = await import('../src/services/youtubeService.js');
 const { imageService } = await import('../src/services/imageService.js');
@@ -51,11 +57,27 @@ describe('Command Handler', () => {
     jest.clearAllMocks();
   });
 
-  it('should handle google search command', async () => {
-    googleSearchService.search.mockResolvedValue([{ title: 'Test Title', link: 'https://test.com', snippet: 'Test snippet.' }]);
-    await handleCommand(mockBot, mockPost, '!google test query');
+  it('should handle search command with multiple results', async () => {
+    const mockResults = [
+      { title: 'Test Title 1', link: 'https://test.com/1', snippet: 'Test snippet 1.' },
+      { title: 'Test Title 2', link: 'https://test.com/2', snippet: 'Test snippet 2.' },
+      { title: 'Test Title 3', link: 'https://test.com/3', snippet: 'Test snippet 3.' },
+    ];
+    googleSearchService.search.mockResolvedValue(mockResults);
+    llmService.generateResponse.mockResolvedValue('This is a test summary.');
+
+    await handleCommand(mockBot, mockPost, '!search test query');
+
     expect(googleSearchService.search).toHaveBeenCalledWith('test query');
-    expect(blueskyService.postReply).toHaveBeenCalled();
+    expect(llmService.generateResponse).toHaveBeenCalled();
+    expect(blueskyService.postReply).toHaveBeenCalledTimes(4);
+
+    // Check summary post
+    expect(blueskyService.postReply).toHaveBeenCalledWith(mockPost, 'This is a test summary.');
+    // Check individual result posts
+    expect(blueskyService.postReply).toHaveBeenCalledWith(mockPost, 'Test Title 1\nhttps://test.com/1');
+    expect(blueskyService.postReply).toHaveBeenCalledWith(mockPost, 'Test Title 2\nhttps://test.com/2');
+    expect(blueskyService.postReply).toHaveBeenCalledWith(mockPost, 'Test Title 3\nhttps://test.com/3');
   });
 
   it('should handle youtube search command', async () => {

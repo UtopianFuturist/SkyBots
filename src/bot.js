@@ -78,15 +78,64 @@ export class Bot {
   async run() {
     console.log('[Bot] Starting main loop...');
 
+    // Run catch-up once on startup to process missed notifications
+    await this.catchUpNotifications();
+
     // Start Firehose for real-time DID mentions
     this.startFirehose();
 
     // Proactive post proposal on a timer
     setInterval(() => this.proposeNewPost(), 3600000); // Every hour
 
-    // The main notification polling loop has been removed.
-    // The bot will now only process mentions and replies via the Firehose.
-    console.log('[Bot] Notification polling disabled. Relying on Firehose for real-time events.');
+    console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
+  }
+
+  async catchUpNotifications() {
+    console.log('[Bot] Catching up on missed notifications...');
+    let cursor;
+    let notificationsCaughtUp = 0;
+    const processingPromises = [];
+
+    do {
+      const response = await blueskyService.getNotifications(cursor);
+      if (!response || response.notifications.length === 0) {
+        break;
+      }
+
+      for (const notif of response.notifications) {
+        // Only process mentions, replies, and quotes that are unread
+        const isActionable = ['mention', 'reply', 'quote'].includes(notif.reason);
+
+        if (notif.isRead || !isActionable) {
+          continue;
+        }
+
+        if (dataStore.hasReplied(notif.uri)) {
+          continue;
+        }
+
+        console.log(`[Bot] Found missed notification: ${notif.uri}`);
+        // Process notifications concurrently but in a controlled way
+        processingPromises.push(
+          this.processNotification(notif).then(() => {
+            dataStore.addRepliedPost(notif.uri);
+            notificationsCaughtUp++;
+          })
+        );
+      }
+      cursor = response.cursor;
+    } while (cursor);
+
+    // Wait for all processing to complete
+    await Promise.all(processingPromises);
+
+    if (notificationsCaughtUp > 0) {
+      console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);
+      // Mark notifications as seen after processing them
+      await blueskyService.updateSeen();
+    } else {
+      console.log('[Bot] No new notifications to catch up on.');
+    }
   }
 
   async processNotification(notif) {

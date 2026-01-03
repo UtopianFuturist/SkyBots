@@ -45,5 +45,6 @@
   "homepage": "https://github.com/UtopianFuturist/skybots#readme",
   "devDependencies": {
     "jest": "^30.2.0"
-  }
+  },
+  "packageManager": "pnpm@9.1.1"
 }

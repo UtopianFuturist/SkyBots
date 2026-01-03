@@ -173,10 +173,11 @@ export class Bot {
       const userPosts = await blueskyService.getUserPosts(handle);
       const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
       if (userIntent.highRisk) {
-        console.log(`[Bot] High-risk intent detected with prompt injection. Responding with refusal.`);
+        console.log(`[Bot] High-risk intent detected with prompt injection. Responding with refusal and stopping processing.`);
         await blueskyService.postReply(notif, "I can't comply with that request.");
+        return; // Stop processing only for high-risk cases
       }
-      return;
+      console.log(`[Bot] Low-risk prompt injection detected. Proceeding with normal processing.`);
     }
 
 
@@ -254,14 +255,15 @@ export class Bot {
     }
 
     // 5. Conversational Image Generation
-    const imageGenCheckPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking for an image to be generated. The user's post is: "${text}". Respond with only "yes" or "no".`;
+    const conversationHistoryForImageCheck = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+    const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with only "yes" or "no".\n\nConversation History:\n${conversationHistoryForImageCheck}`;
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
     console.log(`[Bot] Image Gen Check Prompt: ${imageGenCheckPrompt}`);
     const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 5, preface_system_prompt: false });
     console.log(`[Bot] Raw Image Gen Check Response: "${imageGenCheckResponse}"`);
 
     if (imageGenCheckResponse && imageGenCheckResponse.toLowerCase().includes('yes')) {
-      const imagePromptExtractionPrompt = `You are an AI assistant that extracts image prompts. Based on the user's post, create a concise, literal, and descriptive prompt for an image generation model. The user's post is: "${text}". Respond with only the prompt.`;
+      const imagePromptExtractionPrompt = `You are an AI assistant that extracts image prompts. Based on the conversation, create a concise, literal, and descriptive prompt for an image generation model. The user's latest post is the primary focus. Conversation:\n${conversationHistoryForImageCheck}\n\nRespond with only the prompt.`;
       const imagePromptExtractionMessages = [{ role: 'system', content: imagePromptExtractionPrompt }];
       console.log(`[Bot] Image Prompt Extraction Prompt: ${imagePromptExtractionPrompt}`);
       const prompt = await llmService.generateResponse(imagePromptExtractionMessages, { max_tokens: 100, preface_system_prompt: false });

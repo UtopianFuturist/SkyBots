@@ -97,7 +97,7 @@ class BlueskyService {
             const imageBuffer = new Uint8Array(arrayBuffer);
 
             const { data: uploadData } = await this.agent.uploadBlob(imageBuffer, {
-              encoding: response.headers.get('content-type') || 'image/gif',
+              encoding: 'image/gif',
             });
 
             finalEmbed = {

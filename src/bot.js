@@ -274,11 +274,12 @@ export class Bot {
           const topResult = searchResults[0];
           console.log(`[Bot] Top search result for "${claim}": ${topResult.title}`);
 
+          const snippet = topResult.snippet.substring(0, 500);
           const summaryPrompt = `
             You are a helpful assistant that summarizes information from trusted sources.
             A user is asking about: "${claim}".
             The most relevant article found is titled "${topResult.title}".
-            Here is a snippet from the article: "${topResult.snippet}".
+            Here is a snippet from the article: "${snippet}".
 
             Based on this, provide a concise and conversational summary of the key information.
             Do not link to the article in your summary; the link will be added automatically.
@@ -291,12 +292,13 @@ export class Bot {
           const summaryText = await llmService.generateResponse(messages);
 
           if (summaryText) {
+            console.log(`[Bot] Generated summary for "${claim}": ${summaryText}`);
             const embed = await blueskyService.getExternalEmbed(topResult.link);
             await blueskyService.postReply(notif, summaryText, { embed });
             return;
           }
         } else {
-            console.log(`[Bot] Could not find a relevant Wikipedia page for "${claim}".`);
+            console.log(`[Bot] Could not find a relevant page from trusted sources for "${claim}".`);
         }
       }
     }

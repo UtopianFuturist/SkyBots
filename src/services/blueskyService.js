@@ -58,10 +58,17 @@ class BlueskyService {
   async postReply(parentPost, text, options = {}) {
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 3000; // 3 seconds
+    const MAX_CHUNKS = 5; // Safeguard against runaway replies
 
     console.log(`[BlueskyService] LLM Response: "${text}"`);
     console.log('[BlueskyService] Posting reply...');
-    const textChunks = splitText(text);
+    let textChunks = splitText(text);
+
+    if (textChunks.length > MAX_CHUNKS) {
+        console.warn(`[BlueskyService] Warning: LLM generated a response with ${textChunks.length} chunks. Truncating to ${MAX_CHUNKS}.`);
+        textChunks = textChunks.slice(0, MAX_CHUNKS);
+    }
+
     let currentParent = parentPost;
     let rootPost = parentPost.record.reply?.root || { uri: parentPost.uri, cid: parentPost.cid };
 
@@ -85,10 +92,12 @@ class BlueskyService {
 
       // Only add the embed to the first post in the chain
       if (i === 0) {
-        let finalEmbed = options.embed; // The original embed object if it exists
+        let finalEmbed = null;
 
-        // New logic to handle direct image buffer uploads
-        if (options.imageUrl && options.imageAltText) {
+        // Precedence: explicit embed > image URLs/buffers > automatic link card
+        if (options.embed) {
+          finalEmbed = options.embed;
+        } else if (options.imageUrl && options.imageAltText) {
           try {
             console.log(`[BlueskyService] Uploading image from URL: ${options.imageUrl}`);
             const response = await fetch(options.imageUrl);
@@ -122,7 +131,8 @@ class BlueskyService {
           }
         } else if (options.imagesToEmbed && options.imagesToEmbed.length > 0) {
           finalEmbed = await this.uploadImages(options.imagesToEmbed);
-        } else if (!finalEmbed) {
+        } else {
+          // Fallback to automatic link card detection if no other embed is provided
           const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
             ?.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link')?.uri;
 
@@ -130,6 +140,7 @@ class BlueskyService {
             finalEmbed = await this.getExternalEmbed(firstUrl);
           }
         }
+
         if (finalEmbed) {
           postData.embed = finalEmbed;
         }

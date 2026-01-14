@@ -272,15 +272,15 @@ export class Bot {
         const searchResults = await googleSearchService.search(claim);
         if (searchResults.length > 0) {
           const topResult = searchResults[0];
-          console.log(`[Bot] Top Wikipedia result for "${claim}": ${topResult.title}`);
+          console.log(`[Bot] Top search result for "${claim}": ${topResult.title}`);
 
           const summaryPrompt = `
-            You are a helpful assistant that summarizes information from Wikipedia.
+            You are a helpful assistant that summarizes information from trusted sources.
             A user is asking about: "${claim}".
-            The most relevant Wikipedia article found is titled "${topResult.title}".
+            The most relevant article found is titled "${topResult.title}".
             Here is a snippet from the article: "${topResult.snippet}".
 
-            Based on this, provide a concise and conversational summary.
+            Based on this, provide a concise and conversational summary of the key information.
             Do not link to the article in your summary; the link will be added automatically.
           `;
           const messages = [

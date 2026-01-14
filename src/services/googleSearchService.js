@@ -10,7 +10,14 @@ class GoogleSearchService {
   }
 
   async search(query) {
-    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(query + ' site:en.wikipedia.org')}`;
+    const trustedSources = [
+      'site:en.wikipedia.org',
+      'site:reuters.com',
+      'site:apnews.com',
+      'site:politifact.com'
+    ].join(' OR ');
+    const finalQuery = `${query} (${trustedSources})`;
+    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(finalQuery)}`;
     try {
       const response = await fetch(url);
       if (!response.ok) {

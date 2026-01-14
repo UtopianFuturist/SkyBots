@@ -271,22 +271,32 @@ export class Bot {
       if (claim) {
         const searchResults = await googleSearchService.search(claim);
         if (searchResults.length > 0) {
-          const searchContext = searchResults.map(r => `- ${r.title}: ${r.snippet}`).join('\n');
-          const factCheckPrompt = `
-            A user has made the following claim: "${claim}".
-            Here are some search results to help you verify it:
-            ${searchContext}
-            Please analyze these results and provide an informed response to the user.
+          const topResult = searchResults[0];
+          console.log(`[Bot] Top Wikipedia result for "${claim}": ${topResult.title}`);
+
+          const summaryPrompt = `
+            You are a helpful assistant that summarizes information from Wikipedia.
+            A user is asking about: "${claim}".
+            The most relevant Wikipedia article found is titled "${topResult.title}".
+            Here is a snippet from the article: "${topResult.snippet}".
+
+            Based on this, provide a concise and conversational summary.
+            Do not link to the article in your summary; the link will be added automatically.
           `;
           const messages = [
-            { role: 'system', content: factCheckPrompt },
+            { role: 'system', content: summaryPrompt },
             ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
           ];
-          const responseText = await llmService.generateResponse(messages);
-          if (responseText) {
-            await blueskyService.postReply(notif, responseText);
+
+          const summaryText = await llmService.generateResponse(messages);
+
+          if (summaryText) {
+            const embed = await blueskyService.getExternalEmbed(topResult.link);
+            await blueskyService.postReply(notif, summaryText, { embed });
             return;
           }
+        } else {
+            console.log(`[Bot] Could not find a relevant Wikipedia page for "${claim}".`);
         }
       }
     }

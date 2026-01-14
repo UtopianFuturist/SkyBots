@@ -10,7 +10,7 @@ class GoogleSearchService {
   }
 
   async search(query) {
-    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(query)}`;
+    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(query + ' site:en.wikipedia.org')}`;
     try {
       const response = await fetch(url);
       if (!response.ok) {

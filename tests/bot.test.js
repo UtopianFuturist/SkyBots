@@ -11,6 +11,8 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     likePost: jest.fn(),
     authenticate: jest.fn(),
     postAlert: jest.fn(),
+    deletePost: jest.fn(),
+    getExternalEmbed: jest.fn(),
   },
 }));
 
@@ -28,6 +30,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     rateUserInteraction: jest.fn(),
     analyzeImage: jest.fn(),
     shouldLikePost: jest.fn(),
+    isReplyCoherent: jest.fn(),
   },
 }));
 
@@ -56,6 +59,7 @@ const { Bot } = await import('../src/bot.js');
 const { blueskyService } = await import('../src/services/blueskyService.js');
 const { llmService } = await import('../src/services/llmService.js');
 const { dataStore } = await import('../src/services/dataStore.js');
+const { googleSearchService } = await import('../src/services/googleSearchService.js');
 import config from '../config.js';
 
 describe('Bot', () => {
@@ -103,6 +107,7 @@ describe('Bot', () => {
     blueskyService.getProfile.mockResolvedValue({ description: 'A test user' });
     blueskyService.getUserPosts.mockResolvedValue([]);
     llmService.analyzeUserIntent.mockResolvedValue({ highRisk: false });
+    llmService.isReplyCoherent.mockResolvedValue(true);
     dataStore.getInteractionsByUser.mockReturnValue([]);
 
     await bot.processNotification(mockNotif);
@@ -228,5 +233,93 @@ describe('Bot', () => {
       expect(dataStore.addRepliedPost).not.toHaveBeenCalled();
       expect(blueskyService.updateSeen).not.toHaveBeenCalled();
     });
+  });
+
+  it('should trigger fact-checking for a verifiable claim', async () => {
+    const mockNotif = {
+      isRead: false,
+      uri: 'at://did:plc:123/app.bsky.feed.post/789',
+      reason: 'mention',
+      record: {
+        $type: 'app.bsky.feed.post',
+        text: 'Is it true that the sky is blue? @skybots.bsky.social',
+      },
+      author: { handle: 'user.bsky.social' },
+      indexedAt: new Date().toISOString()
+    };
+
+    bot._getThreadHistory = jest.fn().mockResolvedValue([]);
+    llmService.isPostSafe.mockResolvedValue({ safe: true });
+    llmService.isFactCheckNeeded.mockResolvedValue(true);
+    llmService.extractClaim.mockResolvedValue('sky is blue');
+    googleSearchService.search.mockResolvedValue([
+      { title: 'Why the Sky Is Blue', link: 'https://example.com/sky-is-blue', snippet: 'The sky is blue because of Rayleigh scattering...' }
+    ]);
+    llmService.generateResponse.mockResolvedValue('Yes, the sky is blue due to a phenomenon called Rayleigh scattering.');
+    blueskyService.getExternalEmbed.mockResolvedValue({ $type: 'app.bsky.embed.external', external: {} });
+
+    await bot.processNotification(mockNotif);
+
+    expect(googleSearchService.search).toHaveBeenCalledWith('sky is blue');
+    expect(llmService.generateResponse).toHaveBeenCalled();
+    expect(blueskyService.postReply).toHaveBeenCalledWith(
+      expect.anything(),
+      'Yes, the sky is blue due to a phenomenon called Rayleigh scattering.',
+      expect.objectContaining({
+        embed: { $type: 'app.bsky.embed.external', external: {} }
+      })
+    );
+  });
+
+  it('should delete its own trivial reply', async () => {
+    const mockNotif = {
+      isRead: false,
+      uri: 'at://did:plc:123/app.bsky.feed.post/101',
+      reason: 'mention',
+      record: {
+        $type: 'app.bsky.feed.post',
+        text: 'Hello @skybots.bsky.social',
+      },
+      author: { handle: 'user.bsky.social' },
+      indexedAt: new Date().toISOString()
+    };
+
+    bot._getThreadHistory = jest.fn().mockResolvedValue([]);
+    llmService.isPostSafe.mockResolvedValue({ safe: true });
+    llmService.isFactCheckNeeded.mockResolvedValue(false);
+    llmService.generateResponse.mockResolvedValue('?'); // Trivial reply
+    blueskyService.postReply.mockResolvedValue('at://did:plc:bot/app.bsky.feed.post/999');
+    llmService.isReplyCoherent.mockResolvedValue(true);
+
+    await bot.processNotification(mockNotif);
+
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), '?');
+    expect(blueskyService.deletePost).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/999');
+  });
+
+  it('should delete its own incoherent reply', async () => {
+    const mockNotif = {
+      isRead: false,
+      uri: 'at://did:plc:123/app.bsky.feed.post/102',
+      reason: 'mention',
+      record: {
+        $type: 'app.bsky.feed.post',
+        text: 'What is the capital of France? @skybots.bsky.social',
+      },
+      author: { handle: 'user.bsky.social' },
+      indexedAt: new Date().toISOString()
+    };
+
+    bot._getThreadHistory = jest.fn().mockResolvedValue([]);
+    llmService.isPostSafe.mockResolvedValue({ safe: true });
+    llmService.isFactCheckNeeded.mockResolvedValue(false);
+    llmService.generateResponse.mockResolvedValue('The sky is blue.'); // Incoherent reply
+    blueskyService.postReply.mockResolvedValue('at://did:plc:bot/app.bsky.feed.post/1000');
+    llmService.isReplyCoherent.mockResolvedValue(false);
+
+    await bot.processNotification(mockNotif);
+
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'The sky is blue.');
+    expect(blueskyService.deletePost).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/1000');
   });
 });

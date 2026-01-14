@@ -435,9 +435,10 @@ export class Bot {
 
     let responseText = await llmService.generateResponse(messages);
 
+    const recentBotReplies = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
+
     // 6. Semantic Loop and Safety Check for Bot's Response
     if (responseText) {
-      const recentBotReplies = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
       if (await llmService.checkSemanticLoop(responseText, recentBotReplies)) {
         console.log('[Bot] Semantic loop detected. Generating a new response.');
         responseText = await llmService.generateResponse([...messages, { role: 'system', content: "Your previous response was too similar to a recent one. Please provide a fresh, different perspective." }]);
@@ -467,8 +468,9 @@ export class Bot {
       }
       
       console.log(`[Bot] Replying to @${handle} with: "${responseText}"`);
+      let replyUri;
       if (youtubeResult) {
-        await postYouTubeReply(notif, youtubeResult, responseText);
+        replyUri = await postYouTubeReply(notif, youtubeResult, responseText);
       } else {
         // Autonomous GIF decision-making
         const gifDecisionPrompt = `You are a social media AI. Your generated response is: "${responseText}". Would adding a culturally relevant GIF (e.g., from a movie, TV show, or meme) enhance this response? Your answer must be a single word: "yes" or "no".`;
@@ -493,21 +495,21 @@ Your answer must be only the quote itself.`;
             const gifResult = await giphyService.search(gifQuery);
             if (gifResult) {
               console.log(`[Bot] Posting with GIF: ${gifResult.url}`);
-              await blueskyService.postReply(notif, responseText, {
+              replyUri = await blueskyService.postReply(notif, responseText, {
                 imageUrl: gifResult.url,
                 imageAltText: gifResult.alt,
               });
             } else {
               console.log('[Bot] Giphy search failed. Posting text only.');
-              await blueskyService.postReply(notif, responseText);
+              replyUri = await blueskyService.postReply(notif, responseText);
             }
           } else {
             console.log('[Bot] Could not generate a GIF query. Posting text only.');
-            await blueskyService.postReply(notif, responseText);
+            replyUri = await blueskyService.postReply(notif, responseText);
           }
         } else {
           console.log('[Bot] Decided not to add a GIF. Posting text only.');
-          await blueskyService.postReply(notif, responseText);
+          replyUri = await blueskyService.postReply(notif, responseText);
         }
       }
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
@@ -523,6 +525,20 @@ Your answer must be only the quote itself.`;
       const interactionHistory = dataStore.getInteractionsByUser(handle);
       const rating = await llmService.rateUserInteraction(interactionHistory);
       await dataStore.updateUserRating(handle, rating);
+
+      // Self-moderation check
+      const isTrivial = responseText.length < 2;
+      const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
+      const isCoherent = await llmService.isReplyCoherent(text, responseText);
+
+      if (isTrivial || isRepetitive || !isCoherent) {
+        let reason = 'incoherent';
+        if (isTrivial) reason = 'trivial';
+        if (isRepetitive) reason = 'repetitive';
+
+        console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri}`);
+        await blueskyService.deletePost(replyUri);
+      }
     }
   }
 

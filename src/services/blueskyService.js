@@ -71,6 +71,7 @@ class BlueskyService {
 
     let currentParent = parentPost;
     let rootPost = parentPost.record.reply?.root || { uri: parentPost.uri, cid: parentPost.cid };
+    let firstPostUri = null;
 
     for (let i = 0; i < textChunks.length; i++) {
       const chunk = textChunks[i];
@@ -164,6 +165,9 @@ class BlueskyService {
       }
 
       const { uri, cid } = postResult;
+      if (i === 0) {
+        firstPostUri = uri;
+      }
       console.log(`[BlueskyService] Posted chunk ${i + 1}/${textChunks.length}: ${uri}`);
 
       // The new post becomes the parent for the next chunk
@@ -174,6 +178,22 @@ class BlueskyService {
       }
     }
     console.log('[BlueskyService] Finished posting reply chain.');
+    return firstPostUri;
+  }
+
+  async deletePost(postUri) {
+    try {
+      const rkey = postUri.split('/').pop();
+      await this.agent.api.app.bsky.feed.post.delete({
+        repo: this.agent.session.did,
+        rkey: rkey,
+      });
+      console.log(`[BlueskyService] Deleted post: ${postUri}`);
+      return true;
+    } catch (error) {
+      console.error('[BlueskyService] Error deleting post:', error);
+      return false;
+    }
   }
 
   async getProfile(actor) {

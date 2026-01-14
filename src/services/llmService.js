@@ -238,6 +238,21 @@ class LLMService {
     const response = await this.generateResponse(messages, { max_tokens: 5 });
     return response?.toLowerCase().includes('yes');
   }
+
+  async isReplyCoherent(userPostText, botReplyText) {
+    const systemPrompt = `
+      You are a text analyst. Your task is to determine if the bot's reply is a coherent and logical response to the user's post.
+      The reply should not be nonsensical, overly repetitive, or completely unrelated to the user's post.
+      If the reply is coherent, respond with "yes". Otherwise, respond with "no".
+      Respond with only "yes" or "no".
+    `;
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `User post: "${userPostText}"\nBot reply: "${botReplyText}"` }
+    ];
+    const response = await this.generateResponse(messages, { max_tokens: 3 });
+    return response?.toLowerCase().includes('yes');
+  }
 }
 
 export const llmService = new LLMService();

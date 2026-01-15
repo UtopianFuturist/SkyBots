@@ -20,6 +20,7 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
   blueskyService: {
     postReply: jest.fn(),
     uploadImages: jest.fn(),
+    getExternalEmbed: jest.fn(),
     agent: {
       uploadBlob: jest.fn(),
       post: jest.fn(),
@@ -67,8 +68,8 @@ describe('Command Handler', () => {
     googleSearchService.search.mockResolvedValue(mockResults);
     llmService.generateResponse.mockResolvedValue('This is a test summary.');
 
-    // Mock the agent.post method to simulate returning new post URIs/CIDs
-    blueskyService.agent.post
+    // Mock the postReply method to simulate returning new post URIs/CIDs for chaining
+    blueskyService.postReply
       .mockResolvedValueOnce({ uri: 'at://summary-uri', cid: 'summary-cid' })
       .mockResolvedValueOnce({ uri: 'at://result1-uri', cid: 'result1-cid' })
       .mockResolvedValueOnce({ uri: 'at://result2-uri', cid: 'result2-cid' })
@@ -78,29 +79,25 @@ describe('Command Handler', () => {
 
     expect(googleSearchService.search).toHaveBeenCalledWith('test query');
     expect(llmService.generateResponse).toHaveBeenCalled();
-    expect(blueskyService.agent.post).toHaveBeenCalledTimes(4);
+    expect(blueskyService.postReply).toHaveBeenCalledTimes(4);
 
-    const calls = blueskyService.agent.post.mock.calls;
+    const calls = blueskyService.postReply.mock.calls;
 
     // 1. Summary post should reply to the original post
-    expect(calls[0][0].reply.parent.uri).toBe(mockPost.uri);
-    expect(calls[0][0].reply.root.uri).toBe(mockPost.uri);
-    expect(calls[0][0].text).toBe('This is a test summary.');
+    expect(calls[0][0]).toBe(mockPost);
+    expect(calls[0][1]).toBe('This is a test summary.');
 
     // 2. First result should reply to the summary post
-    expect(calls[1][0].reply.parent.uri).toBe('at://summary-uri');
-    expect(calls[1][0].reply.root.uri).toBe(mockPost.uri);
-    expect(calls[1][0].text).toBe('Test Title 1\nhttps://test.com/1');
+    expect(calls[1][0]).toEqual({ uri: 'at://summary-uri', cid: 'summary-cid' });
+    expect(calls[1][1]).toBe('Test Title 1\nhttps://test.com/1');
 
     // 3. Second result should reply to the first result
-    expect(calls[2][0].reply.parent.uri).toBe('at://result1-uri');
-    expect(calls[2][0].reply.root.uri).toBe(mockPost.uri);
-    expect(calls[2][0].text).toBe('Test Title 2\nhttps://test.com/2');
+    expect(calls[2][0]).toEqual({ uri: 'at://result1-uri', cid: 'result1-cid' });
+    expect(calls[2][1]).toBe('Test Title 2\nhttps://test.com/2');
 
     // 4. Third result should reply to the second result
-    expect(calls[3][0].reply.parent.uri).toBe('at://result2-uri');
-    expect(calls[3][0].reply.root.uri).toBe(mockPost.uri);
-    expect(calls[3][0].text).toBe('Test Title 3\nhttps://test.com/3');
+    expect(calls[3][0]).toEqual({ uri: 'at://result2-uri', cid: 'result2-cid' });
+    expect(calls[3][1]).toBe('Test Title 3\nhttps://test.com/3');
   });
 
   it('should handle youtube search command', async () => {

@@ -67,42 +67,22 @@ export const handleCommand = async (bot, post, text) => {
       const searchContext = topResults.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join('\n');
 
       // 1. Generate and post the summary
-      const summaryPrompt = `Based on the following search results for "${query}", write a concise summary (max 280 characters) of the findings.\n\n${searchContext}`;
+      const summaryPrompt = `Based on the following search results for "${query}", write a concise summary of the findings.\n\n${searchContext}`;
       const summary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }]);
-      let lastPost = post; // Start the chain from the original post
 
+      let lastPost = post;
       if (summary) {
-        // The postReply function is async but we need the URI/CID of the *new* post,
-        // which the current implementation doesn't return.
-        // We need to call the agent directly to get the result.
-        const summaryResult = await blueskyService.agent.post({
-          $type: 'app.bsky.feed.post',
-          text: summary,
-          reply: {
-            root: { uri: post.uri, cid: post.cid },
-            parent: { uri: post.uri, cid: post.cid }
-          },
-          createdAt: new Date().toISOString(),
-        });
-        lastPost = { uri: summaryResult.uri, cid: summaryResult.cid, record: { reply: { root: { uri: post.uri, cid: post.cid } } } }; // Update lastPost to the summary post
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Stagger posts
+        lastPost = await blueskyService.postReply(lastPost, summary, { maxChunks: 1 });
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       // 2. Post each of the top 3 results as a separate, nested reply
       for (const result of topResults) {
+        if (!lastPost) break; // Stop if a post in the chain fails
         const headlineText = `${result.title}\n${result.link}`;
-        const replyResult = await blueskyService.agent.post({
-          $type: 'app.bsky.feed.post',
-          text: headlineText,
-          reply: {
-            root: lastPost.record.reply.root,
-            parent: { uri: lastPost.uri, cid: lastPost.cid }
-          },
-          createdAt: new Date().toISOString(),
-        });
-        // The new post is now the parent for the next one in the chain
-        lastPost = { uri: replyResult.uri, cid: replyResult.cid, record: { reply: { root: lastPost.record.reply.root } } };
-        await new Promise(resolve => setTimeout(resolve, 1000)); // Stagger posts
+        const embed = await blueskyService.getExternalEmbed(result.link);
+        lastPost = await blueskyService.postReply(lastPost, headlineText, { embed, maxChunks: 1 });
+        await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       return; // Command handled, no further reply needed

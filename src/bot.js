@@ -102,6 +102,7 @@ export class Bot {
 
     do {
       const response = await blueskyService.getNotifications(cursor);
+      console.log(`[Bot] Raw notifications response:`, JSON.stringify(response, null, 2));
       if (!response || response.notifications.length === 0) {
         break;
       }

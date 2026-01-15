@@ -29,9 +29,15 @@ async def main():
     firehose = AsyncFirehoseSubscribeReposClient()
 
     async def on_message_handler(message):
-        commit = parse_subscribe_repos_message(message)
-        if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
+        try:
+            commit = parse_subscribe_repos_message(message)
+            if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
+                return
+        except Exception as e:
+            print(f"Failed to parse commit: {e}", file=sys.stderr)
             return
+
+        print(f"Received commit from {commit.repo} at {commit.time}", file=sys.stderr)
 
         for op in commit.ops:
             if op.action != 'create':

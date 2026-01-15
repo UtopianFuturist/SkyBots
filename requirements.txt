@@ -1,2 +1,2 @@
-atproto
+atproto==0.0.35
 python-dotenv

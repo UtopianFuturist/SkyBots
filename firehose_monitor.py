@@ -12,6 +12,8 @@ load_dotenv()
 BLUESKY_IDENTIFIER = os.getenv('BLUESKY_IDENTIFIER')
 BLUESKY_APP_PASSWORD = os.getenv('BLUESKY_APP_PASSWORD')
 
+CURSOR_FILE = 'firehose_cursor.txt'
+
 async def main():
     if not BLUESKY_IDENTIFIER or not BLUESKY_APP_PASSWORD:
         print("Error: BLUESKY_IDENTIFIER or BLUESKY_APP_PASSWORD not set in environment.")
@@ -26,12 +28,30 @@ async def main():
         print(f"Error logging in: {e}", file=sys.stderr)
         sys.exit(1)
 
-    firehose = AsyncFirehoseSubscribeReposClient()
+    cursor = None
+    try:
+        with open(CURSOR_FILE, 'r') as f:
+            cursor_val = f.read().strip()
+            if cursor_val:
+                cursor = int(cursor_val)
+                print(f"Resuming from cursor: {cursor}", file=sys.stderr)
+    except FileNotFoundError:
+        print("Cursor file not found. Starting from latest.", file=sys.stderr)
+    except ValueError:
+        print("Invalid cursor value found. Starting from latest.", file=sys.stderr)
+        cursor = None
+
+    params = models.ComAtprotoSyncSubscribeRepos.Params(cursor=cursor) if cursor else None
+    firehose = AsyncFirehoseSubscribeReposClient(params)
 
     async def on_message_handler(message):
         commit = parse_subscribe_repos_message(message)
         if not isinstance(commit, models.ComAtprotoSyncSubscribeRepos.Commit):
             return
+
+        # Always update and save the latest sequence number to file
+        with open(CURSOR_FILE, 'w') as f:
+            f.write(str(commit.seq))
 
         for op in commit.ops:
             if op.action != 'create':

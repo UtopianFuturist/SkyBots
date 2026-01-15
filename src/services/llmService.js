@@ -239,19 +239,49 @@ class LLMService {
     return response?.toLowerCase().includes('yes');
   }
 
-  async isReplyCoherent(userPostText, botReplyText) {
+  async isReplyCoherent(threadContext, botReplyText) {
     const systemPrompt = `
-      You are a text analyst. Your task is to determine if the bot's reply is a coherent and logical response to the user's post.
-      The reply should not be nonsensical, overly repetitive, or completely unrelated to the user's post.
-      If the reply is coherent, respond with "yes". Otherwise, respond with "no".
+      You are a text analyst. Your task is to determine if the bot's latest reply is a coherent and logical response within the full context of the conversation.
+      The reply should not be nonsensical, repetitive, or unrelated.
+      If the reply is coherent in the context of the thread, respond with "yes". Otherwise, respond with "no".
       Respond with only "yes" or "no".
     `;
+    const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
     const messages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `User post: "${userPostText}"\nBot reply: "${botReplyText}"` }
+      { role: 'user', content: `Conversation History:\n${historyText}\n\nBot's latest reply: "${botReplyText}"` }
     ];
     const response = await this.generateResponse(messages, { max_tokens: 3 });
     return response?.toLowerCase().includes('yes');
+  }
+
+  async getYoutubeSearchQuery(threadContext) {
+    const systemPrompt = `
+      You are an intent detection AI. Analyze the LAST user post in the provided conversation history to determine if they are asking for a YouTube video.
+      - If they ARE asking for a video, respond with a JSON object: {"search": true, "query": "concise search query"}
+      - If they ARE NOT asking for a video, respond with the JSON object: {"search": false, "query": null}
+      Your response MUST be only the JSON object.
+    `;
+    const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Conversation History:\n${historyText}` }
+    ];
+
+    try {
+      const response = await this.generateResponse(messages, { max_tokens: 100 });
+      if (response) {
+        // Find the JSON part of the response in case the model adds extra text
+        const jsonMatch = response.match(/\{.*\}/s);
+        if (jsonMatch) {
+          return JSON.parse(jsonMatch[0]);
+        }
+      }
+      return { search: false, query: null };
+    } catch (error) {
+      console.error('[LLMService] Error parsing YouTube search query JSON:', error);
+      return { search: false, query: null };
+    }
   }
 }
 

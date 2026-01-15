@@ -339,4 +339,54 @@ describe('Bot', () => {
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'The sky is blue.');
     expect(blueskyService.deletePost).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/1000');
   });
+
+  it('should handle a quote repost with the correct context', async () => {
+    const mockNotif = {
+      isRead: false,
+      uri: 'at://did:plc:user/app.bsky.feed.post/quote_repost',
+      reason: 'quote',
+      record: {
+        text: 'This is a cool post!',
+        embed: {
+          $type: 'app.bsky.embed.record',
+          record: {
+            uri: 'at://did:plc:bot/app.bsky.feed.post/original_post'
+          }
+        }
+      },
+      author: { handle: 'user.bsky.social' },
+      indexedAt: new Date().toISOString()
+    };
+
+    const mockQuotedPost = {
+      uri: 'at://did:plc:bot/app.bsky.feed.post/original_post',
+      record: {
+        text: 'This is the original post by the bot.',
+        embed: {
+          $type: 'app.bsky.embed.images',
+          images: [{ alt: 'An image of a space tree.' }]
+        }
+      }
+    };
+
+    blueskyService.getPostDetails.mockResolvedValue(mockQuotedPost);
+    llmService.isPostSafe.mockResolvedValue({ safe: true });
+    llmService.generateResponse.mockResolvedValue('Thank you for the compliment!');
+
+    await bot.processNotification(mockNotif);
+
+    expect(blueskyService.getPostDetails).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/original_post');
+    const generateResponseCalls = llmService.generateResponse.mock.calls;
+    const lastCall = generateResponseCalls[generateResponseCalls.length - 1];
+    const messages = lastCall[0];
+    const threadContext = messages.filter(m => m.role !== 'system');
+
+    expect(threadContext).toHaveLength(2);
+    expect(threadContext[0].role).toBe('assistant');
+    expect(threadContext[0].content).toBe('This is the original post by the bot. [Image with alt text: "An image of a space tree."]');
+    expect(threadContext[1].role).toBe('user');
+    expect(threadContext[1].content).toBe('This is a cool post!');
+
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'Thank you for the compliment!');
+  });
 });

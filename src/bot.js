@@ -11,6 +11,7 @@ import { sanitizeDuplicateText, sanitizeThinkingTags } from './utils/textUtils.j
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
+import path from 'path';
 
 export class Bot {
   constructor() {
@@ -33,7 +34,8 @@ export class Bot {
 
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
-    const command = 'python3 -m pip install --break-system-packages -r requirements.txt && python3 firehose_monitor.py';
+    const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
+    const command = `python3 -m pip install --break-system-packages -r requirements.txt && python3 ${firehosePath}`;
     this.firehoseProcess = spawn(command, { shell: true });
 
     this.firehoseProcess.stdout.on('data', async (data) => {
@@ -543,12 +545,19 @@ Your answer must be only the quote itself.`;
       const isCoherent = await llmService.isReplyCoherent(text, responseText, threadContext);
 
       if (isRepetitive || !isCoherent) {
-        let reason = 'incoherent';
-        if (isRepetitive) reason = 'repetitive';
+        const parentPostDetails = await blueskyService.getPostDetails(notif.uri);
+        const parentPostLiked = parentPostDetails?.viewer?.like;
 
-        console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri}. Content: "${responseText}"`);
-        if (replyUri) {
-          await blueskyService.deletePost(replyUri);
+        if (parentPostLiked) {
+          console.log(`[Bot] Self-deletion vetoed: Parent post was liked by the user.`);
+        } else {
+          let reason = 'incoherent';
+          if (isRepetitive) reason = 'repetitive';
+
+          console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri}. Content: "${responseText}"`);
+          if (replyUri) {
+            await blueskyService.deletePost(replyUri);
+          }
         }
       }
     }
@@ -674,6 +683,13 @@ Your answer must be only the quote itself.`;
         const isCoherent = await llmService.isReplyCoherent(parentText, postText, threadHistory);
 
         if (!isCoherent) {
+          const postDate = new Date(post.indexedAt);
+          const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+          if (postDate > twentyFourHoursAgo) {
+            console.log(`[Bot Cleanup] Skipping recently posted incoherent post: ${post.uri}`);
+            continue;
+          }
+
           const reason = 'incoherent';
 
           console.warn(`[Bot Cleanup] Deleting own post (${reason}). URI: ${post.uri}. Content: "${postText}"`);

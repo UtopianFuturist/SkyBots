@@ -120,9 +120,11 @@ async def main():
                         "reason": reason
                     }
                     print(json.dumps(event), flush=True)
+                    print(f"Detected event for DID {commit.repo} (Reason: {reason})", file=sys.stderr)
 
             except Exception as e:
                 print(f"Error processing firehose event: {e}", file=sys.stderr)
+                print(f"Commit data: {commit}", file=sys.stderr)
 
     print("Starting firehose monitoring...", file=sys.stderr)
     try:

@@ -70,17 +70,17 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, options = {}) {
+    const { maxChunks = 2 } = options;
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 3000; // 3 seconds
-    const MAX_CHUNKS = 2; // Limit replies to 2 chunks
 
     console.log(`[BlueskyService] LLM Response: "${text}"`);
     console.log('[BlueskyService] Posting reply...');
     let textChunks = splitText(text);
 
-    if (textChunks.length > MAX_CHUNKS) {
-        console.warn(`[BlueskyService] Warning: LLM generated a response with ${textChunks.length} chunks. Truncating to ${MAX_CHUNKS}.`);
-        textChunks = textChunks.slice(0, MAX_CHUNKS);
+    if (textChunks.length > maxChunks) {
+        console.warn(`[BlueskyService] Warning: LLM generated a response with ${textChunks.length} chunks. Truncating to ${maxChunks}.`);
+        textChunks = textChunks.slice(0, maxChunks);
     }
 
     let currentParent = parentPost;
@@ -206,7 +206,7 @@ class BlueskyService {
       }
     }
     console.log('[BlueskyService] Finished posting reply chain.');
-    return firstPostUri;
+    return currentParent;
   }
 
   async deletePost(postUri) {

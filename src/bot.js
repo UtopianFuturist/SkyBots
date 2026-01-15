@@ -536,7 +536,7 @@ Your answer must be only the quote itself.`;
         if (isTrivial) reason = 'trivial';
         if (isRepetitive) reason = 'repetitive';
 
-        console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri}`);
+        console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri}. Content: "${responseText}"`);
         await blueskyService.deletePost(replyUri);
       }
     }

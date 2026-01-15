@@ -18,7 +18,7 @@ class GoogleSearchService {
     ].join(' OR ');
     const finalQuery = `${query} (${trustedSources})`;
     console.log(`[GoogleSearchService] Performing search with query: "${finalQuery}"`);
-    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(finalQuery)}`;
+    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(finalQuery)}&dateRestrict=m3`;
     try {
       const response = await fetch(url);
       if (!response.ok) {

@@ -270,7 +270,9 @@ export class Bot {
     }
 
     // 5. Fact-Checking
-    if (await llmService.isFactCheckNeeded(text)) {
+    if (text.toLowerCase().startsWith('!search') || text.toLowerCase().startsWith('!google')) {
+        // This is a command, so we'll let the command handler take care of it
+    } else if (await llmService.isFactCheckNeeded(text)) {
       console.log(`[Bot] Fact-check needed for post by ${handle}.`);
       const claim = await llmService.extractClaim(text);
       if (claim) {

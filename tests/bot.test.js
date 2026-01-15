@@ -299,16 +299,11 @@ describe('Bot', () => {
     llmService.isFactCheckNeeded.mockResolvedValue(false);
     llmService.generateResponse.mockResolvedValue('?'); // Trivial reply
 
-    // Spy on the real postReply method to ensure it's called,
-    // but prevent the actual post from happening.
-    const postReplySpy = jest.spyOn(blueskyService, 'postReply').mockResolvedValue(null);
+    const postReplySpy = jest.spyOn(blueskyService, 'postReply');
 
     await bot.processNotification(mockNotif);
 
-    // Ensure the validation logic was at least called
     expect(postReplySpy).toHaveBeenCalledWith(expect.anything(), '?');
-
-    // Ensure that no post was actually sent
     expect(blueskyService.agent.post).not.toHaveBeenCalled();
     expect(blueskyService.deletePost).not.toHaveBeenCalled();
 

@@ -10,6 +10,10 @@ class BlueskyService {
     });
   }
 
+  get did() {
+    return this.agent.session.did;
+  }
+
   async authenticate() {
     await this.agent.login({
       identifier: config.BLUESKY_IDENTIFIER,

@@ -33,6 +33,10 @@ export const handleCommand = async (bot, post, text) => {
       await bot.createApprovedPost(index);
       return 'Post approved and created!';
     }
+    if (lowerText === '!cleanup') {
+      bot.cleanupOldPosts(); // This will run in the background
+      return 'Starting cleanup of old posts. I will post a summary when complete.';
+    }
   }
 
   if (lowerText.includes('!mute')) {

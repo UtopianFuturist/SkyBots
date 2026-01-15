@@ -476,14 +476,18 @@ export class Bot {
       if (youtubeResult) {
         replyUri = await postYouTubeReply(notif, youtubeResult, responseText);
       } else {
-        // Autonomous GIF decision-making
-        const gifDecisionPrompt = `You are a social media AI. Your generated response is: "${responseText}". Would adding a culturally relevant GIF (e.g., from a movie, TV show, or meme) enhance this response? Your answer must be a single word: "yes" or "no".`;
-        const gifDecisionMessages = [{ role: 'system', content: gifDecisionPrompt }];
-        const gifDecision = await llmService.generateResponse(gifDecisionMessages, { max_tokens: 5 });
+        const hasUrl = /https?:\/\//.test(responseText);
+        const hasExistingImage = imageAnalysisResult && imageAnalysisResult.length > 0;
 
-        if (gifDecision && gifDecision.toLowerCase().includes('yes')) {
-          console.log('[Bot] Decided to add a GIF. Generating culturally relevant query...');
-          const gifQueryPrompt = `You are a pop culture expert AI. Based on the following conversation and the bot's final response, generate a short, iconic quote from a movie, TV show, song lyric, or meme that captures the vibe of the bot's response. The quote should be suitable as a Giphy search query.
+        if (!hasUrl && !hasExistingImage) {
+          // Autonomous GIF decision-making
+          const gifDecisionPrompt = `You are a social media AI. Your generated response is: "${responseText}". Would adding a culturally relevant GIF (e.g., from a movie, TV show, or meme) enhance this response? Your answer must be a single word: "yes" or "no".`;
+          const gifDecisionMessages = [{ role: 'system', content: gifDecisionPrompt }];
+          const gifDecision = await llmService.generateResponse(gifDecisionMessages, { max_tokens: 5 });
+
+          if (gifDecision && gifDecision.toLowerCase().includes('yes')) {
+            console.log('[Bot] Decided to add a GIF. Generating culturally relevant query...');
+            const gifQueryPrompt = `You are a pop culture expert AI. Based on the following conversation and the bot's final response, generate a short, iconic quote from a movie, TV show, song lyric, or meme that captures the vibe of the bot's response. The quote should be suitable as a Giphy search query.
 
 Conversation History:
 ${historyText}
@@ -491,28 +495,32 @@ ${historyText}
 Bot's Response: "${responseText}"
 
 Your answer must be only the quote itself.`;
-          const gifQueryMessages = [{ role: 'system', content: gifQueryPrompt }];
-          const gifQuery = await llmService.generateResponse(gifQueryMessages, { max_tokens: 20 });
+            const gifQueryMessages = [{ role: 'system', content: gifQueryPrompt }];
+            const gifQuery = await llmService.generateResponse(gifQueryMessages, { max_tokens: 20 });
 
-          if (gifQuery && gifQuery.trim()) {
-            console.log(`[Bot] Generated GIF query: "${gifQuery}"`);
-            const gifResult = await giphyService.search(gifQuery);
-            if (gifResult) {
-              console.log(`[Bot] Posting with GIF: ${gifResult.url}`);
-              replyUri = await blueskyService.postReply(notif, responseText, {
-                imageUrl: gifResult.url,
-                imageAltText: gifResult.alt,
-              });
+            if (gifQuery && gifQuery.trim()) {
+              console.log(`[Bot] Generated GIF query: "${gifQuery}"`);
+              const gifResult = await giphyService.search(gifQuery);
+              if (gifResult) {
+                console.log(`[Bot] Posting with GIF: ${gifResult.url}`);
+                replyUri = await blueskyService.postReply(notif, responseText, {
+                  imageUrl: gifResult.url,
+                  imageAltText: gifResult.alt,
+                });
+              } else {
+                console.log('[Bot] Giphy search failed. Posting text only.');
+                replyUri = await blueskyService.postReply(notif, responseText);
+              }
             } else {
-              console.log('[Bot] Giphy search failed. Posting text only.');
+              console.log('[Bot] Could not generate a GIF query. Posting text only.');
               replyUri = await blueskyService.postReply(notif, responseText);
             }
           } else {
-            console.log('[Bot] Could not generate a GIF query. Posting text only.');
+            console.log('[Bot] Decided not to add a GIF. Posting text only.');
             replyUri = await blueskyService.postReply(notif, responseText);
           }
         } else {
-          console.log('[Bot] Decided not to add a GIF. Posting text only.');
+          console.log('[Bot] Skipping GIF search because post already contains a URL or image.');
           replyUri = await blueskyService.postReply(notif, responseText);
         }
       }
@@ -532,7 +540,7 @@ Your answer must be only the quote itself.`;
 
       // Self-moderation check
       const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
-      const isCoherent = await llmService.isReplyCoherent(text, responseText);
+      const isCoherent = await llmService.isReplyCoherent(text, responseText, threadContext);
 
       if (isRepetitive || !isCoherent) {
         let reason = 'incoherent';
@@ -601,8 +609,8 @@ Your answer must be only the quote itself.`;
 
     if (proposedTopics) {
       this.proposedPosts = proposedTopics.split('\n').map(t => t.replace(/^\d+\.\s*/, ''));
-      const approvalMessage = `I've come up with a few ideas for a new post. Please review and approve one:\n${this.proposedPosts.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\nTo approve, reply with \`!approve-post [number]\`.`;
-      await blueskyService.postAlert(approvalMessage);
+      const approvalMessage = `I've come up with a few ideas for a new post. @${config.ADMIN_BLUESKY_HANDLE}, please review and approve one:\n${this.proposedPosts.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\nTo approve, reply with \`!approve-post [number]\`.`;
+      await blueskyService.post(approvalMessage);
     }
   }
 
@@ -655,14 +663,15 @@ Your answer must be only the quote itself.`;
 
         // To check for coherence, we need the parent post's text.
         let parentText = '';
+        const threadHistory = await this._getThreadHistory(post.uri);
         if (post.record.reply.parent.uri) {
-          const parentThread = await blueskyService.getDetailedThread(post.record.reply.parent.uri);
-          if (parentThread && parentThread.post) {
-            parentText = parentThread.post.record.text || '';
+          if (threadHistory.length > 1) {
+            // The second to last post is the parent
+            parentText = threadHistory[threadHistory.length - 2].text;
           }
         }
 
-        const isCoherent = await llmService.isReplyCoherent(parentText, postText);
+        const isCoherent = await llmService.isReplyCoherent(parentText, postText, threadHistory);
 
         if (!isCoherent) {
           const reason = 'incoherent';

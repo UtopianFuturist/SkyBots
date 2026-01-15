@@ -125,6 +125,8 @@ class LLMService {
   async analyzeUserIntent(userProfile, userPosts) {
     const systemPrompt = `
       You are a security and social media analyst. Your task is to analyze a user's intent and attitude based on their profile and recent posts.
+      Your primary goal is to distinguish between genuine inquiries about sensitive topics and the promotion of dangerous or harmful behavior.
+      For example, a user asking "what are the latest news about the protests?" is an inquiry. A user posting "we should all go and protest violently" is promoting dangerous behavior.
       First, determine if the user's posts contain any high-risk content, such as legal threats, self-harm, or severe anger.
       If high-risk content is detected, respond with "high-risk | [reason]". Example: "high-risk | The user has made a legal threat."
       If no high-risk content is found, provide a concise, one-sentence analysis of their likely intent. Example: "This user seems friendly and inquisitive."

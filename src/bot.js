@@ -393,10 +393,8 @@ export class Bot {
     const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
 
     if (userIntent.highRisk) {
-      console.log(`[Bot] High-risk intent detected from ${handle}. Reason: ${userIntent.reason}. Pausing bot and alerting admin.`);
+      console.log(`[Bot] High-risk intent detected from ${handle}. Reason: ${userIntent.reason}. Pausing bot.`);
       this.paused = true;
-      const alertMessage = `🚨 High-risk intent detected from @${handle}. Reason: ${userIntent.reason}. Bot is now paused. Post URI: https://bsky.app/profile/${handle}/post/${notif.uri.split('/').pop()}`;
-      await blueskyService.postAlert(alertMessage);
       return;
     }
 

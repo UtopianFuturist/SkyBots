@@ -70,13 +70,6 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, options = {}) {
-    // Centralized validation to prevent trivial posts
-    const hasAlphanumeric = /[a-zA-Z0-9]/.test(text);
-    if (!text || text.trim().length < 2 || !hasAlphanumeric) {
-      console.log(`[BlueskyService] Aborted reply due to trivial content: "${text}"`);
-      return null; // Do not post
-    }
-
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 3000; // 3 seconds
     const MAX_CHUNKS = 5; // Safeguard against runaway replies
@@ -96,6 +89,19 @@ class BlueskyService {
 
     for (let i = 0; i < textChunks.length; i++) {
       const chunk = textChunks[i];
+
+      // Per-chunk validation to prevent trivial posts
+      const hasAlphanumeric = /[a-zA-Z0-9]/.test(chunk);
+      if (!chunk || chunk.trim().length < 2 || !hasAlphanumeric) {
+        console.log(`[BlueskyService] Aborted reply chunk due to trivial content: "${chunk}"`);
+        if (i === 0) {
+          // If the very first chunk is invalid, abort the whole reply
+          return null;
+        }
+        // Otherwise, just stop the chain here
+        break;
+      }
+
       const rt = new RichText({ text: chunk });
       await rt.detectFacets(this.agent);
 

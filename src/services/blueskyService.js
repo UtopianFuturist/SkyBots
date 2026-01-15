@@ -247,7 +247,8 @@ class BlueskyService {
     try {
       // Construct the full text first, *then* detect facets.
       // This ensures all byte offsets for mentions and links are correct.
-      const fullText = `@${config.ADMIN_BLUESKY_HANDLE} ${text}`;
+      const truncatedText = truncateText(text, 250);
+      const fullText = `@${config.ADMIN_BLUESKY_HANDLE} ${truncatedText}`;
       const rt = new RichText({ text: fullText });
       await rt.detectFacets(this.agent);
 

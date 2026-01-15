@@ -119,6 +119,124 @@ describe('Bot', () => {
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 
+  describe('catchUpNotifications', () => {
+    it('should process unread, actionable notifications and then update seen status', async () => {
+      const mockNotifications = [
+        // 1. A new, unread mention - SHOULD be processed
+        {
+          uri: 'at://did:plc:1/app.bsky.feed.post/1',
+          isRead: false,
+          reason: 'mention',
+          author: { handle: 'user1.bsky.social' },
+          record: { text: 'Hello @bot' },
+          indexedAt: new Date().toISOString()
+        },
+        // 2. An unread reply - SHOULD be processed
+        {
+          uri: 'at://did:plc:2/app.bsky.feed.post/2',
+          isRead: false,
+          reason: 'reply',
+          author: { handle: 'user2.bsky.social' },
+          record: { text: 'Nice post' },
+          indexedAt: new Date().toISOString()
+        },
+        // 3. An unread quote repost - SHOULD be processed
+        {
+          uri: 'at://did:plc:3/app.bsky.feed.post/3',
+          isRead: false,
+          reason: 'quote',
+          author: { handle: 'user3.bsky.social' },
+          record: { text: 'Cool bot' },
+          indexedAt: new Date().toISOString()
+        },
+        // 4. A notification that has already been replied to - SHOULD be skipped
+        {
+          uri: 'at://did:plc:4/app.bsky.feed.post/4',
+          isRead: false,
+          reason: 'mention',
+          author: { handle: 'user3.bsky.social' },
+          record: { text: 'Hi again' },
+          indexedAt: new Date().toISOString()
+        },
+        // 4. A notification that is already read - SHOULD be skipped
+        {
+          uri: 'at://did:plc:4/app.bsky.feed.post/4',
+          isRead: true,
+          reason: 'mention',
+          author: { handle: 'user4.bsky.social' },
+          record: { text: 'You missed this' },
+          indexedAt: new Date().toISOString()
+        },
+        // 5. A non-actionable notification (like) - SHOULD be skipped
+        {
+          uri: 'at://did:plc:5/app.bsky.feed.post/5',
+          isRead: false,
+          reason: 'like',
+          author: { handle: 'user5.bsky.social' },
+          record: {},
+          indexedAt: new Date().toISOString()
+        },
+      ];
+
+      // Setup mocks
+      blueskyService.getNotifications.mockResolvedValueOnce({
+        notifications: mockNotifications,
+        cursor: undefined, // Simulate end of notifications
+      });
+
+      // Mock hasReplied: true for the fourth notification
+      dataStore.hasReplied.mockImplementation(uri => uri === 'at://did:plc:4/app.bsky.feed.post/4');
+
+      // Mock processNotification to avoid its internal logic, just track calls
+      bot.processNotification = jest.fn().mockResolvedValue(true);
+
+      // Run the catch-up process
+      await bot.catchUpNotifications();
+
+      // Assertions
+      // It should try to process the three valid notifications
+      expect(bot.processNotification).toHaveBeenCalledTimes(3);
+      expect(bot.processNotification).toHaveBeenCalledWith(mockNotifications[0]);
+      expect(bot.processNotification).toHaveBeenCalledWith(mockNotifications[1]);
+      expect(bot.processNotification).toHaveBeenCalledWith(mockNotifications[2]);
+
+      // It should NOT try to process the others
+      expect(bot.processNotification).not.toHaveBeenCalledWith(mockNotifications[3]);
+      expect(bot.processNotification).not.toHaveBeenCalledWith(mockNotifications[4]);
+      expect(bot.processNotification).not.toHaveBeenCalledWith(mockNotifications[5]);
+
+      // It should add the three processed URIs to the datastore
+      expect(dataStore.addRepliedPost).toHaveBeenCalledTimes(3);
+      expect(dataStore.addRepliedPost).toHaveBeenCalledWith('at://did:plc:1/app.bsky.feed.post/1');
+      expect(dataStore.addRepliedPost).toHaveBeenCalledWith('at://did:plc:2/app.bsky.feed.post/2');
+      expect(dataStore.addRepliedPost).toHaveBeenCalledWith('at://did:plc:3/app.bsky.feed.post/3');
+
+      // It should update the seen status since notifications were processed
+      expect(blueskyService.updateSeen).toHaveBeenCalledTimes(1);
+    });
+
+    it('should not update seen status if no new notifications were processed', async () => {
+      // All notifications are either read or already replied to
+      const mockNotifications = [
+        { uri: 'at://did:plc:1/app.bsky.feed.post/1', isRead: true, reason: 'mention' },
+        { uri: 'at://did:plc:2/app.bsky.feed.post/2', isRead: false, reason: 'reply' }
+      ];
+
+      blueskyService.getNotifications.mockResolvedValueOnce({
+        notifications: mockNotifications,
+        cursor: undefined,
+      });
+      dataStore.hasReplied.mockReturnValue(true); // All are considered replied to
+      bot.processNotification = jest.fn();
+
+      await bot.catchUpNotifications();
+
+      expect(bot.processNotification).not.toHaveBeenCalled();
+      expect(dataStore.addRepliedPost).not.toHaveBeenCalled();
+      expect(blueskyService.updateSeen).not.toHaveBeenCalled();
+    });
+  });
+
   it('should trigger fact-checking for a verifiable claim', async () => {
     const mockNotif = {
       isRead: false,

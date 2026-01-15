@@ -36,8 +36,6 @@ services:
         value: "1000"
       - key: DATA_PATH
         value: /data/db.json
-      - key: CURSOR_FILE_PATH
-        value: /data/firehose_cursor.txt
     healthCheckPath: /health
     scaling:
       minInstances: 1

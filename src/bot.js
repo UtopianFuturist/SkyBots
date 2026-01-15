@@ -143,12 +143,13 @@ export class Bot {
   }
 
   async processNotification(notif) {
-    const handle = notif.author.handle;
-    const text = notif.record.text || "";
-    const threadRootUri = notif.record.reply?.root?.uri || notif.uri;
+    try {
+      const handle = notif.author.handle;
+      const text = notif.record.text || '';
+      const threadRootUri = notif.record.reply?.root?.uri || notif.uri;
 
-    // Time-Based Reply Filter
-    const postDate = new Date(notif.indexedAt);
+      // Time-Based Reply Filter
+      const postDate = new Date(notif.indexedAt);
     const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
     if (postDate < thirtyDaysAgo) {
       console.log(`[Bot] Skipping notification older than 30 days.`);
@@ -542,9 +543,9 @@ Your answer must be only the quote itself.`;
           await blueskyService.deletePost(replyUri);
         }
       }
-
-      // Run cleanup after a successful interaction
-      await this.cleanupOldPosts();
+    }
+    } catch (error) {
+      console.error(`[Bot] Uncaught error in processNotification for URI ${notif.uri}:`, error);
     }
   }
 

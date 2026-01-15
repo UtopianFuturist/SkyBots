@@ -551,9 +551,22 @@ Your answer must be only the quote itself.`;
       let current = thread;
 
       while (current && current.post) {
+        let postText = current.post.record.text || '';
+        const embed = current.post.record.embed;
+
+        if (embed && embed.$type === 'app.bsky.embed.images' && embed.images) {
+          for (const image of embed.images) {
+            if (image.alt) {
+              postText += ` [Image with alt text: "${image.alt}"]`;
+            } else {
+              postText += ` [Image attached, no alt text]`;
+            }
+          }
+        }
+
         history.unshift({
           author: current.post.author.handle,
-          text: current.post.record.text
+          text: postText.trim(),
         });
         current = current.parent;
       }

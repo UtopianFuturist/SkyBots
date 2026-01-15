@@ -88,6 +88,9 @@ export class Bot {
     // Proactive post proposal on a timer
     setInterval(() => this.proposeNewPost(), 3600000); // Every hour
 
+    // Autonomous post cleanup on a timer
+    setInterval(() => this.cleanupOldPosts(), 21600000); // Every 6 hours
+
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
 
@@ -671,11 +674,9 @@ Your answer must be only the quote itself.`;
 
       const summaryMessage = `Cleanup complete. Scanned ${feed.data.feed.length} posts and deleted ${deletedCount} of them.`;
       console.log(`[Bot] ${summaryMessage}`);
-      await blueskyService.postAlert(summaryMessage);
 
     } catch (error) {
       console.error('[Bot] Error during cleanup of old posts:', error);
-      await blueskyService.postAlert('An error occurred during post cleanup. Please check the logs.');
     }
   }
 }

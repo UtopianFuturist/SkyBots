@@ -239,16 +239,18 @@ class LLMService {
     return response?.toLowerCase().includes('yes');
   }
 
-  async isReplyCoherent(userPostText, botReplyText) {
+  async isReplyCoherent(userPostText, botReplyText, threadHistory = []) {
+    const historyText = threadHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+
     const systemPrompt = `
-      You are a text analyst. Your task is to determine if the bot's reply is a coherent and logical response to the user's post.
+      You are a text analyst. Your task is to determine if the bot's reply is a coherent and logical response to the user's post, considering the entire conversation history.
       The reply should not be nonsensical, overly repetitive, or completely unrelated to the user's post.
       If the reply is coherent, respond with "yes". Otherwise, respond with "no".
       Respond with only "yes" or "no".
     `;
     const messages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `User post: "${userPostText}"\nBot reply: "${botReplyText}"` }
+      { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"` }
     ];
     const response = await this.generateResponse(messages, { max_tokens: 3 });
     return response?.toLowerCase().includes('yes');

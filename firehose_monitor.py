@@ -79,15 +79,16 @@ async def main():
                 # Check for mentions of the bot's DID in the text or facets
                 text = record_raw.get('text', '')
                 facets = record_raw.get('facets', [])
-                is_mention_of_bot = False
+                is_mention_of_bot = bot_did in text
                 
-                for facet in facets:
-                    for feature in facet.get('features', []):
-                        if feature.get('$type') == 'app.bsky.richtext.facet#mention' and feature.get('did') == bot_did:
-                            is_mention_of_bot = True
+                if not is_mention_of_bot:
+                    for facet in facets:
+                        for feature in facet.get('features', []):
+                            if feature.get('$type') == 'app.bsky.richtext.facet#mention' and feature.get('did') == bot_did:
+                                is_mention_of_bot = True
+                                break
+                        if is_mention_of_bot:
                             break
-                    if is_mention_of_bot:
-                        break
                 
                 # Check for quote reposts of the bot's posts
                 embed = record_raw.get('embed', {})

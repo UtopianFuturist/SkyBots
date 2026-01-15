@@ -159,7 +159,7 @@ export class Bot {
 
 
     // 2. Refined Reply Trigger Logic
-    const botMentioned = text.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => text.includes(nick));
+    const botMentioned = text.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => text.includes(nick)) || text.includes(blueskyService.did);
     const isQuoteRepost = notif.reason === 'quote';
 
     // Check if the reply is to one of the bot's own posts.
@@ -626,5 +626,56 @@ Your answer must be only the quote itself.`;
       }
     }
     this.proposedPosts = []; // Clear proposals after posting
+  }
+
+  async cleanupOldPosts() {
+    console.log('[Bot] Starting cleanup of old posts...');
+    let deletedCount = 0;
+    try {
+      const feed = await blueskyService.agent.getAuthorFeed({
+        actor: blueskyService.did,
+        limit: 100, // Fetch a good number of recent posts
+      });
+
+      for (const item of feed.data.feed) {
+        const post = item.post;
+        const postText = post.record.text || '';
+
+        // We only want to clean up replies, not standalone posts.
+        if (!post.record.reply) {
+          continue;
+        }
+
+        // To check for coherence, we need the parent post's text.
+        let parentText = '';
+        if (post.record.reply.parent.uri) {
+          const parentThread = await blueskyService.getDetailedThread(post.record.reply.parent.uri);
+          if (parentThread && parentThread.post) {
+            parentText = parentThread.post.record.text || '';
+          }
+        }
+
+        const isTrivial = postText.length < 2;
+        const isCoherent = await llmService.isReplyCoherent(parentText, postText);
+
+        if (isTrivial || !isCoherent) {
+          let reason = 'incoherent';
+          if (isTrivial) reason = 'trivial';
+
+          console.warn(`[Bot Cleanup] Deleting own post (${reason}). URI: ${post.uri}. Content: "${postText}"`);
+          await blueskyService.deletePost(post.uri);
+          deletedCount++;
+          await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit deletions
+        }
+      }
+
+      const summaryMessage = `Cleanup complete. Scanned ${feed.data.feed.length} posts and deleted ${deletedCount} of them.`;
+      console.log(`[Bot] ${summaryMessage}`);
+      await blueskyService.postAlert(summaryMessage);
+
+    } catch (error) {
+      console.error('[Bot] Error during cleanup of old posts:', error);
+      await blueskyService.postAlert('An error occurred during post cleanup. Please check the logs.');
+    }
   }
 }

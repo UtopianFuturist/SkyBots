@@ -60,6 +60,13 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, options = {}) {
+    // Centralized validation to prevent trivial posts
+    const hasAlphanumeric = /[a-zA-Z0-9]/.test(text);
+    if (!text || text.trim().length < 2 || !hasAlphanumeric) {
+      console.log(`[BlueskyService] Aborted reply due to trivial content: "${text}"`);
+      return null; // Do not post
+    }
+
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 3000; // 3 seconds
     const MAX_CHUNKS = 5; // Safeguard against runaway replies

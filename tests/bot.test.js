@@ -58,6 +58,12 @@ jest.unstable_mockModule('../src/services/googleSearchService.js', () => ({
   },
 }));
 
+jest.unstable_mockModule('../src/services/imageService.js', () => ({
+  imageService: {
+    generateImage: jest.fn(),
+  },
+}));
+
 const { Bot } = await import('../src/bot.js');
 const { blueskyService } = await import('../src/services/blueskyService.js');
 const { llmService } = await import('../src/services/llmService.js');
@@ -274,7 +280,7 @@ describe('Bot', () => {
     );
   });
 
-  it('should delete its own trivial reply', async () => {
+  it('should NOT post a trivial reply', async () => {
     const mockNotif = {
       isRead: false,
       uri: 'at://did:plc:123/app.bsky.feed.post/101',
@@ -291,13 +297,12 @@ describe('Bot', () => {
     llmService.isPostSafe.mockResolvedValue({ safe: true });
     llmService.isFactCheckNeeded.mockResolvedValue(false);
     llmService.generateResponse.mockResolvedValue('?'); // Trivial reply
-    blueskyService.postReply.mockResolvedValue('at://did:plc:bot/app.bsky.feed.post/999');
-    llmService.isReplyCoherent.mockResolvedValue(true);
 
     await bot.processNotification(mockNotif);
 
-    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), '?');
-    expect(blueskyService.deletePost).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/999');
+    // Because of the pre-send validation, postReply should not be called at all.
+    expect(blueskyService.postReply).not.toHaveBeenCalled();
+    expect(blueskyService.deletePost).not.toHaveBeenCalled();
   });
 
   it('should delete its own incoherent reply', async () => {

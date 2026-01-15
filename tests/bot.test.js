@@ -13,6 +13,9 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     postAlert: jest.fn(),
     deletePost: jest.fn(),
     getExternalEmbed: jest.fn(),
+    agent: {
+      getAuthorFeed: jest.fn().mockResolvedValue({ data: { feed: [] } }),
+    },
   },
 }));
 

@@ -158,7 +158,32 @@ export class Bot {
     }
 
     // 1. Thread History Fetching (Centralized)
-    const threadContext = await this._getThreadHistory(notif.uri);
+    let threadContext = await this._getThreadHistory(notif.uri);
+
+    if (notif.reason === 'quote') {
+        console.log(`[Bot] Notification is a quote repost. Reconstructing context...`);
+        const quotedPostUri = notif.record.embed?.record?.uri;
+        if (quotedPostUri) {
+            const quotedPost = await blueskyService.getPostDetails(quotedPostUri);
+            if (quotedPost) {
+                let quotedText = quotedPost.record.text || '';
+                const quotedEmbed = quotedPost.record.embed;
+                if (quotedEmbed && quotedEmbed.$type === 'app.bsky.embed.images' && quotedEmbed.images) {
+                    for (const image of quotedEmbed.images) {
+                        if (image.alt) {
+                            quotedText += ` [Image with alt text: "${image.alt}"]`;
+                        }
+                    }
+                }
+                // Manually construct the context for the LLM
+                threadContext = [
+                    { author: config.BLUESKY_IDENTIFIER, text: quotedText.trim() },
+                    { author: handle, text: text }
+                ];
+                console.log(`[Bot] Reconstructed context for quote repost.`);
+            }
+        }
+    }
 
     // Prompt injection filter removed per user request.
 

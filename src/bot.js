@@ -79,64 +79,15 @@ export class Bot {
   async run() {
     console.log('[Bot] Starting main loop...');
 
-    // Run catch-up once on startup to process missed notifications
-    await this.catchUpNotifications();
+    this.setupGracefulShutdown();
 
-    // Start Firehose for real-time DID mentions
+    // Start Firehose for real-time DID mentions, which now handles catch-up.
     this.startFirehose();
 
     // Proactive post proposal on a timer
     setInterval(() => this.proposeNewPost(), 3600000); // Every hour
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
-  }
-
-  async catchUpNotifications() {
-    console.log('[Bot] Catching up on missed notifications...');
-    let cursor;
-    let notificationsCaughtUp = 0;
-    const processingPromises = [];
-
-    do {
-      const response = await blueskyService.getNotifications(cursor);
-      if (!response || response.notifications.length === 0) {
-        break;
-      }
-
-      for (const notif of response.notifications) {
-        // Only process mentions, replies, and quotes that are unread
-        const isActionable = ['mention', 'reply', 'quote'].includes(notif.reason);
-
-        if (notif.isRead || !isActionable) {
-          continue;
-        }
-
-        if (dataStore.hasReplied(notif.uri)) {
-          continue;
-        }
-
-        console.log(`[Bot] Found missed notification: ${notif.uri}`);
-        // Mark the notification as "replied" immediately to prevent a race condition
-        // with the real-time Firehose stream.
-        await dataStore.addRepliedPost(notif.uri);
-        notificationsCaughtUp++;
-
-        // Now, process the notification.
-        processingPromises.push(this.processNotification(notif));
-      }
-      cursor = response.cursor;
-    } while (cursor);
-
-    // Wait for all processing to complete
-    await Promise.all(processingPromises);
-
-    if (notificationsCaughtUp > 0) {
-      console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);
-      // Mark notifications as seen after processing them
-      await blueskyService.updateSeen();
-    } else {
-      console.log('[Bot] No new notifications to catch up on.');
-    }
   }
 
   async processNotification(notif) {
@@ -190,13 +141,6 @@ export class Bot {
       return;
     }
 
-    // if (!text.includes(config.BLUESKY_IDENTIFIER) && !isReplyToBot) {
-    //   if (!(await llmService.isReplyRelevant(text))) {
-    //     console.log(`[Bot] Post by ${handle} not relevant for a reply. Skipping.`);
-    //     return;
-    //   }
-    // }
-
     // 4. Handle Commands
     const commandResponse = await handleCommand(this, notif, text);
     if (commandResponse !== null) {
@@ -211,15 +155,6 @@ export class Bot {
 
     // 5. Pre-reply LLM check to avoid unnecessary responses
     const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
-    const gatekeeperMessages = [
-      { role: 'system', content: `You are a gatekeeper for an AI assistant. Analyze the user's latest post in the context of the conversation. Respond with only "true" if a direct reply is helpful or expected, or "false" if the post is a simple statement, agreement, or otherwise doesn't need a response. Your answer must be a single word: true or false.` },
-      { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${text}"` }
-    ];
-    // const replyCheckResponse = await llmService.generateResponse(gatekeeperMessages);
-    // if (replyCheckResponse && replyCheckResponse.toLowerCase().trim().includes('false')) {
-    //   console.log(`[Bot] LLM gatekeeper decided no reply is needed for: "${text}". Skipping.`);
-    //   return;
-    // }
 
     // 6. Bot-to-Bot Loop Prevention
     const profile = await blueskyService.getProfile(handle);
@@ -236,30 +171,24 @@ export class Bot {
     const conversationHistoryForImageCheck = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
     const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with only "yes" or "no".\n\nConversation History:\n${conversationHistoryForImageCheck}`;
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
-    console.log(`[Bot] Image Gen Check Prompt: ${imageGenCheckPrompt}`);
     const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 5, preface_system_prompt: false });
-    console.log(`[Bot] Raw Image Gen Check Response: "${imageGenCheckResponse}"`);
 
     if (imageGenCheckResponse && imageGenCheckResponse.toLowerCase().includes('yes')) {
       const imagePromptExtractionPrompt = `You are an AI assistant that extracts image prompts. Based on the conversation, create a concise, literal, and descriptive prompt for an image generation model. The user's latest post is the primary focus. Conversation:\n${conversationHistoryForImageCheck}\n\nRespond with only the prompt.`;
       const imagePromptExtractionMessages = [{ role: 'system', content: imagePromptExtractionPrompt }];
-      console.log(`[Bot] Image Prompt Extraction Prompt: ${imagePromptExtractionPrompt}`);
       const prompt = await llmService.generateResponse(imagePromptExtractionMessages, { max_tokens: 100, preface_system_prompt: false });
-      console.log(`[Bot] Raw Image Gen Extraction Response: "${prompt}"`);
 
       if (prompt && prompt.toLowerCase() !== 'null' && prompt.toLowerCase() !== 'no') {
         console.log(`[Bot] Final image generation prompt: "${prompt}"`);
         const imageBuffer = await imageService.generateImage(prompt);
         if (imageBuffer) {
           console.log('[Bot] Image generation successful, posting reply...');
-          // The text reply is simple and direct.
           await blueskyService.postReply(notif, `Here's an image of "${prompt}":`, {
             imageBuffer,
             imageAltText: prompt,
           });
-          return; // End processing here as the request is fulfilled.
+          return;
         }
-        // If image generation fails, fall through to the normal response flow.
         console.log(`[Bot] Image generation failed for prompt: "${prompt}", continuing with text-based response.`);
       }
     }
@@ -303,55 +232,22 @@ export class Bot {
       }
     }
 
-    // 6. YouTube Search Integration (with improved intent detection)
-    let youtubeResult = null; // Will hold the video object if found
+    // 6. YouTube Search Integration (Streamlined)
+    let youtubeResult = null;
+    const ytSearchAnalysis = await llmService.getYoutubeSearchQuery(threadContext);
 
-    // Stage 1: Use a reliable LLM to check for video search intent.
-    const videoIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking for a YouTube video to be found. Your answer must be a single word: "yes" or "no".`;
-    const videoIntentMessages = [
-      { role: 'system', content: videoIntentSystemPrompt },
-      { role: 'user', content: `The user's post is: "${text}"` }
-    ];
-    console.log(`[Bot] Checking for YouTube video intent in post: "${text}"`);
-    const videoIntentResponse = await llmService.generateResponse(videoIntentMessages, { max_tokens: 5 });
-    console.log(`[Bot] Raw video intent response: "${videoIntentResponse}"`);
+    if (ytSearchAnalysis.search && ytSearchAnalysis.query) {
+      console.log(`[Bot] Extracted YouTube search query: "${ytSearchAnalysis.query}"`);
+      const youtubeResults = await youtubeService.search(ytSearchAnalysis.query);
 
-    if (videoIntentResponse && videoIntentResponse.toLowerCase().includes('yes')) {
-      console.log(`[Bot] Video intent confirmed. Extracting search query...`);
-      // Stage 2: If intent is confirmed, extract the search query.
-      const queryExtractionPrompt = `You are a search query extractor. The user wants to find a YouTube video. Extract the core search query from their post. The user's post is: "${text}". Respond with only the search query itself. For example, if the post is "find a video about cats", you should respond with "cats".`;
-      const queryExtractionMessages = [{ role: 'system', content: queryExtractionPrompt }];
-      const query = await llmService.generateResponse(queryExtractionMessages, { max_tokens: 50 });
-      console.log(`[Bot] Raw YouTube Query Extraction Response: "${query}"`);
-
-      if (query && query.toLowerCase().trim() && query.toLowerCase() !== 'null' && query.toLowerCase() !== 'no') {
-        console.log(`[Bot] Extracted YouTube search query: "${query}"`);
-        const youtubeResults = await youtubeService.search(query);
-
-        if (youtubeResults.length > 0) {
-          const topResult = youtubeResults[0];
-          // Stage 3: Validate the relevance of the top search result.
-          const validationPrompt = `You are a relevance validation AI. A user requested a video with the post: "${text}". The top YouTube search result is a video titled "${topResult.title}". Is this video relevant to the user's request? Your answer must be a single word: "yes" or "no".`;
-          const validationMessages = [{ role: 'system', content: validationPrompt }];
-          console.log(`[Bot] Validating YouTube result: "${topResult.title}"`);
-          const validationResponse = await llmService.generateResponse(validationMessages, { max_tokens: 5 });
-          console.log(`[Bot] Raw validation response: "${validationResponse}"`);
-
-          if (validationResponse && validationResponse.toLowerCase().includes('yes')) {
-            console.log(`[Bot] YouTube result validated as relevant.`);
-            youtubeResult = topResult;
-            console.log(`[Bot] Found YouTube video: https://www.youtube.com/watch?v=${youtubeResult.videoId}`);
-          } else {
-            console.log(`[Bot] Top YouTube result "${topResult.title}" was deemed irrelevant. Discarding.`);
-          }
-        } else {
-          console.log(`[Bot] YouTube search for "${query}" yielded no results.`);
-        }
+      if (youtubeResults.length > 0) {
+        youtubeResult = youtubeResults[0];
+        console.log(`[Bot] Found YouTube video: https://www.youtube.com/watch?v=${youtubeResult.videoId}`);
       } else {
-        console.log(`[Bot] Could not extract a valid search query from the post.`);
+        console.log(`[Bot] YouTube search for "${ytSearchAnalysis.query}" yielded no results.`);
       }
     } else {
-      console.log(`[Bot] No video intent detected.`);
+      console.log('[Bot] No video intent detected.');
     }
 
     // 6. Image Recognition
@@ -369,7 +265,6 @@ export class Bot {
     // 6. Generate Response with User Context and Memory
     console.log(`[Bot] Responding to post from ${handle}: "${text}"`);
 
-    // Step 6a: Check if the user is asking a question that requires their profile context.
     const contextIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking a question that requires their own profile or post history as context. This includes questions like "give me recommendations", "summarize my profile", "what do you think of me?", etc. Your answer must be a single word: "yes" or "no".`;
     const contextIntentMessages = [
       { role: 'system', content: contextIntentSystemPrompt },
@@ -381,7 +276,6 @@ export class Bot {
     console.log(`[Bot] Generating response for ${handle}...`);
     const userMemory = dataStore.getInteractionsByUser(handle);
     
-    // Fetch user profile for additional context
     const userProfile = await blueskyService.getProfile(handle);
     const userPosts = await blueskyService.getUserPosts(handle);
 
@@ -404,7 +298,6 @@ export class Bot {
       ---
     `;
 
-    // Filter out the current post's text from cross-post memory to avoid self-contamination
     const crossPostMemory = userPosts
       .filter(p => (p.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => p.includes(nick))) && p !== text)
       .map(p => `- (Previous mention in a DIFFERENT thread) "${p.substring(0, 100)}..."`)
@@ -423,7 +316,7 @@ export class Bot {
       ${
         youtubeResult
           ? `YouTube Search Result for "${youtubeResult.title}": A video will be embedded in the reply.`
-          : (/video|youtube/i.test(text) ? 'The user may have asked for a video, but no relevant YouTube video was found. Please inform the user that you could not find a video for their request.' : '')
+          : (ytSearchAnalysis.search ? 'The user may have asked for a video, but no relevant YouTube video was found. Please inform the user that you could not find a video for their request.' : '')
       }
     `;
 
@@ -432,6 +325,11 @@ export class Bot {
       ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
       ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
     ];
+
+    // Persona Consistency Reinforcement for long threads
+    if (threadContext.length >= 10) {
+      messages.unshift({ role: 'system', content: `Reminder: Maintain your core persona. ${config.TEXT_SYSTEM_PROMPT}` });
+    }
 
     let responseText = await llmService.generateResponse(messages);
 
@@ -456,10 +354,8 @@ export class Bot {
     if (responseText) {
       // Remove thinking tags and any leftover fragments
       responseText = sanitizeThinkingTags(responseText);
-      // Handle cases where the model might output </think> without the opening tag
       responseText = responseText.replace(/<\/think>/gi, '').trim();
       
-      // Sanitize the response to avoid duplicate sentences
       responseText = sanitizeDuplicateText(responseText);
       
       if (!responseText) {
@@ -472,7 +368,6 @@ export class Bot {
       if (youtubeResult) {
         replyUri = await postYouTubeReply(notif, youtubeResult, responseText);
       } else {
-        // Autonomous GIF decision-making
         const gifDecisionPrompt = `You are a social media AI. Your generated response is: "${responseText}". Would adding a culturally relevant GIF (e.g., from a movie, TV show, or meme) enhance this response? Your answer must be a single word: "yes" or "no".`;
         const gifDecisionMessages = [{ role: 'system', content: gifDecisionPrompt }];
         const gifDecision = await llmService.generateResponse(gifDecisionMessages, { max_tokens: 5 });
@@ -515,13 +410,11 @@ Your answer must be only the quote itself.`;
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
 
-      // Like post if it matches the bot's persona
       if (await llmService.shouldLikePost(text)) {
         console.log(`[Bot] Post by ${handle} matches persona. Liking...`);
         await blueskyService.likePost(notif.uri, notif.cid);
       }
 
-      // Rate user based on interaction history
       const interactionHistory = dataStore.getInteractionsByUser(handle);
       const rating = await llmService.rateUserInteraction(interactionHistory);
       await dataStore.updateUserRating(handle, rating);
@@ -529,7 +422,7 @@ Your answer must be only the quote itself.`;
       // Self-moderation check
       const isTrivial = responseText.length < 2;
       const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
-      const isCoherent = await llmService.isReplyCoherent(text, responseText);
+      const isCoherent = await llmService.isReplyCoherent(threadContext, responseText);
 
       if (isTrivial || isRepetitive || !isCoherent) {
         let reason = 'incoherent';
@@ -613,5 +506,22 @@ Your answer must be only the quote itself.`;
       }
     }
     this.proposedPosts = []; // Clear proposals after posting
+  }
+
+  setupGracefulShutdown() {
+    const shutdown = async () => {
+      console.log('[Bot] Received shutdown signal. Cleaning up...');
+      if (this.firehoseProcess) {
+        // Send SIGINT to the Python process so it can shut down cleanly
+        this.firehoseProcess.kill('SIGINT');
+        console.log('[Bot] Firehose monitor process terminated.');
+      }
+      await dataStore.db.write(); // Ensure data is saved
+      console.log('[Bot] Database flushed.');
+      process.exit(0);
+    };
+
+    process.on('SIGINT', shutdown);
+    process.on('SIGTERM', shutdown);
   }
 }

@@ -203,15 +203,15 @@ export class Bot {
     // }
 
     // 4. Handle Commands
-    const commandResponse = await handleCommand(this, notif, text);
-    if (commandResponse !== null) {
-      // A command was matched. Check if the handler returned a simple string to post.
-      if (typeof commandResponse === 'string') {
-        await blueskyService.postReply(notif, commandResponse);
-      }
-      // If not a string, the handler managed its own reply (e.g., for embeds).
-      // In either case, command processing is done.
-      return;
+    const isCommand = text.trim().startsWith('!');
+    if (isCommand) {
+        const commandResponse = await handleCommand(this, notif, text);
+        if (commandResponse !== null) {
+            if (typeof commandResponse === 'string') {
+                await blueskyService.postReply(notif, commandResponse);
+            }
+            return; // Command processed, stop further processing
+        }
     }
 
     // 5. Pre-reply LLM check to avoid unnecessary responses
@@ -314,7 +314,12 @@ export class Bot {
     let youtubeResult = null; // Will hold the video object if found
 
     // Stage 1: Use a reliable LLM to check for video search intent.
-    const videoIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking for a YouTube video to be found. Your answer must be a single word: "yes" or "no".`;
+    const videoIntentSystemPrompt = `
+      You are an intent detection AI. Analyze the user's post to determine if they are asking for a YouTube video.
+      Your answer must be a single word: "yes" or "no".
+      Example: "can you find me a video of a cat playing a piano" -> "yes"
+      Example: "I like watching videos." -> "no"
+    `;
     const videoIntentMessages = [
       { role: 'system', content: videoIntentSystemPrompt },
       { role: 'user', content: `The user's post is: "${text}"` }
@@ -326,8 +331,13 @@ export class Bot {
     if (videoIntentResponse && videoIntentResponse.toLowerCase().includes('yes')) {
       console.log(`[Bot] Video intent confirmed. Extracting search query...`);
       // Stage 2: If intent is confirmed, extract the search query.
-      const queryExtractionPrompt = `You are a search query extractor. The user wants to find a YouTube video. Extract the core search query from their post. The user's post is: "${text}". Respond with only the search query itself. For example, if the post is "find a video about cats", you should respond with "cats".`;
-      const queryExtractionMessages = [{ role: 'system', content: queryExtractionPrompt }];
+      const queryExtractionPrompt = `
+        You are a search query extractor. The user wants to find a YouTube video.
+        Extract the core search query from their post. Respond with only the search query itself.
+        Example: "find a video about cats playing the piano" -> "cats playing the piano"
+        Example: "show me the latest trailer for the new Dune movie" -> "new Dune movie trailer"
+      `;
+      const queryExtractionMessages = [{ role: 'system', content: queryExtractionPrompt }, { role: 'user', content: `The user's post is: "${text}"` }];
       const query = await llmService.generateResponse(queryExtractionMessages, { max_tokens: 50 });
       console.log(`[Bot] Raw YouTube Query Extraction Response: "${query}"`);
 
@@ -507,9 +517,9 @@ export class Bot {
           let reason = 'incoherent';
           if (isRepetitive) reason = 'repetitive';
 
-          console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri}. Content: "${responseText}"`);
-          if (replyUri) {
-            await blueskyService.deletePost(replyUri);
+          console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri?.uri}. Content: "${responseText}"`);
+          if (replyUri && replyUri.uri) {
+            await blueskyService.deletePost(replyUri.uri);
           }
         }
       }

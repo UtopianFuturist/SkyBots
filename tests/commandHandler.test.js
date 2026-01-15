@@ -115,30 +115,16 @@ describe('Command Handler', () => {
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 
-  it('should handle singular image search command', async () => {
-    const mockImages = [{ title: 'Image 1' }];
-    googleSearchService.searchImages.mockResolvedValue(mockImages);
-    blueskyService.uploadImages.mockResolvedValue({ $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }] });
-    await handleCommand(mockBot, mockPost, '!image-search a dog');
-    expect(googleSearchService.searchImages).toHaveBeenCalledWith('a dog');
-    expect(blueskyService.uploadImages).toHaveBeenCalledWith(mockImages);
-    expect(blueskyService.postReply).toHaveBeenCalledWith(
-      expect.anything(),
-      "Here's an image I found for \"a dog\":",
-      { embed: { $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }] } }
-    );
-  });
-
-  it('should handle plural image search command', async () => {
-    const mockImages = [{ title: 'Image 1' }, { title: 'Image 2' }, { title: 'Image 3' }, { title: 'Image 4' }];
+  it('should handle image search command', async () => {
+    const mockImages = [{ title: 'Image 1' }, { title: 'Image 2' }];
     googleSearchService.searchImages.mockResolvedValue(mockImages);
     blueskyService.uploadImages.mockResolvedValue({ $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }, { image: 'blob2', alt: 'Image 2' }] });
-    await handleCommand(mockBot, mockPost, '!image-search images of cats');
-    expect(googleSearchService.searchImages).toHaveBeenCalledWith('images of cats');
-    expect(blueskyService.uploadImages).toHaveBeenCalledWith(mockImages);
+    await handleCommand(mockBot, mockPost, '!image-search cats');
+    expect(googleSearchService.searchImages).toHaveBeenCalledWith('cats');
+    expect(blueskyService.uploadImages).toHaveBeenCalledWith(mockImages.slice(0, 4));
     expect(blueskyService.postReply).toHaveBeenCalledWith(
       expect.anything(),
-      'Here are the top 4 images I found for "images of cats":',
+      'Here are the top images I found for "cats":',
       { embed: { $type: 'app.bsky.embed.images', images: [{ image: 'blob1', alt: 'Image 1' }, { image: 'blob2', alt: 'Image 2' }] } }
     );
   });

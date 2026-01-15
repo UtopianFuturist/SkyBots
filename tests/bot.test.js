@@ -328,8 +328,11 @@ describe('Bot', () => {
     llmService.isPostSafe.mockResolvedValue({ safe: true });
     llmService.isFactCheckNeeded.mockResolvedValue(false);
     llmService.generateResponse.mockResolvedValue('The sky is blue.'); // Incoherent reply
-    blueskyService.postReply.mockResolvedValue('at://did:plc:bot/app.bsky.feed.post/1000');
+    blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/app.bsky.feed.post/1000' });
     llmService.isReplyCoherent.mockResolvedValue(false);
+    llmService.checkSemanticLoop.mockResolvedValue(false);
+    dataStore.getInteractionsByUser.mockReturnValue([]);
+
 
     await bot.processNotification(mockNotif);
 

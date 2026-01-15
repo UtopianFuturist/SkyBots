@@ -137,17 +137,15 @@ export const handleCommand = async (bot, post, text) => {
 
   if (lowerText.startsWith('!image-search')) {
     const imageQuery = lowerText.replace('!image-search', '').trim();
+    if (!imageQuery) {
+      return "Please provide a search term. Example: `!image-search cute cats`";
+    }
     const imageResults = await googleSearchService.searchImages(imageQuery);
 
     if (imageResults && imageResults.length > 0) {
-      // Check original text for "images" (plural) vs "image" (singular)
-      const isPlural = lowerText.includes('images');
-      const numImagesToEmbed = isPlural ? 4 : 1;
-      const imagesToEmbed = imageResults.slice(0, numImagesToEmbed);
+      const imagesToEmbed = imageResults.slice(0, 4); // Always get top 4
 
-      const replyText = imagesToEmbed.length > 1
-        ? `Here are the top ${imagesToEmbed.length} images I found for "${imageQuery}":`
-        : `Here's an image I found for "${imageQuery}":`;
+      const replyText = `Here are the top images I found for "${imageQuery}":`;
 
       const embed = await blueskyService.uploadImages(imagesToEmbed);
       await blueskyService.postReply(post, replyText, { embed });

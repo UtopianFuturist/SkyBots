@@ -158,8 +158,10 @@ class LLMService {
   async extractClaim(inputText) {
     const systemPrompt = `
       You are a text analyst. Your task is to extract the core verifiable claim from a user's post.
-      Summarize the claim in a concise, searchable phrase.
-      Example: "I heard that the sky is actually green." -> "sky is green"
+      The output should be a concise, neutral phrase suitable for a search engine query.
+      Focus only on the claim itself, ignoring conversational filler.
+      Example: "I'm not sure if it's true, but someone told me the sky is green." -> "sky is green"
+      Example: "find the Wikipedia article for Veganism" -> "Veganism Wikipedia"
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
     return await this.generateResponse(messages, { max_tokens: 20 });

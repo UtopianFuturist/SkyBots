@@ -72,7 +72,7 @@ class BlueskyService {
   async postReply(parentPost, text, options = {}) {
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 3000; // 3 seconds
-    const MAX_CHUNKS = 5; // Safeguard against runaway replies
+    const MAX_CHUNKS = 2; // Limit replies to 2 chunks
 
     console.log(`[BlueskyService] LLM Response: "${text}"`);
     console.log('[BlueskyService] Posting reply...');

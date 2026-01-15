@@ -8,6 +8,7 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     getUserPosts: jest.fn(),
     postReply: jest.fn(),
     getDetailedThread: jest.fn(),
+    getPostDetails: jest.fn(),
     likePost: jest.fn(),
     authenticate: jest.fn(),
     postAlert: jest.fn(),

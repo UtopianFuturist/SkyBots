@@ -59,6 +59,16 @@ class BlueskyService {
     }
   }
 
+  async getPostDetails(uri) {
+    try {
+      const { data } = await this.agent.getPosts({ uris: [uri] });
+      return data.posts[0];
+    } catch (error) {
+      console.error('[BlueskyService] Error fetching post details:', error);
+      return null;
+    }
+  }
+
   async postReply(parentPost, text, options = {}) {
     // Centralized validation to prevent trivial posts
     const hasAlphanumeric = /[a-zA-Z0-9]/.test(text);

@@ -469,13 +469,6 @@ export class Bot {
         console.log('[Bot] Response was empty after sanitization. Aborting reply.');
         return;
       }
-
-      // Pre-send validation to prevent trivial posts
-      const hasAlphanumeric = /[a-zA-Z0-9]/.test(responseText);
-      if (responseText.length < 2 || !hasAlphanumeric) {
-        console.log(`[Bot] Generated response was trivial and not sent: "${responseText}"`);
-        return; // Abort the reply
-      }
       
       console.log(`[Bot] Replying to @${handle} with: "${responseText}"`);
       let replyUri;
@@ -545,7 +538,9 @@ Your answer must be only the quote itself.`;
         if (isRepetitive) reason = 'repetitive';
 
         console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri}. Content: "${responseText}"`);
-        await blueskyService.deletePost(replyUri);
+        if (replyUri) {
+          await blueskyService.deletePost(replyUri);
+        }
       }
 
       // Run cleanup after a successful interaction
@@ -666,12 +661,10 @@ Your answer must be only the quote itself.`;
           }
         }
 
-        const isTrivial = postText.trim().length <= 1;
         const isCoherent = await llmService.isReplyCoherent(parentText, postText);
 
-        if (isTrivial || !isCoherent) {
-          let reason = 'incoherent';
-          if (isTrivial) reason = 'trivial';
+        if (!isCoherent) {
+          const reason = 'incoherent';
 
           console.warn(`[Bot Cleanup] Deleting own post (${reason}). URI: ${post.uri}. Content: "${postText}"`);
           await blueskyService.deletePost(post.uri);

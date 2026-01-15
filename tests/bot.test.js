@@ -15,6 +15,7 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     getExternalEmbed: jest.fn(),
     agent: {
       getAuthorFeed: jest.fn().mockResolvedValue({ data: { feed: [] } }),
+      post: jest.fn(),
     },
   },
 }));
@@ -280,7 +281,7 @@ describe('Bot', () => {
     );
   });
 
-  it('should NOT post a trivial reply', async () => {
+  it('should not post a trivial reply due to centralized validation', async () => {
     const mockNotif = {
       isRead: false,
       uri: 'at://did:plc:123/app.bsky.feed.post/101',
@@ -298,11 +299,20 @@ describe('Bot', () => {
     llmService.isFactCheckNeeded.mockResolvedValue(false);
     llmService.generateResponse.mockResolvedValue('?'); // Trivial reply
 
+    // Spy on the real postReply method to ensure it's called,
+    // but prevent the actual post from happening.
+    const postReplySpy = jest.spyOn(blueskyService, 'postReply').mockResolvedValue(null);
+
     await bot.processNotification(mockNotif);
 
-    // Because of the pre-send validation, postReply should not be called at all.
-    expect(blueskyService.postReply).not.toHaveBeenCalled();
+    // Ensure the validation logic was at least called
+    expect(postReplySpy).toHaveBeenCalledWith(expect.anything(), '?');
+
+    // Ensure that no post was actually sent
+    expect(blueskyService.agent.post).not.toHaveBeenCalled();
     expect(blueskyService.deletePost).not.toHaveBeenCalled();
+
+    postReplySpy.mockRestore();
   });
 
   it('should delete its own incoherent reply', async () => {

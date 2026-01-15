@@ -389,4 +389,28 @@ describe('Bot', () => {
 
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'Thank you for the compliment!');
   });
+
+  it('should not reply to its own post to prevent a loop', async () => {
+    const mockNotif = {
+      isRead: false,
+      uri: 'at://did:plc:bot/app.bsky.feed.post/self_reply',
+      reason: 'reply',
+      record: {
+        text: 'This is a self-reply.',
+        reply: {
+          root: { uri: 'at://did:plc:user/app.bsky.feed.post/original' },
+          parent: { uri: 'at://did:plc:bot/app.bsky.feed.post/previous_reply' }
+        }
+      },
+      author: { handle: config.BLUESKY_IDENTIFIER }, // The author is the bot itself
+      indexedAt: new Date().toISOString()
+    };
+
+    bot.processNotification = jest.fn(bot.processNotification);
+
+    await bot.processNotification(mockNotif);
+
+    expect(blueskyService.postReply).not.toHaveBeenCalled();
+    expect(llmService.generateResponse).not.toHaveBeenCalled();
+  });
 });

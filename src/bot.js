@@ -145,6 +145,12 @@ export class Bot {
 
   async processNotification(notif) {
     try {
+      // Self-reply loop prevention
+      if (notif.author.handle === config.BLUESKY_IDENTIFIER) {
+        console.log(`[Bot] Skipping notification from self to prevent loop.`);
+        return;
+      }
+
       const handle = notif.author.handle;
       const text = notif.record.text || '';
       const threadRootUri = notif.record.reply?.root?.uri || notif.uri;

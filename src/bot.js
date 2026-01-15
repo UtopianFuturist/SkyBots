@@ -695,7 +695,7 @@ Your answer must be only the quote itself.`;
           console.warn(`[Bot Cleanup] Deleting own post (${reason}). URI: ${post.uri}. Content: "${postText}"`);
           await blueskyService.deletePost(post.uri);
           deletedCount++;
-          await new Promise(resolve => setTimeout(resolve, 500)); // Rate limit deletions
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limit deletions
         }
       }
 

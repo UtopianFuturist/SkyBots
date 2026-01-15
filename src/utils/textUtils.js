@@ -47,7 +47,7 @@ export const splitText = (text, maxLength = 300) => {
     remainingText = '…' + remainingText.slice(chunk.length).trim();
   }
 
-    return text;
+    return chunks;
 };
 
 export const sanitizeThinkingTags = (text) => {

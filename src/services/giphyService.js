@@ -22,9 +22,18 @@ class GiphyService {
 
       if (response.ok && data.data && data.data.length > 0) {
         const gif = data.data[0];
+        const gifUrl = gif.images.original.url;
+        const gifSize = parseInt(gif.images.original.size, 10);
+        const maxSize = 976.56 * 1024; // 976.56 KB in bytes
+
+        if (gifSize > maxSize) {
+          console.warn(`[GiphyService] Found GIF, but it is too large (${(gifSize / 1024).toFixed(2)} KB). Skipping.`);
+          return null;
+        }
+
         console.log(`[GiphyService] Found GIF: ${gif.url}`);
         return {
-          url: gif.images.original.url,
+          url: gifUrl,
           alt: gif.title,
           sourceUrl: gif.url,
         };

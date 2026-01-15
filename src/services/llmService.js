@@ -245,8 +245,16 @@ class LLMService {
     const historyText = threadHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
 
     const systemPrompt = `
-      You are a text analyst. Your task is to determine if the bot's reply is a coherent and logical response to the user's post, considering the entire conversation history.
-      The reply should not be nonsensical, overly repetitive, or completely unrelated to the user's post.
+      You are a text analyst for a social media bot. Your task is to determine if the bot's reply is a coherent and logical response to the user's post, considering the entire conversation history. A coherent reply is one that is contextually relevant and directly addresses the user's message.
+
+      **Coherent Examples:**
+      - User: "Can you tell me a fun fact?" Bot: "Sure! A group of flamingos is called a flamboyance." (This is a direct and relevant answer.)
+      - User: "I love your posts!" Bot: "Thank you so much! I'm glad you enjoy them." (This is a polite and relevant acknowledgment.)
+
+      **Incoherent Examples:**
+      - User: "What's the weather like today?" Bot: "I enjoy reading books." (This is completely unrelated.)
+      - User: "Can you help me with this math problem?" Bot: "[Placeholder for a real answer]" (This indicates a failure to generate a real response.)
+
       If the reply is coherent, respond with "yes". Otherwise, respond with "no".
       Respond with only "yes" or "no".
     `;

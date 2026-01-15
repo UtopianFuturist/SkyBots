@@ -13,11 +13,33 @@ app.get('/health', (req, res) => {
   res.status(200).send('OK');
 });
 
+// Initialize the bot
+const bot = new Bot();
+
+import config from './config.js';
+
+// Manual cleanup endpoint needs the bot instance
+app.post('/manual-cleanup', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || authHeader !== `Bearer ${config.MANUAL_CLEANUP_TOKEN}`) {
+    return res.status(401).send('Unauthorized');
+  }
+
+  console.log('[Express] Manual cleanup trigger received.');
+  bot.cleanupOldPosts()
+    .then(() => {
+      res.status(200).send('Cleanup process finished successfully.');
+    })
+    .catch(err => {
+      console.error('[Express] Error during manual cleanup:', err);
+      res.status(500).send('Failed to start cleanup.');
+    });
+});
+
 // Start the Express server
 app.listen(PORT, () => {
   console.log(`[Express] Server is running on port ${PORT}`);
   
   // Initialize and run the bot
-  const bot = new Bot();
   bot.init().then(() => bot.run());
 });

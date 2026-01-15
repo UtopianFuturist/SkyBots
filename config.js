@@ -20,6 +20,7 @@ const validateConfig = (config) => {
     'IMGFLIP_PASSWORD',
     'YOUTUBE_API_KEY',
     'GIPHY_API_KEY',
+    'MANUAL_CLEANUP_TOKEN',
   ];
 
   const missing = required.filter(key => !config[key]);
@@ -78,6 +79,7 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
     "You are an AI assistant. A user is asking about your capabilities. Based on the provided README.md content, answer their question in a conversational and user-friendly way. Summarize the key features and how to use them.",
 
   // Optional configs with defaults
+  MANUAL_CLEANUP_TOKEN: process.env.MANUAL_CLEANUP_TOKEN,
   CHECK_INTERVAL: parseInt(process.env.CHECK_INTERVAL || '120000'), // For notifications
   FOLLOW_FEED_CHECK_INTERVAL: parseInt(process.env.FOLLOW_FEED_CHECK_INTERVAL || '300000'), // For followed feeds (e.g., 5 minutes)
   MAX_RETRIES: parseInt(process.env.MAX_RETRIES || '5'),

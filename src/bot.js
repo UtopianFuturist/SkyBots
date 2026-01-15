@@ -82,14 +82,14 @@ export class Bot {
     // Run catch-up once on startup to process missed notifications
     await this.catchUpNotifications();
 
+    // Run cleanup on startup
+    await this.cleanupOldPosts();
+
     // Start Firehose for real-time DID mentions
     this.startFirehose();
 
     // Proactive post proposal on a timer
     setInterval(() => this.proposeNewPost(), 3600000); // Every hour
-
-    // Autonomous post cleanup on a timer
-    setInterval(() => this.cleanupOldPosts(), 21600000); // Every 6 hours
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
@@ -542,6 +542,9 @@ Your answer must be only the quote itself.`;
         console.warn(`[Bot] Deleting own post (${reason}). URI: ${replyUri}. Content: "${responseText}"`);
         await blueskyService.deletePost(replyUri);
       }
+
+      // Run cleanup after a successful interaction
+      await this.cleanupOldPosts();
     }
   }
 

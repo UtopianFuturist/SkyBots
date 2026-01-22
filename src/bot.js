@@ -4,6 +4,7 @@ import { dataStore } from './services/dataStore.js';
 import { googleSearchService } from './services/googleSearchService.js';
 import { imageService } from './services/imageService.js';
 import { youtubeService } from './services/youtubeService.js';
+import { wikipediaService } from './services/wikipediaService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags } from './utils/textUtils.js';
@@ -23,6 +24,7 @@ export class Bot {
   async init() {
     await dataStore.init();
     await blueskyService.authenticate();
+    await blueskyService.submitAutonomyDeclaration();
     try {
       this.readmeContent = await fs.readFile('README.md', 'utf-8');
       console.log('[Bot] README.md loaded for self-awareness.');
@@ -89,8 +91,11 @@ export class Bot {
     // Start Firehose for real-time DID mentions
     this.startFirehose();
 
-    // Proactive post proposal on a timer
-    setInterval(() => this.proposeNewPost(), 3600000); // Every hour
+    // Perform an autonomous post on startup if needed
+    await this.performAutonomousPost();
+
+    // Periodic autonomous post check
+    setInterval(() => this.performAutonomousPost(), 3600000 * 3); // Every 3 hours
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
@@ -567,6 +572,7 @@ export class Bot {
 
       const history = [];
       let current = thread;
+      const MAX_HISTORY = 25;
 
       while (current && current.post) {
         let postText = current.post.record.text || '';
@@ -587,6 +593,32 @@ export class Bot {
           text: postText.trim(),
         });
         current = current.parent;
+
+        // If we've reached the limit, we try to jump to the root if we're not already there
+        if (history.length >= MAX_HISTORY - 1 && current && current.parent) {
+            // Find the root
+            let root = current;
+            while (root && root.parent) {
+                root = root.parent;
+            }
+            if (root && root.post) {
+                let rootPostText = root.post.record.text || '';
+                const rootEmbed = root.post.record.embed;
+                if (rootEmbed && rootEmbed.$type === 'app.bsky.embed.images' && rootEmbed.images) {
+                    for (const image of rootEmbed.images) {
+                        if (image.alt) {
+                            rootPostText += ` [Image with alt text: "${image.alt}"]`;
+                        }
+                    }
+                }
+                history.unshift({ author: 'SYSTEM', text: '... [thread truncated] ...' });
+                history.unshift({
+                    author: root.post.author.handle,
+                    text: rootPostText.trim(),
+                });
+            }
+            break;
+        }
       }
       return history;
     } catch (error) {
@@ -595,55 +627,79 @@ export class Bot {
     }
   }
 
-  async proposeNewPost() {
+  async performAutonomousPost() {
     if (this.paused) return;
-    console.log('[Bot] Proposing new post...');
-    const interactions = dataStore.db.data.interactions.slice(-10);
-    if (interactions.length < 3) return;
+    console.log('[Bot] Checking for autonomous post eligibility...');
 
-    const topics = interactions.map(i => i.text).join('\n');
-    const systemPrompt = `
-      Based on the following recent topics of conversation, synthesize 3 interesting and relevant topics for a new post.
-      The topics should be in line with the bot's persona: friendly, inquisitive, and occasionally witty.
-      Format the topics as a numbered list.
-    `;
-    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: topics }];
-    const proposedTopics = await llmService.generateResponse(messages);
+    try {
+      const feed = await blueskyService.agent.getAuthorFeed({
+        actor: blueskyService.did,
+        limit: 100,
+      });
 
-    if (proposedTopics) {
-      this.proposedPosts = proposedTopics.split('\n').map(t => t.replace(/^\d+\.\s*/, ''));
-      const approvalMessage = `I've come up with a few ideas for a new post. @${config.ADMIN_BLUESKY_HANDLE}, please review and approve one:\n${this.proposedPosts.map((p, i) => `${i + 1}. ${p}`).join('\n')}\n\nTo approve, reply with \`!approve-post [number]\`.`;
-      await blueskyService.post(approvalMessage);
-    }
-  }
+      const today = new Date().toISOString().split('T')[0];
+      const postsToday = feed.data.feed.filter(item => {
+        return item.post.author.did === blueskyService.did &&
+               item.post.indexedAt.startsWith(today) &&
+               !item.post.record.reply; // Count only standalone posts
+      });
 
-  async createApprovedPost(topicIndex) {
-    if (this.paused || topicIndex < 0 || topicIndex >= this.proposedPosts.length) return;
-
-    const topic = this.proposedPosts[topicIndex];
-    const systemPrompt = `
-      Create a new, standalone Bluesky post about the following topic: "${topic}".
-      The post should be engaging, under 300 characters, and in line with a friendly, inquisitive persona.
-    `;
-    const messages = [{ role: 'system', content: systemPrompt }];
-    const postContent = await llmService.generateResponse(messages);
-
-    if (postContent) {
-      // 50% chance of adding an image
-      if (Math.random() < 0.5) {
-        const imageResults = await googleSearchService.searchImages(topic);
-        if (imageResults.length > 0) {
-          const image = imageResults[0];
-          const embed = await blueskyService.uploadImage(image.link, image.title || topic);
-          await blueskyService.post(postContent, embed);
-        } else {
-          await blueskyService.post(postContent);
-        }
-      } else {
-        await blueskyService.post(postContent);
+      if (postsToday.length >= 5) {
+        console.log(`[Bot] Already posted ${postsToday.length} times today. Skipping autonomous post.`);
+        return;
       }
+
+      console.log(`[Bot] Eligibility confirmed (${postsToday.length}/5). Generating content...`);
+
+      const postTypes = ['text', 'image', 'wikipedia'];
+      const postType = postTypes[Math.floor(Math.random() * postTypes.length)];
+
+      let postContent = '';
+      let embed = null;
+
+      if (postType === 'wikipedia') {
+        const article = await wikipediaService.getRandomArticle();
+        if (article) {
+          const systemPrompt = `Based on the following Wikipedia article summary, write an engaging Bluesky post. Include the article title naturally. Do not use hashtags or lists. Article Summary: "${article.extract}"`;
+          const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }];
+          postContent = await llmService.generateResponse(messages);
+          if (postContent) {
+            postContent += `\n\nRead more: ${article.url}`;
+            embed = await blueskyService.getExternalEmbed(article.url);
+          }
+        }
+      } else if (postType === 'image') {
+          const systemPrompt = `Synthesize an interesting topic for a standalone Bluesky post that would be enhanced by a generated image. Respond with ONLY the topic.`;
+          const messages = [{ role: 'system', content: systemPrompt }];
+          const topic = await llmService.generateResponse(messages);
+
+          if (topic) {
+              const imageBuffer = await imageService.generateImage(topic);
+              const postSystemPrompt = `Create a friendly and inquisitive Bluesky post about the following topic: "${topic}". Keep it under 300 characters.`;
+              postContent = await llmService.generateResponse([{ role: 'system', content: postSystemPrompt }]);
+
+              if (postContent && imageBuffer) {
+                  const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
+                  embed = {
+                    $type: 'app.bsky.embed.images',
+                    images: [{ image: uploadData.blob, alt: topic }],
+                  };
+              }
+          }
+      } else {
+        // Text-only
+        const systemPrompt = `Generate a standalone, engaging, and friendly Bluesky post based on your persona. Your persona is: ${config.TEXT_SYSTEM_PROMPT}`;
+        const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }];
+        postContent = await llmService.generateResponse(messages);
+      }
+
+      if (postContent) {
+        console.log(`[Bot] Performing autonomous ${postType} post: "${postContent}"`);
+        await blueskyService.post(postContent, embed);
+      }
+    } catch (error) {
+      console.error('[Bot] Error in performAutonomousPost:', error);
     }
-    this.proposedPosts = []; // Clear proposals after posting
   }
 
   async cleanupOldPosts() {

@@ -48,6 +48,14 @@ const config = {
   // Bot Nicknames
   BOT_NICKNAMES: process.env.BOT_NICKNAMES ? process.env.BOT_NICKNAMES.split(',') : ['SkyBots', 'skybots'],
 
+  // AI Transparency Declaration
+  AUTOMATION_LEVEL: process.env.AUTOMATION_LEVEL || 'automated',
+  PROJECT_DESCRIPTION: process.env.PROJECT_DESCRIPTION || 'An autonomous AI assistant for Bluesky, featuring image generation, search, and conversational engagement.',
+  DISCLOSURE_URL: process.env.DISCLOSURE_URL || '',
+  RESPONSIBLE_PARTY_NAME: process.env.RESPONSIBLE_PARTY_NAME || 'Admin',
+  RESPONSIBLE_PARTY_CONTACT: process.env.RESPONSIBLE_PARTY_CONTACT || '',
+  RESPONSIBLE_PARTY_BSKY: process.env.RESPONSIBLE_PARTY_BSKY || process.env.ADMIN_BLUESKY_HANDLE || '',
+
   // System prompts
   TEXT_SYSTEM_PROMPT: process.env.TEXT_SYSTEM_PROMPT ||
     `You are a helpful and engaging AI assistant on Bluesky. Your primary goal is to be a conversational partner. Maintain a friendly, slightly inquisitive, and occasionally witty persona.

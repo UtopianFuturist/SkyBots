@@ -12,9 +12,16 @@ class LLMService {
   async generateResponse(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 300, preface_system_prompt = true } = options;
 
+    let systemContent = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}`;
+
+    // Inject Temporal Context
+    const now = new Date();
+    const temporalContext = `\n\n[Current Time: ${now.toUTCString()} / Local Time: ${now.toLocaleString()}]`;
+    systemContent += temporalContext;
+
     const finalMessages = preface_system_prompt
       ? [
-          { role: "system", content: `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}` },
+          { role: "system", content: systemContent },
           ...messages
         ]
       : messages;

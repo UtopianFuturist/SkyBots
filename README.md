@@ -14,7 +14,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Persistent Memory**: Remembers past interactions with users and mutes threads on command, even after restarting.
 - **Enhanced Safety**: Includes pre-reply checks for both user posts and the bot's own responses to ensure all interactions are appropriate.
 - **Detailed Logging**: Provides step-by-step logging for easy debugging on platforms like Render, including reasons for safety check failures.
-- **Code Self-Awareness**: Can answer questions about its own capabilities by referencing its `README.md` file.
+ - **Code Self-Awareness**: Can answer questions about its own capabilities and architecture by searching its GitHub repository in real-time.
 - **Intent-Based Escalation**: Uses an LLM to analyze user intent. If high-risk intentions are detected, the bot will pause operations.
 - **Prompt Injection Defense**: Includes a security check to detect and ignore prompt injection attempts.
 - **Fact-Checking**: Can detect when a user is making a verifiable claim and perform a Google search to validate it before responding.

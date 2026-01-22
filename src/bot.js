@@ -539,6 +539,30 @@ export class Bot {
       const rating = await llmService.rateUserInteraction(interactionHistory);
       await dataStore.updateUserRating(handle, rating);
 
+    // Repo Knowledge Injection
+    const repoIntentPrompt = `Analyze the user's post to determine if they are asking about the bot's code, architecture, tools, or internal logic. Respond with only "yes" or "no".\n\nUser's post: "${text}"`;
+    const repoIntentResponse = await llmService.generateResponse([{ role: 'system', content: repoIntentPrompt }], { max_tokens: 5, preface_system_prompt: false });
+
+    if (repoIntentResponse && repoIntentResponse.toLowerCase().includes('yes')) {
+      console.log(`[Bot] Repo-related query detected. Searching codebase for context...`);
+      const repoQuery = await llmService.extractClaim(text); // Use extractClaim for a clean search query
+      const repoResults = await googleSearchService.searchRepo(repoQuery);
+
+      if (repoResults.length > 0) {
+        const repoContext = repoResults.slice(0, 3).map(r => `File/Page: ${r.title}\nSnippet: ${r.snippet}`).join('\n\n');
+        const repoSystemPrompt = `
+          You have found information about your own codebase from your GitHub repository.
+          Use this context to answer the user's question accurately and helpfully.
+          Repository Context:
+          ${repoContext}
+        `;
+        // Inject this into the messages before final response generation
+        messages.splice(1, 0, { role: 'system', content: repoSystemPrompt });
+        // Re-generate response with new context
+        responseText = await llmService.generateResponse(messages);
+      }
+    }
+
       // Self-moderation check
       const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
       const isCoherent = await llmService.isReplyCoherent(text, responseText, threadContext);

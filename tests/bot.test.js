@@ -378,11 +378,17 @@ describe('Bot', () => {
 
     expect(blueskyService.getPostDetails).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/original_post');
     const generateResponseCalls = llmService.generateResponse.mock.calls;
-    const lastCall = generateResponseCalls[generateResponseCalls.length - 1];
-    const messages = lastCall[0];
+    // Find the call that generates the response (it has the most messages and contains the persona prompt)
+    const responseCall = generateResponseCalls.find(call =>
+      call[0].length >= 3 && call[0][0].content.includes('You are replying to')
+    );
+
+    expect(responseCall).toBeDefined();
+    const messages = responseCall[0];
     const threadContext = messages.filter(m => m.role !== 'system');
 
     expect(threadContext).toHaveLength(2);
+    expect(messages[0].role).toBe('system');
     expect(threadContext[0].role).toBe('assistant');
     expect(threadContext[0].content).toBe('This is the original post by the bot. [Image with alt text: "An image of a space tree."]');
     expect(threadContext[1].role).toBe('user');

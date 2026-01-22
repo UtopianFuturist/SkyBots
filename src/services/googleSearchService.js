@@ -36,6 +36,27 @@ class GoogleSearchService {
     }
   }
 
+  async searchRepo(query) {
+    const finalQuery = `${query} site:github.com/UtopianFuturist/SkyBots`;
+    console.log(`[GoogleSearchService] Performing repo search with query: "${finalQuery}"`);
+    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(finalQuery)}`;
+    try {
+      const response = await fetch(url);
+      if (!response.ok) {
+        throw new Error(`Google Search API error (${response.status})`);
+      }
+      const data = await response.json();
+      return data.items?.map(item => ({
+        title: item.title,
+        link: item.link,
+        snippet: item.snippet,
+      })) || [];
+    } catch (error) {
+      console.error('[GoogleSearchService] Error performing repo search:', error);
+      return [];
+    }
+  }
+
   async searchImages(query, num = 4) {
     const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(query)}&searchType=image&num=${num}`;
     try {

@@ -692,69 +692,50 @@ export class Bot {
 
       console.log(`[Bot] Eligibility confirmed (${postsToday.length}/5). Generating content...`);
 
-      const postTypes = ['text', 'image', 'wikipedia', 'discovery', 'trending'];
+      const postTypes = ['text', 'image', 'wikipedia', 'trending'];
       const postType = postTypes[Math.floor(Math.random() * postTypes.length)];
 
       let postContent = '';
       let embed = null;
 
-      if (postType === 'discovery') {
-        console.log('[Bot] Discovery mode: Browsing timeline...');
-        const timeline = await blueskyService.getTimeline();
-        // Find a suitable post: standalone, not from a bot, has text
-        const target = timeline.find(item => {
-          const isStandalone = !item.post.record.reply;
-          const isNotSelf = item.post.author.did !== blueskyService.did;
-          const isNotBot = !item.post.author.handle.toLowerCase().includes('bot') &&
-                           !item.post.author.description?.toLowerCase().includes('bot');
-          const hasText = (item.post.record.text || '').length > 20;
-          return isStandalone && isNotSelf && isNotBot && hasText;
-        });
-
-        if (target) {
-          const targetText = target.post.record.text;
-          const targetAuthor = target.post.author.handle;
-          console.log(`[Bot] Evaluating interaction with @${targetAuthor}: "${targetText.substring(0, 50)}..."`);
-
-          // Vision check if image present
-          let imageContext = '';
-          if (target.post.record.embed?.$type === 'app.bsky.embed.images') {
-              const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${target.post.author.did}&cid=${target.post.record.embed.images[0].image.ref.$link}`;
-              imageContext = await llmService.analyzeImage(imageUrl, target.post.record.embed.images[0].alt);
-          }
-
-          const evaluationPrompt = `You are browsing Bluesky. You see a post by @${targetAuthor}: "${targetText}"${imageContext ? `\n(Image Analysis: ${imageContext})` : ''}\n\nShould you interact with this post? If you have something genuinely interesting, insightful, or witty to add, respond with your reply. If not, respond with "SKIP". Your persona is: ${config.TEXT_SYSTEM_PROMPT}`;
-          const interaction = await llmService.generateResponse([{ role: 'system', content: evaluationPrompt }], { max_tokens: 300, preface_system_prompt: false });
-
-          if (interaction && interaction.trim().toUpperCase() !== 'SKIP') {
-            console.log(`[Bot] Interacting with discovered post: "${interaction}"`);
-            await blueskyService.postReply(target.post, interaction);
-            await dataStore.saveInteraction({ userHandle: targetAuthor, text: targetText, response: interaction });
-            return; // Quota used
-          }
-        }
-        console.log('[Bot] Discovery found no suitable interaction. Falling back to text post.');
-      }
-
       if (postType === 'trending') {
-        console.log('[Bot] Trending mode: Searching for trending topics...');
-        const trends = await googleSearchService.search('trending news today');
-        if (trends && trends.length > 0) {
-          const topTrend = trends[0];
-          const systemPrompt = `You are a social media commentator. Based on the following trending news item, write an engaging and inquisitive Bluesky post. Do not use hashtags. News Item: "${topTrend.title} - ${topTrend.snippet}"`;
-          const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }];
-          postContent = await llmService.generateResponse(messages);
-          if (postContent) {
-            postContent += `\n\nContext: ${topTrend.link}`;
-            embed = await blueskyService.getExternalEmbed(topTrend.link);
+        console.log('[Bot] Trending mode: Synthesizing persona-aligned search...');
+        try {
+          // 1. Extract interests from persona and interactions
+          const interestPrompt = `Based on your persona and recent conversations, list 3-5 keywords representing your core interests. Persona: ${config.TEXT_SYSTEM_PROMPT}\n\nRecent Interactions:\n${dataStore.db.data.interactions.slice(-10).map(i => i.text).join('\n')}\n\nRespond with ONLY a comma-separated list of keywords.`;
+          const interests = await llmService.generateResponse([{ role: 'system', content: interestPrompt }], { max_tokens: 50, preface_system_prompt: false });
+
+          // 2. Identify network buzz (without replying)
+          const timeline = await blueskyService.getTimeline(20);
+          const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
+
+          // 3. Formulate persona-relevant search query
+          const queryPrompt = `Based on your keywords (${interests || 'AI, technology, social media'}) and what people in your feed are talking about:\n${networkBuzz || 'No recent activity.'}\n\nWhat is a specific news or trending topic you should search for and post about that aligns with your interests and the current vibe? Respond with ONLY the search query.`;
+          const searchQuery = await llmService.generateResponse([{ role: 'system', content: queryPrompt }], { max_tokens: 50, preface_system_prompt: false });
+
+          if (searchQuery) {
+            console.log(`[Bot] Targeting trending topic: "${searchQuery}"`);
+            const trends = await googleSearchService.search(searchQuery);
+            if (trends && trends.length > 0) {
+              const topTrend = trends[0];
+              const systemPrompt = `You are a social media commentator. Based on the following news item that aligns with your interests, write an engaging and inquisitive Bluesky post. Do not use hashtags. News Item: "${topTrend.title} - ${topTrend.snippet}"`;
+              postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }]);
+              if (postContent) {
+                postContent += `\n\nContext: ${topTrend.link}`;
+                embed = await blueskyService.getExternalEmbed(topTrend.link);
+              }
+            }
           }
+        } catch (trendingError) {
+          console.error('[Bot] Error in trending mode:', trendingError);
         }
+
         if (!postContent) {
-            console.log('[Bot] Trending found no suitable topic. Falling back to text post.');
+            console.log('[Bot] Trending found no suitable topic. Falling back to other content types.');
         }
       }
 
-      if (postType === 'wikipedia' || (postType === 'discovery' && !postContent) || (postType === 'trending' && !postContent)) {
+      if (postType === 'wikipedia' || (postType === 'trending' && !postContent)) {
         const article = await wikipediaService.getRandomArticle();
         if (article) {
           const systemPrompt = `Based on the following Wikipedia article summary, write an engaging Bluesky post. Include the article title naturally. Do not use hashtags or lists. Article Summary: "${article.extract}"`;

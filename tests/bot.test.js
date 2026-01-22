@@ -51,7 +51,14 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     saveInteraction: jest.fn(),
     getInteractionsByUser: jest.fn(),
     updateUserRating: jest.fn(),
+    updateUserSummary: jest.fn(),
+    getUserSummary: jest.fn(),
     init: jest.fn(),
+    db: {
+      data: {
+        interactions: []
+      }
+    }
   },
 }));
 

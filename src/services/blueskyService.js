@@ -318,6 +318,7 @@ class BlueskyService {
         automationLevel: 'automated',
         createdAt: new Date().toISOString(),
         description: config.TEXT_SYSTEM_PROMPT,
+        disclosureUrl: 'https://github.com/UtopianFuturist/SkyBots',
       };
 
       if (responsiblePartyDid) {

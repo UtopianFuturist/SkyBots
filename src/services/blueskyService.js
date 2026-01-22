@@ -242,6 +242,16 @@ class BlueskyService {
     }
   }
 
+   async getTimeline(limit = 30) {
+     try {
+       const { data } = await this.agent.getTimeline({ limit });
+       return data.feed;
+     } catch (error) {
+       console.error('[BlueskyService] Error fetching timeline:', error);
+       return [];
+     }
+   }
+
   async likePost(uri, cid) {
     try {
       await this.agent.like(uri, cid);

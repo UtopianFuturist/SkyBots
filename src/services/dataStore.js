@@ -13,6 +13,7 @@ const defaultData = {
   mutedThreads: [],
   conversationLengths: {},
   userProfiles: {},
+   userSummaries: {},
   userRatings: {},
   interactions: [] // For long-term memory
 };
@@ -115,6 +116,15 @@ class DataStore {
 
   getUserRating(handle) {
     return this.db.data.userRatings[handle] || 3; // Default to a neutral rating
+  }
+
+  async updateUserSummary(handle, summary) {
+    this.db.data.userSummaries[handle] = summary;
+    await this.db.write();
+  }
+
+  getUserSummary(handle) {
+    return this.db.data.userSummaries[handle] || null;
   }
 }
 

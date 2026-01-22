@@ -315,22 +315,16 @@ class BlueskyService {
       const record = {
         $type: 'studio.voyager.account.autonomy',
         usesGenerativeAI: true,
-        automationLevel: config.AUTOMATION_LEVEL,
+        automationLevel: 'automated',
         createdAt: new Date().toISOString(),
-        description: config.PROJECT_DESCRIPTION,
+        description: config.TEXT_SYSTEM_PROMPT,
       };
 
-      if (config.DISCLOSURE_URL) {
-        record.disclosureUrl = config.DISCLOSURE_URL;
-      }
-
-      if (config.RESPONSIBLE_PARTY_NAME || config.RESPONSIBLE_PARTY_CONTACT || responsiblePartyDid) {
+      if (responsiblePartyDid) {
         record.responsibleParty = {
-          type: 'person', // Default to person as in Cloudseeding
+          type: 'person',
+          did: responsiblePartyDid,
         };
-        if (config.RESPONSIBLE_PARTY_NAME) record.responsibleParty.name = config.RESPONSIBLE_PARTY_NAME;
-        if (config.RESPONSIBLE_PARTY_CONTACT) record.responsibleParty.contact = config.RESPONSIBLE_PARTY_CONTACT;
-        if (responsiblePartyDid) record.responsibleParty.did = responsiblePartyDid;
       }
 
       await this.agent.api.com.atproto.repo.putRecord({

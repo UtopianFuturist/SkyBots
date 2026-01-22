@@ -6,19 +6,22 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 
 - **Smart Response Filtering**: Uses an LLM to determine if a mention is relevant and safe to reply to, avoiding unnecessary interactions.
 - **Chained Replies**: Automatically splits longer responses into a threaded chain of up to 3 posts.
-- **Nvidia NIM Image Generation**: Creates high-quality images directly in replies using the Flux Schnell model.
+- **Nvidia NIM Image Generation**: Creates high-quality images directly in replies using the **Stable Diffusion 3 Medium** model.
 - **Vetted Google Image Search**: Searches for images and uses an LLM to select the most relevant result from the top 4 candidates.
+- **Wikipedia Integration**: Fetches interesting articles from Wikipedia to share in autonomous posts or respond to queries.
 - **Web & YouTube Search**: Fetches and displays information from Google and YouTube as convenient link cards.
 - **User Context Analysis**: Gathers a user's bio and recent posts to provide more informed and personalized responses.
 - **Persistent Memory**: Remembers past interactions with users and mutes threads on command, even after restarting.
 - **Enhanced Safety**: Includes pre-reply checks for both user posts and the bot's own responses to ensure all interactions are appropriate.
 - **Detailed Logging**: Provides step-by-step logging for easy debugging on platforms like Render, including reasons for safety check failures.
 - **Code Self-Awareness**: Can answer questions about its own capabilities by referencing its `README.md` file.
-- **Intent-Based Escalation**: Uses an LLM to analyze user intent. If high-risk intentions are detected, the bot will pause and alert the admin.
+- **Intent-Based Escalation**: Uses an LLM to analyze user intent. If high-risk intentions are detected, the bot will pause operations.
 - **Prompt Injection Defense**: Includes a security check to detect and ignore prompt injection attempts.
 - **Fact-Checking**: Can detect when a user is making a verifiable claim and perform a Google search to validate it before responding.
 - **User Rating System**: Rates users on a 1-5 scale based on their interaction history and will "like" posts from users with a high rating.
-- **Proactive Posting**: Periodically proposes new post ideas to the admin and, upon approval, will create and publish new content.
+- **Autonomous Posting**: Automatically creates and publishes up to 5 standalone posts per day featuring text, images, or Wikipedia articles.
+- **AI Transparency**: Standardized transparency record on the PDS (studio.voyager.account.autonomy) declaring automation level and persona.
+- **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
 
 ## 📁 Project Structure
 
@@ -88,7 +91,6 @@ The bot understands natural language commands in addition to the following expli
 | `!unblock` | Unblocks the bot. |
 | `!mute` | Mutes the current thread. |
 | `!resume`| (Admin-only) Resumes bot operations after a high-risk escalation. |
-| `!approve-post [number]`| (Admin-only) Approves a proposed post, causing the bot to create and publish it. |
 | `!help` | Displays a list of available commands. |
 | `!about`| Asks the bot to describe its capabilities. |
 | `google [query]` | Searches the web. |

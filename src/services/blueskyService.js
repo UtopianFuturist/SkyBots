@@ -290,6 +290,62 @@ class BlueskyService {
     }
   }
 
+  async submitAutonomyDeclaration() {
+    console.log('[BlueskyService] Submitting AI autonomy declaration record...');
+    try {
+      const repo = this.agent.session.did;
+      if (!repo) throw new Error('Not logged in - no DID available');
+
+      const responsiblePartyBsky = config.RESPONSIBLE_PARTY_BSKY;
+      let responsiblePartyDid = '';
+
+      if (responsiblePartyBsky) {
+        if (responsiblePartyBsky.startsWith('did:')) {
+          responsiblePartyDid = responsiblePartyBsky;
+        } else {
+          try {
+            const profile = await this.getProfile(responsiblePartyBsky);
+            responsiblePartyDid = profile.did;
+          } catch (e) {
+            console.warn(`[BlueskyService] Could not resolve DID for responsible party: ${responsiblePartyBsky}`);
+          }
+        }
+      }
+
+      const record = {
+        $type: 'studio.voyager.account.autonomy',
+        usesGenerativeAI: true,
+        automationLevel: config.AUTOMATION_LEVEL,
+        createdAt: new Date().toISOString(),
+        description: config.PROJECT_DESCRIPTION,
+      };
+
+      if (config.DISCLOSURE_URL) {
+        record.disclosureUrl = config.DISCLOSURE_URL;
+      }
+
+      if (config.RESPONSIBLE_PARTY_NAME || config.RESPONSIBLE_PARTY_CONTACT || responsiblePartyDid) {
+        record.responsibleParty = {
+          type: 'person', // Default to person as in Cloudseeding
+        };
+        if (config.RESPONSIBLE_PARTY_NAME) record.responsibleParty.name = config.RESPONSIBLE_PARTY_NAME;
+        if (config.RESPONSIBLE_PARTY_CONTACT) record.responsibleParty.contact = config.RESPONSIBLE_PARTY_CONTACT;
+        if (responsiblePartyDid) record.responsibleParty.did = responsiblePartyDid;
+      }
+
+      await this.agent.api.com.atproto.repo.putRecord({
+        repo,
+        collection: 'studio.voyager.account.autonomy',
+        rkey: 'self',
+        record,
+      });
+
+      console.log('[BlueskyService] Autonomy declaration submitted successfully.');
+    } catch (error) {
+      console.error('[BlueskyService] Error submitting autonomy declaration:', error);
+    }
+  }
+
   async post(text, embed = null) {
     console.log('[BlueskyService] Creating new post...');
     try {

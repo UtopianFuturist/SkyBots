@@ -11,6 +11,7 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     getPostDetails: jest.fn(),
     likePost: jest.fn(),
     authenticate: jest.fn(),
+    submitAutonomyDeclaration: jest.fn(),
     postAlert: jest.fn(),
     deletePost: jest.fn(),
     getExternalEmbed: jest.fn(),

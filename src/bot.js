@@ -305,106 +305,93 @@ export class Bot {
       }
     }
 
-    // 5. Fact-Checking
-    if (text.toLowerCase().startsWith('!search') || text.toLowerCase().startsWith('!google')) {
-        // This is a command, so we'll let the command handler take care of it
-    } else if (await llmService.isFactCheckNeeded(text)) {
-      console.log(`[Bot] Fact-check needed for post by ${handle}.`);
-      const claim = await llmService.extractClaim(text);
-      if (claim) {
-        const searchResults = await googleSearchService.search(claim);
-        if (searchResults.length > 0) {
-          const topResult = searchResults[0];
-          console.log(`[Bot] Top search result for "${claim}": ${topResult.title}`);
-
-          const snippet = topResult.snippet.substring(0, 500);
-          const summaryPrompt = `
-            You are a helpful assistant that summarizes information from trusted sources.
-            A user is asking about: "${claim}".
-            The most relevant article found is titled "${topResult.title}".
-            Here is a snippet from the article: "${snippet}".
-
-            Based on this, provide a concise and conversational summary of the key information.
-            Do not link to the article in your summary; the link will be added automatically.
-          `;
-          const messages = [
-            { role: 'system', content: summaryPrompt },
-            ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
-          ];
-
-          const summaryText = await llmService.generateResponse(messages);
-
-          if (summaryText) {
-            console.log(`[Bot] Generated summary for "${claim}": ${summaryText}`);
-            const embed = await blueskyService.getExternalEmbed(topResult.link);
-            await blueskyService.postReply(notif, summaryText, { embed });
-            return;
-          }
-        } else {
-            console.log(`[Bot] Could not find a relevant page from trusted sources for "${claim}".`);
-        }
-      }
-    }
-
-    // 6. YouTube Search Integration (with improved intent detection)
-    let youtubeResult = null; // Will hold the video object if found
-
-    // Stage 1: Use a reliable LLM to check for video search intent.
+    // 5. YouTube Search Integration (Priority)
+    let youtubeResult = null;
     const videoIntentSystemPrompt = `
-      You are an intent detection AI. Analyze the user's post to determine if they are asking for a YouTube video.
+      You are an intent detection AI. Analyze the user's post to determine if they are asking for a video (e.g., "find a video about...", "show me a youtube video for...", etc.).
       Your answer must be a single word: "yes" or "no".
-      Example: "can you find me a video of a cat playing a piano" -> "yes"
-      Example: "I like watching videos." -> "no"
     `;
     const videoIntentMessages = [
       { role: 'system', content: videoIntentSystemPrompt },
       { role: 'user', content: `The user's post is: "${text}"` }
     ];
-    console.log(`[Bot] Checking for YouTube video intent in post: "${text}"`);
     const videoIntentResponse = await llmService.generateResponse(videoIntentMessages, { max_tokens: 5 });
-    console.log(`[Bot] Raw video intent response: "${videoIntentResponse}"`);
 
     if (videoIntentResponse && videoIntentResponse.toLowerCase().includes('yes')) {
-      console.log(`[Bot] Video intent confirmed. Extracting search query...`);
-      // Stage 2: If intent is confirmed, extract the search query.
-      const queryExtractionPrompt = `
-        You are a search query extractor. The user wants to find a YouTube video.
-        Extract the core search query from their post. Respond with only the search query itself.
-        Example: "find a video about cats playing the piano" -> "cats playing the piano"
-        Example: "show me the latest trailer for the new Dune movie" -> "new Dune movie trailer"
-      `;
-      const queryExtractionMessages = [{ role: 'system', content: queryExtractionPrompt }, { role: 'user', content: `The user's post is: "${text}"` }];
-      const query = await llmService.generateResponse(queryExtractionMessages, { max_tokens: 50 });
-      console.log(`[Bot] Raw YouTube Query Extraction Response: "${query}"`);
+      console.log(`[Bot] Video intent confirmed for post: "${text}"`);
+      const queryExtractionPrompt = `Extract the core search query for a YouTube video from the following post. Respond with ONLY the query. Post: "${text}"`;
+      const query = await llmService.generateResponse([{ role: 'system', content: queryExtractionPrompt }], { max_tokens: 50 });
 
-      if (query && query.toLowerCase().trim() && query.toLowerCase() !== 'null' && query.toLowerCase() !== 'no') {
-        console.log(`[Bot] Extracted YouTube search query: "${query}"`);
+      if (query && query.trim() && !['null', 'no'].includes(query.toLowerCase())) {
         const youtubeResults = await youtubeService.search(query);
+        youtubeResult = await llmService.selectBestResult(query, youtubeResults, 'youtube');
 
-        if (youtubeResults.length > 0) {
-          const topResult = youtubeResults[0];
-          // Stage 3: Validate the relevance of the top search result.
-          const validationPrompt = `You are a relevance validation AI. A user requested a video with the post: "${text}". The top YouTube search result is a video titled "${topResult.title}". Is this video relevant to the user's request? Your answer must be a single word: "yes" or "no".`;
-          const validationMessages = [{ role: 'system', content: validationPrompt }];
-          console.log(`[Bot] Validating YouTube result: "${topResult.title}"`);
-          const validationResponse = await llmService.generateResponse(validationMessages, { max_tokens: 5 });
-          console.log(`[Bot] Raw validation response: "${validationResponse}"`);
-
-          if (validationResponse && validationResponse.toLowerCase().includes('yes')) {
-            console.log(`[Bot] YouTube result validated as relevant.`);
-            youtubeResult = topResult;
-            console.log(`[Bot] Found YouTube video: https://www.youtube.com/watch?v=${youtubeResult.videoId}`);
-          } else {
-            console.log(`[Bot] Top YouTube result "${topResult.title}" was deemed irrelevant. Discarding.`);
-          }
+        if (youtubeResult) {
+          console.log(`[Bot] Validated YouTube result: "${youtubeResult.title}"`);
         } else {
-          console.log(`[Bot] YouTube search for "${query}" yielded no results.`);
+          console.log(`[Bot] No relevant YouTube result found for "${query}".`);
+          const apologyPrompt = `The user asked for a video about "${query}", but you couldn't find a relevant one. Write a very short, concise, and friendly apology (max 150 characters).`;
+          const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }]);
+          if (apology) {
+            await blueskyService.postReply(notif, apology);
+            return;
+          }
         }
-      } else {
-        console.log(`[Bot] Could not extract a valid search query from the post.`);
       }
-    } else {
-      console.log(`[Bot] No video intent detected.`);
+    }
+
+    // 6. Fact-Checking / Information Search
+    if (!youtubeResult && !text.trim().startsWith('!')) {
+      if (await llmService.isFactCheckNeeded(text)) {
+        console.log(`[Bot] Fact-check/Info search needed for post: "${text}"`);
+        const claim = await llmService.extractClaim(text);
+        if (claim && !['null', 'no'].includes(claim.toLowerCase())) {
+          // Check Wikipedia first for direct information requests
+          const wikiResults = await wikipediaService.searchArticle(claim);
+          let infoResult = await llmService.selectBestResult(claim, wikiResults, 'wikipedia');
+          let isWiki = !!infoResult;
+
+          if (!infoResult) {
+            // Fall back to Google Search (trusted sources)
+            const googleResults = await googleSearchService.search(claim);
+            infoResult = await llmService.selectBestResult(claim, googleResults, 'general');
+            isWiki = false;
+          }
+
+          if (infoResult) {
+            console.log(`[Bot] Validated info result: "${infoResult.title}"`);
+            const summaryPrompt = `
+              You are a helpful assistant. Provide a concise, conversational summary of the following information about "${claim}".
+              Title: "${infoResult.title}"
+              Content: "${isWiki ? infoResult.extract : infoResult.snippet}"
+
+              Do not include the link in your summary.
+            `;
+            const summaryMessages = [
+              { role: 'system', content: summaryPrompt },
+              ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
+            ];
+            const summaryText = await llmService.generateResponse(summaryMessages);
+
+            if (summaryText) {
+              const embed = await blueskyService.getExternalEmbed(infoResult.url || infoResult.link);
+              await blueskyService.postReply(notif, summaryText, { embed });
+              return;
+            }
+          } else {
+            console.log(`[Bot] No relevant information found for "${claim}".`);
+            // If the user explicitly asked for information/fact-check and we failed, apologize.
+            if (text.toLowerCase().includes('what is') || text.toLowerCase().includes('who is') || text.toLowerCase().includes('search for')) {
+              const apologyPrompt = `The user asked for information about "${claim}", but you couldn't find a relevant source. Write a very short, concise, and friendly apology (max 150 characters).`;
+              const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }]);
+              if (apology) {
+                await blueskyService.postReply(notif, apology);
+                return;
+              }
+            }
+          }
+        }
+      }
     }
 
     // 6. Image Recognition
@@ -582,7 +569,7 @@ export class Bot {
 
       // Self-moderation check
       const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
-      const isCoherent = await llmService.isReplyCoherent(text, responseText, threadContext);
+      const isCoherent = await llmService.isReplyCoherent(text, responseText, threadContext, youtubeResult);
 
       if (isRepetitive || !isCoherent) {
         const parentPostDetails = await blueskyService.getPostDetails(notif.uri);
@@ -812,7 +799,8 @@ export class Bot {
           }
         }
 
-        const isCoherent = await llmService.isReplyCoherent(parentText, postText, threadHistory);
+        const embedInfo = post.record.embed;
+        const isCoherent = await llmService.isReplyCoherent(parentText, postText, threadHistory, embedInfo);
 
         if (!isCoherent) {
           const postDate = new Date(post.indexedAt);

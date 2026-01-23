@@ -250,28 +250,98 @@ class LLMService {
     return response?.toLowerCase().includes('yes');
   }
 
-  async isReplyCoherent(userPostText, botReplyText, threadHistory = []) {
+  async isReplyCoherent(userPostText, botReplyText, threadHistory = [], embedInfo = null) {
     const historyText = threadHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
 
+    let embedContext = '';
+    if (embedInfo) {
+      embedContext = `\n\nThe bot's reply also includes an embed: ${JSON.stringify(embedInfo)}`;
+    }
+
     const systemPrompt = `
-      You are a text analyst for a social media bot. Your task is to determine if the bot's reply is a coherent and logical response to the user's post, considering the entire conversation history. A coherent reply is one that is contextually relevant and directly addresses the user's message.
+      You are a text analyst for a social media bot. Your task is to determine if the bot's reply is a coherent, logical, and relevant response to the user's post, considering the entire conversation history.
+
+      A coherent and relevant reply MUST:
+      1. Directly address the user's intent or question.
+      2. Be contextually appropriate.
+      3. If an embed (link, video, image) is included, it MUST be relevant to what the user asked for.
 
       **Coherent Examples:**
-      - User: "Can you tell me a fun fact?" Bot: "Sure! A group of flamingos is called a flamboyance." (This is a direct and relevant answer.)
-      - User: "I love your posts!" Bot: "Thank you so much! I'm glad you enjoy them." (This is a polite and relevant acknowledgment.)
+      - User: "Can you tell me a fun fact?" Bot: "Sure! A group of flamingos is called a flamboyance."
+      - User: "I love your posts!" Bot: "Thank you so much! I'm glad you enjoy them."
+      - User: "Find me a video of a cat." Bot: "Here's a cute cat video!" (with a cat video embed)
 
-      **Incoherent Examples:**
-      - User: "What's the weather like today?" Bot: "I enjoy reading books." (This is completely unrelated.)
-      - User: "Can you help me with this math problem?" Bot: "[Placeholder for a real answer]" (This indicates a failure to generate a real response.)
+      **Incoherent/Irrelevant Examples:**
+      - User: "What's the weather like today?" Bot: "I enjoy reading books."
+      - User: "Find me a video about tofu." Bot: "Here is some info!" (with a Wikipedia link to a competitive eater - THIS IS IRRELEVANT)
+      - User: "Search for space legos." Bot: "Check these out!" (with a link to non-space modular buildings - THIS IS IRRELEVANT)
 
-      If the reply is coherent, respond with "yes". Otherwise, respond with "no".
+      If the reply (including its embed) is coherent and relevant, respond with "yes". Otherwise, respond with "no".
       Respond with only "yes" or "no".
     `;
     const messages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"` }
+      { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"${embedContext}` }
     ];
     const response = await this.generateResponse(messages, { max_tokens: 3 });
+    return response?.toLowerCase().includes('yes');
+  }
+
+  async selectBestResult(query, results, type = 'general') {
+    if (!results || results.length === 0) return null;
+    if (results.length === 1) {
+      const isValid = await this.validateResultRelevance(query, results[0], type);
+      return isValid ? results[0] : null;
+    }
+
+    const resultsList = results.map((r, i) => {
+      if (type === 'youtube') {
+        return `${i + 1}. Title: ${r.title}\nDescription: ${r.description || 'N/A'}\nChannel: ${r.channel}`;
+      } else if (type === 'wikipedia') {
+        return `${i + 1}. Title: ${r.title}\nSummary: ${r.extract}`;
+      } else {
+        return `${i + 1}. Title: ${r.title}\nSnippet: ${r.snippet}`;
+      }
+    }).join('\n\n');
+
+    const systemPrompt = `
+      You are a relevance selection AI. A user requested information with the query: "${query}".
+      Below are some search results. Select the most relevant result that directly fulfills the user's request.
+      If none of the results are relevant, respond with "none".
+      Otherwise, respond with only the number of the best result.
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Results:\n${resultsList}` }];
+    const response = await this.generateResponse(messages, { max_tokens: 5, preface_system_prompt: false });
+
+    if (!response || response.toLowerCase().includes('none')) return null;
+
+    const match = response.match(/\d+/);
+    if (match) {
+      const index = parseInt(match[0], 10) - 1;
+      if (index >= 0 && index < results.length) {
+        return results[index];
+      }
+    }
+    return null;
+  }
+
+  async validateResultRelevance(query, result, type = 'general') {
+    let resultInfo = `Title: ${result.title}`;
+    if (type === 'youtube') {
+      resultInfo += `\nDescription: ${result.description || 'N/A'}`;
+    } else if (type === 'wikipedia') {
+      resultInfo += `\nSummary: ${result.extract}`;
+    } else {
+      resultInfo += `\nSnippet: ${result.snippet}`;
+    }
+
+    const systemPrompt = `
+      You are a relevance validation AI. A user requested information with the query: "${query}".
+      Is the following result relevant and does it directly fulfill the user's request?
+      Your answer must be a single word: "yes" or "no".
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Result:\n${resultInfo}` }];
+    const response = await this.generateResponse(messages, { max_tokens: 5, preface_system_prompt: false });
     return response?.toLowerCase().includes('yes');
   }
 }

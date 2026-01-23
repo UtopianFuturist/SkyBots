@@ -30,6 +30,8 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
 jest.unstable_mockModule('../src/services/llmService.js', () => ({
   llmService: {
     generateResponse: jest.fn(),
+    selectBestResult: jest.fn(),
+    validateResultRelevance: jest.fn(),
   },
 }));
 
@@ -67,6 +69,7 @@ describe('Command Handler', () => {
     ];
     googleSearchService.search.mockResolvedValue(mockResults);
     llmService.generateResponse.mockResolvedValue('This is a test summary.');
+    llmService.validateResultRelevance.mockResolvedValue(true);
 
     // Mock the postReply method to simulate returning new post URIs/CIDs for chaining
     blueskyService.postReply
@@ -77,7 +80,7 @@ describe('Command Handler', () => {
 
     await handleCommand(mockBot, mockPost, '!search test query');
 
-    expect(googleSearchService.search).toHaveBeenCalledWith('test query');
+    expect(googleSearchService.search).toHaveBeenCalledWith('test query', { useTrustedSources: false });
     expect(llmService.generateResponse).toHaveBeenCalled();
     expect(blueskyService.postReply).toHaveBeenCalledTimes(4);
 
@@ -101,9 +104,12 @@ describe('Command Handler', () => {
   });
 
   it('should handle youtube search command', async () => {
-    youtubeService.search.mockResolvedValue([{ videoId: '123', title: 'Test Video' }]);
+    const mockResults = [{ videoId: '123', title: 'Test Video' }];
+    youtubeService.search.mockResolvedValue(mockResults);
+    llmService.selectBestResult.mockResolvedValue(mockResults[0]);
     await handleCommand(mockBot, mockPost, '!youtube test query');
     expect(youtubeService.search).toHaveBeenCalledWith('test query');
+    expect(llmService.selectBestResult).toHaveBeenCalledWith('test query', mockResults, 'youtube');
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 

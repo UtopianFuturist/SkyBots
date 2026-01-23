@@ -247,7 +247,7 @@ export class Bot {
           In your persona, generate a very concise, succinct, and final-sounding response to wrap up the interaction immediately.
           Keep it under 15 words. Do not invite further discussion.
         `;
-        const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 500 });
+        const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 1000 });
         if (conclusion) {
           const reply = await blueskyService.postReply(notif, conclusion);
           if (reply && reply.uri) {
@@ -311,7 +311,7 @@ export class Bot {
         Generate a firm but polite conversational response explaining that you cannot continue this interaction because it violates guidelines regarding ${vibe.reason}.
         Keep it concise and firm.
       `;
-      const disengagement = await llmService.generateResponse([{ role: 'system', content: disengagementPrompt }]);
+      const disengagement = await llmService.generateResponse([{ role: 'system', content: disengagementPrompt }], { max_tokens: 1000 });
       if (disengagement) {
         const reply = await blueskyService.postReply(notif, disengagement);
         if (reply && reply.uri) {
@@ -329,7 +329,7 @@ export class Bot {
         In your persona, generate a very short, natural, and final-sounding concluding message.
         Keep it LESS THAN 10 WORDS.
       `;
-      const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 500 });
+      const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 1000 });
       if (conclusion) {
         const reply = await blueskyService.postReply(notif, conclusion);
         if (reply && reply.uri) {
@@ -353,14 +353,14 @@ export class Bot {
     const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with ONLY "yes" or "no". Do not include any reasoning or <think> tags.\n\nConversation History:\n${conversationHistoryForImageCheck}`;
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
     console.log(`[Bot] Image Gen Check Prompt: ${imageGenCheckPrompt}`);
-    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 500, preface_system_prompt: false });
+    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 1000, preface_system_prompt: false });
     console.log(`[Bot] Image Gen Check Response: "${imageGenCheckResponse}"`);
 
     if (imageGenCheckResponse && imageGenCheckResponse.toLowerCase().includes('yes')) {
       const imagePromptExtractionPrompt = `You are an AI assistant that extracts image prompts. Based on the conversation, create a concise, literal, and descriptive prompt for an image generation model. The user's latest post is the primary focus. Conversation:\n${conversationHistoryForImageCheck}\n\nRespond with only the prompt.`;
       const imagePromptExtractionMessages = [{ role: 'system', content: imagePromptExtractionPrompt }];
       console.log(`[Bot] Image Prompt Extraction Prompt: ${imagePromptExtractionPrompt}`);
-      const prompt = await llmService.generateResponse(imagePromptExtractionMessages, { max_tokens: 500, preface_system_prompt: false });
+      const prompt = await llmService.generateResponse(imagePromptExtractionMessages, { max_tokens: 1000, preface_system_prompt: false });
       console.log(`[Bot] Image Gen Extraction Response: "${prompt}"`);
 
       if (prompt && prompt.toLowerCase() !== 'null' && prompt.toLowerCase() !== 'no') {
@@ -391,13 +391,13 @@ export class Bot {
       { role: 'system', content: videoIntentSystemPrompt },
       { role: 'user', content: `The user's post is: "${text}"` }
     ];
-    const videoIntentResponse = await llmService.generateResponse(videoIntentMessages, { max_tokens: 500 });
+    const videoIntentResponse = await llmService.generateResponse(videoIntentMessages, { max_tokens: 1000 });
     console.log(`[Bot] Video intent response: ${videoIntentResponse}`);
 
     if (videoIntentResponse && videoIntentResponse.toLowerCase().includes('yes')) {
       console.log(`[Bot] Video intent confirmed for post: "${text}"`);
       const queryExtractionPrompt = `Extract the core search query for a YouTube video from the following post. Respond with ONLY the query. Post: "${text}"`;
-      const query = await llmService.generateResponse([{ role: 'system', content: queryExtractionPrompt }], { max_tokens: 500 });
+      const query = await llmService.generateResponse([{ role: 'system', content: queryExtractionPrompt }], { max_tokens: 1000 });
 
       if (query && query.trim() && !['null', 'no'].includes(query.toLowerCase())) {
         const youtubeResults = await youtubeService.search(query);
@@ -408,7 +408,7 @@ export class Bot {
         } else {
           console.log(`[Bot] No relevant YouTube result found for "${query}".`);
           const apologyPrompt = `The user asked for a video about "${query}", but you couldn't find a relevant one. Write a very short, concise, and friendly apology (max 150 characters).`;
-          const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }]);
+          const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }], { max_tokens: 1000 });
           if (apology) {
             await blueskyService.postReply(notif, apology);
             return;
@@ -449,7 +449,7 @@ export class Bot {
               { role: 'system', content: summaryPrompt },
               ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
             ];
-            const summaryText = await llmService.generateResponse(summaryMessages);
+            const summaryText = await llmService.generateResponse(summaryMessages, { max_tokens: 1500 });
 
             if (summaryText) {
               const embed = await blueskyService.getExternalEmbed(infoResult.url || infoResult.link);
@@ -461,7 +461,7 @@ export class Bot {
             // If the user explicitly asked for information/fact-check and we failed, apologize.
             if (text.toLowerCase().includes('what is') || text.toLowerCase().includes('who is') || text.toLowerCase().includes('search for')) {
               const apologyPrompt = `The user asked for information about "${claim}", but you couldn't find a relevant source. Write a very short, concise, and friendly apology (max 150 characters).`;
-              const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }]);
+              const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }], { max_tokens: 1000 });
               if (apology) {
                 await blueskyService.postReply(notif, apology);
                 return;
@@ -497,7 +497,7 @@ export class Bot {
       { role: 'system', content: contextIntentSystemPrompt },
       { role: 'user', content: `The user's post is: "${text}"` }
     ];
-    const contextIntentResponse = await llmService.generateResponse(contextIntentMessages, { max_tokens: 500 });
+    const contextIntentResponse = await llmService.generateResponse(contextIntentMessages, { max_tokens: 1000 });
     let useContext = contextIntentResponse && contextIntentResponse.toLowerCase().includes('yes');
     console.log(`[Bot] User context intent: ${useContext}`);
 
@@ -567,6 +567,10 @@ export class Bot {
 
     const recentBotReplies = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
 
+    if (!responseText) {
+      console.warn(`[Bot] Failed to generate a response text for @${handle}. The LLM response was either empty, all reasoning, or timed out.`);
+    }
+
     // 6. Semantic Loop and Safety Check for Bot's Response
     if (responseText) {
       if (await llmService.checkSemanticLoop(responseText, recentBotReplies)) {
@@ -619,7 +623,7 @@ export class Bot {
       // Update User Summary periodically
       if (userMemory.length % 5 === 0) {
         const summaryPrompt = `Based on the following interaction history with @${handle}, provide a concise, one-sentence summary of this user's interests, relationship with the bot, and personality. Be objective but conversational. Do not include reasoning or <think> tags.\n\nInteraction History:\n${userMemory.slice(-10).map(m => `User: "${m.text}"\nBot: "${m.response}"`).join('\n')}`;
-        const newSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 500 });
+        const newSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 1000 });
         if (newSummary) {
           await dataStore.updateUserSummary(handle, newSummary);
           console.log(`[Bot] Updated persistent summary for @${handle}: ${newSummary}`);
@@ -628,7 +632,7 @@ export class Bot {
 
     // Repo Knowledge Injection
     const repoIntentPrompt = `Analyze the user's post to determine if they are asking about the bot's code, architecture, tools, or internal logic. Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.\n\nUser's post: "${text}"`;
-    const repoIntentResponse = await llmService.generateResponse([{ role: 'system', content: repoIntentPrompt }], { max_tokens: 500, preface_system_prompt: false });
+    const repoIntentResponse = await llmService.generateResponse([{ role: 'system', content: repoIntentPrompt }], { max_tokens: 1000, preface_system_prompt: false });
 
     if (repoIntentResponse && repoIntentResponse.toLowerCase().includes('yes')) {
       console.log(`[Bot] Repo-related query detected. Searching codebase for context...`);
@@ -646,7 +650,7 @@ export class Bot {
         // Inject this into the messages before final response generation
         messages.splice(1, 0, { role: 'system', content: repoSystemPrompt });
         // Re-generate response with new context
-        responseText = await llmService.generateResponse(messages);
+        responseText = await llmService.generateResponse(messages, { max_tokens: 2000 });
       }
     }
 
@@ -782,7 +786,7 @@ export class Bot {
 
         Respond with ONLY the topic/theme (e.g., "AI ethics in social media" or "the future of open-source"). Do not include reasoning or <think> tags.
       `;
-      const topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 500, preface_system_prompt: false });
+      const topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 1000, preface_system_prompt: false });
       console.log(`[Bot] Autonomous topic identification result: ${topic}`);
       if (!topic || topic.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
@@ -799,7 +803,7 @@ export class Bot {
 
         If yes, respond with ONLY their handle (e.g., "@user.bsky.social"). Otherwise, respond "none". Do not include reasoning or <think> tags.
       `;
-      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 500, preface_system_prompt: false });
+      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 1000, preface_system_prompt: false });
       const useMention = mentionHandle && mentionHandle.startsWith('@');
       console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
 
@@ -824,7 +828,7 @@ export class Bot {
                 Topic context: ${topic}
                 Keep it friendly and inquisitive. Max 3 threaded posts if needed.
             `;
-            postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }]);
+            postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
             if (postContent) {
                 postContent += `\n\nReference: ${article.url}`;
                 embed = await blueskyService.getExternalEmbed(article.url);
@@ -845,10 +849,10 @@ export class Bot {
                     Contextual Topic: ${topic}
                     Keep it under 280 characters.
                   `;
-                  postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }]);
+                  postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
 
                   const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${analysis}`;
-                  const altText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 500, preface_system_prompt: false });
+                  const altText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 1000, preface_system_prompt: false });
 
                   const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
                   embed = {
@@ -869,7 +873,7 @@ export class Bot {
             Keep it under 280 characters or max 3 threaded posts if deeper.
             Your persona is: ${config.TEXT_SYSTEM_PROMPT}
         `;
-        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }]);
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
       }
 
       if (postContent) {

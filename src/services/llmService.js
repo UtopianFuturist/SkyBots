@@ -168,8 +168,12 @@ class LLMService {
       - Scientific claims
       - Medical claims
 
-      For all other topics (e.g., personal plans, "checklist tomorrow", pop culture, advice, general knowledge like how to cook), respond with "no".
+      For all other topics, respond with "no".
+
+      IMPORTANT: NEVER fact-check conversational meta-talk, mentions of personal tasks, internal project coordination, or casual statements about future plans (e.g., "running through a checklist", "doing X tomorrow", "checking feature calls"). These are internal or personal matters, not public verifiable claims.
+
       If a fact-check for the specific allowed domains is needed, respond with "yes". Otherwise, respond with "no".
+      If you are in doubt, respond with "no".
       Respond with only "yes" or "no".
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];

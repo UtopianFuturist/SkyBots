@@ -91,8 +91,14 @@ export class Bot {
     // Run cleanup on startup
     await this.cleanupOldPosts();
 
-    // Perform an autonomous post on startup if needed
-    await this.performAutonomousPost();
+    // Perform an autonomous post on startup after a delay to avoid initial API burst
+    setTimeout(async () => {
+      try {
+        await this.performAutonomousPost();
+      } catch (e) {
+        console.error('[Bot] Error in initial autonomous post:', e);
+      }
+    }, 30000); // 30 second delay
 
     // Periodic autonomous post check
     setInterval(() => this.performAutonomousPost(), 3600000 * 3); // Every 3 hours
@@ -104,7 +110,6 @@ export class Bot {
     console.log('[Bot] Catching up on missed notifications...');
     let cursor;
     let notificationsCaughtUp = 0;
-    const processingPromises = [];
 
     do {
       const response = await blueskyService.getNotifications(cursor);
@@ -130,14 +135,16 @@ export class Bot {
         await dataStore.addRepliedPost(notif.uri);
         notificationsCaughtUp++;
 
-        // Now, process the notification.
-        processingPromises.push(this.processNotification(notif));
+        // Now, process the notification sequentially with a delay to avoid API overload
+        try {
+          await this.processNotification(notif);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+        } catch (error) {
+          console.error(`[Bot] Error processing notification ${notif.uri}:`, error);
+        }
       }
       cursor = response.cursor;
     } while (cursor);
-
-    // Wait for all processing to complete
-    await Promise.all(processingPromises);
 
     if (notificationsCaughtUp > 0) {
       console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);

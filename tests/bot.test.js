@@ -1,5 +1,7 @@
 import { jest } from '@jest/globals';
 
+jest.setTimeout(20000);
+
 jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
   blueskyService: {
     getNotifications: jest.fn(),

@@ -138,7 +138,7 @@ export class Bot {
         // Now, process the notification sequentially with a delay to avoid API overload
         try {
           await this.processNotification(notif);
-          await new Promise(resolve => setTimeout(resolve, 2000));
+          await new Promise(resolve => setTimeout(resolve, 5000));
         } catch (error) {
           console.error(`[Bot] Error processing notification ${notif.uri}:`, error);
         }
@@ -913,7 +913,7 @@ export class Bot {
         const embedInfo = post.record.embed;
 
         // Add a small delay between LLM calls to prevent 504 errors/overload
-        await new Promise(resolve => setTimeout(resolve, 1500));
+        await new Promise(resolve => setTimeout(resolve, 3000));
 
         const isCoherent = await llmService.isReplyCoherent(parentText, postText, threadHistory, embedInfo);
 

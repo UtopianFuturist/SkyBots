@@ -91,7 +91,7 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   MAX_RETRIES: parseInt(process.env.MAX_RETRIES || '5'),
   BACKOFF_DELAY: parseInt(process.env.BACKOFF_DELAY || '60000'),
   MAX_REPLIED_POSTS: parseInt(process.env.MAX_REPLIED_POSTS || '1000'),
-  LLM_MODEL: process.env.LLM_MODEL || 'moonshotai/kimi-k2-instruct-0905',
+  LLM_MODEL: process.env.LLM_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
   VISION_MODEL: process.env.VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct',
 };
 

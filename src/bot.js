@@ -705,7 +705,7 @@ export class Bot {
             const trends = await googleSearchService.search(searchQuery);
             if (trends && trends.length > 0) {
               const topTrend = trends[0];
-              const systemPrompt = `You are a social media commentator. Based on the following news item that aligns with your interests, write an engaging and inquisitive Bluesky post. Do not use hashtags. News Item: "${topTrend.title} - ${topTrend.snippet}"`;
+              const systemPrompt = `You are a social media commentator. Based on the following news item that aligns with your interests, write an engaging and inquisitive Bluesky post. Keep it under 200 characters. Do not use hashtags. News Item: "${topTrend.title} - ${topTrend.snippet}"`;
               postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }]);
               if (postContent) {
                 postContent += `\n\nContext: ${topTrend.link}`;
@@ -725,7 +725,7 @@ export class Bot {
       if (postType === 'wikipedia' || (postType === 'trending' && !postContent)) {
         const article = await wikipediaService.getRandomArticle();
         if (article) {
-          const systemPrompt = `Based on the following Wikipedia article summary, write an engaging Bluesky post. Include the article title naturally. Do not use hashtags or lists. Article Summary: "${article.extract}"`;
+          const systemPrompt = `Based on the following Wikipedia article summary, write an engaging Bluesky post. Include the article title naturally. Keep it under 200 characters. Do not use hashtags or lists. Article Summary: "${article.extract}"`;
           const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }];
           postContent = await llmService.generateResponse(messages);
           if (postContent) {
@@ -740,7 +740,7 @@ export class Bot {
 
           if (topic) {
               const imageBuffer = await imageService.generateImage(topic);
-              const postSystemPrompt = `Create a friendly and inquisitive Bluesky post about the following topic: "${topic}". Keep it under 300 characters.`;
+              const postSystemPrompt = `Create a friendly and inquisitive Bluesky post about the following topic: "${topic}". Keep it under 280 characters.`;
               postContent = await llmService.generateResponse([{ role: 'system', content: postSystemPrompt }]);
 
               if (postContent && imageBuffer) {
@@ -757,12 +757,18 @@ export class Bot {
           }
       } else {
         // Text-only
-        const systemPrompt = `Generate a standalone, engaging, and friendly Bluesky post based on your persona. Your persona is: ${config.TEXT_SYSTEM_PROMPT}`;
+        const systemPrompt = `Generate a standalone, engaging, and friendly Bluesky post based on your persona. Keep it under 280 characters. Your persona is: ${config.TEXT_SYSTEM_PROMPT}`;
         const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }];
         postContent = await llmService.generateResponse(messages);
       }
 
       if (postContent) {
+        // Final length check and truncation failsafe
+        if (postContent.length > 300) {
+            console.warn(`[Bot] Post content too long (${postContent.length} chars). Truncating...`);
+            postContent = postContent.substring(0, 297) + '...';
+        }
+
         console.log(`[Bot] Performing autonomous ${postType} post: "${postContent}"`);
         await blueskyService.post(postContent, embed);
       }

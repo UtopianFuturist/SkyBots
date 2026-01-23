@@ -262,13 +262,45 @@ export class Bot {
     //   return;
     // }
 
-    // 6. Bot-to-Bot Loop Prevention
-    const profile = await blueskyService.getProfile(handle);
-    const isBot = handle.includes('bot') || profile.description?.toLowerCase().includes('bot');
+    // 6. Conversation Vibe and Status Check (Anti-Looping & Monotony)
+    const vibe = await llmService.evaluateConversationVibe(threadContext, text);
     const convLength = dataStore.getConversationLength(threadRootUri);
 
+    if (vibe.status === 'hostile') {
+      console.log(`[Bot] Disengaging from ${handle} due to hostility: ${vibe.reason}`);
+      const disengagementPrompt = `
+        A user interaction has been flagged for disengagement due to: "${vibe.reason}".
+        Generate a firm but polite conversational response explaining that you cannot continue this interaction because it violates guidelines regarding ${vibe.reason}.
+        Keep it concise and firm.
+      `;
+      const disengagement = await llmService.generateResponse([{ role: 'system', content: disengagementPrompt }]);
+      if (disengagement) {
+        await blueskyService.postReply(notif, disengagement);
+      }
+      await dataStore.muteThread(threadRootUri);
+      return;
+    }
+
+    if (vibe.status === 'monotonous') {
+      console.log(`[Bot] Ending monotonous conversation in thread ${threadRootUri}`);
+      const conclusionPrompt = `
+        This conversation has reached a natural conclusion or become too lengthy.
+        Generate a very short, natural, and final-sounding concluding message (LESS THAN 10 WORDS).
+        Examples: "Fair enough, catch you later!", "Got it, talk soon.", "See ya around!"
+      `;
+      const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 20 });
+      if (conclusion) {
+        await blueskyService.postReply(notif, conclusion);
+      }
+      await dataStore.muteThread(threadRootUri);
+      return;
+    }
+
+    // Traditional Bot-to-Bot fallback
+    const profile = await blueskyService.getProfile(handle);
+    const isBot = handle.includes('bot') || profile.description?.toLowerCase().includes('bot');
     if (isBot && convLength >= 5) {
-      await blueskyService.postReply(notif, "This conversation has been great, but I'll step away now to avoid looping! Feel free to tag me elsewhere.");
+      await blueskyService.postReply(notif, "Catch you later! Stopping here to avoid a loop.");
       await dataStore.muteThread(threadRootUri);
       return;
     }

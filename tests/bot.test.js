@@ -39,6 +39,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     isReplyCoherent: jest.fn(),
     selectBestResult: jest.fn(),
     validateResultRelevance: jest.fn(),
+    evaluateConversationVibe: jest.fn(),
   },
 }));
 
@@ -48,6 +49,7 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     addRepliedPost: jest.fn(),
     isBlocked: jest.fn(),
     isThreadMuted: jest.fn(),
+    muteThread: jest.fn(),
     getConversationLength: jest.fn(),
     updateConversationLength: jest.fn(),
     saveInteraction: jest.fn(),
@@ -119,6 +121,7 @@ describe('Bot', () => {
     llmService.isFactCheckNeeded.mockResolvedValue(false);
     llmService.analyzeUserIntent.mockResolvedValue({ highRisk: false, reason: 'Friendly' });
     llmService.isReplyCoherent.mockResolvedValue(true);
+    llmService.evaluateConversationVibe.mockResolvedValue({ status: 'healthy' });
     llmService.checkSemanticLoop.mockResolvedValue(false);
     llmService.shouldLikePost.mockResolvedValue(false);
     llmService.rateUserInteraction.mockResolvedValue(3);
@@ -487,5 +490,47 @@ describe('Bot', () => {
 
     expect(blueskyService.postReply).not.toHaveBeenCalled();
     expect(llmService.generateResponse).not.toHaveBeenCalled();
+  });
+
+  it('should disengage from a hostile user with an explanation', async () => {
+    const mockNotif = {
+      isRead: false,
+      uri: 'at://did:plc:123/app.bsky.feed.post/hostile',
+      reason: 'mention',
+      record: { text: 'You are a terrible bot! @skybots.bsky.social' },
+      author: { handle: 'mean.user' },
+      indexedAt: new Date().toISOString()
+    };
+
+    bot._getThreadHistory = jest.fn().mockResolvedValue([]);
+    llmService.evaluateConversationVibe.mockResolvedValue({ status: 'hostile', reason: 'harassment' });
+    llmService.generateResponse.mockResolvedValue('I cannot continue this conversation as it violates my guidelines regarding harassment.');
+
+    await bot.processNotification(mockNotif);
+
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'I cannot continue this conversation as it violates my guidelines regarding harassment.');
+    expect(dataStore.muteThread).toHaveBeenCalledWith('at://did:plc:123/app.bsky.feed.post/hostile');
+  });
+
+  it('should end a monotonous conversation with a short reply', async () => {
+    const mockNotif = {
+      isRead: false,
+      uri: 'at://did:plc:123/app.bsky.feed.post/monotonous',
+      reason: 'reply',
+      record: { text: 'Tell me more.' },
+      author: { handle: 'bored.user' },
+      indexedAt: new Date().toISOString()
+    };
+
+    const history = new Array(15).fill({ author: 'user', text: '...' });
+    history[13] = { author: config.BLUESKY_IDENTIFIER, text: 'Bot previous reply' };
+    bot._getThreadHistory = jest.fn().mockResolvedValue(history);
+    llmService.evaluateConversationVibe.mockResolvedValue({ status: 'monotonous' });
+    llmService.generateResponse.mockResolvedValue('Fair enough, talk soon!');
+
+    await bot.processNotification(mockNotif);
+
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'Fair enough, talk soon!');
+    expect(dataStore.muteThread).toHaveBeenCalledWith('at://did:plc:123/app.bsky.feed.post/monotonous');
   });
 });

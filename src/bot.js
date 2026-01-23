@@ -586,8 +586,6 @@ export class Bot {
     if (responseText) {
       // Remove thinking tags and any leftover fragments
       responseText = sanitizeThinkingTags(responseText);
-      // Handle cases where the model might output </think> without the opening tag
-      responseText = responseText.replace(/<\/think>/gi, '').trim();
       
       // Sanitize the response to avoid duplicate sentences
       responseText = sanitizeDuplicateText(responseText);
@@ -875,6 +873,28 @@ export class Bot {
       }
 
       if (postContent) {
+        postContent = sanitizeThinkingTags(postContent);
+        postContent = sanitizeDuplicateText(postContent);
+
+        if (!postContent) {
+          console.log('[Bot] Autonomous post content was empty after sanitization. Aborting.');
+          return;
+        }
+
+        // 5. Coherence Check for Autonomous Post
+        console.log(`[Bot] Checking coherence for autonomous ${postType} post...`);
+        const isCoherent = await llmService.isReplyCoherent(
+          `Topic: ${topic}`,
+          postContent,
+          [], // No thread history for standalone posts
+          embed
+        );
+
+        if (!isCoherent) {
+          console.log(`[Bot] Autonomous post failed coherence check. Aborting. Topic: ${topic}`);
+          return;
+        }
+
         console.log(`[Bot] Performing autonomous ${postType} post...`);
         const result = await blueskyService.post(postContent, embed, { maxChunks: 3 });
 

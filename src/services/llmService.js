@@ -4,7 +4,7 @@ import config from '../../config.js';
 class LLMService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    this.model = 'moonshotai/kimi-k2-instruct-0905';
+    this.model = config.LLM_MODEL || 'meta/llama-3.3-70b-instruct';
     this.visionModel = config.VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
@@ -384,7 +384,14 @@ class LLMService {
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"${embedContext}` }
     ];
     const response = await this.generateResponse(messages, { max_tokens: 3 });
-    return response?.toLowerCase().includes('yes');
+
+    // Safety check: if the API fails, assume it's coherent to avoid accidental deletion.
+    if (!response) {
+        console.warn(`[LLMService] Coherence check failed due to empty response/timeout. Defaulting to "true" (coherent).`);
+        return true;
+    }
+
+    return response.toLowerCase().includes('yes');
   }
 
   async selectBestResult(query, results, type = 'general') {

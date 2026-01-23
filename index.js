@@ -20,6 +20,10 @@ import config from './config.js';
 
 // Manual cleanup endpoint needs the bot instance
 app.post('/manual-cleanup', (req, res) => {
+  if (!config.MANUAL_CLEANUP_TOKEN) {
+    return res.status(503).send('Manual cleanup is not configured.');
+  }
+
   const authHeader = req.headers.authorization;
   if (!authHeader || authHeader !== `Bearer ${config.MANUAL_CLEANUP_TOKEN}`) {
     return res.status(401).send('Unauthorized');

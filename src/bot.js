@@ -793,14 +793,16 @@ export class Bot {
         Recent Interactions:
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
 
-        Respond with ONLY the topic/theme (e.g., "AI ethics in social media" or "the future of open-source"). Do not include reasoning or <think> tags.
+        Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source). Do not include surrounding quotes, reasoning, or <think> tags.
       `;
-      const topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 1000, preface_system_prompt: false });
+      let topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 1000, preface_system_prompt: false });
       console.log(`[Bot] Autonomous topic identification result: ${topic}`);
       if (!topic || topic.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
           return;
       }
+      // Strip leading/trailing quotes from the topic
+      topic = topic.replace(/^["']|["']$/g, '').trim();
       console.log(`[Bot] Identified topic: "${topic}"`);
 
       // 3. Check for meaningful user to mention
@@ -810,7 +812,7 @@ export class Bot {
         Interactions:
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n')}
 
-        If yes, respond with ONLY their handle (e.g., "@user.bsky.social"). Otherwise, respond "none". Do not include reasoning or <think> tags.
+        If yes, respond with ONLY their handle (e.g., @user.bsky.social). Otherwise, respond "none". Do not include surrounding quotes, reasoning, or <think> tags.
       `;
       const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 1000, preface_system_prompt: false });
       const useMention = mentionHandle && mentionHandle.startsWith('@');
@@ -818,7 +820,7 @@ export class Bot {
 
       // 4. Determine Post Type
       const postTypes = ['text', 'image', 'wikipedia'];
-      const postType = postTypes[Math.floor(Math.random() * postTypes.length)];
+      let postType = postTypes[Math.floor(Math.random() * postTypes.length)];
       console.log(`[Bot] Selected post type: ${postType}`);
 
       let postContent = '';
@@ -839,7 +841,13 @@ export class Bot {
         console.log(`[Bot] Pre-fetching Wikipedia article for topic: ${topic}`);
         const articles = await wikipediaService.searchArticle(topic, 1);
         article = articles[0];
-      } else if (postType === 'image') {
+        if (!article) {
+          console.log(`[Bot] No Wikipedia article found for "${topic}". Falling back to text post.`);
+          postType = 'text';
+        }
+      }
+
+      if (postType === 'image') {
         console.log(`[Bot] Pre-generating image for topic: ${topic}`);
         imageBuffer = await imageService.generateImage(topic);
         if (imageBuffer) {
@@ -850,9 +858,22 @@ export class Bot {
             imageAltText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 1000, preface_system_prompt: false });
 
             console.log(`[Bot] Uploading image blob...`);
-            const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
-            imageBlob = uploadData.blob;
+            try {
+              const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
+              imageBlob = uploadData.blob;
+            } catch (uploadError) {
+              console.error(`[Bot] Error uploading image blob:`, uploadError);
+            }
+          } else {
+            console.log(`[Bot] Image analysis failed for topic: "${topic}".`);
           }
+        } else {
+          console.log(`[Bot] Image generation failed for topic: "${topic}".`);
+        }
+
+        if (!imageBlob) {
+          console.log(`[Bot] Falling back to text post due to image generation/upload failure.`);
+          postType = 'text';
         }
       }
 

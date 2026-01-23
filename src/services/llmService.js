@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
+import { sanitizeThinkingTags } from '../utils/textUtils.js';
 
 class LLMService {
   constructor() {
@@ -62,8 +63,12 @@ class LLMService {
 
       const data = await response.json();
       console.log(`[LLMService] [${requestId}] Response received successfully in ${duration}ms.`);
-      const content = data.choices[0]?.message?.content;
-      return content ? content.trim() : null;
+      let content = data.choices[0]?.message?.content;
+      if (content) {
+        content = sanitizeThinkingTags(content);
+        return content.trim() || null;
+      }
+      return null;
     } catch (error) {
       if (error.name === 'AbortError') {
         console.error(`[LLMService] [${requestId}] Request timed out after 60s.`);
@@ -387,7 +392,10 @@ class LLMService {
         return true;
     }
 
-    const score = parseInt(response.trim(), 10);
+    // Extract the first digit found in the response (robust against filler text)
+    const match = response.match(/\d/);
+    const score = match ? parseInt(match[0], 10) : NaN;
+
     if (isNaN(score)) {
       console.warn(`[LLMService] Invalid coherence score: "${response}". Defaulting to true.`);
       return true;

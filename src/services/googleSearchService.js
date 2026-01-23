@@ -9,16 +9,26 @@ class GoogleSearchService {
     this.baseUrl = 'https://www.googleapis.com/customsearch/v1';
   }
 
-  async search(query) {
-    const trustedSources = [
-      'site:en.wikipedia.org',
-      'site:reuters.com',
-      'site:apnews.com',
-      'site:politifact.com'
-    ].join(' OR ');
-    const finalQuery = `${query} (${trustedSources})`;
-    console.log(`[GoogleSearchService] Performing search with query: "${finalQuery}"`);
-    const url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(finalQuery)}&dateRestrict=m3`;
+  async search(query, options = {}) {
+    const { useTrustedSources = true, dateRestrict = 'm3' } = options;
+
+    let finalQuery = query;
+    if (useTrustedSources) {
+      const trustedSources = [
+        'site:en.wikipedia.org',
+        'site:reuters.com',
+        'site:apnews.com',
+        'site:politifact.com'
+      ].join(' OR ');
+      finalQuery = `${query} (${trustedSources})`;
+    }
+
+    console.log(`[GoogleSearchService] Performing search with query: "${finalQuery}" (trusted: ${useTrustedSources})`);
+    let url = `${this.baseUrl}?key=${this.apiKey}&cx=${this.cxId}&q=${encodeURIComponent(finalQuery)}`;
+    if (dateRestrict) {
+      url += `&dateRestrict=${dateRestrict}`;
+    }
+
     try {
       const response = await fetch(url);
       if (!response.ok) {

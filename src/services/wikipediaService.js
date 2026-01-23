@@ -25,27 +25,35 @@ class WikipediaService {
     }
   }
 
-  async searchArticle(query) {
-      console.log(`[WikipediaService] Searching for article: "${query}"`);
+  async searchArticle(query, limit = 3) {
+      console.log(`[WikipediaService] Searching for article: "${query}" (limit: ${limit})`);
       try {
           const searchResponse = await fetch(`https://en.wikipedia.org/w/api.php?action=query&list=search&srsearch=${encodeURIComponent(query)}&format=json&origin=*`);
           const searchData = await searchResponse.json();
 
-          if (searchData.query.search.length > 0) {
-              const title = searchData.query.search[0].title;
-              const summaryResponse = await fetch(`${this.baseUrl}/page/summary/${encodeURIComponent(title.replace(/ /g, '_'))}`);
-              const data = await summaryResponse.json();
-              return {
-                title: data.title,
-                extract: data.extract,
-                url: data.content_urls.desktop.page,
-                thumbnail: data.thumbnail ? data.thumbnail.source : null,
-              };
+          const results = [];
+          const searchItems = searchData.query.search.slice(0, limit);
+
+          for (const item of searchItems) {
+              try {
+                  const summaryResponse = await fetch(`${this.baseUrl}/page/summary/${encodeURIComponent(item.title.replace(/ /g, '_'))}`);
+                  if (summaryResponse.ok) {
+                      const data = await summaryResponse.json();
+                      results.push({
+                        title: data.title,
+                        extract: data.extract,
+                        url: data.content_urls.desktop.page,
+                        thumbnail: data.thumbnail ? data.thumbnail.source : null,
+                      });
+                  }
+              } catch (summaryError) {
+                  console.error(`[WikipediaService] Error fetching summary for ${item.title}:`, summaryError);
+              }
           }
-          return null;
+          return results;
       } catch (error) {
           console.error('[WikipediaService] Error searching Wikipedia:', error);
-          return null;
+          return [];
       }
   }
 }

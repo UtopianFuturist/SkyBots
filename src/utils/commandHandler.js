@@ -55,46 +55,60 @@ export const handleCommand = async (bot, post, text) => {
     }
 
     console.log(`[CommandHandler] Received !search command with query: "${query}"`);
-    const results = await googleSearchService.search(query);
+    // Use general search for explicit !search command
+    const results = await googleSearchService.search(query, { useTrustedSources: false });
 
     if (results && results.length > 0) {
-      const topResults = results.slice(0, 3);
-      const searchContext = topResults.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join('\n');
-
-      // 1. Generate and post the summary
-      const summaryPrompt = `Based on the following search results for "${query}", write a concise summary of the findings.\n\n${searchContext}`;
-      const summary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }]);
-
-      let lastPost = post;
-      if (summary) {
-        lastPost = await blueskyService.postReply(lastPost, summary, { maxChunks: 1 });
-        await new Promise(resolve => setTimeout(resolve, 1000));
+      // For the summary thread, we still use the top 3 but validated
+      const validatedResults = [];
+      for (const result of results.slice(0, 5)) {
+          if (await llmService.validateResultRelevance(query, result)) {
+              validatedResults.push(result);
+          }
+          if (validatedResults.length >= 3) break;
       }
 
-      // 2. Post each of the top 3 results as a separate, nested reply
-      for (const result of topResults) {
-        if (!lastPost) break; // Stop if a post in the chain fails
-        const headlineText = `${result.title}\n${result.link}`;
-        const embed = await blueskyService.getExternalEmbed(result.link);
-        lastPost = await blueskyService.postReply(lastPost, headlineText, { embed, maxChunks: 1 });
-        await new Promise(resolve => setTimeout(resolve, 1000));
-      }
+      if (validatedResults.length > 0) {
+        const searchContext = validatedResults.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join('\n');
 
-      return; // Command handled, no further reply needed
+        // 1. Generate and post the summary
+        const summaryPrompt = `Based on the following search results for "${query}", write a concise summary of the findings.\n\n${searchContext}`;
+        const summary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }]);
+
+        let lastPost = post;
+        if (summary) {
+          lastPost = await blueskyService.postReply(lastPost, summary, { maxChunks: 1 });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+
+        // 2. Post each of the validated results as a separate, nested reply
+        for (const result of validatedResults) {
+          if (!lastPost) break; // Stop if a post in the chain fails
+          const headlineText = `${result.title}\n${result.link}`;
+          const embed = await blueskyService.getExternalEmbed(result.link);
+          lastPost = await blueskyService.postReply(lastPost, headlineText, { embed, maxChunks: 1 });
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+        return;
+      }
     }
 
-    return `I couldn't find anything for "${query}".`;
+    return `I couldn't find any relevant results for "${query}".`;
   }
 
   if (lowerText.startsWith('!video') || lowerText.startsWith('!youtube')) {
     const query = lowerText.replace('!video', '').replace('!youtube', '').trim();
+    if (!query) {
+        return "Please provide a video search term. Example: `!video how to cook tofu`";
+    }
     const results = await youtubeService.search(query);
-    if (results.length > 0) {
-      const topResult = results[0];
-      const videoUrl = `https://www.youtube.com/watch?v=${topResult.videoId}`;
+    const bestResult = await llmService.selectBestResult(query, results, 'youtube');
+
+    if (bestResult) {
+      const videoUrl = `https://www.youtube.com/watch?v=${bestResult.videoId}`;
 
       // First, post the text-only reply
-      const replyText = `Here's a video I found for "${query}":\n\n${topResult.title}`;
+      const replyText = `Here's a video I found for "${query}":\n\n${bestResult.title}`;
       await blueskyService.postReply(post, replyText);
 
       // Then, post the embed-only reply to the same original post
@@ -103,14 +117,14 @@ export const handleCommand = async (bot, post, text) => {
           $type: 'app.bsky.embed.external',
           external: {
             uri: videoUrl,
-            title: topResult.title,
-            description: `A video by ${topResult.channel}.`,
+            title: bestResult.title,
+            description: `A video by ${bestResult.channel}.`,
           },
         }
       });
       return; // Command handled
     }
-    return `I couldn't find any videos for "${query}".`;
+    return `I couldn't find a relevant video for "${query}".`;
   }
 
   if (lowerText.startsWith('!generate-image')) {

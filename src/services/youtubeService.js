@@ -52,15 +52,15 @@ class YouTubeService {
             videoId: videoId,
             thumbnail: details.snippet.thumbnails.default.url,
             channel: details.snippet.channelTitle,
+            description: details.snippet.description,
           });
-          // Return the first valid result for now, but we could return more
-          return results;
+        } else {
+          console.log(`[YouTubeService] Skipping unavailable video: ID ${videoId}`);
         }
-        console.log(`[YouTubeService] Skipping unavailable video: ID ${videoId}`);
       }
 
-      console.log(`[YouTubeService] No available videos found for "${query}" after checking details.`);
-      return [];
+      console.log(`[YouTubeService] Found ${results.length} available videos for "${query}" after checking details.`);
+      return results;
     } catch (error) {
       console.error('[YouTubeService] Unhandled error during YouTube search:', error.message);
       return [];

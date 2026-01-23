@@ -37,6 +37,8 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     analyzeImage: jest.fn(),
     shouldLikePost: jest.fn(),
     isReplyCoherent: jest.fn(),
+    selectBestResult: jest.fn(),
+    validateResultRelevance: jest.fn(),
   },
 }));
 
@@ -64,6 +66,20 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
 
 jest.unstable_mockModule('../src/services/googleSearchService.js', () => ({
   googleSearchService: {
+    search: jest.fn().mockResolvedValue([]),
+    searchRepo: jest.fn().mockResolvedValue([]),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/wikipediaService.js', () => ({
+  wikipediaService: {
+    searchArticle: jest.fn(),
+    getRandomArticle: jest.fn(),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/youtubeService.js', () => ({
+  youtubeService: {
     search: jest.fn(),
   },
 }));
@@ -79,6 +95,8 @@ const { blueskyService } = await import('../src/services/blueskyService.js');
 const { llmService } = await import('../src/services/llmService.js');
 const { dataStore } = await import('../src/services/dataStore.js');
 const { googleSearchService } = await import('../src/services/googleSearchService.js');
+const { wikipediaService } = await import('../src/services/wikipediaService.js');
+const { youtubeService } = await import('../src/services/youtubeService.js');
 import config from '../config.js';
 
 describe('Bot', () => {
@@ -88,6 +106,36 @@ describe('Bot', () => {
     jest.clearAllMocks();
     bot = new Bot();
     await bot.init(); // To load readme, etc.
+
+    // Default mocks for common behavior
+    llmService.generateResponse.mockImplementation((messages) => {
+      const systemContent = messages[0].content || '';
+      if (systemContent.includes('intent detection AI')) return Promise.resolve('no');
+      if (systemContent.includes('gatekeeper')) return Promise.resolve('true');
+      return Promise.resolve('Test response');
+    });
+    llmService.isPostSafe.mockResolvedValue({ safe: true });
+    llmService.isResponseSafe.mockResolvedValue({ safe: true });
+    llmService.isFactCheckNeeded.mockResolvedValue(false);
+    llmService.analyzeUserIntent.mockResolvedValue({ highRisk: false, reason: 'Friendly' });
+    llmService.isReplyCoherent.mockResolvedValue(true);
+    llmService.checkSemanticLoop.mockResolvedValue(false);
+    llmService.shouldLikePost.mockResolvedValue(false);
+    llmService.rateUserInteraction.mockResolvedValue(3);
+
+    blueskyService.getProfile.mockResolvedValue({ handle: 'user.bsky.social', description: 'Test bio' });
+    blueskyService.getUserPosts.mockResolvedValue([]);
+    blueskyService.postReply.mockResolvedValue({ uri: 'at://bot/post/1' });
+
+    dataStore.hasReplied.mockReturnValue(false);
+    dataStore.isBlocked.mockReturnValue(false);
+    dataStore.isThreadMuted.mockReturnValue(false);
+    dataStore.getConversationLength.mockReturnValue(1);
+    dataStore.getInteractionsByUser.mockReturnValue([]);
+    dataStore.getUserSummary.mockReturnValue(null);
+
+    wikipediaService.searchArticle.mockResolvedValue([]);
+    youtubeService.search.mockResolvedValue([]);
   });
 
   it('should reply to a follow-up comment on its own post without a direct mention', async () => {
@@ -268,19 +316,32 @@ describe('Bot', () => {
     };
 
     bot._getThreadHistory = jest.fn().mockResolvedValue([]);
-    llmService.isPostSafe.mockResolvedValue({ safe: true });
     llmService.isFactCheckNeeded.mockResolvedValue(true);
     llmService.extractClaim.mockResolvedValue('sky is blue');
-    googleSearchService.search.mockResolvedValue([
+
+    const mockGoogleResults = [
       { title: 'Why the Sky Is Blue', link: 'https://example.com/sky-is-blue', snippet: 'The sky is blue because of Rayleigh scattering...' }
-    ]);
-    llmService.generateResponse.mockResolvedValue('Yes, the sky is blue due to a phenomenon called Rayleigh scattering.');
+    ];
+    googleSearchService.search.mockResolvedValue(mockGoogleResults);
+    llmService.selectBestResult.mockImplementation((query, results) => {
+        if (results && results.length > 0) return Promise.resolve(results[0]);
+        return Promise.resolve(null);
+    });
+
+    // Override default mock for this specific test's response
+    llmService.generateResponse.mockImplementation((messages) => {
+        const systemContent = messages[0].content || '';
+        if (systemContent.includes('intent detection AI')) return Promise.resolve('no');
+        if (systemContent.toLowerCase().includes('summary')) return Promise.resolve('Yes, the sky is blue due to a phenomenon called Rayleigh scattering.');
+        return Promise.resolve('Test response');
+    });
+
     blueskyService.getExternalEmbed.mockResolvedValue({ $type: 'app.bsky.embed.external', external: {} });
 
     await bot.processNotification(mockNotif);
 
     expect(googleSearchService.search).toHaveBeenCalledWith('sky is blue');
-    expect(llmService.generateResponse).toHaveBeenCalled();
+    expect(llmService.selectBestResult).toHaveBeenCalledWith('sky is blue', mockGoogleResults, 'general');
     expect(blueskyService.postReply).toHaveBeenCalledWith(
       expect.anything(),
       'Yes, the sky is blue due to a phenomenon called Rayleigh scattering.',

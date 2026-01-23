@@ -774,6 +774,7 @@ export class Bot {
       const recentInteractions = dataStore.db.data.interactions.slice(-20);
 
       // 2. Identify a topic based on context
+      console.log(`[Bot] Identifying autonomous post topic...`);
       const topicPrompt = `
         Based on the current vibe of your following feed and recent interactions, identify a single interesting topic or theme for a standalone post.
         Network Buzz:
@@ -784,6 +785,7 @@ export class Bot {
         Respond with ONLY the topic/theme (e.g., "AI ethics in social media" or "the future of open-source").
       `;
       const topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 50, preface_system_prompt: false });
+      console.log(`[Bot] Autonomous topic identification result: ${topic}`);
       if (!topic || topic.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
           return;
@@ -791,6 +793,7 @@ export class Bot {
       console.log(`[Bot] Identified topic: "${topic}"`);
 
       // 3. Check for meaningful user to mention
+      console.log(`[Bot] Checking for meaningful mentions for topic: ${topic}`);
       const mentionPrompt = `
         For the topic "${topic}", identify if any of the following users have had a meaningful persistent discussion with you about it (multiple quality interactions).
         Interactions:
@@ -800,6 +803,7 @@ export class Bot {
       `;
       const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 50, preface_system_prompt: false });
       const useMention = mentionHandle && mentionHandle.startsWith('@');
+      console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
 
       // 4. Determine Post Type
       const postTypes = ['text', 'image', 'wikipedia'];
@@ -811,6 +815,7 @@ export class Bot {
       let generationPrompt = '';
 
       if (postType === 'wikipedia') {
+        console.log(`[Bot] Post type selected: Wikipedia. Searching for article: ${topic}`);
         const articles = await wikipediaService.searchArticle(topic, 1);
         const article = articles[0];
         if (article) {
@@ -828,8 +833,10 @@ export class Bot {
             }
         }
       } else if (postType === 'image') {
+          console.log(`[Bot] Post type selected: Image. Generating image for: ${topic}`);
           const imageBuffer = await imageService.generateImage(topic);
           if (imageBuffer) {
+              console.log(`[Bot] Image generated successfully. Analyzing visuals...`);
               const analysis = await llmService.analyzeImage(imageBuffer);
               if (analysis) {
                   const systemPrompt = `
@@ -901,6 +908,7 @@ export class Bot {
 
         const post = item.post;
         const postText = post.record.text || '';
+        console.log(`[Bot Cleanup] Checking post coherence: ${post.uri}`);
 
         // Optimization: Ignore posts older than 30 days per user request
         const postDate = new Date(post.indexedAt);
@@ -931,7 +939,9 @@ export class Bot {
         // Add a small delay between LLM calls to prevent 504 errors/overload
         await new Promise(resolve => setTimeout(resolve, 3000));
 
+        console.log(`[Bot Cleanup] Requesting coherence check for: "${postText.substring(0, 50)}..."`);
         const isCoherent = await llmService.isReplyCoherent(parentText, postText, threadHistory, embedInfo);
+        console.log(`[Bot Cleanup] Coherence check result for ${post.uri}: ${isCoherent}`);
 
         if (!isCoherent) {
           const postDate = new Date(post.indexedAt);

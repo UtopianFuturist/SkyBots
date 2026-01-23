@@ -169,7 +169,9 @@ export class Bot {
     }
 
     // 1. Thread History Fetching (Centralized)
-    let threadContext = await this._getThreadHistory(notif.uri);
+    const threadData = await this._getThreadHistory(notif.uri);
+    let threadContext = threadData.map(h => ({ author: h.author, text: h.text }));
+    const ancestorUris = threadData.map(h => h.uri).filter(uri => uri);
 
     if (notif.reason === 'quote') {
         console.log(`[Bot] Notification is a quote repost. Reconstructing context...`);
@@ -224,6 +226,30 @@ export class Bot {
       return;
     }
 
+    // 2. Check Muted Branch
+    const mutedBranch = dataStore.getMutedBranchInfo(ancestorUris);
+    if (mutedBranch) {
+      if (mutedBranch.handle === handle) {
+        console.log(`[Bot] Branch is muted for user ${handle}. Skipping.`);
+        return;
+      } else {
+        console.log(`[Bot] Branch is muted, but user ${handle} is new. Providing concise conclusion.`);
+        const conclusionPrompt = `
+          The conversation branch you are in has been concluded, but a new user (@${handle}) has joined.
+          Generate a very concise, succinct, and final-sounding response to their post: "${text}".
+          Wrap up the interaction immediately. Keep it under 15 words.
+        `;
+        const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 30 });
+        if (conclusion) {
+          const reply = await blueskyService.postReply(notif, conclusion);
+          if (reply && reply.uri) {
+            await dataStore.muteBranch(reply.uri, handle);
+          }
+        }
+        return;
+      }
+    }
+
     // 3. Pre-reply safety and relevance checks
     const postSafetyCheck = await llmService.isPostSafe(text);
     if (!postSafetyCheck.safe) {
@@ -275,14 +301,16 @@ export class Bot {
       `;
       const disengagement = await llmService.generateResponse([{ role: 'system', content: disengagementPrompt }]);
       if (disengagement) {
-        await blueskyService.postReply(notif, disengagement);
+        const reply = await blueskyService.postReply(notif, disengagement);
+        if (reply && reply.uri) {
+            await dataStore.muteBranch(reply.uri, handle);
+        }
       }
-      await dataStore.muteThread(threadRootUri);
       return;
     }
 
     if (vibe.status === 'monotonous') {
-      console.log(`[Bot] Ending monotonous conversation in thread ${threadRootUri}`);
+      console.log(`[Bot] Ending monotonous conversation in branch starting at ${notif.uri}`);
       const conclusionPrompt = `
         This conversation has reached a natural conclusion or become too lengthy.
         Generate a very short, natural, and final-sounding concluding message (LESS THAN 10 WORDS).
@@ -290,9 +318,11 @@ export class Bot {
       `;
       const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 20 });
       if (conclusion) {
-        await blueskyService.postReply(notif, conclusion);
+        const reply = await blueskyService.postReply(notif, conclusion);
+        if (reply && reply.uri) {
+            await dataStore.muteBranch(reply.uri, handle);
+        }
       }
-      await dataStore.muteThread(threadRootUri);
       return;
     }
 
@@ -651,6 +681,7 @@ export class Bot {
         history.unshift({
           author: current.post.author.handle,
           text: postText.trim(),
+          uri: current.post.uri,
         });
         current = current.parent;
 
@@ -671,10 +702,11 @@ export class Bot {
                         }
                     }
                 }
-                history.unshift({ author: 'SYSTEM', text: '... [thread truncated] ...' });
+                history.unshift({ author: 'SYSTEM', text: '... [thread truncated] ...', uri: null });
                 history.unshift({
                     author: root.post.author.handle,
                     text: rootPostText.trim(),
+                    uri: root.post.uri,
                 });
             }
             break;
@@ -709,100 +741,115 @@ export class Bot {
         return;
       }
 
-      console.log(`[Bot] Eligibility confirmed (${postsToday.length}/5). Generating content...`);
+      console.log(`[Bot] Eligibility confirmed (${postsToday.length}/5). Gathering context...`);
 
-      const postTypes = ['text', 'image', 'wikipedia', 'trending'];
+      // 1. Gather context from timeline and interactions
+      const timeline = await blueskyService.getTimeline(20);
+      const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
+      const recentInteractions = dataStore.db.data.interactions.slice(-20);
+
+      // 2. Identify a topic based on context
+      const topicPrompt = `
+        Based on the current vibe of your following feed and recent interactions, identify a single interesting topic or theme for a standalone post.
+        Network Buzz:
+        ${networkBuzz || 'None.'}
+        Recent Interactions:
+        ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
+
+        Respond with ONLY the topic/theme (e.g., "AI ethics in social media" or "the future of open-source").
+      `;
+      const topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 50, preface_system_prompt: false });
+      if (!topic || topic.toLowerCase() === 'none') {
+          console.log('[Bot] Could not identify a suitable topic for autonomous post.');
+          return;
+      }
+      console.log(`[Bot] Identified topic: "${topic}"`);
+
+      // 3. Check for meaningful user to mention
+      const mentionPrompt = `
+        For the topic "${topic}", identify if any of the following users have had a meaningful persistent discussion with you about it (multiple quality interactions).
+        Interactions:
+        ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n')}
+
+        If yes, respond with ONLY their handle (e.g., "@user.bsky.social"). Otherwise, respond "none".
+      `;
+      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 50, preface_system_prompt: false });
+      const useMention = mentionHandle && mentionHandle.startsWith('@');
+
+      // 4. Determine Post Type
+      const postTypes = ['text', 'image', 'wikipedia'];
       const postType = postTypes[Math.floor(Math.random() * postTypes.length)];
+      console.log(`[Bot] Selected post type: ${postType}`);
 
       let postContent = '';
       let embed = null;
+      let generationPrompt = '';
 
-      if (postType === 'trending') {
-        console.log('[Bot] Trending mode: Synthesizing persona-aligned search...');
-        try {
-          // 1. Extract interests from persona and interactions
-          const interestPrompt = `Based on your persona and recent conversations, list 3-5 keywords representing your core interests. Persona: ${config.TEXT_SYSTEM_PROMPT}\n\nRecent Interactions:\n${dataStore.db.data.interactions.slice(-10).map(i => i.text).join('\n')}\n\nRespond with ONLY a comma-separated list of keywords.`;
-          const interests = await llmService.generateResponse([{ role: 'system', content: interestPrompt }], { max_tokens: 50, preface_system_prompt: false });
-
-          // 2. Identify network buzz (without replying)
-          const timeline = await blueskyService.getTimeline(20);
-          const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
-
-          // 3. Formulate persona-relevant search query
-          const queryPrompt = `Based on your keywords (${interests || 'AI, technology, social media'}) and what people in your feed are talking about:\n${networkBuzz || 'No recent activity.'}\n\nWhat is a specific news or trending topic you should search for and post about that aligns with your interests and the current vibe? Respond with ONLY the search query.`;
-          const searchQuery = await llmService.generateResponse([{ role: 'system', content: queryPrompt }], { max_tokens: 50, preface_system_prompt: false });
-
-          if (searchQuery) {
-            console.log(`[Bot] Targeting trending topic: "${searchQuery}"`);
-            const trends = await googleSearchService.search(searchQuery);
-            if (trends && trends.length > 0) {
-              const topTrend = trends[0];
-              const systemPrompt = `You are a social media commentator. Based on the following news item that aligns with your interests, write an engaging and inquisitive Bluesky post. Keep it under 200 characters. Do not use hashtags. News Item: "${topTrend.title} - ${topTrend.snippet}"`;
-              postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }]);
-              if (postContent) {
-                postContent += `\n\nContext: ${topTrend.link}`;
-                embed = await blueskyService.getExternalEmbed(topTrend.link);
-              }
-            }
-          }
-        } catch (trendingError) {
-          console.error('[Bot] Error in trending mode:', trendingError);
-        }
-
-        if (!postContent) {
-            console.log('[Bot] Trending found no suitable topic. Falling back to other content types.');
-        }
-      }
-
-      if (postType === 'wikipedia' || (postType === 'trending' && !postContent)) {
-        const article = await wikipediaService.getRandomArticle();
+      if (postType === 'wikipedia') {
+        const articles = await wikipediaService.searchArticle(topic, 1);
+        const article = articles[0];
         if (article) {
-          const systemPrompt = `Based on the following Wikipedia article summary, write an engaging Bluesky post. Include the article title naturally. Keep it under 200 characters. Do not use hashtags or lists. Article Summary: "${article.extract}"`;
-          const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }];
-          postContent = await llmService.generateResponse(messages);
-          if (postContent) {
-            postContent += `\n\nRead more: ${article.url}`;
-            embed = await blueskyService.getExternalEmbed(article.url);
-          }
+            const systemPrompt = `
+                Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
+                ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
+                IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
+                Topic context: ${topic}
+                Keep it friendly and inquisitive. Max 3 threaded posts if needed.
+            `;
+            postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }]);
+            if (postContent) {
+                postContent += `\n\nReference: ${article.url}`;
+                embed = await blueskyService.getExternalEmbed(article.url);
+            }
         }
       } else if (postType === 'image') {
-          const systemPrompt = `Synthesize an interesting topic for a standalone Bluesky post that would be enhanced by a generated image. Respond with ONLY the topic.`;
-          const messages = [{ role: 'system', content: systemPrompt }];
-          const topic = await llmService.generateResponse(messages);
+          const imageBuffer = await imageService.generateImage(topic);
+          if (imageBuffer) {
+              const analysis = await llmService.analyzeImage(imageBuffer);
+              if (analysis) {
+                  const systemPrompt = `
+                    Write a friendly, inquisitive, and conversational Bluesky post about why you chose to generate this image and what it offers.
+                    Do NOT be too mechanical; stay in your persona.
+                    ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
+                    Actual Visuals in Image: ${analysis}
+                    Contextual Topic: ${topic}
+                    Keep it under 280 characters.
+                  `;
+                  postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }]);
 
-          if (topic) {
-              const imageBuffer = await imageService.generateImage(topic);
-              const postSystemPrompt = `Create a friendly and inquisitive Bluesky post about the following topic: "${topic}". Keep it under 280 characters.`;
-              postContent = await llmService.generateResponse([{ role: 'system', content: postSystemPrompt }]);
-
-              if (postContent && imageBuffer) {
-                  // Generate better alt text
-                  const altTextPrompt = `Generate a descriptive and concise alt text for an image about the topic: "${topic}". The alt text should describe the visual content for accessibility.`;
-                  const descriptiveAlt = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 100, preface_system_prompt: false });
+                  const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${analysis}`;
+                  const altText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 100, preface_system_prompt: false });
 
                   const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
                   embed = {
                     $type: 'app.bsky.embed.images',
-                    images: [{ image: uploadData.blob, alt: descriptiveAlt || topic }],
+                    images: [{ image: uploadData.blob, alt: altText || analysis }],
                   };
+
+                  // Re-fetch the prompt used (we need to store it from ImageService or re-generate)
+                  // For simplicity, let's use the topic as the "base" prompt or re-extract it.
+                  generationPrompt = topic;
               }
           }
       } else {
         // Text-only
-        const systemPrompt = `Generate a standalone, engaging, and friendly Bluesky post based on your persona. Keep it under 280 characters. Your persona is: ${config.TEXT_SYSTEM_PROMPT}`;
-        const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: 'Generate post content.' }];
-        postContent = await llmService.generateResponse(messages);
+        const systemPrompt = `
+            Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
+            ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
+            Keep it under 280 characters or max 3 threaded posts if deeper.
+            Your persona is: ${config.TEXT_SYSTEM_PROMPT}
+        `;
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }]);
       }
 
       if (postContent) {
-        // Final length check and truncation failsafe
-        if (postContent.length > 300) {
-            console.warn(`[Bot] Post content too long (${postContent.length} chars). Truncating...`);
-            postContent = postContent.substring(0, 297) + '...';
-        }
+        console.log(`[Bot] Performing autonomous ${postType} post...`);
+        const result = await blueskyService.post(postContent, embed, { maxChunks: 3 });
 
-        console.log(`[Bot] Performing autonomous ${postType} post: "${postContent}"`);
-        await blueskyService.post(postContent, embed);
+        // If it was an image post, add the nested prompt comment
+        if (postType === 'image' && result && generationPrompt) {
+            await blueskyService.postReply({ uri: result.uri, cid: result.cid, record: {} }, `Generation Prompt: ${generationPrompt}`);
+        }
       }
     } catch (error) {
       console.error('[Bot] Error in performAutonomousPost:', error);

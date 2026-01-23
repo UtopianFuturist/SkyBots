@@ -351,38 +351,68 @@ class BlueskyService {
     }
   }
 
-  async post(text, embed = null) {
-    console.log('[BlueskyService] Creating new post...');
+  async post(text, embed = null, options = { maxChunks: 3 }) {
+    console.log('[BlueskyService] Creating new post (potentially threaded)...');
     try {
-      const rt = new RichText({ text });
-      await rt.detectFacets(this.agent);
+      let textChunks = splitText(text);
+      if (textChunks.length > options.maxChunks) {
+        console.warn(`[BlueskyService] Post content exceeds ${options.maxChunks} chunks. Truncating.`);
+        textChunks = textChunks.slice(0, options.maxChunks);
+      }
 
-      const postData = {
-        $type: 'app.bsky.feed.post',
-        text: rt.text,
-        facets: rt.facets,
-        createdAt: new Date().toISOString(),
-      };
+      let currentParent = null;
+      let rootPost = null;
+      let firstPostResult = null;
 
-      // If no embed is provided, try to generate a link card from the first URL in the text
-      let finalEmbed = embed;
-      if (!finalEmbed) {
-        const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
-          ?.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link')?.uri;
-        
-        if (firstUrl) {
-          finalEmbed = await this.getExternalEmbed(firstUrl);
+      for (let i = 0; i < textChunks.length; i++) {
+        const chunk = textChunks[i];
+        const rt = new RichText({ text: chunk });
+        await rt.detectFacets(this.agent);
+
+        const postData = {
+          $type: 'app.bsky.feed.post',
+          text: rt.text,
+          facets: rt.facets,
+          createdAt: new Date().toISOString(),
+        };
+
+        // If no embed is provided for the first post, try to generate a link card
+        let finalEmbed = i === 0 ? embed : null;
+        if (i === 0 && !finalEmbed) {
+          const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
+            ?.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link')?.uri;
+
+          if (firstUrl) {
+            finalEmbed = await this.getExternalEmbed(firstUrl);
+          }
         }
-      }
 
-      if (finalEmbed) {
-        postData.embed = finalEmbed;
-      }
+        if (finalEmbed) {
+          postData.embed = finalEmbed;
+        }
 
-      await this.agent.post(postData);
-      console.log('[BlueskyService] New post created successfully.');
+        if (currentParent) {
+          postData.reply = {
+            root: rootPost,
+            parent: currentParent,
+          };
+        }
+
+        const postResult = await this.agent.post(postData);
+        const { uri, cid } = postResult;
+
+        if (i === 0) {
+          rootPost = { uri, cid };
+          firstPostResult = postResult;
+        }
+        currentParent = { uri, cid };
+        console.log(`[BlueskyService] Created post ${i + 1}/${textChunks.length}: ${uri}`);
+      }
+      console.log('[BlueskyService] Finished creating post thread.');
+      return firstPostResult; // Returning the first post so replies can be attached to it if needed
     } catch (error) {
-      console.error('[BlueskyService] Error creating new post:', error);
+      console.error('[BlueskyService] Error creating new post(s):', error);
+      return null;
     }
   }
 

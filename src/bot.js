@@ -259,7 +259,9 @@ export class Bot {
     }
 
     // 3. Pre-reply safety and relevance checks
+    console.log(`[Bot] Starting safety check for post: "${text.substring(0, 50)}..."`);
     const postSafetyCheck = await llmService.isPostSafe(text);
+    console.log(`[Bot] Safety check complete. Safe: ${postSafetyCheck.safe}`);
     if (!postSafetyCheck.safe) {
       console.log(`[Bot] Post by ${handle} failed safety check. Reason: ${postSafetyCheck.reason}. Skipping.`);
       return;
@@ -297,7 +299,9 @@ export class Bot {
     // }
 
     // 6. Conversation Vibe and Status Check (Anti-Looping & Monotony)
+    console.log(`[Bot] Evaluating conversation vibe...`);
     const vibe = await llmService.evaluateConversationVibe(threadContext, text);
+    console.log(`[Bot] Conversation vibe: ${vibe.status}`);
     const convLength = dataStore.getConversationLength(threadRootUri);
 
     if (vibe.status === 'hostile') {
@@ -377,6 +381,7 @@ export class Bot {
     }
 
     // 5. YouTube Search Integration (Priority)
+    console.log(`[Bot] Checking for video intent...`);
     let youtubeResult = null;
     const videoIntentSystemPrompt = `
       You are an intent detection AI. Analyze the user's post to determine if they are asking for a video (e.g., "find a video about...", "show me a youtube video for...", etc.).
@@ -387,6 +392,7 @@ export class Bot {
       { role: 'user', content: `The user's post is: "${text}"` }
     ];
     const videoIntentResponse = await llmService.generateResponse(videoIntentMessages, { max_tokens: 5 });
+    console.log(`[Bot] Video intent response: ${videoIntentResponse}`);
 
     if (videoIntentResponse && videoIntentResponse.toLowerCase().includes('yes')) {
       console.log(`[Bot] Video intent confirmed for post: "${text}"`);
@@ -413,6 +419,7 @@ export class Bot {
 
     // 6. Fact-Checking / Information Search
     if (!youtubeResult && !text.trim().startsWith('!')) {
+      console.log(`[Bot] Checking if fact-check is needed...`);
       if (await llmService.isFactCheckNeeded(text)) {
         console.log(`[Bot] Fact-check/Info search needed for post: "${text}"`);
         const claim = await llmService.extractClaim(text);
@@ -469,11 +476,14 @@ export class Bot {
     let imageAnalysisResult = '';
     const embed = notif.record.embed;
     if (embed && embed.$type === 'app.bsky.embed.images') {
+      console.log(`[Bot] Images detected in post. Starting image analysis...`);
       for (const image of embed.images) {
         const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${notif.author.did}&cid=${image.image.ref.$link}`;
         console.log(`[Bot] Image detected: ${image.image.ref.$link}`);
         console.log(`[Bot] Alt text: ${image.alt}`);
-        imageAnalysisResult += await llmService.analyzeImage(imageUrl, image.alt) + ' ';
+        const analysis = await llmService.analyzeImage(imageUrl, image.alt);
+        console.log(`[Bot] Image analysis complete: ${analysis ? 'Success' : 'Failed'}`);
+        imageAnalysisResult += (analysis || '') + ' ';
       }
     }
 
@@ -481,6 +491,7 @@ export class Bot {
     console.log(`[Bot] Responding to post from ${handle}: "${text}"`);
 
     // Step 6a: Check if the user is asking a question that requires their profile context.
+    console.log(`[Bot] Checking for user context intent...`);
     const contextIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking a question that requires their own profile or post history as context. This includes questions like "give me recommendations", "summarize my profile", "what do you think of me?", etc. Your answer must be a single word: "yes" or "no".`;
     const contextIntentMessages = [
       { role: 'system', content: contextIntentSystemPrompt },
@@ -488,6 +499,7 @@ export class Bot {
     ];
     const contextIntentResponse = await llmService.generateResponse(contextIntentMessages, { max_tokens: 5 });
     let useContext = contextIntentResponse && contextIntentResponse.toLowerCase().includes('yes');
+    console.log(`[Bot] User context intent: ${useContext}`);
 
     console.log(`[Bot] Generating response for ${handle}...`);
     const userMemory = dataStore.getInteractionsByUser(handle);
@@ -501,7 +513,9 @@ export class Bot {
     const userProfile = await blueskyService.getProfile(handle);
     const userPosts = await blueskyService.getUserPosts(handle);
 
+    console.log(`[Bot] Analyzing user intent...`);
     const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
+    console.log(`[Bot] User intent analysis complete.`);
 
     if (userIntent.highRisk) {
       console.log(`[Bot] High-risk intent detected from ${handle}. Reason: ${userIntent.reason}. Pausing bot.`);
@@ -639,8 +653,10 @@ export class Bot {
     }
 
       // Self-moderation check
+      console.log(`[Bot] Running self-moderation checks...`);
       const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
       const isCoherent = await llmService.isReplyCoherent(text, responseText, threadContext, youtubeResult);
+      console.log(`[Bot] Self-moderation complete. Repetitive: ${isRepetitive}, Coherent: ${isCoherent}`);
 
       if (isRepetitive || !isCoherent) {
         const parentPostDetails = await blueskyService.getPostDetails(notif.uri);

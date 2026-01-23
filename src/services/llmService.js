@@ -5,12 +5,54 @@ class LLMService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = 'moonshotai/kimi-k2-instruct-0905';
-    this.visionModel = 'nvidia/kosmos-2';
+    this.visionModel = config.VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+  }
+
+  async _fetchWithRetry(url, options, maxRetries = config.MAX_RETRIES || 3) {
+    let lastError;
+    for (let i = 0; i <= maxRetries; i++) {
+      try {
+        if (i > 0) {
+          const delay = Math.min(2000 * Math.pow(2, i - 1), 30000); // Exponential backoff starting at 2s, max 30s
+          console.log(`[LLMService] Retrying (${i}/${maxRetries}) in ${delay}ms...`);
+          await new Promise(resolve => setTimeout(resolve, delay));
+        }
+
+        const startTime = Date.now();
+        const response = await fetch(url, options);
+        const duration = Date.now() - startTime;
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const error = new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
+          error.status = response.status;
+          throw error;
+        }
+
+        const data = await response.json();
+        return { data, duration };
+      } catch (error) {
+        lastError = error;
+        const status = error.status;
+        const isRetryable = !status || [429, 502, 503, 504].includes(status);
+
+        if (!isRetryable) {
+          console.error(`[LLMService] Non-retryable error (${status}): ${error.message}`);
+          throw error;
+        }
+
+        console.warn(`[LLMService] Attempt ${i + 1} failed (${status || 'Network Error'}): ${error.message}`);
+      }
+    }
+    throw lastError;
   }
 
   async generateResponse(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 300, preface_system_prompt = true } = options;
+    const requestId = Math.random().toString(36).substring(7);
+
+    console.log(`[LLMService] [${requestId}] Starting generateResponse with model: ${this.model}`);
 
     let systemContent = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}`;
 
@@ -26,32 +68,30 @@ class LLMService {
         ]
       : messages;
 
+    const payload = {
+      model: this.model,
+      messages: finalMessages,
+      temperature,
+      max_tokens,
+      stream: false
+    };
+
     try {
-      const response = await fetch(this.baseUrl, {
+      console.log(`[LLMService] [${requestId}] Sending request to Nvidia NIM...`);
+      const { data, duration } = await this._fetchWithRetry(this.baseUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.model,
-          messages: finalMessages,
-          temperature,
-          max_tokens,
-          stream: false
-        })
+        body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
+      console.log(`[LLMService] [${requestId}] Response received successfully in ${duration}ms.`);
       const content = data.choices[0]?.message?.content;
       return content ? content.trim() : null;
     } catch (error) {
-      console.error('[LLMService] Error generating response:', error);
+      console.error(`[LLMService] [${requestId}] Error generating response after retries:`, error.message);
       return null;
     }
   }
@@ -225,44 +265,50 @@ class LLMService {
   }
 
   async analyzeImage(imageSource, altText) {
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${this.visionModel}`);
+
     let imageUrl = imageSource;
     if (Buffer.isBuffer(imageSource)) {
       imageUrl = `data:image/jpeg;base64,${imageSource.toString('base64')}`;
+      console.log(`[LLMService] [${requestId}] Image provided as Buffer, converted to base64.`);
+    } else {
+      console.log(`[LLMService] [${requestId}] Image provided as URL: ${imageSource}`);
     }
 
     const messages = [
       {
         "role": "user",
-        "content": `Describe the image in detail. ${altText ? `The user has provided the following alt text: "${altText}"` : ""}`,
-        "image_url": imageUrl
+        "content": [
+          { "type": "text", "text": `Describe the image in detail. ${altText ? `The user has provided the following alt text: "${altText}"` : ""}` },
+          { "type": "image_url", "image_url": { "url": imageUrl } }
+        ]
       }
     ];
 
+    const payload = {
+      model: this.visionModel,
+      messages: messages,
+      max_tokens: 1024,
+      stream: false
+    };
+
     try {
-      const response = await fetch(this.baseUrl, {
+      console.log(`[LLMService] [${requestId}] Sending vision request to Nvidia NIM...`);
+      const { data, duration } = await this._fetchWithRetry(this.baseUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify({
-          model: this.visionModel,
-          messages: messages,
-          max_tokens: 1024,
-          stream: false
-        })
+        body: JSON.stringify(payload)
       });
 
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
+      console.log(`[LLMService] [${requestId}] Vision response received successfully in ${duration}ms.`);
       const content = data.choices[0]?.message?.content;
       return content ? content.trim() : null;
     } catch (error) {
-      console.error('[LLMService] Error analyzing image:', error);
+      console.error(`[LLMService] [${requestId}] Error analyzing image after retries:`, error.message);
       return null;
     }
   }

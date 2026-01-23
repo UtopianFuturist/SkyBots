@@ -36,7 +36,7 @@ export class Bot {
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
     const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
-    const command = `python3 -m pip install --break-system-packages -r requirements.txt && python3 ${firehosePath}`;
+    const command = `python3 ${firehosePath}`;
     this.firehoseProcess = spawn(command, { shell: true });
 
     this.firehoseProcess.stdout.on('data', async (data) => {
@@ -82,14 +82,14 @@ export class Bot {
   async run() {
     console.log('[Bot] Starting main loop...');
 
+    // Start Firehose immediately for real-time DID mentions
+    this.startFirehose();
+
     // Run catch-up once on startup to process missed notifications
     await this.catchUpNotifications();
 
     // Run cleanup on startup
     await this.cleanupOldPosts();
-
-    // Start Firehose for real-time DID mentions
-    this.startFirehose();
 
     // Perform an autonomous post on startup if needed
     await this.performAutonomousPost();
@@ -789,6 +789,13 @@ export class Bot {
       for (const item of feed.data.feed) {
         const post = item.post;
         const postText = post.record.text || '';
+
+        // Optimization: Ignore posts older than 30 days per user request
+        const postDate = new Date(post.indexedAt);
+        const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+        if (postDate < thirtyDaysAgo) {
+          continue;
+        }
 
         // We only want to clean up replies, not standalone posts.
         if (!post.record.reply) {

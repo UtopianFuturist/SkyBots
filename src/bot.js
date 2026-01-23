@@ -235,9 +235,10 @@ export class Bot {
       } else {
         console.log(`[Bot] Branch is muted, but user ${handle} is new. Providing concise conclusion.`);
         const conclusionPrompt = `
-          The conversation branch you are in has been concluded, but a new user (@${handle}) has joined.
-          Generate a very concise, succinct, and final-sounding response to their post: "${text}".
-          Wrap up the interaction immediately. Keep it under 15 words.
+          [Conversation Status: CONCLUDED]
+          The conversation branch you are in has been concluded, but a new user (@${handle}) has joined and posted: "${text}".
+          In your persona, generate a very concise, succinct, and final-sounding response to wrap up the interaction immediately.
+          Keep it under 15 words. Do not invite further discussion.
         `;
         const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 30 });
         if (conclusion) {
@@ -312,9 +313,10 @@ export class Bot {
     if (vibe.status === 'monotonous') {
       console.log(`[Bot] Ending monotonous conversation in branch starting at ${notif.uri}`);
       const conclusionPrompt = `
-        This conversation has reached a natural conclusion or become too lengthy.
-        Generate a very short, natural, and final-sounding concluding message (LESS THAN 10 WORDS).
-        Examples: "Fair enough, catch you later!", "Got it, talk soon.", "See ya around!"
+        [Conversation Status: ENDING]
+        This conversation has reached a natural conclusion, become too lengthy, or is stagnating.
+        In your persona, generate a very short, natural, and final-sounding concluding message.
+        Keep it LESS THAN 10 WORDS.
       `;
       const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 20 });
       if (conclusion) {
@@ -859,13 +861,21 @@ export class Bot {
   async cleanupOldPosts() {
     console.log('[Bot] Starting cleanup of old posts...');
     let deletedCount = 0;
+    let checkedCount = 0;
+    const MAX_CHECKS_PER_RUN = 20;
+
     try {
       const feed = await blueskyService.agent.getAuthorFeed({
         actor: blueskyService.did,
-        limit: 100, // Fetch a good number of recent posts
+        limit: 50, // Reduced from 100 to focus on most recent first
       });
 
       for (const item of feed.data.feed) {
+        if (checkedCount >= MAX_CHECKS_PER_RUN) {
+          console.log(`[Bot Cleanup] Reached max checks limit (${MAX_CHECKS_PER_RUN}). Stopping for this run.`);
+          break;
+        }
+
         const post = item.post;
         const postText = post.record.text || '';
 
@@ -881,6 +891,8 @@ export class Bot {
           continue;
         }
 
+        checkedCount++;
+
         // To check for coherence, we need the parent post's text.
         let parentText = '';
         const threadHistory = await this._getThreadHistory(post.uri);
@@ -892,6 +904,10 @@ export class Bot {
         }
 
         const embedInfo = post.record.embed;
+
+        // Add a small delay between LLM calls to prevent 504 errors/overload
+        await new Promise(resolve => setTimeout(resolve, 1500));
+
         const isCoherent = await llmService.isReplyCoherent(parentText, postText, threadHistory, embedInfo);
 
         if (!isCoherent) {

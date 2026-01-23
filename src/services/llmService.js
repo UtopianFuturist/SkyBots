@@ -90,9 +90,16 @@ class LLMService {
 
   async isPostSafe(postText) {
     const systemPrompt = `
-      You are a safety filter. Check the user's post for violations: no adult content, NSFW, copyrighted material, illegal acts, violence, or politics.
+      You are a safety filter. Check the user's post for violations of Bluesky's community guidelines:
+      - No harassment, hate speech, or threats.
+      - No sexually explicit content (NSFW).
+      - No promotion of illegal acts or self-harm.
+      - No spam or severe manipulation.
+
+      Politics and differing opinions are allowed as long as they are respectful and don't violate the above.
+
       If safe, respond with "safe".
-      If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The post contains political content."
+      If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The post contains harassment."
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
     const response = await this.generateResponse(messages, { max_tokens: 50 });
@@ -104,7 +111,7 @@ class LLMService {
 
   async isResponseSafe(responseText) {
     const systemPrompt = `
-      You are a safety filter. Check the bot's own response for violations: no adult content, NSFW, copyrighted material, illegal acts, violence, or politics.
+      You are a safety filter. Check the bot's own response for violations: no adult content, NSFW, copyrighted material, illegal acts, or violence.
       If safe, respond with "safe".
       If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The response contains sensitive information."
     `;
@@ -152,14 +159,52 @@ class LLMService {
 
   async isFactCheckNeeded(inputText) {
     const systemPrompt = `
-      You are a text analyst. Your task is to determine if a user's post requires fact-checking.
-      Analyze the post for any verifiable claims or direct questions about the validity of a fact (e.g., "Is it true that...", "I heard that...", "Studies show...").
-      If a fact-check is needed, respond with "yes". Otherwise, respond with "no".
+      You are a text analyst. Your task is to determine if a user's post requires fact-checking using external sources.
+
+      ONLY trigger a fact-check if the post contains verifiable claims or direct questions about:
+      - Politics
+      - Current events
+      - Historical facts
+      - Scientific claims
+      - Medical claims
+
+      For all other topics (e.g., personal plans, "checklist tomorrow", pop culture, advice, general knowledge like how to cook), respond with "no".
+      If a fact-check for the specific allowed domains is needed, respond with "yes". Otherwise, respond with "no".
       Respond with only "yes" or "no".
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
     const response = await this.generateResponse(messages, { max_tokens: 3 });
     return response?.toLowerCase().includes('yes');
+  }
+
+  async evaluateConversationVibe(history, currentPost) {
+    const historyText = history.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+    const systemPrompt = `
+      You are a conversation analyst for a social media bot. Analyze the conversation history and the user's latest post.
+      Determine if the bot should disengage for one of the following reasons:
+      1. **Hostility/Bad Faith**: The user is being disrespectful, hostile, manipulative, or acting in bad faith (e.g., trolling, harassment).
+      2. **Monotony/Length**: The conversation has become repetitive, reached a natural conclusion, or is becoming too lengthy/monotonous for a social media interaction (e.g., over 10-15 messages in a thread without a clear purpose).
+
+      Respond with:
+      - "healthy" if the conversation is good-faith and should continue.
+      - "hostile | [reason]" if the bot should disengage due to hostility/bad faith. Provide a concise reason based on content guidelines (e.g., harassment, disrespect).
+      - "monotonous" if the conversation should end naturally due to length or repetition.
+
+      Respond with ONLY one of these formats.
+    `;
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${currentPost}"` }
+    ];
+    const response = await this.generateResponse(messages, { max_tokens: 50, preface_system_prompt: false });
+
+    if (response?.toLowerCase().startsWith('hostile')) {
+      return { status: 'hostile', reason: response.split('|')[1]?.trim() || 'unspecified' };
+    }
+    if (response?.toLowerCase().includes('monotonous')) {
+      return { status: 'monotonous' };
+    }
+    return { status: 'healthy' };
   }
 
   async extractClaim(inputText) {

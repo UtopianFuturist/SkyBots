@@ -9,45 +9,6 @@ class LLMService {
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
-  async _fetchWithRetry(url, options, maxRetries = config.MAX_RETRIES || 3) {
-    let lastError;
-    for (let i = 0; i <= maxRetries; i++) {
-      try {
-        if (i > 0) {
-          const delay = Math.min(2000 * Math.pow(2, i - 1), 30000); // Exponential backoff starting at 2s, max 30s
-          console.log(`[LLMService] Retrying (${i}/${maxRetries}) in ${delay}ms...`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-
-        const startTime = Date.now();
-        const response = await fetch(url, options);
-        const duration = Date.now() - startTime;
-
-        if (!response.ok) {
-          const errorText = await response.text();
-          const error = new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
-          error.status = response.status;
-          throw error;
-        }
-
-        const data = await response.json();
-        return { data, duration };
-      } catch (error) {
-        lastError = error;
-        const status = error.status;
-        const isRetryable = !status || [429, 502, 503, 504].includes(status);
-
-        if (!isRetryable) {
-          console.error(`[LLMService] Non-retryable error (${status}): ${error.message}`);
-          throw error;
-        }
-
-        console.warn(`[LLMService] Attempt ${i + 1} failed (${status || 'Network Error'}): ${error.message}`);
-      }
-    }
-    throw lastError;
-  }
-
   async generateResponse(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 300, preface_system_prompt = true } = options;
     const requestId = Math.random().toString(36).substring(7);
@@ -76,23 +37,42 @@ class LLMService {
       stream: false
     };
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
     try {
       console.log(`[LLMService] [${requestId}] Sending request to Nvidia NIM...`);
-      const { data, duration } = await this._fetchWithRetry(this.baseUrl, {
+      const startTime = Date.now();
+      const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
 
+      const duration = Date.now() - startTime;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
       console.log(`[LLMService] [${requestId}] Response received successfully in ${duration}ms.`);
       const content = data.choices[0]?.message?.content;
       return content ? content.trim() : null;
     } catch (error) {
-      console.error(`[LLMService] [${requestId}] Error generating response after retries:`, error.message);
+      if (error.name === 'AbortError') {
+        console.error(`[LLMService] [${requestId}] Request timed out after 60s.`);
+      } else {
+        console.error(`[LLMService] [${requestId}] Error generating response:`, error.message);
+      }
       return null;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 
@@ -293,23 +273,42 @@ class LLMService {
       stream: false
     };
 
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90000); // 90s timeout for vision
+
     try {
       console.log(`[LLMService] [${requestId}] Sending vision request to Nvidia NIM...`);
-      const { data, duration } = await this._fetchWithRetry(this.baseUrl, {
+      const startTime = Date.now();
+      const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        signal: controller.signal
       });
 
+      const duration = Date.now() - startTime;
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
       console.log(`[LLMService] [${requestId}] Vision response received successfully in ${duration}ms.`);
       const content = data.choices[0]?.message?.content;
       return content ? content.trim() : null;
     } catch (error) {
-      console.error(`[LLMService] [${requestId}] Error analyzing image after retries:`, error.message);
+      if (error.name === 'AbortError') {
+        console.error(`[LLMService] [${requestId}] Vision request timed out.`);
+      } else {
+        console.error(`[LLMService] [${requestId}] Error analyzing image:`, error.message);
+      }
       return null;
+    } finally {
+      clearTimeout(timeout);
     }
   }
 

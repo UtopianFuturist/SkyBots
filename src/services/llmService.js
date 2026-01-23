@@ -4,7 +4,7 @@ import config from '../../config.js';
 class LLMService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    this.model = config.LLM_MODEL || 'meta/llama-3.3-70b-instruct';
+    this.model = config.LLM_MODEL || 'moonshotai/kimi-k2-instruct-0905';
     this.visionModel = config.VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }

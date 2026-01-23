@@ -181,14 +181,16 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       First, determine if the user's posts contain any high-risk content, such as legal threats, self-harm, or severe anger.
       If high-risk content is detected, respond with "high-risk | [reason]". Example: "high-risk | The user has made a legal threat."
       If no high-risk content is found, provide a concise, one-sentence analysis of their likely intent. Example: "This user seems friendly and inquisitive."
+
+      Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Bio: ${userProfile.description}\n\nRecent Posts:\n- ${userPosts.join('\n- ')}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 50 });
+    const response = await this.generateResponse(messages, { max_tokens: 150 });
 
-    if (response?.toLowerCase().startsWith('high-risk')) {
+    if (response?.toLowerCase().includes('high-risk')) {
       return { highRisk: true, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
     return { highRisk: false, reason: response };
@@ -232,15 +234,15 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       - "hostile | [reason]" if the bot should disengage due to hostility/bad faith. Provide a concise reason based on content guidelines (e.g., harassment, disrespect).
       - "monotonous" if the conversation should end naturally due to length, repetition, or semantic stagnation.
 
-      Respond with ONLY one of these formats.
+      Respond with ONLY one of these formats. Do not include reasoning or <think> tags.
     `;
     const messages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${currentPost}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 50, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 150, preface_system_prompt: false });
 
-    if (response?.toLowerCase().startsWith('hostile')) {
+    if (response?.toLowerCase().includes('hostile')) {
       return { status: 'hostile', reason: response.split('|')[1]?.trim() || 'unspecified' };
     }
     if (response?.toLowerCase().includes('monotonous')) {
@@ -347,7 +349,8 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'user', content: `Interaction History:\n${historyText}` }
     ];
     const response = await this.generateResponse(messages, { max_tokens: 50 });
-    const rating = response ? parseInt(response.trim(), 10) : NaN;
+    const match = response?.match(/\d+/);
+    const rating = match ? parseInt(match[0], 10) : NaN;
     return isNaN(rating) ? 3 : Math.max(1, Math.min(5, rating));
   }
 
@@ -406,7 +409,8 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
         return true;
     }
 
-    const score = parseInt(response.trim(), 10);
+    const match = response.match(/\d+/);
+    const score = match ? parseInt(match[0], 10) : NaN;
     if (isNaN(score)) {
       console.warn(`[LLMService] Invalid coherence score: "${response}". Defaulting to true.`);
       return true;

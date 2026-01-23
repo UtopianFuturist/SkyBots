@@ -930,7 +930,7 @@ export class Bot {
     try {
       const feed = await blueskyService.agent.getAuthorFeed({
         actor: blueskyService.did,
-        limit: 50, // Reduced from 100 to focus on most recent first
+        limit: 10, // Reduced from 50 to focus on most recent first
       });
 
       for (const item of feed.data.feed) {

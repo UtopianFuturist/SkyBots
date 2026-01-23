@@ -52,8 +52,20 @@ export const splitText = (text, maxLength = 300) => {
 
 export const sanitizeThinkingTags = (text) => {
   if (!text) return text;
-  // Remove <think>...</think> tags and their content
-  return text.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
+
+  // 1. Remove closed <think>...</think> tags and their content
+  let sanitized = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
+
+  // 2. Remove any unclosed <think> tag and everything following it
+  const unclosedIndex = sanitized.toLowerCase().indexOf('<think>');
+  if (unclosedIndex !== -1) {
+    sanitized = sanitized.substring(0, unclosedIndex);
+  }
+
+  // 3. Remove stray closing tags if any (e.g. if the start was already removed)
+  sanitized = sanitized.replace(/<\/think>/gi, '');
+
+  return sanitized.trim();
 };
 
 export const sanitizeDuplicateText = (text) => {

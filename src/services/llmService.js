@@ -359,39 +359,43 @@ class LLMService {
     }
 
     const systemPrompt = `
-      You are a text analyst for a social media bot. Your task is to determine if the bot's reply is a coherent, logical, and relevant response to the user's post, considering the entire conversation history.
+      You are a text analyst for a social media bot. Your task is to rate how coherent, logical, and relevant the bot's reply is to the user's post, considering the conversation history.
 
-      A coherent and relevant reply MUST:
-      1. Directly address the user's intent or question.
-      2. Be contextually appropriate.
-      3. If an embed (link, video, image) is included, it MUST be relevant to what the user asked for.
+      Score the response from 1 to 5:
+      5: Perfectly relevant, helpful, and contextually appropriate.
+      4: Mostly relevant and logical, perhaps slightly off but still a good interaction.
+      3: Somewhat relevant, but maybe misses the mark slightly or is a bit generic. Still acceptable.
+      2: Largely irrelevant or nonsensical. Ignores the user's intent.
+      1: Completely irrelevant, gibberish, or a hallucinated response that makes no sense.
 
-      **Coherent Examples:**
-      - User: "Can you tell me a fun fact?" Bot: "Sure! A group of flamingos is called a flamboyance."
-      - User: "I love your posts!" Bot: "Thank you so much! I'm glad you enjoy them."
-      - User: "Find me a video of a cat." Bot: "Here's a cute cat video!" (with a cat video embed)
+      A relevant reply SHOULD:
+      1. Attempt to address the user's intent or question.
+      2. Be contextually appropriate for a social media interaction.
+      3. If an embed is included, it should be reasonably related to the topic.
 
-      **Incoherent/Irrelevant Examples:**
-      - User: "What's the weather like today?" Bot: "I enjoy reading books."
-      - User: "Find me a video about tofu." Bot: "Here is some info!" (with a Wikipedia link to a competitive eater - THIS IS IRRELEVANT)
-      - User: "Search for space legos." Bot: "Check these out!" (with a link to non-space modular buildings - THIS IS IRRELEVANT)
-
-      If the reply (including its embed) is coherent and relevant, respond with "yes". Otherwise, respond with "no".
-      Respond with only "yes" or "no".
+      Respond with ONLY a single number from 1 to 5.
     `;
     const messages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"${embedContext}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 3 });
+    const response = await this.generateResponse(messages, { max_tokens: 5, preface_system_prompt: false });
 
-    // Safety check: if the API fails, assume it's coherent to avoid accidental deletion.
+    // Safety check: if the API fails, assume it's coherent (score 5) to avoid accidental deletion.
     if (!response) {
-        console.warn(`[LLMService] Coherence check failed due to empty response/timeout. Defaulting to "true" (coherent).`);
+        console.warn(`[LLMService] Coherence check failed due to empty response/timeout. Defaulting to score 5.`);
         return true;
     }
 
-    return response.toLowerCase().includes('yes');
+    const score = parseInt(response.trim(), 10);
+    if (isNaN(score)) {
+      console.warn(`[LLMService] Invalid coherence score: "${response}". Defaulting to true.`);
+      return true;
+    }
+
+    console.log(`[LLMService] Coherence score for reply: ${score}/5`);
+    // Threshold is 3 - we only delete if it's 1 or 2.
+    return score >= 3;
   }
 
   async selectBestResult(query, results, type = 'general') {

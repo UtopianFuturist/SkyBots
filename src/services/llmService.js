@@ -427,6 +427,53 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
     return score >= 3;
   }
 
+  async isAutonomousPostCoherent(topic, postContent, postType, embedInfo = null) {
+    let embedContext = '';
+    if (embedInfo) {
+      embedContext = `\n\nThe post also includes an embed: ${JSON.stringify(embedInfo)}`;
+    }
+
+    const systemPrompt = `
+      You are a text analyst for a social media bot. Your task is to rate how coherent, logical, and relevant a standalone autonomous post is to its identified topic and the bot's persona.
+
+      Bot Persona: "${config.TEXT_SYSTEM_PROMPT}"
+
+      Score the post from 1 to 5:
+      5: Perfectly relevant to the topic, matches the persona perfectly, and is engaging.
+      4: Mostly relevant and logical, fits the persona well.
+      3: Acceptable. Relevant to the topic, but maybe a bit generic or slightly off-persona.
+      2: Largely irrelevant to the topic, nonsensical, or completely out of persona.
+      1: Completely irrelevant, gibberish, or makes no sense.
+
+      Your response MUST be in the following format:
+      Score: [1-5]
+      Reason: [One sentence explaining the score]
+
+      Do not include reasoning or <think> tags.
+    `;
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Topic: "${topic}"\nPost Type: ${postType}\nPost Content: "${postContent}"${embedContext}` }
+    ];
+
+    const response = await this.generateResponse(messages, { max_tokens: 1000, preface_system_prompt: false });
+
+    if (!response) {
+      return { score: 5, reason: 'Coherence check failed (timeout/empty). Defaulting to pass.' };
+    }
+
+    const scoreMatch = response.match(/Score:\s*(\d)/i);
+    const reasonMatch = response.match(/Reason:\s*(.*)/i);
+
+    const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 5;
+    const reason = reasonMatch ? reasonMatch[1].trim() : 'No reason provided.';
+
+    console.log(`[LLMService] Autonomous Coherence Score: ${score}/5. Reason: ${reason}`);
+
+    return { score, reason };
+  }
+
   async selectBestResult(query, results, type = 'general') {
     if (!results || results.length === 0) return null;
     if (results.length === 1) {

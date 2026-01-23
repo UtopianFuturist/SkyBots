@@ -824,98 +824,117 @@ export class Bot {
       let postContent = '';
       let embed = null;
       let generationPrompt = '';
+      let attempts = 0;
+      const MAX_ATTEMPTS = 3;
+      let feedback = '';
+
+      // Pre-fetch data for specific post types to avoid redundant API calls in the retry loop
+      let article = null;
+      let imageBuffer = null;
+      let imageAnalysis = null;
+      let imageAltText = null;
+      let imageBlob = null;
 
       if (postType === 'wikipedia') {
-        console.log(`[Bot] Post type selected: Wikipedia. Searching for article: ${topic}`);
+        console.log(`[Bot] Pre-fetching Wikipedia article for topic: ${topic}`);
         const articles = await wikipediaService.searchArticle(topic, 1);
-        const article = articles[0];
-        if (article) {
-            const systemPrompt = `
-                Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
-                ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
-                IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
-                Topic context: ${topic}
-                Keep it friendly and inquisitive. Max 3 threaded posts if needed.
-            `;
-            postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
-            if (postContent) {
-                postContent += `\n\nReference: ${article.url}`;
-                embed = await blueskyService.getExternalEmbed(article.url);
-            }
-        }
+        article = articles[0];
       } else if (postType === 'image') {
-          console.log(`[Bot] Post type selected: Image. Generating image for: ${topic}`);
-          const imageBuffer = await imageService.generateImage(topic);
-          if (imageBuffer) {
-              console.log(`[Bot] Image generated successfully. Analyzing visuals...`);
-              const analysis = await llmService.analyzeImage(imageBuffer);
-              if (analysis) {
-                  const systemPrompt = `
-                    Write a friendly, inquisitive, and conversational Bluesky post about why you chose to generate this image and what it offers.
-                    Do NOT be too mechanical; stay in your persona.
-                    ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
-                    Actual Visuals in Image: ${analysis}
-                    Contextual Topic: ${topic}
-                    Keep it under 280 characters.
-                  `;
-                  postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
+        console.log(`[Bot] Pre-generating image for topic: ${topic}`);
+        imageBuffer = await imageService.generateImage(topic);
+        if (imageBuffer) {
+          console.log(`[Bot] Image generated successfully. Analyzing visuals...`);
+          imageAnalysis = await llmService.analyzeImage(imageBuffer);
+          if (imageAnalysis) {
+            const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}`;
+            imageAltText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 1000, preface_system_prompt: false });
 
-                  const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${analysis}`;
-                  const altText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 1000, preface_system_prompt: false });
-
-                  const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
-                  embed = {
-                    $type: 'app.bsky.embed.images',
-                    images: [{ image: uploadData.blob, alt: altText || analysis }],
-                  };
-
-                  // Re-fetch the prompt used (we need to store it from ImageService or re-generate)
-                  // For simplicity, let's use the topic as the "base" prompt or re-extract it.
-                  generationPrompt = topic;
-              }
+            console.log(`[Bot] Uploading image blob...`);
+            const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
+            imageBlob = uploadData.blob;
           }
-      } else {
-        // Text-only
-        const systemPrompt = `
-            Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
-            ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
-            Keep it under 280 characters or max 3 threaded posts if deeper.
-            Your persona is: ${config.TEXT_SYSTEM_PROMPT}
-        `;
-        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
-      }
-
-      if (postContent) {
-        postContent = sanitizeThinkingTags(postContent);
-        postContent = sanitizeDuplicateText(postContent);
-
-        if (!postContent) {
-          console.log('[Bot] Autonomous post content was empty after sanitization. Aborting.');
-          return;
-        }
-
-        // 5. Coherence Check for Autonomous Post
-        console.log(`[Bot] Checking coherence for autonomous ${postType} post...`);
-        const isCoherent = await llmService.isReplyCoherent(
-          `Topic: ${topic}`,
-          postContent,
-          [], // No thread history for standalone posts
-          embed
-        );
-
-        if (!isCoherent) {
-          console.log(`[Bot] Autonomous post failed coherence check. Aborting. Topic: ${topic}`);
-          return;
-        }
-
-        console.log(`[Bot] Performing autonomous ${postType} post...`);
-        const result = await blueskyService.post(postContent, embed, { maxChunks: 3 });
-
-        // If it was an image post, add the nested prompt comment
-        if (postType === 'image' && result && generationPrompt) {
-            await blueskyService.postReply({ uri: result.uri, cid: result.cid, record: {} }, `Generation Prompt: ${generationPrompt}`);
         }
       }
+
+      while (attempts < MAX_ATTEMPTS) {
+        attempts++;
+        console.log(`[Bot] Autonomous post attempt ${attempts}/${MAX_ATTEMPTS} for topic: "${topic}" (Type: ${postType})`);
+
+        const feedbackContext = feedback ? `\n\nYour previous attempt was rejected for the following reason: "${feedback}". Please improve the post accordingly.` : '';
+
+        if (postType === 'wikipedia' && article) {
+          const systemPrompt = `
+              Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
+              ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
+              IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
+              Topic context: ${topic}
+              Keep it friendly and inquisitive. Max 3 threaded posts if needed.${feedbackContext}
+          `;
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
+          if (postContent) {
+              postContent += `\n\nReference: ${article.url}`;
+              embed = await blueskyService.getExternalEmbed(article.url);
+          }
+        } else if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
+          const systemPrompt = `
+              Write a friendly, inquisitive, and conversational Bluesky post about why you chose to generate this image and what it offers.
+              Do NOT be too mechanical; stay in your persona.
+              ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
+              Actual Visuals in Image: ${imageAnalysis}
+              Contextual Topic: ${topic}
+              Keep it under 280 characters.${feedbackContext}
+          `;
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
+
+          embed = {
+            $type: 'app.bsky.embed.images',
+            images: [{ image: imageBlob, alt: imageAltText || imageAnalysis }],
+          };
+          generationPrompt = topic;
+        } else if (postType === 'text') {
+          const systemPrompt = `
+              Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
+              ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
+              Keep it under 280 characters or max 3 threaded posts if deeper.
+              Your persona is: ${config.TEXT_SYSTEM_PROMPT}${feedbackContext}
+          `;
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
+        }
+
+        if (postContent) {
+          postContent = sanitizeThinkingTags(postContent);
+          postContent = sanitizeDuplicateText(postContent);
+
+          if (!postContent) {
+            console.log(`[Bot] Autonomous post content was empty after sanitization on attempt ${attempts}.`);
+            feedback = 'The generated post was empty or invalid.';
+            continue;
+          }
+
+          // 5. Dedicated Coherence Check for Autonomous Post
+          console.log(`[Bot] Checking coherence for autonomous ${postType} post...`);
+          const { score, reason } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
+
+          if (score >= 3) {
+            console.log(`[Bot] Autonomous post passed coherence check (Score: ${score}/5). Performing post...`);
+            const result = await blueskyService.post(postContent, embed, { maxChunks: 3 });
+
+            // If it was an image post, add the nested prompt comment
+            if (postType === 'image' && result && generationPrompt) {
+                await blueskyService.postReply({ uri: result.uri, cid: result.cid, record: {} }, `Generation Prompt: ${generationPrompt}`);
+            }
+            return; // Success, exit function
+          } else {
+            console.warn(`[Bot] Autonomous post attempt ${attempts} failed coherence check (Score: ${score}/5). Reason: ${reason}`);
+            feedback = reason;
+          }
+        } else {
+          console.log(`[Bot] Failed to generate post content on attempt ${attempts}.`);
+          feedback = 'Failed to generate meaningful post content.';
+        }
+      }
+
+      console.log(`[Bot] All ${MAX_ATTEMPTS} attempts failed for autonomous post. Aborting.`);
     } catch (error) {
       console.error('[Bot] Error in performAutonomousPost:', error);
     }

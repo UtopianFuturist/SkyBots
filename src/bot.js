@@ -245,7 +245,10 @@ export class Bot {
           [Conversation Status: CONCLUDED]
           The conversation branch you are in has been concluded, but a new user (@${handle}) has joined and posted: "${text}".
           In your persona, generate a very concise, succinct, and final-sounding response to wrap up the interaction immediately.
-          Keep it under 15 words. Do not invite further discussion.
+
+          CRITICAL: YOUR RESPONSE MUST BE LESS THAN 10 WORDS. DO NOT EXCEED THIS LIMIT UNDER ANY CIRCUMSTANCES.
+
+          Do not invite further discussion.
         `;
         const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 1000 });
         if (conclusion) {
@@ -299,7 +302,8 @@ export class Bot {
     // }
 
     // 6. Conversation Vibe and Status Check (Anti-Looping & Monotony)
-    console.log(`[Bot] Evaluating conversation vibe...`);
+    const botReplyCount = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER).length;
+    console.log(`[Bot] Evaluating conversation vibe (Bot replies so far: ${botReplyCount})...`);
     const vibe = await llmService.evaluateConversationVibe(threadContext, text);
     console.log(`[Bot] Conversation vibe: ${vibe.status}`);
     const convLength = dataStore.getConversationLength(threadRootUri);
@@ -322,21 +326,26 @@ export class Bot {
     }
 
     if (vibe.status === 'monotonous') {
-      console.log(`[Bot] Ending monotonous conversation in branch starting at ${notif.uri}`);
-      const conclusionPrompt = `
-        [Conversation Status: ENDING]
-        This conversation has reached a natural conclusion, become too lengthy, or is stagnating.
-        In your persona, generate a very short, natural, and final-sounding concluding message.
-        Keep it LESS THAN 10 WORDS.
-      `;
-      const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 1000 });
-      if (conclusion) {
-        const reply = await blueskyService.postReply(notif, conclusion);
-        if (reply && reply.uri) {
-            await dataStore.muteBranch(reply.uri, handle);
+      if (botReplyCount < 5) {
+        console.log(`[Bot] Vibe check returned "monotonous", but ignoring since bot has only replied ${botReplyCount} times (minimum 5 required).`);
+      } else {
+        console.log(`[Vibe Check] DISENGAGING: Conversation flagged as monotonous after ${botReplyCount} bot replies. Sending final message.`);
+        const conclusionPrompt = `
+          [Conversation Status: ENDING]
+          This conversation has reached a natural conclusion, become too lengthy, or is stagnating.
+          In your persona, generate a very short, natural, and final-sounding concluding message.
+
+          CRITICAL: YOUR RESPONSE MUST BE LESS THAN 10 WORDS. DO NOT EXCEED THIS LIMIT UNDER ANY CIRCUMSTANCES.
+        `;
+        const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 1000 });
+        if (conclusion) {
+          const reply = await blueskyService.postReply(notif, conclusion);
+          if (reply && reply.uri) {
+              await dataStore.muteBranch(reply.uri, handle);
+          }
         }
+        return;
       }
-      return;
     }
 
     // Traditional Bot-to-Bot fallback

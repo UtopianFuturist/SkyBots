@@ -527,8 +527,14 @@ describe('Bot', () => {
       indexedAt: new Date().toISOString()
     };
 
-    const history = new Array(15).fill({ author: 'user', text: '...' });
-    history[13] = { author: config.BLUESKY_IDENTIFIER, text: 'Bot previous reply' };
+    const history = [
+        { author: 'user', text: '1' }, { author: config.BLUESKY_IDENTIFIER, text: 'A' },
+        { author: 'user', text: '2' }, { author: config.BLUESKY_IDENTIFIER, text: 'B' },
+        { author: 'user', text: '3' }, { author: config.BLUESKY_IDENTIFIER, text: 'C' },
+        { author: 'user', text: '4' }, { author: config.BLUESKY_IDENTIFIER, text: 'D' },
+        { author: 'user', text: '5' }, { author: config.BLUESKY_IDENTIFIER, text: 'E' },
+        { author: 'user', text: 'Tell me more.' }
+    ];
     bot._getThreadHistory = jest.fn().mockResolvedValue(history);
     llmService.evaluateConversationVibe.mockResolvedValue({ status: 'monotonous' });
     llmService.generateResponse.mockResolvedValue('Fair enough, talk soon!');

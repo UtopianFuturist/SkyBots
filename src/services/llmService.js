@@ -230,13 +230,15 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       You are a conversation analyst for a social media bot. Analyze the conversation history and the user's latest post.
       Determine if the bot should disengage for one of the following reasons:
       1. **Hostility/Bad Faith**: The user is being disrespectful, hostile, manipulative, or acting in bad faith (e.g., trolling, harassment).
-      2. **Monotony/Length**: The conversation has reached a natural conclusion, or is becoming too lengthy for a social media interaction (e.g., over 10-15 messages in a thread without a clear purpose).
-      3. **Semantic Stagnation**: The conversation is technically moving but not adding new information, value, or interesting perspectives. It feels repetitive in its ideas or circular in its logic.
+      2. **Monotony/Length**: The conversation has become exceptionally long (e.g., over 20 messages) and is no longer productive.
+      3. **Semantic Stagnation**: The conversation is stuck in a repetitive loop or circular logic, typical of bot-to-bot interactions or broken logic.
+
+      IMPORTANT: Be very lenient. Most human interactions should be flagged as "healthy". Only flag as "monotonous" if there is a clear, repetitive loop or extreme length that suggests a bug or bot-loop.
 
       Respond with:
       - "healthy" if the conversation is good-faith, productive, and should continue.
       - "hostile | [reason]" if the bot should disengage due to hostility/bad faith. Provide a concise reason based on content guidelines (e.g., harassment, disrespect).
-      - "monotonous" if the conversation should end naturally due to length, repetition, or semantic stagnation.
+      - "monotonous" if the conversation should end due to extreme length or clear semantic looping.
 
       Respond with ONLY one of these formats. Do not include reasoning or <think> tags.
     `;

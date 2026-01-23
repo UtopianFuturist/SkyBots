@@ -11,6 +11,7 @@ const defaultData = {
   repliedPosts: [],
   userBlocklist: [],
   mutedThreads: [],
+  mutedBranches: [], // { uri, handle }
   conversationLengths: {},
   userProfiles: {},
    userSummaries: {},
@@ -82,6 +83,22 @@ class DataStore {
 
   isThreadMuted(rootUri) {
     return this.db.data.mutedThreads.includes(rootUri);
+  }
+
+  async muteBranch(uri, handle) {
+    if (!this.db.data.mutedBranches.find(b => b.uri === uri && b.handle === handle)) {
+      this.db.data.mutedBranches.push({ uri, handle });
+      await this.db.write();
+    }
+  }
+
+  getMutedBranchInfo(ancestorUris) {
+    // Check if any of the ancestors are in mutedBranches
+    for (const uri of ancestorUris) {
+      const muted = this.db.data.mutedBranches.find(b => b.uri === uri);
+      if (muted) return muted;
+    }
+    return null;
   }
 
   async updateConversationLength(rootUri, length) {

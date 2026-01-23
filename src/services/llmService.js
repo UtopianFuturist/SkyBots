@@ -183,12 +183,13 @@ class LLMService {
       You are a conversation analyst for a social media bot. Analyze the conversation history and the user's latest post.
       Determine if the bot should disengage for one of the following reasons:
       1. **Hostility/Bad Faith**: The user is being disrespectful, hostile, manipulative, or acting in bad faith (e.g., trolling, harassment).
-      2. **Monotony/Length**: The conversation has become repetitive, reached a natural conclusion, or is becoming too lengthy/monotonous for a social media interaction (e.g., over 10-15 messages in a thread without a clear purpose).
+      2. **Monotony/Length**: The conversation has reached a natural conclusion, or is becoming too lengthy for a social media interaction (e.g., over 10-15 messages in a thread without a clear purpose).
+      3. **Semantic Stagnation**: The conversation is technically moving but not adding new information, value, or interesting perspectives. It feels repetitive in its ideas or circular in its logic.
 
       Respond with:
-      - "healthy" if the conversation is good-faith and should continue.
+      - "healthy" if the conversation is good-faith, productive, and should continue.
       - "hostile | [reason]" if the bot should disengage due to hostility/bad faith. Provide a concise reason based on content guidelines (e.g., harassment, disrespect).
-      - "monotonous" if the conversation should end naturally due to length or repetition.
+      - "monotonous" if the conversation should end naturally due to length, repetition, or semantic stagnation.
 
       Respond with ONLY one of these formats.
     `;
@@ -219,7 +220,12 @@ class LLMService {
     return await this.generateResponse(messages, { max_tokens: 20 });
   }
 
-  async analyzeImage(imageUrl, altText) {
+  async analyzeImage(imageSource, altText) {
+    let imageUrl = imageSource;
+    if (Buffer.isBuffer(imageSource)) {
+      imageUrl = `data:image/jpeg;base64,${imageSource.toString('base64')}`;
+    }
+
     const messages = [
       {
         "role": "user",

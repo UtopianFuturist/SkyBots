@@ -50,6 +50,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     isBlocked: jest.fn(),
     isThreadMuted: jest.fn(),
     muteThread: jest.fn(),
+    muteBranch: jest.fn(),
+    getMutedBranchInfo: jest.fn(),
     getConversationLength: jest.fn(),
     updateConversationLength: jest.fn(),
     saveInteraction: jest.fn(),
@@ -128,11 +130,12 @@ describe('Bot', () => {
 
     blueskyService.getProfile.mockResolvedValue({ handle: 'user.bsky.social', description: 'Test bio' });
     blueskyService.getUserPosts.mockResolvedValue([]);
-    blueskyService.postReply.mockResolvedValue({ uri: 'at://bot/post/1' });
+    blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/post/1' });
 
     dataStore.hasReplied.mockReturnValue(false);
     dataStore.isBlocked.mockReturnValue(false);
     dataStore.isThreadMuted.mockReturnValue(false);
+    dataStore.getMutedBranchInfo.mockReturnValue(null);
     dataStore.getConversationLength.mockReturnValue(1);
     dataStore.getInteractionsByUser.mockReturnValue([]);
     dataStore.getUserSummary.mockReturnValue(null);
@@ -509,7 +512,7 @@ describe('Bot', () => {
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'I cannot continue this conversation as it violates my guidelines regarding harassment.');
-    expect(dataStore.muteThread).toHaveBeenCalledWith('at://did:plc:123/app.bsky.feed.post/hostile');
+    expect(dataStore.muteBranch).toHaveBeenCalledWith('at://did:plc:bot/post/1', 'mean.user');
   });
 
   it('should end a monotonous conversation with a short reply', async () => {
@@ -531,6 +534,32 @@ describe('Bot', () => {
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'Fair enough, talk soon!');
-    expect(dataStore.muteThread).toHaveBeenCalledWith('at://did:plc:123/app.bsky.feed.post/monotonous');
+    expect(dataStore.muteBranch).toHaveBeenCalledWith('at://did:plc:bot/post/1', 'bored.user');
+  });
+
+  it('should provide a concise conclusion for a new user in a muted branch', async () => {
+    const mockNotif = {
+      isRead: false,
+      uri: 'at://did:plc:123/app.bsky.feed.post/new_user_reply',
+      reason: 'reply',
+      record: { text: `Wait, what happened? ${config.BLUESKY_IDENTIFIER}` },
+      author: { handle: 'new.user' },
+      indexedAt: new Date().toISOString()
+    };
+
+    bot._getThreadHistory = jest.fn().mockResolvedValue([
+      { author: 'mean.user', text: '...', uri: 'at://did:plc:123/app.bsky.feed.post/hostile' }
+    ]);
+    dataStore.getMutedBranchInfo.mockReturnValue({ uri: 'at://did:plc:123/app.bsky.feed.post/hostile', handle: 'mean.user' });
+    llmService.generateResponse.mockImplementation((messages) => {
+        if (messages[0].content.includes('final-sounding response')) return Promise.resolve('The conversation ended.');
+        return Promise.resolve('Test response');
+    });
+    blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/post/concise' });
+
+    await bot.processNotification(mockNotif);
+
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'The conversation ended.');
+    expect(dataStore.muteBranch).toHaveBeenCalledWith('at://did:plc:bot/post/concise', 'new.user');
   });
 });

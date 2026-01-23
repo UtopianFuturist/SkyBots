@@ -69,13 +69,15 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       if (!content) return null;
 
       const sanitized = sanitizeThinkingTags(content);
-      if (sanitized) {
-        return sanitized;
+      if (sanitized && sanitized.trim().length > 0) {
+        return sanitized.trim();
       }
 
       // Fallback: If sanitization leaves nothing but the original had content,
-      // it means it was likely all reasoning.
-      console.warn(`[LLMService] [${requestId}] Response was empty after tag sanitization. Original: "${content.substring(0, 100)}..."`);
+      // it means it was likely all reasoning or the model just output reasoning.
+      if (content && content.trim().length > 0) {
+        console.warn(`[LLMService] [${requestId}] Response was empty after tag sanitization. Model likely only produced reasoning within token limit. Original: "${content.substring(0, 200)}..."`);
+      }
       return null;
     } catch (error) {
       if (error.name === 'AbortError') {
@@ -117,7 +119,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond with ONLY "yes" or "no". Do not include any reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 50 });
+    const response = await this.generateResponse(messages, { max_tokens: 500 });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -137,7 +139,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 100 });
+    const response = await this.generateResponse(messages, { max_tokens: 500 });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
@@ -153,7 +155,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: responseText }];
-    const response = await this.generateResponse(messages, { max_tokens: 100 });
+    const response = await this.generateResponse(messages, { max_tokens: 500 });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
@@ -169,7 +171,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond with ONLY "injection" or "clean". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    const response = await this.generateResponse(messages, { max_tokens: 50 });
+    const response = await this.generateResponse(messages, { max_tokens: 500 });
     return response?.toLowerCase().includes('injection') || false;
   }
 
@@ -188,7 +190,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Bio: ${userProfile.description}\n\nRecent Posts:\n- ${userPosts.join('\n- ')}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 150 });
+    const response = await this.generateResponse(messages, { max_tokens: 500 });
 
     if (response?.toLowerCase().includes('high-risk')) {
       return { highRisk: true, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
@@ -216,7 +218,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    const response = await this.generateResponse(messages, { max_tokens: 50 });
+    const response = await this.generateResponse(messages, { max_tokens: 500 });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -240,7 +242,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${currentPost}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 150, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 500, preface_system_prompt: false });
 
     if (response?.toLowerCase().includes('hostile')) {
       return { status: 'hostile', reason: response.split('|')[1]?.trim() || 'unspecified' };
@@ -262,7 +264,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond directly with the claim. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    return await this.generateResponse(messages, { max_tokens: 50 });
+    return await this.generateResponse(messages, { max_tokens: 500 });
   }
 
   async analyzeImage(imageSource, altText) {
@@ -348,7 +350,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Interaction History:\n${historyText}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 50 });
+    const response = await this.generateResponse(messages, { max_tokens: 500 });
     const match = response?.match(/\d+/);
     const rating = match ? parseInt(match[0], 10) : NaN;
     return isNaN(rating) ? 3 : Math.max(1, Math.min(5, rating));
@@ -368,7 +370,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Post content: "${postText}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 50 });
+    const response = await this.generateResponse(messages, { max_tokens: 500 });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -401,7 +403,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"${embedContext}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 50, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 500, preface_system_prompt: false });
 
     // Safety check: if the API fails, assume it's coherent (score 5) to avoid accidental deletion.
     if (!response) {
@@ -445,7 +447,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Otherwise, respond with ONLY the number of the best result. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Results:\n${resultsList}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 50, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 500, preface_system_prompt: false });
 
     if (!response || response.toLowerCase().includes('none')) return null;
 
@@ -475,7 +477,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Your answer must be a single word: "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Result:\n${resultInfo}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 50, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 500, preface_system_prompt: false });
     return response?.toLowerCase().includes('yes') || false;
   }
 }

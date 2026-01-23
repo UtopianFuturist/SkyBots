@@ -36,7 +36,7 @@ export class Bot {
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
     const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
-    const command = `python3 ${firehosePath}`;
+    const command = `python3 -m pip install --break-system-packages -r requirements.txt && python3 ${firehosePath}`;
     this.firehoseProcess = spawn(command, { shell: true });
 
     this.firehoseProcess.stdout.on('data', async (data) => {

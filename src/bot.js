@@ -350,10 +350,10 @@ export class Bot {
 
     // 5. Conversational Image Generation
     const conversationHistoryForImageCheck = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
-    const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with only "yes" or "no".\n\nConversation History:\n${conversationHistoryForImageCheck}`;
+    const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with ONLY "yes" or "no". Do not include any reasoning or <think> tags.\n\nConversation History:\n${conversationHistoryForImageCheck}`;
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
     console.log(`[Bot] Image Gen Check Prompt: ${imageGenCheckPrompt}`);
-    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 5, preface_system_prompt: false });
+    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 50, preface_system_prompt: false });
     console.log(`[Bot] Raw Image Gen Check Response: "${imageGenCheckResponse}"`);
 
     if (imageGenCheckResponse && imageGenCheckResponse.toLowerCase().includes('yes')) {
@@ -492,12 +492,12 @@ export class Bot {
 
     // Step 6a: Check if the user is asking a question that requires their profile context.
     console.log(`[Bot] Checking for user context intent...`);
-    const contextIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking a question that requires their own profile or post history as context. This includes questions like "give me recommendations", "summarize my profile", "what do you think of me?", etc. Your answer must be a single word: "yes" or "no".`;
+    const contextIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking a question that requires their own profile or post history as context. This includes questions like "give me recommendations", "summarize my profile", "what do you think of me?", etc. Your answer must be ONLY "yes" or "no". Do not include reasoning or <think> tags.`;
     const contextIntentMessages = [
       { role: 'system', content: contextIntentSystemPrompt },
       { role: 'user', content: `The user's post is: "${text}"` }
     ];
-    const contextIntentResponse = await llmService.generateResponse(contextIntentMessages, { max_tokens: 5 });
+    const contextIntentResponse = await llmService.generateResponse(contextIntentMessages, { max_tokens: 50 });
     let useContext = contextIntentResponse && contextIntentResponse.toLowerCase().includes('yes');
     console.log(`[Bot] User context intent: ${useContext}`);
 
@@ -618,8 +618,8 @@ export class Bot {
 
       // Update User Summary periodically
       if (userMemory.length % 5 === 0) {
-        const summaryPrompt = `Based on the following interaction history with @${handle}, provide a concise, one-sentence summary of this user's interests, relationship with the bot, and personality. Be objective but conversational.\n\nInteraction History:\n${userMemory.slice(-10).map(m => `User: "${m.text}"\nBot: "${m.response}"`).join('\n')}`;
-        const newSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 50 });
+        const summaryPrompt = `Based on the following interaction history with @${handle}, provide a concise, one-sentence summary of this user's interests, relationship with the bot, and personality. Be objective but conversational. Do not include reasoning or <think> tags.\n\nInteraction History:\n${userMemory.slice(-10).map(m => `User: "${m.text}"\nBot: "${m.response}"`).join('\n')}`;
+        const newSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 100 });
         if (newSummary) {
           await dataStore.updateUserSummary(handle, newSummary);
           console.log(`[Bot] Updated persistent summary for @${handle}: ${newSummary}`);
@@ -627,8 +627,8 @@ export class Bot {
       }
 
     // Repo Knowledge Injection
-    const repoIntentPrompt = `Analyze the user's post to determine if they are asking about the bot's code, architecture, tools, or internal logic. Respond with only "yes" or "no".\n\nUser's post: "${text}"`;
-    const repoIntentResponse = await llmService.generateResponse([{ role: 'system', content: repoIntentPrompt }], { max_tokens: 5, preface_system_prompt: false });
+    const repoIntentPrompt = `Analyze the user's post to determine if they are asking about the bot's code, architecture, tools, or internal logic. Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.\n\nUser's post: "${text}"`;
+    const repoIntentResponse = await llmService.generateResponse([{ role: 'system', content: repoIntentPrompt }], { max_tokens: 50, preface_system_prompt: false });
 
     if (repoIntentResponse && repoIntentResponse.toLowerCase().includes('yes')) {
       console.log(`[Bot] Repo-related query detected. Searching codebase for context...`);
@@ -780,9 +780,9 @@ export class Bot {
         Recent Interactions:
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
 
-        Respond with ONLY the topic/theme (e.g., "AI ethics in social media" or "the future of open-source").
+        Respond with ONLY the topic/theme (e.g., "AI ethics in social media" or "the future of open-source"). Do not include reasoning or <think> tags.
       `;
-      const topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 50, preface_system_prompt: false });
+      const topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 100, preface_system_prompt: false });
       console.log(`[Bot] Autonomous topic identification result: ${topic}`);
       if (!topic || topic.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
@@ -797,9 +797,9 @@ export class Bot {
         Interactions:
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n')}
 
-        If yes, respond with ONLY their handle (e.g., "@user.bsky.social"). Otherwise, respond "none".
+        If yes, respond with ONLY their handle (e.g., "@user.bsky.social"). Otherwise, respond "none". Do not include reasoning or <think> tags.
       `;
-      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 50, preface_system_prompt: false });
+      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 100, preface_system_prompt: false });
       const useMention = mentionHandle && mentionHandle.startsWith('@');
       console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
 

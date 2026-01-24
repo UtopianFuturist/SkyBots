@@ -795,13 +795,31 @@ export class Bot {
 
         Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source). Do not include surrounding quotes, reasoning, or <think> tags.
       `;
-      let topic = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 1000, preface_system_prompt: false });
-      console.log(`[Bot] Autonomous topic identification result: ${topic}`);
-      if (!topic || topic.toLowerCase() === 'none') {
+      let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 1000, preface_system_prompt: false });
+      console.log(`[Bot] Autonomous topic identification result: ${topicResponse}`);
+      if (!topicResponse || topicResponse.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
           return;
       }
-      // Strip leading/trailing quotes from the topic
+
+      // Robust Topic Extraction:
+      // 1. Try to find content between double asterisks (common for bolding the main topic)
+      // 2. Otherwise, look for the last line if there's a preamble
+      // 3. Fallback to the whole cleaned response
+      let topic = '';
+      const boldMatch = topicResponse.match(/\*\*(.*?)\*\*/);
+      if (boldMatch) {
+        topic = boldMatch[1].trim();
+      } else {
+        const lines = topicResponse.split('\n').filter(l => l.trim());
+        if (lines.length > 0) {
+          topic = lines[lines.length - 1].trim();
+        } else {
+          topic = topicResponse.trim();
+        }
+      }
+
+      // Strip leading/trailing quotes from the extracted topic
       topic = topic.replace(/^["']|["']$/g, '').trim();
       console.log(`[Bot] Identified topic: "${topic}"`);
 

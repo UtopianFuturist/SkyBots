@@ -103,4 +103,21 @@ describe('LLM Service', () => {
       expect(result).toBe('sky is green');
     });
   });
+
+  describe('isAutonomousPostCoherent', () => {
+    it('should extract score and reason from a formatted response', async () => {
+      llmService.generateResponse.mockResolvedValue('Score: 4\nReason: The post is engaging and fits the persona.');
+      const result = await llmService.isAutonomousPostCoherent('Topic', 'Content', 'text');
+      expect(result).toEqual({
+        score: 4,
+        reason: 'The post is engaging and fits the persona.'
+      });
+    });
+
+    it('should return default values if response is empty', async () => {
+      llmService.generateResponse.mockResolvedValue(null);
+      const result = await llmService.isAutonomousPostCoherent('Topic', 'Content', 'text');
+      expect(result.score).toBe(5);
+    });
+  });
 });

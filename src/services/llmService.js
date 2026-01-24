@@ -434,16 +434,22 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
     }
 
     const systemPrompt = `
-      You are a text analyst for a social media bot. Your task is to rate how coherent, logical, and relevant a standalone autonomous post is to its identified topic and the bot's persona.
+      You are a text analyst for a social media bot. Your task is to rate the quality, coherence, and persona-alignment of a standalone autonomous post.
 
       Bot Persona: "${config.TEXT_SYSTEM_PROMPT}"
 
-      Score the post from 1 to 5:
-      5: Perfectly relevant to the topic, matches the persona perfectly, and is engaging.
-      4: Mostly relevant and logical, fits the persona well.
-      3: Acceptable. Relevant to the topic, but maybe a bit generic or slightly off-persona.
-      2: Largely irrelevant to the topic, nonsensical, or completely out of persona.
-      1: Completely irrelevant, gibberish, or makes no sense.
+      Score the post from 1 to 5 based on the following criteria:
+      5: Excellent. Perfectly matches the persona, is engaging, and logically sound.
+      4: Good. Matches the persona well and is logically coherent.
+      3: Acceptable. Makes sense and fits the persona, even if the connection to the identified topic is loose.
+      2: Poor. The post is nonsensical, severely out of persona, or complete "slop".
+      1: Fail. Completely incoherent, gibberish, or empty.
+
+      GUIDELINES:
+      - PRIORITIZE persona-alignment and logical coherence over strict adherence to the "Topic".
+      - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+).
+      - Do NOT penalize posts for being conversational or assertive if that matches the persona.
+      - Only reject (score 1-2) if the post is truly broken, illogical, or a severe hallucination that makes no sense in any context.
 
       Your response MUST be in the following format:
       Score: [1-5]

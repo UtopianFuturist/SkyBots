@@ -542,47 +542,80 @@ export class Bot {
     if (imagesToAnalyze.length > 0) {
       console.log(`[Bot] ${imagesToAnalyze.length} images detected in context. Starting analysis...`);
       for (const img of imagesToAnalyze) {
+        console.log(`[Bot] Analyzing thread image from @${img.author}...`);
         const analysis = await llmService.analyzeImage(img.url, img.alt);
         if (analysis) {
           imageAnalysisResult += `[Image in post by @${img.author}: ${analysis}] `;
+          console.log(`[Bot] Successfully analyzed thread image from @${img.author}.`);
+        } else {
+          console.warn(`[Bot] Analysis returned empty for thread image from @${img.author}.`);
         }
       }
-      console.log(`[Bot] Image analysis complete.`);
+      console.log(`[Bot] Thread-wide image analysis complete.`);
     }
 
     // 6. Profile Picture (PFP) analysis intent
     console.log(`[Bot] Checking for PFP analysis intent...`);
-    const pfpIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking you to look at, describe, or comment on a profile picture (PFP or avatar). This includes their own PFP, someone else's PFP, or your own PFP. Your answer must be ONLY "yes" or "no". Do not include reasoning or <think> tags.`;
+    const pfpIntentSystemPrompt = `
+      You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking you to look at, describe, or comment on a profile picture (PFP or avatar).
+      DO NOT trigger "yes" for general conversation about identity, memory, or fresh starts unless a profile picture or avatar is mentioned.
+      Respond with "yes" ONLY if the user uses words like "PFP", "profile picture", "avatar", "look at my picture", "describe her photo", etc.
+      Your answer must be ONLY "yes" or "no". Do not include reasoning or <think> tags.
+    `.trim();
     const pfpIntentResponse = await llmService.generateResponse([{ role: 'system', content: pfpIntentSystemPrompt }, { role: 'user', content: `The user's post is: "${text}"` }], { max_tokens: 1000 });
 
     if (pfpIntentResponse && pfpIntentResponse.toLowerCase().includes('yes')) {
         console.log(`[Bot] PFP analysis intent confirmed.`);
-        const pfpTargetPrompt = `Extract the target user whose profile picture the user is asking about. If they are asking about their own, respond with "self". If they are asking about yours (the bot's), respond with "bot". If they mention a handle (e.g., @user.bsky.social), respond with that handle. Respond with ONLY the handle, "self", or "bot".\n\nUser post: "${text}"`;
-        const target = await llmService.generateResponse([{ role: 'system', content: pfpTargetPrompt }], { max_tokens: 1000 });
+        const pfpTargetPrompt = `
+          Extract the handles or keywords of users whose profile pictures (PFP) the user is EXPLICITLY asking about.
+          - If asking about their own: include "self".
+          - If asking about yours (the bot): include "bot".
+          - If mentioning other handles: include them (e.g., @user.bsky.social).
+          Respond with a comma-separated list of targets, or "none" if no clear PFP target is found.
+          Respond with ONLY the list or "none". No reasoning or <think> tags.
 
-        let targetHandle = handle;
-        if (target.toLowerCase().includes('bot')) {
-            targetHandle = config.BLUESKY_IDENTIFIER;
-        } else if (target.includes('@')) {
-            const match = target.match(/@[a-zA-Z0-9.-]+/);
-            if (match) {
-                targetHandle = match[0].substring(1);
-            }
-        }
+          User post: "${text}"
+        `.trim();
+        const targetsResponse = await llmService.generateResponse([{ role: 'system', content: pfpTargetPrompt }], { max_tokens: 1000 });
 
-        try {
-            const targetProfile = await blueskyService.getProfile(targetHandle);
-            if (targetProfile.avatar) {
-                console.log(`[Bot] Analyzing PFP for @${targetHandle}...`);
-                const pfpAnalysis = await llmService.analyzeImage(targetProfile.avatar, `Profile picture of @${targetHandle}`);
-                if (pfpAnalysis) {
-                    imageAnalysisResult += `[Profile picture of @${targetHandle}: ${pfpAnalysis}] `;
+        if (targetsResponse && !targetsResponse.toLowerCase().includes('none')) {
+            const targets = targetsResponse.split(',').map(t => t.trim().toLowerCase());
+            for (const target of targets) {
+                let targetHandle = null;
+                if (target === 'self') {
+                    targetHandle = handle;
+                } else if (target === 'bot') {
+                    targetHandle = config.BLUESKY_IDENTIFIER;
+                } else if (target.includes('@')) {
+                    const match = target.match(/@[a-zA-Z0-9.-]+/);
+                    if (match) {
+                        targetHandle = match[0].substring(1);
+                    }
+                } else if (target.includes('.')) { // Handle without @
+                    targetHandle = target;
                 }
-            } else {
-                console.log(`[Bot] @${targetHandle} has no avatar.`);
+
+                if (targetHandle) {
+                    try {
+                        const targetProfile = await blueskyService.getProfile(targetHandle);
+                        if (targetProfile.avatar) {
+                            console.log(`[Bot] Analyzing PFP for @${targetHandle}...`);
+                            const pfpAnalysis = await llmService.analyzeImage(targetProfile.avatar, `Profile picture of @${targetHandle}`);
+                            if (pfpAnalysis) {
+                                imageAnalysisResult += `[Profile picture of @${targetHandle}: ${pfpAnalysis}] `;
+                                console.log(`[Bot] Successfully analyzed PFP for @${targetHandle}.`);
+                            } else {
+                                console.warn(`[Bot] Analysis returned empty for @${targetHandle}'s PFP.`);
+                            }
+                        } else {
+                            console.log(`[Bot] @${targetHandle} has no avatar.`);
+                            imageAnalysisResult += `[User @${targetHandle} has no profile picture set.] `;
+                        }
+                    } catch (e) {
+                        console.error(`[Bot] Error fetching profile/analyzing PFP for @${targetHandle}:`, e);
+                    }
+                }
             }
-        } catch (e) {
-            console.error(`[Bot] Error fetching profile for PFP analysis:`, e);
         }
     }
 

@@ -47,7 +47,16 @@ export class Bot {
           const event = JSON.parse(line);
           if (event.type === 'firehose_mention') {
             console.log(`[Bot] Firehose mention detected: ${event.uri}`);
-            if (dataStore.hasReplied(event.uri)) continue;
+            if (dataStore.hasReplied(event.uri)) {
+              console.log(`[Bot] Already in local replied list: ${event.uri}`);
+              continue;
+            }
+
+            if (await blueskyService.hasBotRepliedTo(event.uri)) {
+              console.log(`[Bot] On-network check: Already replied to ${event.uri}. Skipping.`);
+              await dataStore.addRepliedPost(event.uri);
+              continue;
+            }
             
             // Resolve handle for the author DID
             const profile = await blueskyService.getProfile(event.author.did);
@@ -109,50 +118,72 @@ export class Bot {
   async catchUpNotifications() {
     console.log('[Bot] Catching up on missed notifications...');
     let cursor;
-    let notificationsCaughtUp = 0;
+    let unreadActionable = [];
 
+    // 1. Fetch unread notifications that are actionable
     do {
       const response = await blueskyService.getNotifications(cursor);
       if (!response || response.notifications.length === 0) {
         break;
       }
 
-      for (const notif of response.notifications) {
-        // Only process mentions, replies, and quotes that are unread
-        const isActionable = ['mention', 'reply', 'quote'].includes(notif.reason);
+      const actionableBatch = response.notifications.filter(notif =>
+        !notif.isRead && ['mention', 'reply', 'quote'].includes(notif.reason)
+      );
 
-        if (notif.isRead || !isActionable) {
-          continue;
-        }
+      unreadActionable.push(...actionableBatch);
 
-        if (dataStore.hasReplied(notif.uri)) {
-          continue;
-        }
+      // If we've started hitting read notifications in the batch, we can likely stop fetching more pages
+      const hasRead = response.notifications.some(notif => notif.isRead);
+      if (hasRead) break;
 
-        console.log(`[Bot] Found missed notification: ${notif.uri}`);
-        // Mark the notification as "replied" immediately to prevent a race condition
-        // with the real-time Firehose stream.
-        await dataStore.addRepliedPost(notif.uri);
-        notificationsCaughtUp++;
-
-        // Now, process the notification sequentially with a delay to avoid API overload
-        try {
-          await this.processNotification(notif);
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        } catch (error) {
-          console.error(`[Bot] Error processing notification ${notif.uri}:`, error);
-        }
-      }
       cursor = response.cursor;
     } while (cursor);
 
-    if (notificationsCaughtUp > 0) {
-      console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);
-      // Mark notifications as seen after processing them
-      await blueskyService.updateSeen();
-    } else {
+    if (unreadActionable.length === 0) {
       console.log('[Bot] No new notifications to catch up on.');
+      return;
     }
+
+    console.log(`[Bot] Found ${unreadActionable.length} unread actionable notifications. Processing oldest first...`);
+
+    // 2. Process oldest first for safe state progression
+    unreadActionable.reverse();
+    let notificationsCaughtUp = 0;
+
+    for (const notif of unreadActionable) {
+      // Local check (fast)
+      if (dataStore.hasReplied(notif.uri)) {
+        console.log(`[Bot] Skip: Already in local replied list: ${notif.uri}`);
+        await blueskyService.updateSeen(notif.indexedAt);
+        continue;
+      }
+
+      // On-network check (slow but robust for deployments/restarts)
+      if (await blueskyService.hasBotRepliedTo(notif.uri)) {
+        console.log(`[Bot] Skip: On-network check confirmed existing reply to ${notif.uri}`);
+        await dataStore.addRepliedPost(notif.uri);
+        await blueskyService.updateSeen(notif.indexedAt);
+        continue;
+      }
+
+      console.log(`[Bot] Processing missed notification: ${notif.uri}`);
+
+      // Mark as replied in local store to prevent race conditions
+      await dataStore.addRepliedPost(notif.uri);
+      notificationsCaughtUp++;
+
+      try {
+        await this.processNotification(notif);
+        // Mark as seen on-network immediately after successful processing
+        await blueskyService.updateSeen(notif.indexedAt);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } catch (error) {
+        console.error(`[Bot] Error processing notification ${notif.uri}:`, error);
+      }
+    }
+
+    console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);
   }
 
   async processNotification(notif) {

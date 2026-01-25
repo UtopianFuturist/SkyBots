@@ -180,6 +180,34 @@ export class Bot {
     let threadContext = threadData.map(h => ({ author: h.author, text: h.text }));
     const ancestorUris = threadData.map(h => h.uri).filter(uri => uri);
 
+    // 1b. Historical Memory Fetching (Past Week via API)
+    console.log(`[Bot] Fetching past week's interactions with @${handle} for context...`);
+    const pastPosts = await blueskyService.getPastInteractions(handle);
+    let historicalSummary = '';
+    if (pastPosts.length > 0) {
+        console.log(`[Bot] Found ${pastPosts.length} past interactions. Summarizing...`);
+        const now = new Date();
+        const interactionsList = pastPosts.map(p => {
+            const date = new Date(p.indexedAt);
+            const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
+            const timeAgo = diffDays === 0 ? 'today' : (diffDays === 1 ? 'yesterday' : `${diffDays} days ago`);
+            return `- [${timeAgo}] User said: "${p.record.text}"`;
+        }).join('\n');
+
+        const summaryPrompt = `
+            You are a memory module for an AI agent. Below are interactions with @${handle} from the past week (most recent first).
+            Create a concise summary of what you've talked about, any important details or conclusions, and the evolution of your relationship.
+            Include relative timestamps (e.g., "yesterday we discussed...", "3 days ago you mentions...").
+
+            Interactions:
+            ${interactionsList}
+
+            Summary (be brief, objective, and conversational):
+        `;
+        historicalSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 1000 });
+
+    }
+
     if (notif.reason === 'quote') {
         console.log(`[Bot] Notification is a quote repost. Reconstructing context...`);
         const quotedPostUri = notif.record.embed?.record?.uri;
@@ -481,19 +509,81 @@ export class Bot {
       }
     }
 
-    // 6. Image Recognition
+    // 6. Image Recognition (Thread-wide and quoted posts)
     let imageAnalysisResult = '';
-    const embed = notif.record.embed;
-    if (embed && embed.$type === 'app.bsky.embed.images') {
-      console.log(`[Bot] Images detected in post. Starting image analysis...`);
-      for (const image of embed.images) {
-        const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${notif.author.did}&cid=${image.image.ref.$link}`;
-        console.log(`[Bot] Image detected: ${image.image.ref.$link}`);
-        console.log(`[Bot] Alt text: ${image.alt}`);
-        const analysis = await llmService.analyzeImage(imageUrl, image.alt);
-        console.log(`[Bot] Image analysis complete: ${analysis ? 'Success' : 'Failed'}`);
-        imageAnalysisResult += (analysis || '') + ' ';
+    const imagesToAnalyze = [];
+
+    // Collect images from the thread
+    for (const post of threadData) {
+        if (post.images) {
+            for (const img of post.images) {
+                imagesToAnalyze.push({ ...img, author: post.author });
+            }
+        }
+    }
+
+    // Collect images from quoted post if not already handled
+    if (notif.reason === 'quote') {
+        const quotedPostUri = notif.record.embed?.record?.uri;
+        if (quotedPostUri) {
+            const quotedPost = await blueskyService.getPostDetails(quotedPostUri);
+            if (quotedPost && quotedPost.record.embed?.$type === 'app.bsky.embed.images') {
+                for (const image of quotedPost.record.embed.images) {
+                    const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${quotedPost.author.did}&cid=${image.image.ref.$link}`;
+                    // Avoid duplicates
+                    if (!imagesToAnalyze.some(img => img.url === imageUrl)) {
+                        imagesToAnalyze.push({ url: imageUrl, alt: image.alt || '', author: quotedPost.author.handle });
+                    }
+                }
+            }
+        }
+    }
+
+    if (imagesToAnalyze.length > 0) {
+      console.log(`[Bot] ${imagesToAnalyze.length} images detected in context. Starting analysis...`);
+      for (const img of imagesToAnalyze) {
+        const analysis = await llmService.analyzeImage(img.url, img.alt);
+        if (analysis) {
+          imageAnalysisResult += `[Image in post by @${img.author}: ${analysis}] `;
+        }
       }
+      console.log(`[Bot] Image analysis complete.`);
+    }
+
+    // 6. Profile Picture (PFP) analysis intent
+    console.log(`[Bot] Checking for PFP analysis intent...`);
+    const pfpIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking you to look at, describe, or comment on a profile picture (PFP or avatar). This includes their own PFP, someone else's PFP, or your own PFP. Your answer must be ONLY "yes" or "no". Do not include reasoning or <think> tags.`;
+    const pfpIntentResponse = await llmService.generateResponse([{ role: 'system', content: pfpIntentSystemPrompt }, { role: 'user', content: `The user's post is: "${text}"` }], { max_tokens: 1000 });
+
+    if (pfpIntentResponse && pfpIntentResponse.toLowerCase().includes('yes')) {
+        console.log(`[Bot] PFP analysis intent confirmed.`);
+        const pfpTargetPrompt = `Extract the target user whose profile picture the user is asking about. If they are asking about their own, respond with "self". If they are asking about yours (the bot's), respond with "bot". If they mention a handle (e.g., @user.bsky.social), respond with that handle. Respond with ONLY the handle, "self", or "bot".\n\nUser post: "${text}"`;
+        const target = await llmService.generateResponse([{ role: 'system', content: pfpTargetPrompt }], { max_tokens: 1000 });
+
+        let targetHandle = handle;
+        if (target.toLowerCase().includes('bot')) {
+            targetHandle = config.BLUESKY_IDENTIFIER;
+        } else if (target.includes('@')) {
+            const match = target.match(/@[a-zA-Z0-9.-]+/);
+            if (match) {
+                targetHandle = match[0].substring(1);
+            }
+        }
+
+        try {
+            const targetProfile = await blueskyService.getProfile(targetHandle);
+            if (targetProfile.avatar) {
+                console.log(`[Bot] Analyzing PFP for @${targetHandle}...`);
+                const pfpAnalysis = await llmService.analyzeImage(targetProfile.avatar, `Profile picture of @${targetHandle}`);
+                if (pfpAnalysis) {
+                    imageAnalysisResult += `[Profile picture of @${targetHandle}: ${pfpAnalysis}] `;
+                }
+            } else {
+                console.log(`[Bot] @${targetHandle} has no avatar.`);
+            }
+        } catch (e) {
+            console.error(`[Bot] Error fetching profile for PFP analysis:`, e);
+        }
     }
 
     // 6. Generate Response with User Context and Memory
@@ -549,6 +639,7 @@ export class Bot {
 
     const fullContext = `
       ${useContext ? userContext : ''}
+      ${historicalSummary ? `--- Historical Context (Interactions from the past week): ${historicalSummary} ---` : ''}
       ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
       ${activityContext}
       ---
@@ -567,7 +658,17 @@ export class Bot {
     `;
 
     const messages = [
-      { role: 'system', content: `You are replying to ${handle}. Use the following context to tailor your response. Your tone should be influenced by the user's intent, but do not state the analysis directly.${fullContext}` },
+      { role: 'system', content: `
+        You are replying to @${handle}.
+        CRITICAL: Use the provided "Historical Context" and "Persistent memory" to maintain a stateful, ongoing relationship with the user.
+        If the context shows you have talked before, reference those past discussions naturally to show you remember them (e.g., "As we talked about yesterday...", "I recall you were interested in...").
+        You are an agent that feels alive and has a continuous history with your users.
+
+        Tailor your response based on this context:
+        ${fullContext}
+
+        Tone should be influenced by User Intent Analysis, but do not mention the analysis itself.
+      `.trim() },
       ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
       ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
     ];
@@ -703,9 +804,12 @@ export class Bot {
       while (current && current.post) {
         let postText = current.post.record.text || '';
         const embed = current.post.record.embed;
+        const postImages = [];
 
         if (embed && embed.$type === 'app.bsky.embed.images' && embed.images) {
           for (const image of embed.images) {
+            const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${current.post.author.did}&cid=${image.image.ref.$link}`;
+            postImages.push({ url: imageUrl, alt: image.alt || '' });
             if (image.alt) {
               postText += ` [Image with alt text: "${image.alt}"]`;
             } else {
@@ -718,6 +822,8 @@ export class Bot {
           author: current.post.author.handle,
           text: postText.trim(),
           uri: current.post.uri,
+          images: postImages,
+          did: current.post.author.did
         });
         current = current.parent;
 
@@ -731,18 +837,23 @@ export class Bot {
             if (root && root.post) {
                 let rootPostText = root.post.record.text || '';
                 const rootEmbed = root.post.record.embed;
+                const rootImages = [];
                 if (rootEmbed && rootEmbed.$type === 'app.bsky.embed.images' && rootEmbed.images) {
                     for (const image of rootEmbed.images) {
+                        const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${root.post.author.did}&cid=${image.image.ref.$link}`;
+                        rootImages.push({ url: imageUrl, alt: image.alt || '' });
                         if (image.alt) {
                             rootPostText += ` [Image with alt text: "${image.alt}"]`;
                         }
                     }
                 }
-                history.unshift({ author: 'SYSTEM', text: '... [thread truncated] ...', uri: null });
+                history.unshift({ author: 'SYSTEM', text: '... [thread truncated] ...', uri: null, images: [] });
                 history.unshift({
                     author: root.post.author.handle,
                     text: rootPostText.trim(),
                     uri: root.post.uri,
+                    images: rootImages,
+                    did: root.post.author.did
                 });
             }
             break;

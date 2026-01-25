@@ -242,6 +242,27 @@ class BlueskyService {
     }
   }
 
+  async getPastInteractions(handle, days = 7) {
+    try {
+      const botHandle = config.BLUESKY_IDENTIFIER;
+      // Search for posts from the user that mention the bot
+      const query = `from:${handle} @${botHandle}`;
+      const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
+
+      console.log(`[BlueskyService] Searching for past interactions: ${query} since ${since}`);
+
+      const { data } = await this.agent.app.bsky.feed.searchPosts({
+        q: query,
+        limit: 25,
+      });
+
+      return data.posts.filter(post => post.indexedAt >= since);
+    } catch (error) {
+      console.error(`[BlueskyService] Error fetching past interactions for ${handle}:`, error);
+      return [];
+    }
+  }
+
    async getTimeline(limit = 30) {
      try {
        const { data } = await this.agent.getTimeline({ limit });

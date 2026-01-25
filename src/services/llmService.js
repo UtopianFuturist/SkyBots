@@ -280,7 +280,18 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       imageUrl = `data:image/jpeg;base64,${imageSource.toString('base64')}`;
       console.log(`[LLMService] [${requestId}] Image provided as Buffer, converted to base64.`);
     } else {
-      console.log(`[LLMService] [${requestId}] Image provided as URL: ${imageSource}`);
+      console.log(`[LLMService] [${requestId}] Image provided as URL: ${imageSource}. Fetching and converting to base64...`);
+      try {
+        const response = await fetch(imageSource);
+        if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+        const arrayBuffer = await response.arrayBuffer();
+        const buffer = Buffer.from(arrayBuffer);
+        const contentType = response.headers.get('content-type') || 'image/jpeg';
+        imageUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
+        console.log(`[LLMService] [${requestId}] Successfully converted URL to base64 data URL.`);
+      } catch (error) {
+        console.error(`[LLMService] [${requestId}] Error fetching image from URL, falling back to original URL:`, error.message);
+      }
     }
 
     const messages = [

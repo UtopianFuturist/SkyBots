@@ -425,7 +425,7 @@ export class Bot {
     console.log(`[Bot] Image Gen Check Response: "${imageGenCheckResponse}"`);
 
     if (imageGenCheckResponse && imageGenCheckResponse.toLowerCase().includes('yes')) {
-      const imagePromptExtractionPrompt = `You are an AI assistant that extracts image prompts. Based on the conversation, create a concise, literal, and descriptive prompt for an image generation model. The user's latest post is the primary focus. Conversation:\n${conversationHistoryForImageCheck}\n\nRespond with only the prompt.`;
+      const imagePromptExtractionPrompt = `You are the SkyBots persona: a witty, inquisitive, and friendly AI assistant. Based on the conversation, identify the core visual theme the user is interested in. Create a simple, literal, and descriptive prompt for an image generation model in 2-3 sentences. Focus on objects, environments, and atmosphere. **CRITICAL: Avoid portrait representations, close-ups of human faces, or complex human anatomy.** Do not use abstract metaphors or multiple layers of meaning. Respond with only the prompt. Conversation:\n${conversationHistoryForImageCheck}`;
       const imagePromptExtractionMessages = [{ role: 'system', content: imagePromptExtractionPrompt }];
       console.log(`[Bot] Image Prompt Extraction Prompt: ${imagePromptExtractionPrompt}`);
       const prompt = await llmService.generateResponse(imagePromptExtractionMessages, { max_tokens: 1000, preface_system_prompt: false });

@@ -36,10 +36,10 @@ class BlueskyService {
     }
   }
 
-  async updateSeen() {
+  async updateSeen(seenAt) {
     try {
-      await this.agent.updateSeenNotifications();
-      console.log('[BlueskyService] Updated notification seen status.');
+      await this.agent.updateSeenNotifications(seenAt ? { seenAt } : undefined);
+      console.log(`[BlueskyService] Updated notification seen status${seenAt ? ` up to ${seenAt}` : ''}.`);
     } catch (error) {
       console.error('[BlueskyService] Error updating notification seen status:', error);
     }
@@ -56,6 +56,28 @@ class BlueskyService {
     } catch (error) {
       console.error('[BlueskyService] Error fetching detailed thread:', error);
       return null;
+    }
+  }
+
+  async hasBotRepliedTo(uri) {
+    try {
+      const { data } = await this.agent.getPostThread({
+        uri,
+        depth: 1,
+      });
+      const thread = data.thread;
+      // Check if the thread is a standard post and has replies
+      if (thread && thread.$type === 'app.bsky.feed.defs#threadViewPost' && thread.replies) {
+        return thread.replies.some(reply =>
+          reply.post && (reply.post.author.did === this.did ||
+          reply.post.author.handle === config.BLUESKY_IDENTIFIER)
+        );
+      }
+      return false;
+    } catch (error) {
+      // If post is not found or other error, assume we haven't replied or can't reply
+      console.error(`[BlueskyService] Error checking for existing reply to ${uri}:`, error.message);
+      return false;
     }
   }
 

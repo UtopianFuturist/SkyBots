@@ -18,6 +18,7 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     postAlert: jest.fn(),
     deletePost: jest.fn(),
     getExternalEmbed: jest.fn(),
+    hasBotRepliedTo: jest.fn(),
     agent: {
       getAuthorFeed: jest.fn().mockResolvedValue({ data: { feed: [] } }),
       post: jest.fn(),
@@ -135,6 +136,7 @@ describe('Bot', () => {
     blueskyService.getUserPosts.mockResolvedValue([]);
     blueskyService.getPastInteractions.mockResolvedValue([]);
     blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/post/1' });
+    blueskyService.hasBotRepliedTo.mockResolvedValue(false);
 
     dataStore.hasReplied.mockReturnValue(false);
     dataStore.isBlocked.mockReturnValue(false);
@@ -287,7 +289,8 @@ describe('Bot', () => {
       expect(dataStore.addRepliedPost).toHaveBeenCalledWith('at://did:plc:3/app.bsky.feed.post/3');
 
       // It should update the seen status since notifications were processed
-      expect(blueskyService.updateSeen).toHaveBeenCalledTimes(1);
+      // (3 successful processes + 1 skip that still updates seen)
+      expect(blueskyService.updateSeen).toHaveBeenCalledTimes(4);
     });
 
     it('should not update seen status if no new notifications were processed', async () => {
@@ -308,7 +311,8 @@ describe('Bot', () => {
 
       expect(bot.processNotification).not.toHaveBeenCalled();
       expect(dataStore.addRepliedPost).not.toHaveBeenCalled();
-      expect(blueskyService.updateSeen).not.toHaveBeenCalled();
+      // It will still call updateSeen to mark the already-replied notification as seen on-network
+      expect(blueskyService.updateSeen).toHaveBeenCalled();
     });
   });
 

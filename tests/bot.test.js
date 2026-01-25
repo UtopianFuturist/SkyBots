@@ -11,6 +11,7 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     postReply: jest.fn(),
     getDetailedThread: jest.fn(),
     getPostDetails: jest.fn(),
+    getPastInteractions: jest.fn(),
     likePost: jest.fn(),
     authenticate: jest.fn(),
     submitAutonomyDeclaration: jest.fn(),
@@ -132,6 +133,7 @@ describe('Bot', () => {
 
     blueskyService.getProfile.mockResolvedValue({ handle: 'user.bsky.social', description: 'Test bio' });
     blueskyService.getUserPosts.mockResolvedValue([]);
+    blueskyService.getPastInteractions.mockResolvedValue([]);
     blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/post/1' });
 
     dataStore.hasReplied.mockReturnValue(false);
@@ -437,11 +439,15 @@ describe('Bot', () => {
 
     const mockQuotedPost = {
       uri: 'at://did:plc:bot/app.bsky.feed.post/original_post',
+      author: { handle: 'bot.handle', did: 'did:plc:bot' },
       record: {
         text: 'This is the original post by the bot.',
         embed: {
           $type: 'app.bsky.embed.images',
-          images: [{ alt: 'An image of a space tree.' }]
+          images: [{
+            image: { ref: { $link: 'cid1' } },
+            alt: 'An image of a space tree.'
+          }]
         }
       }
     };

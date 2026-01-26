@@ -68,6 +68,13 @@ export const sanitizeThinkingTags = (text) => {
   return sanitized.trim();
 };
 
+export const sanitizeCharacterCount = (text) => {
+  if (!text) return text;
+  // Matches patterns like (123 chars), (123 characters), (123 char), (123 character) at the end of the text
+  // or anywhere if it's clearly a tag.
+  return text.replace(/\s*\(\s*\d+\s*char(acter)?s?\s*\)/gi, '').trim();
+};
+
 export const sanitizeDuplicateText = (text) => {
   if (!text) {
     return text;

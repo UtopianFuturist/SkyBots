@@ -7,7 +7,7 @@ import { youtubeService } from './services/youtubeService.js';
 import { wikipediaService } from './services/wikipediaService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -776,6 +776,9 @@ export class Bot {
       // Remove thinking tags and any leftover fragments
       responseText = sanitizeThinkingTags(responseText);
       
+      // Remove character count tags
+      responseText = sanitizeCharacterCount(responseText);
+
       // Sanitize the response to avoid duplicate sentences
       responseText = sanitizeDuplicateText(responseText);
       
@@ -1128,6 +1131,7 @@ export class Bot {
 
         if (postContent) {
           postContent = sanitizeThinkingTags(postContent);
+          postContent = sanitizeCharacterCount(postContent);
           postContent = sanitizeDuplicateText(postContent);
 
           if (!postContent) {

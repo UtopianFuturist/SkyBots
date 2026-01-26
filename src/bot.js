@@ -211,7 +211,27 @@ export class Bot {
     let threadContext = threadData.map(h => ({ author: h.author, text: h.text }));
     const ancestorUris = threadData.map(h => h.uri).filter(uri => uri);
 
-    // 1b. Historical Memory Fetching (Past Week via API)
+    // 1b. Own Profile Context (Recent Standalone Posts)
+    console.log(`[Bot] Fetching own recent standalone posts for context...`);
+    let ownRecentPostsContext = '';
+    try {
+        const ownFeed = await blueskyService.agent.getAuthorFeed({
+            actor: blueskyService.did,
+            limit: 10,
+        });
+        const recentOwnPosts = ownFeed.data.feed
+            .filter(item => item.post.author.did === blueskyService.did && !item.post.record.reply)
+            .slice(0, 5)
+            .map(item => `- "${item.post.record.text.substring(0, 150)}..."`)
+            .join('\n');
+        if (recentOwnPosts) {
+            ownRecentPostsContext = `\n\n[Your Recent Standalone Posts (Profile Activity):\n${recentOwnPosts}]`;
+        }
+    } catch (e) {
+        console.error('[Bot] Error fetching own feed for context:', e);
+    }
+
+    // 1c. Historical Memory Fetching (Past Week via API)
     console.log(`[Bot] Fetching past week's interactions with @${handle} for context...`);
     const pastPosts = await blueskyService.getPastInteractions(handle);
     let historicalSummary = '';
@@ -717,6 +737,7 @@ export class Bot {
       ${historicalSummary ? `--- Historical Context (Interactions from the past week): ${historicalSummary} ---` : ''}
       ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
       ${activityContext}
+      ${ownRecentPostsContext}
       ---
       Cross-Post Memory (Recent mentions of the bot by this user):
       ${crossPostMemory || 'No recent cross-post mentions found.'}
@@ -968,19 +989,30 @@ export class Bot {
 
       console.log(`[Bot] Eligibility confirmed (${postsToday.length}/5). Gathering context...`);
 
-      // 1. Gather context from timeline and interactions
+      // 1. Gather context from timeline, interactions, and own profile
       const timeline = await blueskyService.getTimeline(20);
       const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
       const recentInteractions = dataStore.db.data.interactions.slice(-20);
+      const recentOwnPosts = feed.data.feed
+        .filter(item => item.post.author.did === blueskyService.did && !item.post.record.reply)
+        .slice(0, 10)
+        .map(item => item.post.record.text);
 
       // 2. Identify a topic based on context
       console.log(`[Bot] Identifying autonomous post topic...`);
       const topicPrompt = `
-        Based on the current vibe of your following feed and recent interactions, identify a single interesting topic or theme for a standalone post.
-        Network Buzz:
+        Based on the current vibe of your following feed, recent interactions, and your own past thoughts, identify a single interesting topic or theme for a standalone post.
+
+        Network Buzz (what others are talking about):
         ${networkBuzz || 'None.'}
-        Recent Interactions:
+
+        Recent Interactions (what you've been discussing):
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
+
+        Your Recent Standalone Posts (what you've already said):
+        ${recentOwnPosts.join('\n') || 'None.'}
+
+        CHALLENGE: Avoid simple greetings, "hello" messages, or just saying "I'm back". Instead, aim for a varied thought, musing, idea, dream, or analysis that fits your persona. You can choose to build on your past posts, react to the network buzz, or come up with something entirely new.
 
         Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source). Do not include surrounding quotes, reasoning, or <think> tags.
       `;
@@ -1093,6 +1125,7 @@ export class Bot {
         if (postType === 'wikipedia' && article) {
           const systemPrompt = `
               Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings.
               ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
               IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
               Topic context: ${topic}
@@ -1106,6 +1139,7 @@ export class Bot {
         } else if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
               Write a friendly, inquisitive, and conversational Bluesky post about why you chose to generate this image and what it offers.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings.
               Do NOT be too mechanical; stay in your persona.
               ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
               Actual Visuals in Image: ${imageAnalysis}
@@ -1122,6 +1156,7 @@ export class Bot {
         } else if (postType === 'text') {
           const systemPrompt = `
               Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings or meta-talk about your status.
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
               Keep it under 280 characters or max 3 threaded posts if deeper.
               Your persona is: ${config.TEXT_SYSTEM_PROMPT}${feedbackContext}

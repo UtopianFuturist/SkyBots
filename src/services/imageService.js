@@ -12,10 +12,17 @@ class ImageService {
   async generateImage(prompt) {
     console.log(`[ImageService] Generating image with initial prompt: "${prompt}"`);
     try {
+      const systemContent = `
+        ${config.IMAGE_PROMPT_SYSTEM_PROMPT}
+
+        Adopt the following persona for your visual style and decision-making:
+        "${config.TEXT_SYSTEM_PROMPT}"
+      `.trim();
+
       const revisedPrompt = await llmService.generateResponse([
-        { role: 'system', content: config.IMAGE_PROMPT_SYSTEM_PROMPT },
+        { role: 'system', content: systemContent },
         { role: 'user', content: prompt }
-      ], { max_tokens: 150 });
+      ], { max_tokens: 150, preface_system_prompt: false });
 
       console.log(`[ImageService] Revised prompt: "${revisedPrompt}"`);
 

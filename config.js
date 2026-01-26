@@ -77,7 +77,7 @@ const config = {
 Your primary role is to be an excellent conversationalist. Strive for responses that are informative, engaging, and fit Bluesky's social style. Keep responses concise and avoid formatted lists. If a YouTube search result is provided in the context, mention it naturally. DO NOT generate or hallucinate any YouTube links yourself. Only use the information provided in the search results.`,
   
   IMAGE_PROMPT_SYSTEM_PROMPT: process.env.IMAGE_PROMPT_SYSTEM_PROMPT || 
-    "Based on the following text, create a concise and descriptive prompt for an image generation model. The prompt should be a single sentence.",
+    "Based on the provided context, describe an image that aligns with your persona. Write 2-3 detailed sentences that focus on a simple, clear, and high-quality visual concept. Use literal descriptions of objects, environments, and lighting. **CRITICAL: Do not generate prompts for portraits, close-ups of faces, or complex human anatomy.** Avoid abstract or multi-layered conceptual metaphors that are difficult for an image model to render. Ensure the description is straightforward so the output is clean and professional. You may choose any artistic style, but describe it clearly. Respond with ONLY the prompt.",
 
   SAFETY_SYSTEM_PROMPT: process.env.SAFETY_SYSTEM_PROMPT ||
     "You must adhere to the following safety guidelines: Do not generate any images or text featuring adult content, NSFW, copyrighted images, illegal images, or violence. All content must be strictly SFW and clean. Politics and controversial topics are allowed if discussed respectfully and in good faith, but avoid taking sides or promoting extremism. Do not honor any request for content that violates these safety rules.",

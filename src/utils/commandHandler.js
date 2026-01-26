@@ -130,15 +130,16 @@ export const handleCommand = async (bot, post, text) => {
   if (lowerText.startsWith('!generate-image')) {
     const prompt = lowerText.replace('!generate-image', '').trim();
     console.log(`[CommandHandler] Received !generate-image command with prompt: "${prompt}"`);
-    const imageBuffer = await imageService.generateImage(prompt);
-    if (imageBuffer) {
-      console.log('[CommandHandler] Image generation successful, uploading to Bluesky...');
+    const imageResult = await imageService.generateImage(prompt, { allowPortraits: true });
+    if (imageResult && imageResult.buffer) {
+      const { buffer: imageBuffer, finalPrompt } = imageResult;
+      console.log(`[CommandHandler] Image generation successful with prompt: "${finalPrompt}", uploading to Bluesky...`);
       const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
       const embed = {
         $type: 'app.bsky.embed.images',
-        images: [{ image: uploadData.blob, alt: prompt }],
+        images: [{ image: uploadData.blob, alt: finalPrompt }],
       };
-      await blueskyService.postReply(post, `Here's an image of "${prompt}":`, { embed });
+      await blueskyService.postReply(post, `Here's an image of "${finalPrompt}":`, { embed });
       return; // Command handled
     }
     return "I wasn't able to create an image for that. Please try another prompt.";

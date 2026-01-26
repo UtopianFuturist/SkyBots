@@ -39,6 +39,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     isResponseSafe: jest.fn(),
     rateUserInteraction: jest.fn(),
     analyzeImage: jest.fn(),
+    isImageCompliant: jest.fn(),
     shouldLikePost: jest.fn(),
     isReplyCoherent: jest.fn(),
     selectBestResult: jest.fn(),
@@ -130,6 +131,7 @@ describe('Bot', () => {
     llmService.evaluateConversationVibe.mockResolvedValue({ status: 'healthy' });
     llmService.checkSemanticLoop.mockResolvedValue(false);
     llmService.shouldLikePost.mockResolvedValue(false);
+    llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
     llmService.rateUserInteraction.mockResolvedValue(3);
 
     blueskyService.getProfile.mockResolvedValue({ handle: 'user.bsky.social', description: 'Test bio' });

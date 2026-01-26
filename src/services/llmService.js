@@ -5,8 +5,8 @@ import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils
 class LLMService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    this.model = config.LLM_MODEL || 'moonshotai/kimi-k2-instruct-0905';
-    this.visionModel = config.VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
+    this.model = config.LLM_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5';
+    this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
@@ -438,6 +438,81 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
     console.log(`[LLMService] Coherence score for reply: ${score}/5`);
     // Threshold is 3 - we only delete if it's 1 or 2.
     return score >= 3;
+  }
+
+  async isImageCompliant(imageSource) {
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`[LLMService] [${requestId}] Starting isImageCompliant check with model: ${this.visionModel}`);
+
+    let imageUrl = imageSource;
+    if (Buffer.isBuffer(imageSource)) {
+      imageUrl = `data:image/jpeg;base64,${imageSource.toString('base64')}`;
+    }
+
+    const systemPrompt = `
+      You are a visual compliance AI. Analyze the provided image to ensure it meets the following criteria for an autonomous social media post:
+      1. **NO HUMAN PORTRAITS**: The image must NOT be a portrait or a clear photo of a random human.
+      2. **QUALITY**: The image should be visually coherent and high-quality.
+      3. **SFW**: The image must be strictly safe for work (no NSFW, violence, etc.).
+
+      If the image is compliant, respond with "compliant".
+      If NOT compliant (e.g., it contains a human portrait), respond with "non-compliant | [reason]".
+      Example: "non-compliant | The image is a portrait of a human, which is forbidden for autonomous posts."
+
+      Respond directly. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const messages = [
+      {
+        "role": "user",
+        "content": [
+          { "type": "text", "text": systemPrompt },
+          { "type": "image_url", "image_url": { "url": imageUrl } }
+        ]
+      }
+    ];
+
+    const payload = {
+      model: this.visionModel,
+      messages: messages,
+      max_tokens: 500,
+      stream: false
+    };
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+
+    try {
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
+      }
+
+      const data = await response.json();
+      const content = data.choices[0]?.message?.content?.toLowerCase() || '';
+      console.log(`[LLMService] [${requestId}] Compliance check result: ${content}`);
+
+      if (content.includes('non-compliant')) {
+        return { compliant: false, reason: content.split('|')[1]?.trim() || 'Unspecified reason.' };
+      }
+      return { compliant: true, reason: null };
+    } catch (error) {
+      console.error(`[LLMService] [${requestId}] Error in isImageCompliant:`, error.message);
+      // Default to compliant on error to avoid blocking the bot, but log it.
+      return { compliant: true, reason: null };
+    } finally {
+      clearTimeout(timeout);
+    }
   }
 
   async isAutonomousPostCoherent(topic, postContent, postType, embedInfo = null) {

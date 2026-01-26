@@ -22,6 +22,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     generateResponse: jest.fn(),
     isAutonomousPostCoherent: jest.fn(),
     analyzeImage: jest.fn(),
+    isImageCompliant: jest.fn(),
   },
 }));
 
@@ -138,6 +139,7 @@ Decentralized Social Media`);
       finalPrompt: literalPrompt
     });
 
+    llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
     llmService.analyzeImage.mockResolvedValue('A robotic hand with a flower.');
     blueskyService.agent.uploadBlob.mockResolvedValue({ data: { blob: 'blob-ref' } });
 
@@ -150,6 +152,7 @@ Decentralized Social Media`);
     await bot.performAutonomousPost();
 
     expect(imageService.generateImage).toHaveBeenCalledWith(topic, { allowPortraits: false });
+    expect(llmService.isImageCompliant).toHaveBeenCalled();
     expect(blueskyService.post).toHaveBeenCalledWith(
       'Here is a thought about technology.',
       expect.objectContaining({

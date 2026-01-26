@@ -274,8 +274,8 @@ class BlueskyService {
   async getPastInteractions(handle, days = 7) {
     try {
       const botHandle = config.BLUESKY_IDENTIFIER;
-      // Search for posts from the user that mention the bot
-      const query = `from:${handle} @${botHandle}`;
+      // Search for posts between the user and the bot
+      const query = `(from:${handle} @${botHandle}) OR (from:${botHandle} @${handle})`;
       const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000).toISOString();
 
       console.log(`[BlueskyService] Searching for past interactions: ${query} since ${since}`);

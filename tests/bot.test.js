@@ -442,13 +442,13 @@ describe('Bot', () => {
       author: { handle: 'bot.handle', did: 'did:plc:bot' },
       record: {
         text: 'This is the original post by the bot.',
-        embed: {
-          $type: 'app.bsky.embed.images',
-          images: [{
-            image: { ref: { $link: 'cid1' } },
-            alt: 'An image of a space tree.'
-          }]
-        }
+      },
+      embed: {
+        $type: 'app.bsky.embed.images#view',
+        images: [{
+          fullsize: 'https://example.com/image.jpg',
+          alt: 'An image of a space tree.'
+        }]
       }
     };
 

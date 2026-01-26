@@ -215,12 +215,12 @@ export class Bot {
             const quotedPost = await blueskyService.getPostDetails(quotedPostUri);
             if (quotedPost) {
                 let quotedText = quotedPost.record.text || '';
-                const quotedEmbed = quotedPost.record.embed;
-                if (quotedEmbed && quotedEmbed.$type === 'app.bsky.embed.images' && quotedEmbed.images) {
-                    for (const image of quotedEmbed.images) {
-                        if (image.alt) {
-                            quotedText += ` [Image with alt text: "${image.alt}"]`;
-                        }
+                const quotedImages = this._extractImages(quotedPost);
+                for (const img of quotedImages) {
+                    if (img.alt) {
+                        quotedText += ` [Image with alt text: "${img.alt}"]`;
+                    } else {
+                        quotedText += ` [Image attached]`;
                     }
                 }
                 // Manually construct the context for the LLM
@@ -517,22 +517,24 @@ export class Bot {
     for (const post of threadData) {
         if (post.images) {
             for (const img of post.images) {
-                imagesToAnalyze.push({ ...img, author: post.author });
+                // Avoid duplicates
+                if (!imagesToAnalyze.some(existing => existing.url === img.url)) {
+                    imagesToAnalyze.push({ ...img, author: post.author });
+                }
             }
         }
     }
 
-    // Collect images from quoted post if not already handled
+    // Collect images from quoted post if not already handled (quote notifications)
     if (notif.reason === 'quote') {
         const quotedPostUri = notif.record.embed?.record?.uri;
         if (quotedPostUri) {
             const quotedPost = await blueskyService.getPostDetails(quotedPostUri);
-            if (quotedPost && quotedPost.record.embed?.$type === 'app.bsky.embed.images') {
-                for (const image of quotedPost.record.embed.images) {
-                    const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${quotedPost.author.did}&cid=${image.image.ref.$link}`;
-                    // Avoid duplicates
-                    if (!imagesToAnalyze.some(img => img.url === imageUrl)) {
-                        imagesToAnalyze.push({ url: imageUrl, alt: image.alt || '', author: quotedPost.author.handle });
+            if (quotedPost) {
+                const quotedImages = this._extractImages(quotedPost);
+                for (const img of quotedImages) {
+                    if (!imagesToAnalyze.some(existing => existing.url === img.url)) {
+                        imagesToAnalyze.push(img);
                     }
                 }
             }
@@ -557,10 +559,21 @@ export class Bot {
     // 6. Profile Picture (PFP) analysis intent
     console.log(`[Bot] Checking for PFP analysis intent...`);
     const pfpIntentSystemPrompt = `
-      You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking you to look at, describe, or comment on a profile picture (PFP or avatar).
-      DO NOT trigger "yes" for general conversation about identity, memory, or fresh starts unless a profile picture or avatar is mentioned.
-      Respond with "yes" ONLY if the user uses words like "PFP", "profile picture", "avatar", "look at my picture", "describe her photo", etc.
-      Your answer must be ONLY "yes" or "no". Do not include reasoning or <think> tags.
+      You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking you to look at, describe, or comment on a profile picture (PFP, avatar, icon).
+
+      TRIGGERS:
+      - "What's my PFP?"
+      - "Can you see my profile picture?"
+      - "Look at @user.bsky.social's avatar"
+      - "Describe our PFPs"
+      - "What do you think of your own icon?"
+
+      DO NOT trigger "yes" for:
+      - "Can you see me?" (Too ambiguous)
+      - "Who am I?" (Identity question)
+      - "What's in this post?" (General vision request)
+
+      Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `.trim();
     const pfpIntentResponse = await llmService.generateResponse([{ role: 'system', content: pfpIntentSystemPrompt }, { role: 'user', content: `The user's post is: "${text}"` }], { max_tokens: 1000 });
 
@@ -568,10 +581,14 @@ export class Bot {
         console.log(`[Bot] PFP analysis intent confirmed.`);
         const pfpTargetPrompt = `
           Extract the handles or keywords of users whose profile pictures (PFP) the user is EXPLICITLY asking about.
+
+          RULES:
           - If asking about their own: include "self".
           - If asking about yours (the bot): include "bot".
           - If mentioning other handles: include them (e.g., @user.bsky.social).
-          Respond with a comma-separated list of targets, or "none" if no clear PFP target is found.
+          - If saying "both", "our", or "everyone", include all relevant keywords (e.g., "self, bot").
+
+          Respond with a comma-separated list of targets (e.g., "self, bot, @someone.bsky.social"), or "none" if no clear PFP target is found.
           Respond with ONLY the list or "none". No reasoning or <think> tags.
 
           User post: "${text}"
@@ -696,6 +713,8 @@ export class Bot {
         CRITICAL: Use the provided "Historical Context" and "Persistent memory" to maintain a stateful, ongoing relationship with the user.
         If the context shows you have talked before, reference those past discussions naturally to show you remember them (e.g., "As we talked about yesterday...", "I recall you were interested in...").
         You are an agent that feels alive and has a continuous history with your users.
+
+        VISION: You have vision capabilities. Use the "Image Analysis" section in the provided context to understand images attached to posts or profiles. Treat these descriptions as your own visual perception. Never deny being able to see images if an analysis is provided.
 
         Tailor your response based on this context:
         ${fullContext}
@@ -825,6 +844,45 @@ export class Bot {
     }
   }
 
+  _extractImages(post) {
+    const images = [];
+    if (!post || !post.embed) return images;
+
+    const embed = post.embed;
+
+    // Direct images embed (#view for PostView)
+    if ((embed.$type === 'app.bsky.embed.images#view' || embed.$type === 'app.bsky.embed.images') && embed.images) {
+      for (const img of embed.images) {
+        const url = img.fullsize || img.thumb || (img.image?.ref?.$link ? `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${post.author.did}&cid=${img.image.ref.$link}` : null);
+        if (url) {
+          images.push({
+            url: url,
+            alt: img.alt || '',
+            author: post.author.handle
+          });
+        }
+      }
+    }
+
+    // recordWithMedia embed (images + quote)
+    if (embed.$type === 'app.bsky.embed.recordWithMedia#view' && embed.media) {
+      if ((embed.media.$type === 'app.bsky.embed.images#view' || embed.media.$type === 'app.bsky.embed.images') && embed.media.images) {
+        for (const img of embed.media.images) {
+          const url = img.fullsize || img.thumb || (img.image?.ref?.$link ? `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${post.author.did}&cid=${img.image.ref.$link}` : null);
+          if (url) {
+            images.push({
+              url: url,
+              alt: img.alt || '',
+              author: post.author.handle
+            });
+          }
+        }
+      }
+    }
+
+    return images;
+  }
+
   async _getThreadHistory(uri) {
     try {
       const thread = await blueskyService.getDetailedThread(uri);
@@ -836,18 +894,14 @@ export class Bot {
 
       while (current && current.post) {
         let postText = current.post.record.text || '';
-        const embed = current.post.record.embed;
-        const postImages = [];
+        const postImages = this._extractImages(current.post);
 
-        if (embed && embed.$type === 'app.bsky.embed.images' && embed.images) {
-          for (const image of embed.images) {
-            const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${current.post.author.did}&cid=${image.image.ref.$link}`;
-            postImages.push({ url: imageUrl, alt: image.alt || '' });
-            if (image.alt) {
-              postText += ` [Image with alt text: "${image.alt}"]`;
-            } else {
-              postText += ` [Image attached, no alt text]`;
-            }
+        // Add image info to post text for context
+        for (const img of postImages) {
+          if (img.alt) {
+            postText += ` [Image with alt text: "${img.alt}"]`;
+          } else {
+            postText += ` [Image attached, no alt text]`;
           }
         }
 
@@ -869,15 +923,10 @@ export class Bot {
             }
             if (root && root.post) {
                 let rootPostText = root.post.record.text || '';
-                const rootEmbed = root.post.record.embed;
-                const rootImages = [];
-                if (rootEmbed && rootEmbed.$type === 'app.bsky.embed.images' && rootEmbed.images) {
-                    for (const image of rootEmbed.images) {
-                        const imageUrl = `https://bsky.social/xrpc/com.atproto.sync.getBlob?did=${root.post.author.did}&cid=${image.image.ref.$link}`;
-                        rootImages.push({ url: imageUrl, alt: image.alt || '' });
-                        if (image.alt) {
-                            rootPostText += ` [Image with alt text: "${image.alt}"]`;
-                        }
+                const rootImages = this._extractImages(root.post);
+                for (const img of rootImages) {
+                    if (img.alt) {
+                        rootPostText += ` [Image with alt text: "${img.alt}"]`;
                     }
                 }
                 history.unshift({ author: 'SYSTEM', text: '... [thread truncated] ...', uri: null, images: [] });

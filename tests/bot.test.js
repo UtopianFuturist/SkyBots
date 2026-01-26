@@ -38,6 +38,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     isResponseSafe: jest.fn(),
     rateUserInteraction: jest.fn(),
     analyzeImage: jest.fn(),
+    isImageCompliant: jest.fn(),
     shouldLikePost: jest.fn(),
     isReplyCoherent: jest.fn(),
     selectBestResult: jest.fn(),
@@ -178,6 +179,7 @@ describe('Bot', () => {
     bot._getThreadHistory = jest.fn().mockResolvedValue(mockThreadContext);
     llmService.isPostSafe.mockResolvedValue({ safe: true });
     llmService.generateResponse.mockResolvedValue('This is a test response.');
+    llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
     llmService.shouldLikePost.mockResolvedValue(false);
     llmService.isResponseSafe.mockResolvedValue({ safe: true });
     llmService.rateUserInteraction.mockResolvedValue(4);

@@ -387,7 +387,7 @@ export class Bot {
 
     // 5. Conversational Image Generation
     const conversationHistoryForImageCheck = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
-    const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with ONLY "yes" or "no". Do not include any reasoning or <think> tags.\n\nConversation History:\n${conversationHistoryForImageCheck}`;
+    const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.\n\nConversation History:\n${conversationHistoryForImageCheck}`;
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
     console.log(`[Bot] Image Gen Check Prompt: ${imageGenCheckPrompt}`);
     const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 1000, preface_system_prompt: false });
@@ -422,8 +422,8 @@ export class Bot {
     let youtubeResult = null;
     const videoIntentSystemPrompt = `
       You are an intent detection AI. Analyze the user's post to determine if they are asking for a video (e.g., "find a video about...", "show me a youtube video for...", etc.).
-      Your answer must be a single word: "yes" or "no".
-    `;
+      Your answer must be ONLY the word "yes" or "no". Do NOT include any other text, reasoning, or "I can't see images" refusals.
+    `.trim();
     const videoIntentMessages = [
       { role: 'system', content: videoIntentSystemPrompt },
       { role: 'user', content: `The user's post is: "${text}"` }
@@ -573,7 +573,7 @@ export class Bot {
       - "Who am I?" (Identity question)
       - "What's in this post?" (General vision request)
 
-      Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
+      Respond with ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.
     `.trim();
     const pfpIntentResponse = await llmService.generateResponse([{ role: 'system', content: pfpIntentSystemPrompt }, { role: 'user', content: `The user's post is: "${text}"` }], { max_tokens: 1000 });
 
@@ -641,7 +641,7 @@ export class Bot {
 
     // Step 6a: Check if the user is asking a question that requires their profile context.
     console.log(`[Bot] Checking for user context intent...`);
-    const contextIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking a question that requires their own profile or post history as context. This includes questions like "give me recommendations", "summarize my profile", "what do you think of me?", etc. Your answer must be ONLY "yes" or "no". Do not include reasoning or <think> tags.`;
+    const contextIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking a question that requires their own profile or post history as context. This includes questions like "give me recommendations", "summarize my profile", "what do you think of me?", etc. Your answer must be ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.`;
     const contextIntentMessages = [
       { role: 'system', content: contextIntentSystemPrompt },
       { role: 'user', content: `The user's post is: "${text}"` }
@@ -698,8 +698,6 @@ export class Bot {
       ---
       User Intent Analysis: ${userIntent.reason || 'Could not be determined.'}
       ---
-      Image Analysis: ${imageAnalysisResult || 'No image provided.'}
-      ---
       ${
         youtubeResult
           ? `YouTube Search Result for "${youtubeResult.title}": A video will be embedded in the reply.`
@@ -707,6 +705,7 @@ export class Bot {
       }
     `;
 
+    console.log(`[Bot] Final response generation for @${handle}. Vision context length: ${imageAnalysisResult.length}`);
     const messages = [
       { role: 'system', content: `
         You are replying to @${handle}.
@@ -714,12 +713,16 @@ export class Bot {
         If the context shows you have talked before, reference those past discussions naturally to show you remember them (e.g., "As we talked about yesterday...", "I recall you were interested in...").
         You are an agent that feels alive and has a continuous history with your users.
 
-        VISION: You have vision capabilities. Use the "Image Analysis" section in the provided context to understand images attached to posts or profiles. Treat these descriptions as your own visual perception. Never deny being able to see images if an analysis is provided.
-
         Tailor your response based on this context:
         ${fullContext}
 
         Tone should be influenced by User Intent Analysis, but do not mention the analysis itself.
+
+        --- CRITICAL VISION INFORMATION ---
+        You HAVE vision capabilities. The following is your current visual perception of images and profile pictures in this interaction.
+        Treat these descriptions as if you are seeing them with your own eyes.
+        NEVER claim you cannot see images or read screenshots.
+        IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected.'}
       `.trim() },
       ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
       ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
@@ -793,7 +796,7 @@ export class Bot {
       }
 
     // Repo Knowledge Injection
-    const repoIntentPrompt = `Analyze the user's post to determine if they are asking about the bot's code, architecture, tools, or internal logic. Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.\n\nUser's post: "${text}"`;
+    const repoIntentPrompt = `Analyze the user's post to determine if they are asking about the bot's code, architecture, tools, or internal logic. Respond with ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.\n\nUser's post: "${text}"`;
     const repoIntentResponse = await llmService.generateResponse([{ role: 'system', content: repoIntentPrompt }], { max_tokens: 1000, preface_system_prompt: false });
 
     if (repoIntentResponse && repoIntentResponse.toLowerCase().includes('yes')) {
@@ -1058,39 +1061,52 @@ export class Bot {
         }
       }
 
-      if (postType === 'image') {
-        console.log(`[Bot] Pre-generating image for topic: ${topic}`);
-        imageBuffer = await imageService.generateImage(topic);
-        if (imageBuffer) {
-          console.log(`[Bot] Image generated successfully. Analyzing visuals...`);
-          imageAnalysis = await llmService.analyzeImage(imageBuffer);
-          if (imageAnalysis) {
-            const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}`;
-            imageAltText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 1000, preface_system_prompt: false });
-
-            console.log(`[Bot] Uploading image blob...`);
-            try {
-              const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
-              imageBlob = uploadData.blob;
-            } catch (uploadError) {
-              console.error(`[Bot] Error uploading image blob:`, uploadError);
-            }
-          } else {
-            console.log(`[Bot] Image analysis failed for topic: "${topic}".`);
-          }
-        } else {
-          console.log(`[Bot] Image generation failed for topic: "${topic}".`);
-        }
-
-        if (!imageBlob) {
-          console.log(`[Bot] Falling back to text post due to image generation/upload failure.`);
-          postType = 'text';
-        }
-      }
-
       while (attempts < MAX_ATTEMPTS) {
         attempts++;
         console.log(`[Bot] Autonomous post attempt ${attempts}/${MAX_ATTEMPTS} for topic: "${topic}" (Type: ${postType})`);
+
+        if (postType === 'image') {
+            console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${attempts})...`);
+            const revisedTopic = feedback ? `${topic} (Correction: ${feedback})` : topic;
+            imageBuffer = await imageService.generateImage(revisedTopic);
+
+            if (imageBuffer) {
+                console.log(`[Bot] Image generated successfully. Running compliance check using Scout...`);
+                const compliance = await llmService.isImageCompliant(imageBuffer);
+
+                if (!compliance.compliant) {
+                    console.warn(`[Bot] Generated image failed compliance check: ${compliance.reason}`);
+                    feedback = compliance.reason;
+                    continue; // Trigger re-attempt
+                }
+
+                console.log(`[Bot] Image is compliant. Analyzing visuals...`);
+                imageAnalysis = await llmService.analyzeImage(imageBuffer);
+
+                if (imageAnalysis) {
+                    const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}. Respond with ONLY the alt-text.`;
+                    imageAltText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 1000, preface_system_prompt: false });
+
+                    console.log(`[Bot] Uploading image blob...`);
+                    try {
+                        const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
+                        imageBlob = uploadData.blob;
+                    } catch (uploadError) {
+                        console.error(`[Bot] Error uploading image blob:`, uploadError);
+                        feedback = 'Failed to upload image blob.';
+                        continue;
+                    }
+                } else {
+                    console.warn(`[Bot] Image analysis failed for attempt ${attempts}.`);
+                    feedback = 'Failed to analyze generated image visuals.';
+                    continue;
+                }
+            } else {
+                console.warn(`[Bot] Image generation failed for attempt ${attempts}.`);
+                feedback = 'Image generation service failed.';
+                continue;
+            }
+        }
 
         const feedbackContext = feedback ? `\n\nYour previous attempt was rejected for the following reason: "${feedback}". Please improve the post accordingly.` : '';
 

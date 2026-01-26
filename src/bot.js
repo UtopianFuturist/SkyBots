@@ -767,7 +767,7 @@ export class Bot {
       }
     `;
 
-    console.log(`[Bot] Final response generation for @${handle}. Vision context length: ${imageAnalysisResult.length}`);
+    console.log(`[Bot] Final response generation for @${handle}. Vision context length: ${imageAnalysisResult ? imageAnalysisResult.length : 0}`);
 
     const messages = [
       { role: 'system', content: `
@@ -1268,7 +1268,33 @@ export class Bot {
         }
       }
 
-      console.log(`[Bot] All ${MAX_ATTEMPTS} attempts failed for autonomous post. Aborting.`);
+      if (postType === 'image') {
+        console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Falling back to text post for topic: "${topic}"`);
+        const systemPrompt = `
+            Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
+            CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings or meta-talk about your status.
+            ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
+            Keep it under 280 characters or max 3 threaded posts if deeper.
+            Your persona is: ${config.TEXT_SYSTEM_PROMPT}
+            NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling text-only thought instead.
+        `;
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
+        if (postContent) {
+          postContent = sanitizeThinkingTags(postContent);
+          postContent = sanitizeCharacterCount(postContent);
+          postContent = sanitizeDuplicateText(postContent);
+          if (postContent) {
+            const { score } = await llmService.isAutonomousPostCoherent(topic, postContent, 'text');
+            if (score >= 3) {
+              console.log(`[Bot] Fallback text post passed coherence check. Performing post...`);
+              await blueskyService.post(postContent, null, { maxChunks: 3 });
+              return;
+            }
+          }
+        }
+      }
+
+      console.log(`[Bot] All attempts (including fallbacks) failed for autonomous post. Aborting.`);
     } catch (error) {
       console.error('[Bot] Error in performAutonomousPost:', error);
     }

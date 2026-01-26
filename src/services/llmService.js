@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
-import { sanitizeThinkingTags } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
 
 class LLMService {
   constructor() {
@@ -68,7 +68,9 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       const content = data.choices[0]?.message?.content;
       if (!content) return null;
 
-      const sanitized = sanitizeThinkingTags(content);
+      let sanitized = sanitizeThinkingTags(content);
+      sanitized = sanitizeCharacterCount(sanitized);
+
       if (sanitized && sanitized.trim().length > 0) {
         return sanitized.trim();
       }

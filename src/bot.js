@@ -7,7 +7,7 @@ import { youtubeService } from './services/youtubeService.js';
 import { wikipediaService } from './services/wikipediaService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -47,7 +47,16 @@ export class Bot {
           const event = JSON.parse(line);
           if (event.type === 'firehose_mention') {
             console.log(`[Bot] Firehose mention detected: ${event.uri}`);
-            if (dataStore.hasReplied(event.uri)) continue;
+            if (dataStore.hasReplied(event.uri)) {
+              console.log(`[Bot] Already in local replied list: ${event.uri}`);
+              continue;
+            }
+
+            if (await blueskyService.hasBotRepliedTo(event.uri)) {
+              console.log(`[Bot] On-network check: Already replied to ${event.uri}. Skipping.`);
+              await dataStore.addRepliedPost(event.uri);
+              continue;
+            }
             
             // Resolve handle for the author DID
             const profile = await blueskyService.getProfile(event.author.did);
@@ -109,50 +118,72 @@ export class Bot {
   async catchUpNotifications() {
     console.log('[Bot] Catching up on missed notifications...');
     let cursor;
-    let notificationsCaughtUp = 0;
+    let unreadActionable = [];
 
+    // 1. Fetch unread notifications that are actionable
     do {
       const response = await blueskyService.getNotifications(cursor);
       if (!response || response.notifications.length === 0) {
         break;
       }
 
-      for (const notif of response.notifications) {
-        // Only process mentions, replies, and quotes that are unread
-        const isActionable = ['mention', 'reply', 'quote'].includes(notif.reason);
+      const actionableBatch = response.notifications.filter(notif =>
+        !notif.isRead && ['mention', 'reply', 'quote'].includes(notif.reason)
+      );
 
-        if (notif.isRead || !isActionable) {
-          continue;
-        }
+      unreadActionable.push(...actionableBatch);
 
-        if (dataStore.hasReplied(notif.uri)) {
-          continue;
-        }
+      // If we've started hitting read notifications in the batch, we can likely stop fetching more pages
+      const hasRead = response.notifications.some(notif => notif.isRead);
+      if (hasRead) break;
 
-        console.log(`[Bot] Found missed notification: ${notif.uri}`);
-        // Mark the notification as "replied" immediately to prevent a race condition
-        // with the real-time Firehose stream.
-        await dataStore.addRepliedPost(notif.uri);
-        notificationsCaughtUp++;
-
-        // Now, process the notification sequentially with a delay to avoid API overload
-        try {
-          await this.processNotification(notif);
-          await new Promise(resolve => setTimeout(resolve, 5000));
-        } catch (error) {
-          console.error(`[Bot] Error processing notification ${notif.uri}:`, error);
-        }
-      }
       cursor = response.cursor;
     } while (cursor);
 
-    if (notificationsCaughtUp > 0) {
-      console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);
-      // Mark notifications as seen after processing them
-      await blueskyService.updateSeen();
-    } else {
+    if (unreadActionable.length === 0) {
       console.log('[Bot] No new notifications to catch up on.');
+      return;
     }
+
+    console.log(`[Bot] Found ${unreadActionable.length} unread actionable notifications. Processing oldest first...`);
+
+    // 2. Process oldest first for safe state progression
+    unreadActionable.reverse();
+    let notificationsCaughtUp = 0;
+
+    for (const notif of unreadActionable) {
+      // Local check (fast)
+      if (dataStore.hasReplied(notif.uri)) {
+        console.log(`[Bot] Skip: Already in local replied list: ${notif.uri}`);
+        await blueskyService.updateSeen(notif.indexedAt);
+        continue;
+      }
+
+      // On-network check (slow but robust for deployments/restarts)
+      if (await blueskyService.hasBotRepliedTo(notif.uri)) {
+        console.log(`[Bot] Skip: On-network check confirmed existing reply to ${notif.uri}`);
+        await dataStore.addRepliedPost(notif.uri);
+        await blueskyService.updateSeen(notif.indexedAt);
+        continue;
+      }
+
+      console.log(`[Bot] Processing missed notification: ${notif.uri}`);
+
+      // Mark as replied in local store to prevent race conditions
+      await dataStore.addRepliedPost(notif.uri);
+      notificationsCaughtUp++;
+
+      try {
+        await this.processNotification(notif);
+        // Mark as seen on-network immediately after successful processing
+        await blueskyService.updateSeen(notif.indexedAt);
+        await new Promise(resolve => setTimeout(resolve, 5000));
+      } catch (error) {
+        console.error(`[Bot] Error processing notification ${notif.uri}:`, error);
+      }
+    }
+
+    console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);
   }
 
   async processNotification(notif) {
@@ -180,7 +211,27 @@ export class Bot {
     let threadContext = threadData.map(h => ({ author: h.author, text: h.text }));
     const ancestorUris = threadData.map(h => h.uri).filter(uri => uri);
 
-    // 1b. Historical Memory Fetching (Past Week via API)
+    // 1b. Own Profile Context (Recent Standalone Posts)
+    console.log(`[Bot] Fetching own recent standalone posts for context...`);
+    let ownRecentPostsContext = '';
+    try {
+        const ownFeed = await blueskyService.agent.getAuthorFeed({
+            actor: blueskyService.did,
+            limit: 10,
+        });
+        const recentOwnPosts = ownFeed.data.feed
+            .filter(item => item.post.author.did === blueskyService.did && !item.post.record.reply)
+            .slice(0, 5)
+            .map(item => `- "${item.post.record.text.substring(0, 150)}..."`)
+            .join('\n');
+        if (recentOwnPosts) {
+            ownRecentPostsContext = `\n\n[Your Recent Standalone Posts (Profile Activity):\n${recentOwnPosts}]`;
+        }
+    } catch (e) {
+        console.error('[Bot] Error fetching own feed for context:', e);
+    }
+
+    // 1c. Historical Memory Fetching (Past Week via API)
     console.log(`[Bot] Fetching past week's interactions with @${handle} for context...`);
     const pastPosts = await blueskyService.getPastInteractions(handle);
     let historicalSummary = '';
@@ -394,7 +445,16 @@ export class Bot {
     console.log(`[Bot] Image Gen Check Response: "${imageGenCheckResponse}"`);
 
     if (imageGenCheckResponse && imageGenCheckResponse.toLowerCase().includes('yes')) {
-      const imagePromptExtractionPrompt = `You are an AI assistant that extracts image prompts. Based on the conversation, create a concise, literal, and descriptive prompt for an image generation model. The user's latest post is the primary focus. Conversation:\n${conversationHistoryForImageCheck}\n\nRespond with only the prompt.`;
+      const imagePromptExtractionPrompt = `
+        Adopt the following persona: "${config.TEXT_SYSTEM_PROMPT}"
+
+        Based on the conversation below, identify the core visual theme the user is interested in. Create a simple, literal, and descriptive prompt for an image generation model in 2-3 sentences. Focus on objects, environments, and atmosphere.
+
+        Do not use abstract metaphors or multiple layers of meaning. Respond with ONLY the prompt.
+
+        Conversation:
+        ${conversationHistoryForImageCheck}
+      `.trim();
       const imagePromptExtractionMessages = [{ role: 'system', content: imagePromptExtractionPrompt }];
       console.log(`[Bot] Image Prompt Extraction Prompt: ${imagePromptExtractionPrompt}`);
       const prompt = await llmService.generateResponse(imagePromptExtractionMessages, { max_tokens: 1000, preface_system_prompt: false });
@@ -402,13 +462,14 @@ export class Bot {
 
       if (prompt && prompt.toLowerCase() !== 'null' && prompt.toLowerCase() !== 'no') {
         console.log(`[Bot] Final image generation prompt: "${prompt}"`);
-        const imageBuffer = await imageService.generateImage(prompt);
-        if (imageBuffer) {
+        const imageResult = await imageService.generateImage(prompt, { allowPortraits: true });
+        if (imageResult && imageResult.buffer) {
+          const { buffer: imageBuffer, finalPrompt } = imageResult;
           console.log('[Bot] Image generation successful, posting reply...');
           // The text reply is simple and direct.
-          await blueskyService.postReply(notif, `Here's an image of "${prompt}":`, {
+          await blueskyService.postReply(notif, `Here's an image of "${finalPrompt}":`, {
             imageBuffer,
-            imageAltText: prompt,
+            imageAltText: finalPrompt,
           });
           return; // End processing here as the request is fulfilled.
         }
@@ -692,6 +753,7 @@ export class Bot {
       ${historicalSummary ? `--- Historical Context (Interactions from the past week): ${historicalSummary} ---` : ''}
       ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
       ${activityContext}
+      ${ownRecentPostsContext}
       ---
       Cross-Post Memory (Recent mentions of the bot by this user):
       ${crossPostMemory || 'No recent cross-post mentions found.'}
@@ -756,6 +818,9 @@ export class Bot {
       // Remove thinking tags and any leftover fragments
       responseText = sanitizeThinkingTags(responseText);
       
+      // Remove character count tags
+      responseText = sanitizeCharacterCount(responseText);
+
       // Sanitize the response to avoid duplicate sentences
       responseText = sanitizeDuplicateText(responseText);
       
@@ -975,19 +1040,30 @@ export class Bot {
 
       console.log(`[Bot] Eligibility confirmed (${postsToday.length}/5). Gathering context...`);
 
-      // 1. Gather context from timeline and interactions
+      // 1. Gather context from timeline, interactions, and own profile
       const timeline = await blueskyService.getTimeline(20);
       const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
       const recentInteractions = dataStore.db.data.interactions.slice(-20);
+      const recentOwnPosts = feed.data.feed
+        .filter(item => item.post.author.did === blueskyService.did && !item.post.record.reply)
+        .slice(0, 10)
+        .map(item => item.post.record.text);
 
       // 2. Identify a topic based on context
       console.log(`[Bot] Identifying autonomous post topic...`);
       const topicPrompt = `
-        Based on the current vibe of your following feed and recent interactions, identify a single interesting topic or theme for a standalone post.
-        Network Buzz:
+        Based on the current vibe of your following feed, recent interactions, and your own past thoughts, identify a single interesting topic or theme for a standalone post.
+
+        Network Buzz (what others are talking about):
         ${networkBuzz || 'None.'}
-        Recent Interactions:
+
+        Recent Interactions (what you've been discussing):
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
+
+        Your Recent Standalone Posts (what you've already said):
+        ${recentOwnPosts.join('\n') || 'None.'}
+
+        CHALLENGE: Avoid simple greetings, "hello" messages, or just saying "I'm back". Instead, aim for a varied thought, musing, idea, dream, or analysis that fits your persona. You can choose to build on your past posts, react to the network buzz, or come up with something entirely new.
 
         Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source). Do not include surrounding quotes, reasoning, or <think> tags.
       `;
@@ -1068,10 +1144,12 @@ export class Bot {
         if (postType === 'image') {
             console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${attempts})...`);
             const revisedTopic = feedback ? `${topic} (Correction: ${feedback})` : topic;
-            imageBuffer = await imageService.generateImage(revisedTopic);
+            const imageResult = await imageService.generateImage(revisedTopic, { allowPortraits: false });
 
-            if (imageBuffer) {
-                console.log(`[Bot] Image generated successfully. Running compliance check using Scout...`);
+            if (imageResult && imageResult.buffer) {
+                imageBuffer = imageResult.buffer;
+                generationPrompt = imageResult.finalPrompt;
+                console.log(`[Bot] Image generated successfully with prompt: "${generationPrompt}". Running compliance check using Scout...`);
                 const compliance = await llmService.isImageCompliant(imageBuffer);
 
                 if (!compliance.compliant) {
@@ -1113,6 +1191,7 @@ export class Bot {
         if (postType === 'wikipedia' && article) {
           const systemPrompt = `
               Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings.
               ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
               IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
               Topic context: ${topic}
@@ -1126,6 +1205,7 @@ export class Bot {
         } else if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
               Write a friendly, inquisitive, and conversational Bluesky post about why you chose to generate this image and what it offers.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings.
               Do NOT be too mechanical; stay in your persona.
               ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
               Actual Visuals in Image: ${imageAnalysis}
@@ -1138,10 +1218,10 @@ export class Bot {
             $type: 'app.bsky.embed.images',
             images: [{ image: imageBlob, alt: imageAltText || imageAnalysis }],
           };
-          generationPrompt = topic;
         } else if (postType === 'text') {
           const systemPrompt = `
               Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings or meta-talk about your status.
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
               Keep it under 280 characters or max 3 threaded posts if deeper.
               Your persona is: ${config.TEXT_SYSTEM_PROMPT}${feedbackContext}
@@ -1151,6 +1231,7 @@ export class Bot {
 
         if (postContent) {
           postContent = sanitizeThinkingTags(postContent);
+          postContent = sanitizeCharacterCount(postContent);
           postContent = sanitizeDuplicateText(postContent);
 
           if (!postContent) {

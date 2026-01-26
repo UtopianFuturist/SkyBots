@@ -22,6 +22,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     generateResponse: jest.fn(),
     isAutonomousPostCoherent: jest.fn(),
     analyzeImage: jest.fn(),
+    isImageCompliant: jest.fn(),
   },
 }));
 
@@ -51,6 +52,7 @@ jest.unstable_mockModule('../src/services/imageService.js', () => ({
 const { Bot } = await import('../src/bot.js');
 const { blueskyService } = await import('../src/services/blueskyService.js');
 const { llmService } = await import('../src/services/llmService.js');
+const { imageService } = await import('../src/services/imageService.js');
 
 describe('Bot Autonomous Posting', () => {
   let bot;
@@ -112,6 +114,58 @@ Decentralized Social Media`);
       expect.any(String),
       'text',
       null
+    );
+
+    spyRandom.mockRestore();
+  });
+
+  it('should handle autonomous image posts and convert abstract topic to literal prompt', async () => {
+    blueskyService.agent.getAuthorFeed.mockResolvedValue({ data: { feed: [] } });
+    blueskyService.getTimeline.mockResolvedValue([]);
+
+    const topic = 'The Intersection of Technology and Human Vulnerability';
+    const literalPrompt = 'A rusted robotic hand holding a glowing blue flower in a cyberpunk alley.';
+    const postContent = 'Here is a thought about technology.';
+    const altText = 'Accessible alt text';
+
+    llmService.generateResponse
+      .mockResolvedValueOnce(topic) // Topic identification
+      .mockResolvedValueOnce('none') // mention check
+      .mockResolvedValueOnce(altText) // alt text generation
+      .mockResolvedValueOnce(postContent); // post content generation
+
+    imageService.generateImage.mockResolvedValue({
+      buffer: Buffer.from('fake-image'),
+      finalPrompt: literalPrompt
+    });
+
+    llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
+
+    llmService.analyzeImage.mockResolvedValue('A robotic hand with a flower.');
+    blueskyService.agent.uploadBlob.mockResolvedValue({ data: { blob: 'blob-ref' } });
+
+    llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
+    blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/img1', cid: 'img1' });
+
+    // Mock Math.random to pick 'image' post
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4); // postTypes[1] is 'image'
+
+    await bot.performAutonomousPost();
+
+    expect(imageService.generateImage).toHaveBeenCalledWith(topic, { allowPortraits: false });
+    expect(blueskyService.post).toHaveBeenCalledWith(
+      'Here is a thought about technology.',
+      expect.objectContaining({
+        $type: 'app.bsky.embed.images',
+        images: [expect.objectContaining({ alt: 'Accessible alt text' })]
+      }),
+      { maxChunks: 3 }
+    );
+
+    // Check if the generation prompt reply was posted with the LITERAL prompt
+    expect(blueskyService.postReply).toHaveBeenCalledWith(
+      { uri: 'at://did:plc:bot/post/img1', cid: 'img1', record: {} },
+      `Generation Prompt: ${literalPrompt}`
     );
 
     spyRandom.mockRestore();

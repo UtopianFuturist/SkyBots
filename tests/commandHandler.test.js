@@ -114,11 +114,19 @@ describe('Command Handler', () => {
   });
 
   it('should handle image generation command', async () => {
-    imageService.generateImage.mockResolvedValue(Buffer.from('test-image-data'));
+    imageService.generateImage.mockResolvedValue({ buffer: Buffer.from('test-image-data'), finalPrompt: 'a beautiful cat' });
     blueskyService.agent = { uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'test-blob-ref' } }) };
     await handleCommand(mockBot, mockPost, '!generate-image a cat');
-    expect(imageService.generateImage).toHaveBeenCalledWith('a cat');
-    expect(blueskyService.postReply).toHaveBeenCalled();
+    expect(imageService.generateImage).toHaveBeenCalledWith('a cat', { allowPortraits: true });
+    expect(blueskyService.postReply).toHaveBeenCalledWith(
+      expect.anything(),
+      'Here\'s an image of "a beautiful cat":',
+      expect.objectContaining({
+        embed: expect.objectContaining({
+          images: [expect.objectContaining({ alt: 'a beautiful cat' })]
+        })
+      })
+    );
   });
 
   it('should handle image search command', async () => {

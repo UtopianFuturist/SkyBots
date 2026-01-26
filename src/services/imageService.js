@@ -26,6 +26,7 @@ class ImageService {
         Example: Instead of "The Intersection of Technology and Human Vulnerability", describe "A lone, rusted robotic hand gently holding a single, glowing blue flower in a dark, atmospheric cyberpunk alleyway."
 
         CRITICAL: Your entire response MUST be under 270 characters to ensure it fits within social media limits.
+        IMPORTANT: Respond directly with the prompt. DO NOT include reasoning, <think> tags, or conversational filler.
 
         Adopt the following persona for your visual style and decision-making:
         "${config.TEXT_SYSTEM_PROMPT}"
@@ -34,7 +35,7 @@ class ImageService {
       const revisedPrompt = await llmService.generateResponse([
         { role: 'system', content: systemContent },
         { role: 'user', content: prompt }
-      ], { max_tokens: 150, preface_system_prompt: false });
+      ], { max_tokens: 500, preface_system_prompt: false });
 
       console.log(`[ImageService] Revised prompt: "${revisedPrompt}"`);
 

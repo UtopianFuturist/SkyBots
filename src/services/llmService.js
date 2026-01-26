@@ -508,8 +508,8 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       return { compliant: true, reason: null };
     } catch (error) {
       console.error(`[LLMService] [${requestId}] Error in isImageCompliant:`, error.message);
-      // Default to compliant on error to avoid blocking the bot, but log it.
-      return { compliant: true, reason: null };
+      // Default to non-compliant on error to be safe regarding human portraits.
+      return { compliant: false, reason: 'Compliance check failed due to an error.' };
     } finally {
       clearTimeout(timeout);
     }

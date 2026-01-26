@@ -170,4 +170,51 @@ Decentralized Social Media`);
 
     spyRandom.mockRestore();
   });
+
+  it('should fall back to a text post if image generation repeatedly fails compliance', async () => {
+    blueskyService.agent.getAuthorFeed.mockResolvedValue({ data: { feed: [] } });
+    blueskyService.getTimeline.mockResolvedValue([]);
+
+    const topic = 'Human Portraits in Art';
+    const fallbackText = 'I decided to write about the history of portraiture instead.';
+
+    llmService.generateResponse
+      .mockResolvedValueOnce(topic) // Topic identification
+      .mockResolvedValueOnce('none') // mention check
+      .mockResolvedValueOnce(fallbackText); // fallback text generation (since image attempts will return null postContent if they fail)
+
+    // Image generation succeeds but fails compliance
+    imageService.generateImage.mockResolvedValue({
+      buffer: Buffer.from('fake-image'),
+      finalPrompt: 'A close up of a human face.'
+    });
+
+    llmService.isImageCompliant.mockResolvedValue({ compliant: false, reason: 'Contains a human portrait.' });
+
+    // Mock coherence check for the fallback text
+    llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
+
+    // Mock Math.random to pick 'image' post
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4); // 'image'
+
+    await bot.performAutonomousPost();
+
+    // Should have tried image generation 3 times
+    expect(imageService.generateImage).toHaveBeenCalledTimes(3);
+    expect(llmService.isImageCompliant).toHaveBeenCalledTimes(3);
+
+    // Should have fallen back to text
+    expect(llmService.generateResponse).toHaveBeenCalledWith(
+        expect.arrayContaining([expect.objectContaining({ content: expect.stringContaining('NOTE: Your previous attempt to generate an image for this topic failed compliance') })]),
+        expect.any(Object)
+    );
+
+    expect(blueskyService.post).toHaveBeenCalledWith(
+      expect.stringContaining(fallbackText),
+      null,
+      { maxChunks: 3 }
+    );
+
+    spyRandom.mockRestore();
+  });
 });

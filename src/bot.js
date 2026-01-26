@@ -450,8 +450,6 @@ export class Bot {
 
         Based on the conversation below, identify the core visual theme the user is interested in. Create a simple, literal, and descriptive prompt for an image generation model in 2-3 sentences. Focus on objects, environments, and atmosphere.
 
-        **CRITICAL: Avoid portrait representations, close-ups of human faces, or complex human anatomy.**
-
         Do not use abstract metaphors or multiple layers of meaning. Respond with ONLY the prompt.
 
         Conversation:
@@ -464,13 +462,14 @@ export class Bot {
 
       if (prompt && prompt.toLowerCase() !== 'null' && prompt.toLowerCase() !== 'no') {
         console.log(`[Bot] Final image generation prompt: "${prompt}"`);
-        const imageBuffer = await imageService.generateImage(prompt);
-        if (imageBuffer) {
+        const imageResult = await imageService.generateImage(prompt, { allowPortraits: true });
+        if (imageResult && imageResult.buffer) {
+          const { buffer: imageBuffer, finalPrompt } = imageResult;
           console.log('[Bot] Image generation successful, posting reply...');
           // The text reply is simple and direct.
-          await blueskyService.postReply(notif, `Here's an image of "${prompt}":`, {
+          await blueskyService.postReply(notif, `Here's an image of "${finalPrompt}":`, {
             imageBuffer,
-            imageAltText: prompt,
+            imageAltText: finalPrompt,
           });
           return; // End processing here as the request is fulfilled.
         }
@@ -1088,9 +1087,11 @@ export class Bot {
 
       if (postType === 'image') {
         console.log(`[Bot] Pre-generating image for topic: ${topic}`);
-        imageBuffer = await imageService.generateImage(topic);
-        if (imageBuffer) {
-          console.log(`[Bot] Image generated successfully. Analyzing visuals...`);
+        const imageResult = await imageService.generateImage(topic, { allowPortraits: false });
+        if (imageResult && imageResult.buffer) {
+          imageBuffer = imageResult.buffer;
+          generationPrompt = imageResult.finalPrompt;
+          console.log(`[Bot] Image generated successfully with prompt: "${generationPrompt}". Analyzing visuals...`);
           imageAnalysis = await llmService.analyzeImage(imageBuffer);
           if (imageAnalysis) {
             const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}`;
@@ -1152,7 +1153,6 @@ export class Bot {
             $type: 'app.bsky.embed.images',
             images: [{ image: imageBlob, alt: imageAltText || imageAnalysis }],
           };
-          generationPrompt = topic;
         } else if (postType === 'text') {
           const systemPrompt = `
               Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".

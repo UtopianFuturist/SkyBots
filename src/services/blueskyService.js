@@ -38,7 +38,14 @@ class BlueskyService {
 
   async updateSeen(seenAt) {
     try {
-      await this.agent.updateSeenNotifications(seenAt ? { seenAt } : undefined);
+      if (seenAt && typeof seenAt !== 'string') {
+        console.warn(`[BlueskyService] updateSeen: seenAt is not a string (${typeof seenAt}). Converting to string if possible.`);
+        seenAt = String(seenAt);
+      }
+
+      // The convenience method updateSeenNotifications expects the seenAt string directly,
+      // not wrapped in an object.
+      await this.agent.updateSeenNotifications(seenAt);
       console.log(`[BlueskyService] Updated notification seen status${seenAt ? ` up to ${seenAt}` : ''}.`);
     } catch (error) {
       console.error('[BlueskyService] Error updating notification seen status:', error);

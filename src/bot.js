@@ -1076,9 +1076,10 @@ export class Bot {
         NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
         Weight things toward "internal" thoughts that feel deeply human and relatable.
 
-        Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source). Do not include surrounding quotes, reasoning, or <think> tags.
+        Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source).
+        CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
       `;
-      let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 1000, preface_system_prompt: false });
+      let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 2000, preface_system_prompt: false });
       console.log(`[Bot] Autonomous topic identification result: ${topicResponse}`);
       if (!topicResponse || topicResponse.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
@@ -1113,9 +1114,10 @@ export class Bot {
         Interactions:
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n')}
 
-        If yes, respond with ONLY their handle (e.g., @user.bsky.social). Otherwise, respond "none". Do not include surrounding quotes, reasoning, or <think> tags.
+        If yes, respond with ONLY their handle (e.g., @user.bsky.social). Otherwise, respond "none".
+        CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
       `;
-      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 1000, preface_system_prompt: false });
+      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 2000, preface_system_prompt: false });
       const useMention = mentionHandle && mentionHandle.startsWith('@');
       console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
 

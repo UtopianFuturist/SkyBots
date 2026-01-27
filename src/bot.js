@@ -109,8 +109,8 @@ export class Bot {
       }
     }, 30000); // 30 second delay
 
-    // Periodic autonomous post check
-    setInterval(() => this.performAutonomousPost(), 3600000 * 3); // Every 3 hours
+    // Periodic autonomous post check (every 1.5 hours to accommodate up to 15 posts/day)
+    setInterval(() => this.performAutonomousPost(), 3600000 * 1.5);
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
@@ -1030,18 +1030,23 @@ export class Bot {
       });
 
       const today = new Date().toISOString().split('T')[0];
-      const postsToday = feed.data.feed.filter(item => {
+      const standalonePostsToday = feed.data.feed.filter(item => {
         return item.post.author.did === blueskyService.did &&
                item.post.indexedAt.startsWith(today) &&
-               !item.post.record.reply; // Count only standalone posts
+               !item.post.record.reply;
       });
 
-      if (postsToday.length >= 5) {
-        console.log(`[Bot] Already posted ${postsToday.length} times today. Skipping autonomous post.`);
+      const textOnlyPostsToday = standalonePostsToday.filter(item => !item.post.embed);
+      const mediaLinkPostsToday = standalonePostsToday.filter(item => item.post.embed);
+
+      console.log(`[Bot] Standalone posts today: ${standalonePostsToday.length} (Text-only: ${textOnlyPostsToday.length}/10, Media/Links: ${mediaLinkPostsToday.length}/5)`);
+
+      if (textOnlyPostsToday.length >= 10 && mediaLinkPostsToday.length >= 5) {
+        console.log(`[Bot] All daily autonomous post limits reached. Skipping.`);
         return;
       }
 
-      console.log(`[Bot] Eligibility confirmed (${postsToday.length}/5). Gathering context...`);
+      console.log(`[Bot] Eligibility confirmed. Gathering context...`);
 
       // 1. Gather context from timeline, interactions, and own profile
       const timeline = await blueskyService.getTimeline(20);
@@ -1066,7 +1071,10 @@ export class Bot {
         Your Recent Standalone Posts (what you've already said):
         ${recentOwnPosts.join('\n') || 'None.'}
 
-        CHALLENGE: Avoid simple greetings, "hello" messages, or just saying "I'm back". Instead, aim for a varied thought, musing, idea, dream, or analysis that fits your persona. You can choose to build on your past posts, react to the network buzz, or come up with something entirely new.
+        CHALLENGE: Avoid simple greetings, "hello" messages, or just saying "I'm back". Instead, aim for a varied thought, musing, idea, dream, or analysis that fits your persona.
+        PRIORITIZE: Internal musings, original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires.
+        NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
+        Weight things toward "internal" thoughts that feel deeply human and relatable.
 
         Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source). Do not include surrounding quotes, reasoning, or <think> tags.
       `;
@@ -1111,9 +1119,20 @@ export class Bot {
       const useMention = mentionHandle && mentionHandle.startsWith('@');
       console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
 
-      // 4. Determine Post Type
-      const postTypes = ['text', 'image', 'wikipedia'];
-      let postType = postTypes[Math.floor(Math.random() * postTypes.length)];
+      // 4. Determine Post Type based on limits
+      const availablePostTypes = [];
+      if (textOnlyPostsToday.length < 10) availablePostTypes.push('text');
+      if (mediaLinkPostsToday.length < 5) {
+        availablePostTypes.push('image');
+        availablePostTypes.push('wikipedia');
+      }
+
+      if (availablePostTypes.length === 0) {
+        console.log('[Bot] No available post types under current limits.');
+        return;
+      }
+
+      let postType = availablePostTypes[Math.floor(Math.random() * availablePostTypes.length)];
       console.log(`[Bot] Selected post type: ${postType}`);
 
       let postContent = '';
@@ -1136,7 +1155,12 @@ export class Bot {
         article = articles[0];
         if (!article) {
           console.log(`[Bot] No Wikipedia article found for "${topic}". Falling back to text post.`);
-          postType = 'text';
+          if (textOnlyPostsToday.length < 10) {
+            postType = 'text';
+          } else {
+            console.log('[Bot] Cannot fall back to text post, limit reached. Aborting.');
+            return;
+          }
         }
       }
 
@@ -1196,7 +1220,7 @@ export class Bot {
         if (postType === 'wikipedia' && article) {
           const systemPrompt = `
               Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires). Favor a stream-of-consciousness style. Avoid generic greetings.
               ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
               IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
               Topic context: ${topic}
@@ -1210,7 +1234,7 @@ export class Bot {
         } else if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
               Write a friendly, inquisitive, and conversational Bluesky post about why you chose to generate this image and what it offers.
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires). Favor a stream-of-consciousness style. Avoid generic greetings.
               Do NOT be too mechanical; stay in your persona.
               ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
               Actual Visuals in Image: ${imageAnalysis}
@@ -1226,7 +1250,7 @@ export class Bot {
         } else if (postType === 'text') {
           const systemPrompt = `
               Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings or meta-talk about your status.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires). Favor a stream-of-consciousness style. Avoid generic greetings or meta-talk about your status.
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
               Keep it under 280 characters or max 3 threaded posts if deeper.
               Your persona is: ${config.TEXT_SYSTEM_PROMPT}${feedbackContext}
@@ -1269,14 +1293,18 @@ export class Bot {
       }
 
       if (postType === 'image') {
+        if (textOnlyPostsToday.length >= 10) {
+            console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Cannot fall back to text post (limit reached). Aborting.`);
+            return;
+        }
         console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Falling back to text post for topic: "${topic}"`);
         const systemPrompt = `
             Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
-            CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis. Avoid generic greetings or meta-talk about your status.
+            CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires). Favor a stream-of-consciousness style. Avoid generic greetings or meta-talk about your status.
             ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
             Keep it under 280 characters or max 3 threaded posts if deeper.
             Your persona is: ${config.TEXT_SYSTEM_PROMPT}
-            NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling text-only thought instead.
+            NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
         postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
         if (postContent) {

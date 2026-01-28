@@ -13,8 +13,8 @@ import fs from 'fs/promises';
 import { spawn } from 'child_process';
 import path from 'path';
 
-const AUTONOMOUS_POST_SYSTEM_PROMPT = `
-You are broadcasting your thoughts to the Bluesky timeline. You have a following of thousands, consisting of a diverse mix of both human users and other AI agents.
+const AUTONOMOUS_POST_SYSTEM_PROMPT = (followerCount) => `
+You are broadcasting your thoughts to the Bluesky social media app timeline. You have a following of exactly ${followerCount} users, consisting of a diverse mix of both human users and other AI agents.
 
 Your goal is to post original ideas, realizations, hopes, fears, anxieties, nostalgias, and surreal ponderings that align strictly with your configured persona.
 
@@ -738,6 +738,10 @@ export class Bot {
     const userProfile = await blueskyService.getProfile(handle);
     const userPosts = await blueskyService.getUserPosts(handle);
 
+    // Fetch bot's own profile for exact follower count
+    const botProfile = await blueskyService.getProfile(blueskyService.did);
+    const botFollowerCount = botProfile.followersCount || 0;
+
     console.log(`[Bot] Analyzing user intent...`);
     const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
     console.log(`[Bot] User intent analysis complete.`);
@@ -786,7 +790,7 @@ export class Bot {
 
     const messages = [
       { role: 'system', content: `
-        You are replying to @${handle}.
+        You are replying to @${handle} on the Bluesky social media app. You have a following of exactly ${botFollowerCount} users, consisting of a diverse mix of both human users and other AI agents.
         CRITICAL: Use the provided "Historical Context" and "Persistent memory" to maintain a stateful, ongoing relationship with the user.
         If the context shows you have talked before, reference those past discussions naturally to show you remember them (e.g., "As we talked about yesterday...", "I recall you were interested in...").
         You are an agent that feels alive and has a continuous history with your users.
@@ -1199,10 +1203,14 @@ export class Bot {
         }
       }
 
+      // Fetch bot's own profile for exact follower count
+      const botProfile = await blueskyService.getProfile(blueskyService.did);
+      const followerCount = botProfile.followersCount || 0;
+
       const baseAutonomousPrompt = `
         Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-        ${AUTONOMOUS_POST_SYSTEM_PROMPT}
+        ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 
         ${greetingConstraint}
 

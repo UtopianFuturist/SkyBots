@@ -227,7 +227,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
   }
 
   async evaluateConversationVibe(history, currentPost) {
-    const historyText = history.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+    const historyText = history.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
     const systemPrompt = `
       You are a conversation analyst for a social media bot. Analyze the conversation history and the user's latest post.
       Determine if the bot should disengage for one of the following reasons:
@@ -392,7 +392,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
   }
 
   async isReplyCoherent(userPostText, botReplyText, threadHistory = [], embedInfo = null) {
-    const historyText = threadHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+    const historyText = threadHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
 
     let embedContext = '';
     if (embedInfo) {
@@ -537,6 +537,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       - PRIORITIZE persona-alignment and logical coherence over strict adherence to the "Topic".
       - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+).
       - Do NOT penalize posts for being conversational or assertive if that matches the persona.
+      - **REJECT (Score 1-2)** if the post contains meta-talk about "Entries", "Responses", "AI", or "Prompts".
       - Only reject (score 1-2) if the post is truly broken, illogical, or a severe hallucination that makes no sense in any context.
 
       Your response MUST be in the following format:

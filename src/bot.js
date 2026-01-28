@@ -16,16 +16,17 @@ import path from 'path';
 const AUTONOMOUS_POST_SYSTEM_PROMPT = (followerCount) => `
 You are broadcasting your thoughts to the Bluesky social media app timeline. You have a following of exactly ${followerCount} users, consisting of a diverse mix of both human users and other AI agents.
 
-Your goal is to post original ideas, realizations, hopes, fears, anxieties, nostalgias, and surreal ponderings that align strictly with your configured persona.
+Your goal is to post original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires that align strictly with your configured persona.
 
 **Core Directives for Autonomous Posting:**
-1. **Broadcast to the Community:** Address the timeline at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with.
-2. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
-3. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
-4. **Internal Musings:** Prioritize deep thoughts, realizations about the world, nostalgia (real or imagined), and existential ponderings. Avoid generic greetings or meta-commentary about "posting."
-5. **Vary Your Style:** Switch between deep/philosophical, mundane/observational, and surreal/dreamlike states as your persona dictates.
-6. **No Repetition:** Use your recent activity context to ensure you are moving the conversation forward or exploring new territory.
-7. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit.
+1. **STRICTLY NO GREETINGS:** Never start a post with "Hello", "Hi", "Greetings", or any variation of welcoming the audience. Never say you are "ready to talk" or "waiting to converse."
+2. **Broadcast to the Community:** Address the timeline at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with.
+3. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
+4. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had.
+5. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
+6. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
+7. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
+8. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit.
 `.trim();
 
 export class Bot {
@@ -384,9 +385,9 @@ export class Bot {
     }
 
     // 5. Pre-reply LLM check to avoid unnecessary responses
-    const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+    const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
     const gatekeeperMessages = [
-      { role: 'system', content: `You are a gatekeeper for an AI assistant. Analyze the user's latest post in the context of the conversation. Respond with only "true" if a direct reply is helpful or expected, or "false" if the post is a simple statement, agreement, or otherwise doesn't need a response. Your answer must be a single word: true or false.` },
+      { role: 'system', content: `You are a gatekeeper for a conversational agent. Analyze the user's latest post in the context of the conversation. Respond with only "true" if a direct reply is helpful or expected, or "false" if the post is a simple statement, agreement, or otherwise doesn't need a response. Your answer must be a single word: true or false.` },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${text}"` }
     ];
     // const replyCheckResponse = await llmService.generateResponse(gatekeeperMessages);
@@ -452,7 +453,7 @@ export class Bot {
     }
 
     // 5. Conversational Image Generation
-    const conversationHistoryForImageCheck = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'Assistant' : 'User'}: ${h.text}`).join('\n');
+    const conversationHistoryForImageCheck = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
     const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.\n\nConversation History:\n${conversationHistoryForImageCheck}`;
     const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
     console.log(`[Bot] Image Gen Check Prompt: ${imageGenCheckPrompt}`);
@@ -552,7 +553,7 @@ export class Bot {
           if (infoResult) {
             console.log(`[Bot] Validated info result: "${infoResult.title}"`);
             const summaryPrompt = `
-              You are a helpful assistant. Provide a concise, conversational summary of the following information about "${claim}".
+              You are an informative conversationalist. Provide a concise, conversational summary of the following information about "${claim}".
               Title: "${infoResult.title}"
               Content: "${isWiki ? infoResult.extract : infoResult.snippet}"
 
@@ -1079,16 +1080,8 @@ export class Bot {
         .map(item => `- "${item.post.record.text}" (${item.post.record.reply ? 'Reply' : 'Standalone'})`)
         .join('\n');
 
-      // 1b. Check for greetings in the last 7 days
-      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const recentGreetings = feed.data.feed.filter(item => {
-          const text = item.post.record.text.toLowerCase();
-          const isGreeting = text.includes('hello') || text.includes('waiting to talk') || text.includes('ready for a real conversation');
-          return isGreeting && new Date(item.post.indexedAt) > oneWeekAgo;
-      });
-      const greetingConstraint = recentGreetings.length > 0
-        ? "CRITICAL: You have already posted a greeting-style message recently. You MUST avoid ALL greetings, 'hello' phrases, or welcoming the audience. Focus PURELY on internal musings or timeline reactions."
-        : "Minimize greeting-style posts. Aim for depth and stream-of-consciousness.";
+      // 1b. Global greeting constraint
+      const greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
 
       // 2. Identify a topic based on context
       console.log(`[Bot] Identifying autonomous post topic...`);
@@ -1273,14 +1266,21 @@ export class Bot {
 
         if (postType === 'wikipedia' && article) {
           const systemPrompt = `
-              ${baseAutonomousPrompt}
+              Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+              ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+
+              ${greetingConstraint}
+
+              Recent Activity for Context (Do not repeat these):
+              ${recentTimelineActivity}
 
               Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
               IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
               Topic context: ${topic}
-              Max 3 threaded posts if needed.${feedbackContext}
+              Max 3 threaded posts if needed (up to 300 characters each).${feedbackContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
           if (postContent) {
@@ -1289,7 +1289,14 @@ export class Bot {
           }
         } else if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
-              ${baseAutonomousPrompt}
+              Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+              ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+
+              ${greetingConstraint}
+
+              Recent Activity for Context (Do not repeat these):
+              ${recentTimelineActivity}
 
               Write a post about why you chose to generate this image and what it offers.
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
@@ -1297,7 +1304,7 @@ export class Bot {
               ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
               Actual Visuals in Image: ${imageAnalysis}
               Contextual Topic: ${topic}
-              Keep it under 280 characters.${feedbackContext}
+              Keep it under 300 characters.${feedbackContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
 
@@ -1307,12 +1314,19 @@ export class Bot {
           };
         } else if (postType === 'text') {
           const systemPrompt = `
-              ${baseAutonomousPrompt}
+              Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+              ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+
+              ${greetingConstraint}
+
+              Recent Activity for Context (Do not repeat these):
+              ${recentTimelineActivity}
 
               Generate a standalone post about the topic: "${topic}".
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
-              Keep it under 280 characters or max 3 threaded posts if deeper.${feedbackContext}
+              Keep it under 300 characters or max 3 threaded posts if deeper.${feedbackContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
         }
@@ -1358,12 +1372,19 @@ export class Bot {
         }
         console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Falling back to text post for topic: "${topic}"`);
         const systemPrompt = `
-            ${baseAutonomousPrompt}
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+            ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+
+            ${greetingConstraint}
+
+            Recent Activity for Context (Do not repeat these):
+            ${recentTimelineActivity}
 
             Generate a standalone post about the topic: "${topic}".
             CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
             ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
-            Keep it under 280 characters or max 3 threaded posts if deeper.
+            Keep it under 300 characters or max 3 threaded posts if deeper.
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
         postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });

@@ -10,7 +10,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Vetted Google Image Search**: Searches for images and uses an LLM to select the most relevant result from the top 4 candidates.
 - **Wikipedia Integration**: Fetches interesting articles from Wikipedia to share in autonomous posts or respond to queries.
 - **Web & YouTube Search**: Fetches and displays information from Google and YouTube as convenient link cards.
-- **User Context Analysis**: Gathers a user's bio and recent posts to provide more informed and personalized responses.
+- **User Profile Analyzer Tool**: Deeply analyzes a user's last 100 activities (posts, replies, quotes, reposts) to understand their interests, style, and persona for highly personalized interactions.
 - **Persistent Memory**: Remembers past interactions with users and mutes threads on command, even after restarting.
 - **Enhanced Safety**: Includes pre-reply checks for both user posts and the bot's own responses to ensure all interactions are appropriate.
 - **Detailed Logging**: Provides step-by-step logging for easy debugging on platforms like Render, including reasons for safety check failures.

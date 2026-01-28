@@ -19,7 +19,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Prompt Injection Defense**: Includes a security check to detect and ignore prompt injection attempts.
 - **Fact-Checking**: Can detect when a user is making a verifiable claim and perform a Google search to validate it before responding.
 - **User Rating System**: Rates users on a 1-5 scale based on their interaction history and will "like" posts from users with a high rating.
-- **Autonomous Posting**: Automatically creates and publishes up to 5 standalone posts per day featuring text, images, or persona-aligned trending news.
+- **Autonomous Posting**: Automatically creates and publishes up to 20 text posts and 5 image posts per day featuring original musings or preferred topics from your context banks.
 - **AI Transparency**: Standardized transparency record on the PDS (studio.voyager.account.autonomy) declaring automation level, persona, and source code.
 - **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
 
@@ -80,6 +80,7 @@ The bot is pre-configured for seamless deployment on Render.
 | `SAFETY_SYSTEM_PROMPT`| Defines the safety guidelines for all content. | (A strict SFW and clean content policy) |
 | `IMAGE_PROMPT_SYSTEM_PROMPT` | A prompt to revise user-provided image prompts. | (Adds cats to prompts that don't have animals) |
 | `POST_TOPICS` | An optional context bank of preferred topics for autonomous posts. | (None) |
+| `IMAGE_SUBJECTS` | An optional context bank of subjects for autonomous image posts. | (None) |
 | `CHECK_INTERVAL` | Milliseconds between checking for new mentions. | `60000` |
 
 ## 💬 User Commands

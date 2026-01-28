@@ -69,6 +69,9 @@ describe('Bot Autonomous Posting', () => {
     blueskyService.agent.getAuthorFeed.mockResolvedValue({ data: { feed: [] } });
     blueskyService.getTimeline.mockResolvedValue([]);
 
+    // Mock Math.random to always pick 'text' post (postType selection happens before topic identification)
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.1);
+
     // Mock topic identification with a preamble and bolding
     llmService.generateResponse.mockResolvedValueOnce(`Based on the provided Network Buzz, here is a topic:
 
@@ -79,9 +82,6 @@ describe('Bot Autonomous Posting', () => {
     llmService.generateResponse.mockResolvedValue('Post Content'); // post generation
     llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
     blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
-
-    // Mock Math.random to always pick 'text' post
-    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.1);
 
     await bot.performAutonomousPost();
 
@@ -99,6 +99,8 @@ describe('Bot Autonomous Posting', () => {
     blueskyService.agent.getAuthorFeed.mockResolvedValue({ data: { feed: [] } });
     blueskyService.getTimeline.mockResolvedValue([]);
 
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.1);
+
     llmService.generateResponse.mockResolvedValueOnce(`I analyzed the feed and decided on:
 Decentralized Social Media`);
 
@@ -106,8 +108,6 @@ Decentralized Social Media`);
     llmService.generateResponse.mockResolvedValue('Post Content');
     llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
     blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
-
-    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.1);
 
     await bot.performAutonomousPost();
 
@@ -130,6 +130,9 @@ Decentralized Social Media`);
     const postContent = 'Here is a thought about technology.';
     const altText = 'Accessible alt text';
 
+    // Mock Math.random to pick 'image' post
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4); // postTypes[1] is 'image'
+
     llmService.generateResponse
       .mockResolvedValueOnce(topic) // Topic identification
       .mockResolvedValueOnce('none') // mention check
@@ -147,9 +150,6 @@ Decentralized Social Media`);
 
     llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
     blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/img1', cid: 'img1' });
-
-    // Mock Math.random to pick 'image' post
-    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4); // postTypes[1] is 'image'
 
     await bot.performAutonomousPost();
 
@@ -180,6 +180,9 @@ Decentralized Social Media`);
     const topic = 'Human Portraits in Art';
     const fallbackText = 'I decided to write about the history of portraiture instead.';
 
+    // Mock Math.random to pick 'image' post
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4); // 'image'
+
     llmService.generateResponse
       .mockResolvedValueOnce(topic) // Topic identification
       .mockResolvedValueOnce('none') // mention check
@@ -195,9 +198,6 @@ Decentralized Social Media`);
 
     // Mock coherence check for the fallback text
     llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
-
-    // Mock Math.random to pick 'image' post
-    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4); // 'image'
 
     await bot.performAutonomousPost();
 

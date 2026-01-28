@@ -125,8 +125,8 @@ export class Bot {
       }
     }, 30000); // 30 second delay
 
-    // Periodic autonomous post check (every 1.5 hours to accommodate up to 15 posts/day)
-    setInterval(() => this.performAutonomousPost(), 3600000 * 1.5);
+    // Periodic autonomous post check (every hour)
+    setInterval(() => this.performAutonomousPost(), 3600000);
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
@@ -1094,11 +1094,17 @@ export class Bot {
       });
 
       const textOnlyPostsToday = standalonePostsToday.filter(item => !item.post.embed);
-      const mediaLinkPostsToday = standalonePostsToday.filter(item => item.post.embed);
+      const imagePostsToday = standalonePostsToday.filter(item => item.post.embed?.images || item.post.embed?.media?.images);
+      const wikiPostsToday = standalonePostsToday.filter(item => item.post.embed?.external);
 
-      console.log(`[Bot] Standalone posts today: ${standalonePostsToday.length} (Text-only: ${textOnlyPostsToday.length}/10, Media/Links: ${mediaLinkPostsToday.length}/5)`);
+      console.log(`[Bot] Standalone posts today: ${standalonePostsToday.length} (Text: ${textOnlyPostsToday.length}/20, Images: ${imagePostsToday.length}/5, Wiki: ${wikiPostsToday.length}/5)`);
 
-      if (textOnlyPostsToday.length >= 10 && mediaLinkPostsToday.length >= 5) {
+      const availablePostTypes = [];
+      if (textOnlyPostsToday.length < 20) availablePostTypes.push('text');
+      if (imagePostsToday.length < 5) availablePostTypes.push('image');
+      if (wikiPostsToday.length < 5) availablePostTypes.push('wikipedia');
+
+      if (availablePostTypes.length === 0) {
         console.log(`[Bot] All daily autonomous post limits reached. Skipping.`);
         return;
       }
@@ -1118,35 +1124,60 @@ export class Bot {
       // 1b. Global greeting constraint
       const greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
 
-      // 2. Identify a topic based on context
-      console.log(`[Bot] Identifying autonomous post topic...`);
-      const topicPrompt = `
-        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      // 2. Determine Post Type based on limits
+      let postType = availablePostTypes[Math.floor(Math.random() * availablePostTypes.length)];
+      console.log(`[Bot] Selected post type: ${postType}`);
 
-        Based on the current vibe of your following feed, recent interactions, and your own profile activity, identify a single interesting topic or theme for a standalone post.
+      // 3. Identify a topic based on postType and context
+      console.log(`[Bot] Identifying autonomous post topic for type: ${postType}...`);
+      let topicPrompt = '';
+      if (postType === 'image' && config.IMAGE_SUBJECTS) {
+        topicPrompt = `
+          Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-        Preferred Topics (Topics you should prioritize):
-        ${config.POST_TOPICS || 'None specified.'}
+          You are identifying a subject for an autonomous post containing an image.
+          You MUST choose one of the following subjects from your context bank:
+          ${config.IMAGE_SUBJECTS}
 
-        Network Buzz (what others are talking about):
-        ${networkBuzz || 'None.'}
+          Consider the current network vibe and your recent interactions to pick the most relevant subject, or simply pick one that inspires you.
 
-        Recent Interactions (what you've been discussing):
-        ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
+          Network Buzz:
+          ${networkBuzz || 'None.'}
 
-        Your Recent Activity (Last 10 posts):
-        ${recentTimelineActivity || 'None.'}
+          Recent Interactions:
+          ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
 
-        CHALLENGE: What would you, in your persona, GENUINELY like to share with the world today?
-        Consider your recent conversations and what's on your mind.
-        Aim for a varied thought, musing, idea, dream, or analysis.
-        PRIORITIZE: Internal musings, original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires.
-        NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
-        Weight things toward "internal" thoughts that feel deeply human and relatable.
+          Respond with ONLY the chosen subject.
+          CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
+        `;
+      } else {
+        topicPrompt = `
+          Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-        Respond with ONLY the topic/theme (e.g., the beauty of fleeting moments or the future of decentralized networks).
-        CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
-      `;
+          Based on the current vibe of your following feed, recent interactions, and your own profile activity, identify a single interesting topic or theme for a standalone post.
+
+          Preferred Topics (Context Bank):
+          ${config.POST_TOPICS || 'None specified.'}
+
+          Network Buzz (what others are talking about):
+          ${networkBuzz || 'None.'}
+
+          Recent Interactions (what you've been discussing):
+          ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
+
+          Your Recent Activity (Last 10 posts):
+          ${recentTimelineActivity || 'None.'}
+
+          CHALLENGE: What would you, in your persona, GENUINELY like to share with the world today?
+          Aim for a varied thought, musing, idea, dream, or analysis.
+          PRIORITIZE: Internal musings, original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires.
+          NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
+
+          Respond with ONLY the topic/theme (e.g., the beauty of fleeting moments or the future of decentralized networks).
+          CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
+        `;
+      }
+
       let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 2000, preface_system_prompt: false });
       console.log(`[Bot] Autonomous topic identification result: ${topicResponse}`);
       if (!topicResponse || topicResponse.toLowerCase() === 'none') {
@@ -1154,10 +1185,7 @@ export class Bot {
           return;
       }
 
-      // Robust Topic Extraction:
-      // 1. Try to find content between double asterisks (common for bolding the main topic)
-      // 2. Otherwise, look for the last line if there's a preamble
-      // 3. Fallback to the whole cleaned response
+      // Robust Topic Extraction
       let topic = '';
       const boldMatch = topicResponse.match(/\*\*(.*?)\*\*/);
       if (boldMatch) {
@@ -1171,11 +1199,10 @@ export class Bot {
         }
       }
 
-      // Strip leading/trailing quotes from the extracted topic
       topic = topic.replace(/^["']|["']$/g, '').trim();
       console.log(`[Bot] Identified topic: "${topic}"`);
 
-      // 3. Check for meaningful user to mention
+      // 4. Check for meaningful user to mention
       console.log(`[Bot] Checking for meaningful mentions for topic: ${topic}`);
       const mentionPrompt = `
         For the topic "${topic}", identify if any of the following users have had a meaningful persistent discussion with you about it (multiple quality interactions).
@@ -1188,22 +1215,6 @@ export class Bot {
       const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 2000, preface_system_prompt: false });
       const useMention = mentionHandle && mentionHandle.startsWith('@');
       console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
-
-      // 4. Determine Post Type based on limits
-      const availablePostTypes = [];
-      if (textOnlyPostsToday.length < 10) availablePostTypes.push('text');
-      if (mediaLinkPostsToday.length < 5) {
-        availablePostTypes.push('image');
-        availablePostTypes.push('wikipedia');
-      }
-
-      if (availablePostTypes.length === 0) {
-        console.log('[Bot] No available post types under current limits.');
-        return;
-      }
-
-      let postType = availablePostTypes[Math.floor(Math.random() * availablePostTypes.length)];
-      console.log(`[Bot] Selected post type: ${postType}`);
 
       let postContent = '';
       let embed = null;
@@ -1225,7 +1236,7 @@ export class Bot {
         article = articles[0];
         if (!article) {
           console.log(`[Bot] No Wikipedia article found for "${topic}". Falling back to text post.`);
-          if (textOnlyPostsToday.length < 10) {
+          if (textOnlyPostsToday.length < 20) {
             postType = 'text';
           } else {
             console.log('[Bot] Cannot fall back to text post, limit reached. Aborting.');
@@ -1247,6 +1258,9 @@ export class Bot {
 
         Preferred Topics (Context Bank):
         ${config.POST_TOPICS || 'None specified.'}
+
+        Preferred Image Subjects (Context Bank):
+        ${config.IMAGE_SUBJECTS || 'None specified.'}
 
         Recent Activity for Context (Do not repeat these):
         ${recentTimelineActivity}
@@ -1316,6 +1330,9 @@ export class Bot {
               Preferred Topics (Context Bank):
               ${config.POST_TOPICS || 'None specified.'}
 
+              Preferred Image Subjects (Context Bank):
+              ${config.IMAGE_SUBJECTS || 'None specified.'}
+
               Recent Activity for Context (Do not repeat these):
               ${recentTimelineActivity}
 
@@ -1339,11 +1356,14 @@ export class Bot {
 
               ${greetingConstraint}
 
-              Recent Activity for Context (Do not repeat these):
-              ${recentTimelineActivity}
-
               Preferred Topics (Context Bank):
               ${config.POST_TOPICS || 'None specified.'}
+
+              Preferred Image Subjects (Context Bank):
+              ${config.IMAGE_SUBJECTS || 'None specified.'}
+
+              Recent Activity for Context (Do not repeat these):
+              ${recentTimelineActivity}
 
               Write a post about why you chose to generate this image and what it offers.
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
@@ -1367,11 +1387,14 @@ export class Bot {
 
               ${greetingConstraint}
 
-              Recent Activity for Context (Do not repeat these):
-              ${recentTimelineActivity}
-
               Preferred Topics (Context Bank):
               ${config.POST_TOPICS || 'None specified.'}
+
+              Preferred Image Subjects (Context Bank):
+              ${config.IMAGE_SUBJECTS || 'None specified.'}
+
+              Recent Activity for Context (Do not repeat these):
+              ${recentTimelineActivity}
 
               Generate a standalone post about the topic: "${topic}".
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
@@ -1416,7 +1439,7 @@ export class Bot {
       }
 
       if (postType === 'image') {
-        if (textOnlyPostsToday.length >= 10) {
+        if (textOnlyPostsToday.length >= 20) {
             console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Cannot fall back to text post (limit reached). Aborting.`);
             return;
         }
@@ -1430,6 +1453,9 @@ export class Bot {
 
             Preferred Topics (Context Bank):
             ${config.POST_TOPICS || 'None specified.'}
+
+            Preferred Image Subjects (Context Bank):
+            ${config.IMAGE_SUBJECTS || 'None specified.'}
 
             Recent Activity for Context (Do not repeat these):
             ${recentTimelineActivity}

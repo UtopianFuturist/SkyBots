@@ -387,7 +387,7 @@ export class Bot {
     // 5. Pre-reply LLM check to avoid unnecessary responses
     const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
     const gatekeeperMessages = [
-      { role: 'system', content: `You are a gatekeeper for a conversational agent. Analyze the user's latest post in the context of the conversation. Respond with only "true" if a direct reply is helpful or expected, or "false" if the post is a simple statement, agreement, or otherwise doesn't need a response. Your answer must be a single word: true or false.` },
+      { role: 'system', content: `Analyze the user's latest post in the context of the conversation. Respond with only "true" if a direct reply is helpful or expected, or "false" if the post is a simple statement, agreement, or otherwise doesn't need a response. Your answer must be a single word: true or false.` },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${text}"` }
     ];
     // const replyCheckResponse = await llmService.generateResponse(gatekeeperMessages);
@@ -521,7 +521,7 @@ export class Bot {
           console.log(`[Bot] Validated YouTube result: "${youtubeResult.title}"`);
         } else {
           console.log(`[Bot] No relevant YouTube result found for "${query}".`);
-          const apologyPrompt = `The user asked for a video about "${query}", but you couldn't find a relevant one. Write a very short, concise, and friendly apology (max 150 characters).`;
+          const apologyPrompt = `The user asked for a video about "${query}", but you couldn't find a relevant one. Write a very short and concise apology (max 150 characters) while staying in persona.`;
           const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }], { max_tokens: 1000 });
           if (apology) {
             await blueskyService.postReply(notif, apology);
@@ -553,7 +553,7 @@ export class Bot {
           if (infoResult) {
             console.log(`[Bot] Validated info result: "${infoResult.title}"`);
             const summaryPrompt = `
-              You are an informative conversationalist. Provide a concise, conversational summary of the following information about "${claim}".
+              Provide a concise, conversational summary of the following information about "${claim}" while staying in persona.
               Title: "${infoResult.title}"
               Content: "${isWiki ? infoResult.extract : infoResult.snippet}"
 
@@ -574,7 +574,7 @@ export class Bot {
             console.log(`[Bot] No relevant information found for "${claim}".`);
             // If the user explicitly asked for information/fact-check and we failed, apologize.
             if (text.toLowerCase().includes('what is') || text.toLowerCase().includes('who is') || text.toLowerCase().includes('search for')) {
-              const apologyPrompt = `The user asked for information about "${claim}", but you couldn't find a relevant source. Write a very short, concise, and friendly apology (max 150 characters).`;
+              const apologyPrompt = `The user asked for information about "${claim}", but you couldn't find a relevant source. Write a very short and concise apology (max 150 characters) while staying in persona.`;
               const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }], { max_tokens: 1000 });
               if (apology) {
                 await blueskyService.postReply(notif, apology);

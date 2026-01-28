@@ -76,9 +76,10 @@ The bot is pre-configured for seamless deployment on Render.
 
 | Variable | Description | Default Value |
 | :--- | :--- | :--- |
-| `TEXT_SYSTEM_PROMPT` | Defines the bot's conversational persona. | (A friendly, inquisitive, and witty persona) |
+| `TEXT_SYSTEM_PROMPT` | Defines the bot's conversational persona. | (A neutral conversational persona) |
 | `SAFETY_SYSTEM_PROMPT`| Defines the safety guidelines for all content. | (A strict SFW and clean content policy) |
 | `IMAGE_PROMPT_SYSTEM_PROMPT` | A prompt to revise user-provided image prompts. | (Adds cats to prompts that don't have animals) |
+| `POST_TOPICS` | An optional context bank of preferred topics for autonomous posts. | (None) |
 | `CHECK_INTERVAL` | Milliseconds between checking for new mentions. | `60000` |
 
 ## 💬 User Commands

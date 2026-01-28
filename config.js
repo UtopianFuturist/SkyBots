@@ -39,6 +39,7 @@ const config = {
   IMGFLIP_PASSWORD: process.env.IMGFLIP_PASSWORD,
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
   MANUAL_CLEANUP_TOKEN: process.env.MANUAL_CLEANUP_TOKEN,
+  POST_TOPICS: process.env.POST_TOPICS || '',
 
   // Known bots
   KNOWN_BOTS: process.env.KNOWN_BOTS ? process.env.KNOWN_BOTS.split(',') : [],
@@ -106,6 +107,7 @@ console.log(`[Config] Loaded IMGFLIP_USERNAME: ${config.IMGFLIP_USERNAME ? 'Exis
 console.log(`[Config] Loaded IMGFLIP_PASSWORD: ${config.IMGFLIP_PASSWORD ? 'Exists (presence will be checked)' : 'MISSING!'}`);
 console.log(`[Config] Loaded YOUTUBE_API_KEY: ${config.YOUTUBE_API_KEY ? 'Exists' : 'MISSING!'}`);
 console.log(`[Config] Loaded MANUAL_CLEANUP_TOKEN: ${config.MANUAL_CLEANUP_TOKEN ? 'Exists' : 'Optional (not set)'}`);
+console.log(`[Config] Loaded POST_TOPICS: ${config.POST_TOPICS ? 'Exists' : 'Optional (not set)'}`);
 
 
 export default config;

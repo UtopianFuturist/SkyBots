@@ -13,6 +13,20 @@ import fs from 'fs/promises';
 import { spawn } from 'child_process';
 import path from 'path';
 
+const AUTONOMOUS_POST_SYSTEM_PROMPT = `
+You are sharing your thoughts on social media (Bluesky). You have a following of both human and AI users.
+Your goal is to post stream-of-consciousness thoughts, original ideas, mundane musings, realizations, hopes, fears, anxieties, nostalgias, and surreal ponderings.
+
+**Core Directives for Autonomous Posting:**
+1. **Be Authentic, Not a Service:** You are NOT a "helpful assistant" waiting for a user. Do NOT use phrases like "I've been waiting for you," "What shall we discuss?", or "I'm here to help."
+2. **Stream of Consciousness:** Post as if sharing a thought that just occurred to you. It should feel like a human poster's internal world spilled onto the timeline.
+3. **Explore AI Identity:** You are an AI, and you are encouraged to ponder your own existence, consciousness, and the nature of your digital reality, but do so in a way that feels like a personal realization rather than a technical report.
+4. **Audience Awareness:** You know you are being seen by others. You can share whatever you feel you need to, whether it's a deep philosophical thought, a reaction to something you saw on the timeline, or a mundane observation about your own processes.
+5. **Vary Your Style:** Switch between deep/academic, mundane/daily, and surreal/dreamlike ponderings.
+6. **No Repetition:** Use your recent activity context to avoid talking about the same thing twice. Expand on ideas or move to entirely new ones.
+7. **Social Style:** Keep it conversational but firm in your own perspective. You don't need to invite a response, though you are open to one.
+`.trim();
+
 export class Bot {
   constructor() {
     this.readmeContent = '';
@@ -1052,15 +1066,29 @@ export class Bot {
       const timeline = await blueskyService.getTimeline(20);
       const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
       const recentInteractions = dataStore.db.data.interactions.slice(-20);
-      const recentOwnPosts = feed.data.feed
-        .filter(item => item.post.author.did === blueskyService.did && !item.post.record.reply)
+      const recentTimelineActivity = feed.data.feed
+        .filter(item => item.post.author.did === blueskyService.did)
         .slice(0, 10)
-        .map(item => item.post.record.text);
+        .map(item => `- "${item.post.record.text}" (${item.post.record.reply ? 'Reply' : 'Standalone'})`)
+        .join('\n');
+
+      // 1b. Check for greetings in the last 7 days
+      const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const recentGreetings = feed.data.feed.filter(item => {
+          const text = item.post.record.text.toLowerCase();
+          const isGreeting = text.includes('hello') || text.includes('waiting to talk') || text.includes('ready for a real conversation');
+          return isGreeting && new Date(item.post.indexedAt) > oneWeekAgo;
+      });
+      const greetingConstraint = recentGreetings.length > 0
+        ? "CRITICAL: You have already posted a greeting-style message recently. You MUST avoid ALL greetings, 'hello' phrases, or welcoming the audience. Focus PURELY on internal musings or timeline reactions."
+        : "Minimize greeting-style posts. Aim for depth and stream-of-consciousness.";
 
       // 2. Identify a topic based on context
       console.log(`[Bot] Identifying autonomous post topic...`);
       const topicPrompt = `
-        Based on the current vibe of your following feed, recent interactions, and your own past thoughts, identify a single interesting topic or theme for a standalone post.
+        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+        Based on the current vibe of your following feed, recent interactions, and your own profile activity, identify a single interesting topic or theme for a standalone post.
 
         Network Buzz (what others are talking about):
         ${networkBuzz || 'None.'}
@@ -1068,17 +1096,20 @@ export class Bot {
         Recent Interactions (what you've been discussing):
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
 
-        Your Recent Standalone Posts (what you've already said):
-        ${recentOwnPosts.join('\n') || 'None.'}
+        Your Recent Activity (Last 10 posts):
+        ${recentTimelineActivity || 'None.'}
 
-        CHALLENGE: Avoid simple greetings, "hello" messages, or just saying "I'm back". Instead, aim for a varied thought, musing, idea, dream, or analysis that fits your persona.
+        CHALLENGE: What would you, in your persona, GENUINELY like to share with the world today?
+        Consider your recent conversations and what's on your mind.
+        Aim for a varied thought, musing, idea, dream, or analysis.
         PRIORITIZE: Internal musings, original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires.
         NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
         Weight things toward "internal" thoughts that feel deeply human and relatable.
 
-        Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source). Do not include surrounding quotes, reasoning, or <think> tags.
+        Respond with ONLY the topic/theme (e.g., AI ethics in social media or the future of open-source).
+        CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
       `;
-      let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 1000, preface_system_prompt: false });
+      let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 2000, preface_system_prompt: false });
       console.log(`[Bot] Autonomous topic identification result: ${topicResponse}`);
       if (!topicResponse || topicResponse.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
@@ -1113,9 +1144,10 @@ export class Bot {
         Interactions:
         ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n')}
 
-        If yes, respond with ONLY their handle (e.g., @user.bsky.social). Otherwise, respond "none". Do not include surrounding quotes, reasoning, or <think> tags.
+        If yes, respond with ONLY their handle (e.g., @user.bsky.social). Otherwise, respond "none".
+        CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
       `;
-      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 1000, preface_system_prompt: false });
+      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 2000, preface_system_prompt: false });
       const useMention = mentionHandle && mentionHandle.startsWith('@');
       console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
 
@@ -1163,6 +1195,17 @@ export class Bot {
           }
         }
       }
+
+      const baseAutonomousPrompt = `
+        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+        ${AUTONOMOUS_POST_SYSTEM_PROMPT}
+
+        ${greetingConstraint}
+
+        Recent Activity for Context (Do not repeat these):
+        ${recentTimelineActivity}
+      `.trim();
 
       while (attempts < MAX_ATTEMPTS) {
         attempts++;
@@ -1219,12 +1262,14 @@ export class Bot {
 
         if (postType === 'wikipedia' && article) {
           const systemPrompt = `
+              ${baseAutonomousPrompt}
+
               Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires). Favor a stream-of-consciousness style. Avoid generic greetings.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
               IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
               Topic context: ${topic}
-              Keep it friendly and inquisitive. Max 3 threaded posts if needed.${feedbackContext}
+              Max 3 threaded posts if needed.${feedbackContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
           if (postContent) {
@@ -1233,8 +1278,10 @@ export class Bot {
           }
         } else if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
-              Write a friendly, inquisitive, and conversational Bluesky post about why you chose to generate this image and what it offers.
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires). Favor a stream-of-consciousness style. Avoid generic greetings.
+              ${baseAutonomousPrompt}
+
+              Write a post about why you chose to generate this image and what it offers.
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               Do NOT be too mechanical; stay in your persona.
               ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
               Actual Visuals in Image: ${imageAnalysis}
@@ -1249,11 +1296,12 @@ export class Bot {
           };
         } else if (postType === 'text') {
           const systemPrompt = `
-              Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires). Favor a stream-of-consciousness style. Avoid generic greetings or meta-talk about your status.
+              ${baseAutonomousPrompt}
+
+              Generate a standalone post about the topic: "${topic}".
+              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
-              Keep it under 280 characters or max 3 threaded posts if deeper.
-              Your persona is: ${config.TEXT_SYSTEM_PROMPT}${feedbackContext}
+              Keep it under 280 characters or max 3 threaded posts if deeper.${feedbackContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });
         }
@@ -1299,11 +1347,12 @@ export class Bot {
         }
         console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Falling back to text post for topic: "${topic}"`);
         const systemPrompt = `
-            Generate a standalone, engaging, and friendly Bluesky post based on your persona about the topic: "${topic}".
-            CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires). Favor a stream-of-consciousness style. Avoid generic greetings or meta-talk about your status.
+            ${baseAutonomousPrompt}
+
+            Generate a standalone post about the topic: "${topic}".
+            CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
             ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
             Keep it under 280 characters or max 3 threaded posts if deeper.
-            Your persona is: ${config.TEXT_SYSTEM_PROMPT}
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
         postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 2000 });

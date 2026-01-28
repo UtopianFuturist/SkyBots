@@ -14,6 +14,8 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     getTimeline: jest.fn().mockResolvedValue([]),
     post: jest.fn(),
     postReply: jest.fn(),
+    getProfile: jest.fn().mockResolvedValue({ followersCount: 1234, did: 'did:plc:bot' }),
+    did: 'did:plc:bot',
   },
 }));
 

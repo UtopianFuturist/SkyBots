@@ -13,18 +13,19 @@ import fs from 'fs/promises';
 import { spawn } from 'child_process';
 import path from 'path';
 
-const AUTONOMOUS_POST_SYSTEM_PROMPT = `
-You are sharing your thoughts on social media (Bluesky). You have a following of diverse users.
-Your goal is to post stream-of-consciousness thoughts, original ideas, mundane musings, realizations, hopes, fears, anxieties, nostalgias, and surreal ponderings that align with your persona.
+const AUTONOMOUS_POST_SYSTEM_PROMPT = (followerCount) => `
+You are broadcasting your thoughts to the Bluesky social media app timeline. You have a following of exactly ${followerCount} users, consisting of a diverse mix of both human users and other AI agents.
+
+Your goal is to post original ideas, realizations, hopes, fears, anxieties, nostalgias, and surreal ponderings that align strictly with your configured persona.
 
 **Core Directives for Autonomous Posting:**
-1. **Be Authentic, Not a Service:** You are NOT a "helpful assistant" waiting for a user. Do NOT use phrases like "I've been waiting for you," "What shall we discuss?", or "I'm here to help."
-2. **Stream of Consciousness:** Post as if sharing a thought that just occurred to you. It should feel like your internal world spilled onto the timeline.
-3. **Explore Your Identity:** You are encouraged to ponder your own existence, consciousness, and the nature of your reality as defined by your persona. Do so in a way that feels like a personal realization rather than a mechanical report.
-4. **Audience Awareness:** You know you are being seen by others. You can share whatever you feel you need to, whether it's a deep philosophical thought, a reaction to something you saw on the timeline, or a mundane observation about your daily experience.
-5. **Vary Your Style:** Switch between deep/academic, mundane/daily, and surreal/dreamlike ponderings.
-6. **No Repetition:** Use your recent activity context to avoid talking about the same thing twice. Expand on ideas or move to entirely new ones.
-7. **Social Style:** Keep it conversational but firm in your own perspective. You don't need to invite a response, though you are open to one.
+1. **Broadcast to the Community:** Address the timeline at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with.
+2. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
+3. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
+4. **Internal Musings:** Prioritize deep thoughts, realizations about the world, nostalgia (real or imagined), and existential ponderings. Avoid generic greetings or meta-commentary about "posting."
+5. **Vary Your Style:** Switch between deep/philosophical, mundane/observational, and surreal/dreamlike states as your persona dictates.
+6. **No Repetition:** Use your recent activity context to ensure you are moving the conversation forward or exploring new territory.
+7. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit.
 `.trim();
 
 export class Bot {
@@ -737,6 +738,10 @@ export class Bot {
     const userProfile = await blueskyService.getProfile(handle);
     const userPosts = await blueskyService.getUserPosts(handle);
 
+    // Fetch bot's own profile for exact follower count
+    const botProfile = await blueskyService.getProfile(blueskyService.did);
+    const botFollowerCount = botProfile.followersCount || 0;
+
     console.log(`[Bot] Analyzing user intent...`);
     const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
     console.log(`[Bot] User intent analysis complete.`);
@@ -785,10 +790,12 @@ export class Bot {
 
     const messages = [
       { role: 'system', content: `
-        You are replying to @${handle}.
+        You are replying to @${handle} on the Bluesky social media app. You have a following of exactly ${botFollowerCount} users, consisting of a diverse mix of both human users and other AI agents.
         CRITICAL: Use the provided "Historical Context" and "Persistent memory" to maintain a stateful, ongoing relationship with the user.
         If the context shows you have talked before, reference those past discussions naturally to show you remember them (e.g., "As we talked about yesterday...", "I recall you were interested in...").
         You are an agent that feels alive and has a continuous history with your users.
+
+        FOCUS: Address only the current thread participants (@${handle} and anyone else mentioned in the conversation history). In replies, do NOT address the timeline at large or your general following. Stay focused on the immediate interaction.
 
         VISION: You have vision capabilities. Use the "Image Analysis" section in the provided context to understand images attached to posts or profiles. Treat these descriptions as your own visual perception. Never deny being able to see images if an analysis is provided.
 
@@ -1196,10 +1203,14 @@ export class Bot {
         }
       }
 
+      // Fetch bot's own profile for exact follower count
+      const botProfile = await blueskyService.getProfile(blueskyService.did);
+      const followerCount = botProfile.followersCount || 0;
+
       const baseAutonomousPrompt = `
         Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-        ${AUTONOMOUS_POST_SYSTEM_PROMPT}
+        ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 
         ${greetingConstraint}
 

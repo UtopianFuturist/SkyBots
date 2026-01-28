@@ -271,6 +271,53 @@ class BlueskyService {
     }
   }
 
+  async getUserActivity(actor, limit = 100) {
+    try {
+      const allActivity = [];
+      let cursor;
+
+      console.log(`[BlueskyService] Fetching up to ${limit} activity items for ${actor}...`);
+
+      while (allActivity.length < limit) {
+        const response = await this.agent.getAuthorFeed({
+          actor,
+          limit: Math.min(limit - allActivity.length, 100),
+          cursor,
+        });
+
+        const batch = response.data.feed.map(item => {
+          const post = item.post;
+          const record = post.record;
+          const isReply = !!record.reply;
+          const isQuote = !!post.embed?.record || !!post.embed?.media?.record;
+          const isRepost = item.reason?.$type === 'app.bsky.feed.defs#skeletonReasonRepost';
+
+          let type = 'post';
+          if (isRepost) type = 'repost';
+          else if (isReply) type = 'reply';
+          else if (isQuote) type = 'quote';
+
+          return {
+            type,
+            text: record.text || '',
+            indexedAt: post.indexedAt,
+            uri: post.uri
+          };
+        });
+
+        allActivity.push(...batch);
+        cursor = response.data.cursor;
+        if (!cursor) break;
+      }
+
+      console.log(`[BlueskyService] Successfully fetched ${allActivity.length} activity items for ${actor}.`);
+      return allActivity.slice(0, limit);
+    } catch (error) {
+      console.error(`[BlueskyService] Error fetching activity for ${actor}:`, error);
+      return [];
+    }
+  }
+
   async getPastInteractions(handle, days = 7) {
     try {
       const botHandle = config.BLUESKY_IDENTIFIER;

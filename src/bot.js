@@ -1090,6 +1090,9 @@ export class Bot {
 
         Based on the current vibe of your following feed, recent interactions, and your own profile activity, identify a single interesting topic or theme for a standalone post.
 
+        Preferred Topics (Topics you should prioritize):
+        ${config.POST_TOPICS || 'None specified.'}
+
         Network Buzz (what others are talking about):
         ${networkBuzz || 'None.'}
 
@@ -1207,6 +1210,9 @@ export class Bot {
 
         ${greetingConstraint}
 
+        Preferred Topics (Context Bank):
+        ${config.POST_TOPICS || 'None specified.'}
+
         Recent Activity for Context (Do not repeat these):
         ${recentTimelineActivity}
       `.trim();
@@ -1272,6 +1278,9 @@ export class Bot {
 
               ${greetingConstraint}
 
+              Preferred Topics (Context Bank):
+              ${config.POST_TOPICS || 'None specified.'}
+
               Recent Activity for Context (Do not repeat these):
               ${recentTimelineActivity}
 
@@ -1298,6 +1307,9 @@ export class Bot {
               Recent Activity for Context (Do not repeat these):
               ${recentTimelineActivity}
 
+              Preferred Topics (Context Bank):
+              ${config.POST_TOPICS || 'None specified.'}
+
               Write a post about why you chose to generate this image and what it offers.
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               Do NOT be too mechanical; stay in your persona.
@@ -1322,6 +1334,9 @@ export class Bot {
 
               Recent Activity for Context (Do not repeat these):
               ${recentTimelineActivity}
+
+              Preferred Topics (Context Bank):
+              ${config.POST_TOPICS || 'None specified.'}
 
               Generate a standalone post about the topic: "${topic}".
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
@@ -1377,6 +1392,9 @@ export class Bot {
             ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 
             ${greetingConstraint}
+
+            Preferred Topics (Context Bank):
+            ${config.POST_TOPICS || 'None specified.'}
 
             Recent Activity for Context (Do not repeat these):
             ${recentTimelineActivity}

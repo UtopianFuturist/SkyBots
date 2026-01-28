@@ -18,7 +18,7 @@ class LLMService {
 
     let systemContent = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}
 
-IMPORTANT: Respond directly with the requested information. DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.`;
+CRITICAL: Respond directly with the requested information. DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response. If you must reason, ensure the final answer is provided after your reasoning and is clearly visible.`;
 
     // Inject Temporal Context
     const now = new Date();
@@ -123,7 +123,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond with ONLY "yes" or "no". Do not include any reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 1000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000 });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -143,7 +143,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 1000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000 });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
@@ -159,7 +159,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: responseText }];
-    const response = await this.generateResponse(messages, { max_tokens: 1000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000 });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
@@ -175,7 +175,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond with ONLY "injection" or "clean". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    const response = await this.generateResponse(messages, { max_tokens: 1000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000 });
     return response?.toLowerCase().includes('injection') || false;
   }
 
@@ -194,7 +194,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Bio: ${userProfile.description}\n\nRecent Posts:\n- ${userPosts.join('\n- ')}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 1000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000 });
 
     if (response?.toLowerCase().includes('high-risk')) {
       return { highRisk: true, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
@@ -222,7 +222,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    const response = await this.generateResponse(messages, { max_tokens: 1000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000 });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -248,7 +248,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${currentPost}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 1000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
 
     if (response?.toLowerCase().includes('hostile')) {
       return { status: 'hostile', reason: response.split('|')[1]?.trim() || 'unspecified' };
@@ -270,7 +270,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Respond directly with the claim. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    return await this.generateResponse(messages, { max_tokens: 1000 });
+    return await this.generateResponse(messages, { max_tokens: 2000 });
   }
 
   async analyzeImage(imageSource, altText) {
@@ -367,7 +367,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Interaction History:\n${historyText}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 1000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000 });
     const matches = response?.match(/\d+/g);
     const rating = matches ? parseInt(matches[matches.length - 1], 10) : NaN;
     return isNaN(rating) ? 3 : Math.max(1, Math.min(5, rating));
@@ -387,7 +387,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Post content: "${postText}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 1000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000 });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -420,7 +420,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"${embedContext}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 1000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
 
     // Safety check: if the API fails, assume it's coherent (score 5) to avoid accidental deletion.
     if (!response) {
@@ -551,7 +551,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       { role: 'user', content: `Topic: "${topic}"\nPost Type: ${postType}\nPost Content: "${postContent}"${embedContext}` }
     ];
 
-    const response = await this.generateResponse(messages, { max_tokens: 1000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
 
     if (!response) {
       return { score: 5, reason: 'Coherence check failed (timeout/empty). Defaulting to pass.' };
@@ -592,7 +592,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Otherwise, respond with ONLY the number of the best result. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Results:\n${resultsList}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 1000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
 
     if (!response || response.toLowerCase().includes('none')) return null;
 
@@ -622,7 +622,7 @@ IMPORTANT: Respond directly with the requested information. DO NOT include any r
       Your answer must be a single word: "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Result:\n${resultInfo}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 1000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
     return response?.toLowerCase().includes('yes') || false;
   }
 }

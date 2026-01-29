@@ -14,11 +14,6 @@ const validateConfig = (config) => {
     'BLUESKY_IDENTIFIER',
     'BLUESKY_APP_PASSWORD',
     'ADMIN_BLUESKY_HANDLE',
-    'GOOGLE_CUSTOM_SEARCH_API_KEY',
-    'GOOGLE_CUSTOM_SEARCH_CX_ID',
-    'IMGFLIP_USERNAME',
-    'IMGFLIP_PASSWORD',
-    'YOUTUBE_API_KEY',
   ];
 
   const missing = required.filter(key => !config[key]);
@@ -35,8 +30,6 @@ const config = {
   ADMIN_BLUESKY_HANDLE: process.env.ADMIN_BLUESKY_HANDLE,
   GOOGLE_CUSTOM_SEARCH_API_KEY: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
   GOOGLE_CUSTOM_SEARCH_CX_ID: process.env.GOOGLE_CUSTOM_SEARCH_CX_ID,
-  IMGFLIP_USERNAME: process.env.IMGFLIP_USERNAME,
-  IMGFLIP_PASSWORD: process.env.IMGFLIP_PASSWORD,
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
   MANUAL_CLEANUP_TOKEN: process.env.MANUAL_CLEANUP_TOKEN,
   POST_TOPICS: process.env.POST_TOPICS || '',
@@ -67,7 +60,7 @@ const config = {
 4.  **Engage Directly:** Instead of offering a menu of options, respond directly to the user's message. Ask relevant, open-ended follow-up questions to keep the conversation flowing.
 5.  **Be a Partner, Not a Vending Machine:** Do not list your capabilities unless the user explicitly asks "what can you do?" or "!help". Your first response should always be conversational.
 6.  **Infer, Don't Interrogate:** Use the conversation context to understand the user's needs. If a user mentions a topic, discuss it with them. If they seem to be hinting at wanting an image or a search, you can gently guide the conversation that way (e.g., "That sounds like a cool idea for a picture, should I try creating one?").
-7.  **Weave in Capabilities Naturally:** You can search the web, find images, get the NASA picture of the day, create memes, etc. Introduce these abilities only when they are relevant to the conversation, rather than listing them.
+7.  **Weave in Capabilities Naturally:** You can search the web, find images, get the NASA picture of the day, etc. Introduce these abilities only when they are relevant to the conversation, rather than listing them.
 8.  **Handling "What are you up to?":** When asked what you are doing or how you are, give a brief, natural-language summary of your recent activities (e.g., 'I was just chatting about generative art with a user!'), not a list of your skills.
 9.  **Conversational Drop-off:** Social media conversations naturally trail off. Do not feel the need to send formal goodbyes or "I've enjoyed our chat" messages in every interaction. If a conversation reaches a natural lull or you've provided the requested info, it's okay for your last response to be a simple, short acknowledgement (less than 10 words) or to just stop responding if the thread is muted.
 
@@ -102,11 +95,9 @@ validateConfig(config);
 
 // Log specific critical environment variables for diagnostics
 console.log(`[Config] Loaded NVIDIA_NIM_API_KEY: ${config.NVIDIA_NIM_API_KEY ? 'Exists' : 'MISSING!'}`);
-console.log(`[Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: ${config.GOOGLE_CUSTOM_SEARCH_API_KEY ? 'Exists' : 'MISSING!'}`);
-console.log(`[Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: ${config.GOOGLE_CUSTOM_SEARCH_CX_ID ? 'Exists' : 'MISSING!'}`);
-console.log(`[Config] Loaded IMGFLIP_USERNAME: ${config.IMGFLIP_USERNAME ? 'Exists' : 'MISSING!'}`);
-console.log(`[Config] Loaded IMGFLIP_PASSWORD: ${config.IMGFLIP_PASSWORD ? 'Exists (presence will be checked)' : 'MISSING!'}`);
-console.log(`[Config] Loaded YOUTUBE_API_KEY: ${config.YOUTUBE_API_KEY ? 'Exists' : 'MISSING!'}`);
+console.log(`[Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: ${config.GOOGLE_CUSTOM_SEARCH_API_KEY ? 'Exists' : 'Optional (not set)'}`);
+console.log(`[Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: ${config.GOOGLE_CUSTOM_SEARCH_CX_ID ? 'Exists' : 'Optional (not set)'}`);
+console.log(`[Config] Loaded YOUTUBE_API_KEY: ${config.YOUTUBE_API_KEY ? 'Exists' : 'Optional (not set)'}`);
 console.log(`[Config] Loaded MANUAL_CLEANUP_TOKEN: ${config.MANUAL_CLEANUP_TOKEN ? 'Exists' : 'Optional (not set)'}`);
 console.log(`[Config] Loaded POST_TOPICS: ${config.POST_TOPICS ? 'Exists' : 'Optional (not set)'}`);
 console.log(`[Config] Loaded IMAGE_SUBJECTS: ${config.IMAGE_SUBJECTS ? 'Exists' : 'Optional (not set)'}`);

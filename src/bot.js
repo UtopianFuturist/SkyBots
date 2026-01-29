@@ -510,6 +510,10 @@ export class Bot {
 
     if (videoIntentResponse && videoIntentResponse.toLowerCase().includes('yes')) {
       console.log(`[Bot] Video intent confirmed for post: "${text}"`);
+      if (!config.YOUTUBE_API_KEY) {
+        await blueskyService.postReply(notif, "I'm sorry, my YouTube API key is not currently configured, so I can't find a video for you right now.");
+        return;
+      }
       const queryExtractionPrompt = `Extract the core search query for a YouTube video from the following post. Respond with ONLY the query. Post: "${text}"`;
       const query = await llmService.generateResponse([{ role: 'system', content: queryExtractionPrompt }], { max_tokens: 2000 });
 
@@ -536,6 +540,10 @@ export class Bot {
       console.log(`[Bot] Checking if fact-check is needed...`);
       if (await llmService.isFactCheckNeeded(text)) {
         console.log(`[Bot] Fact-check/Info search needed for post: "${text}"`);
+        if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
+          await blueskyService.postReply(notif, "I'm sorry, my Google Search API key is not currently configured, so I can't look up information for you right now.");
+          return;
+        }
         const claim = await llmService.extractClaim(text);
         if (claim && !['null', 'no'].includes(claim.toLowerCase())) {
           // Check Wikipedia first for direct information requests
@@ -926,21 +934,30 @@ export class Bot {
 
     if (repoIntentResponse && repoIntentResponse.toLowerCase().includes('yes')) {
       console.log(`[Bot] Repo-related query detected. Searching codebase for context...`);
-      const repoQuery = await llmService.extractClaim(text); // Use extractClaim for a clean search query
-      const repoResults = await googleSearchService.searchRepo(repoQuery);
+      if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
+        console.log(`[Bot] Google Search keys missing for repo search.`);
+        const repoMissingKeyPrompt = `A user is asking about your code or internal logic, but your Google Search API key is not configured, which you use to search your repository. Write a very short, conversational message (max 150 characters) explaining that you can't access your codebase right now because of this missing configuration.`;
+        const repoMissingKeyMsg = await llmService.generateResponse([{ role: 'system', content: repoMissingKeyPrompt }], { max_tokens: 200 });
+        if (repoMissingKeyMsg) {
+          responseText = repoMissingKeyMsg;
+        }
+      } else {
+        const repoQuery = await llmService.extractClaim(text); // Use extractClaim for a clean search query
+        const repoResults = await googleSearchService.searchRepo(repoQuery);
 
-      if (repoResults.length > 0) {
-        const repoContext = repoResults.slice(0, 3).map(r => `File/Page: ${r.title}\nSnippet: ${r.snippet}`).join('\n\n');
-        const repoSystemPrompt = `
-          You have found information about your own codebase from your GitHub repository.
-          Use this context to answer the user's question accurately and helpfully.
-          Repository Context:
-          ${repoContext}
-        `;
-        // Inject this into the messages before final response generation
-        messages.splice(1, 0, { role: 'system', content: repoSystemPrompt });
-        // Re-generate response with new context
-        responseText = await llmService.generateResponse(messages, { max_tokens: 2000 });
+        if (repoResults.length > 0) {
+          const repoContext = repoResults.slice(0, 3).map(r => `File/Page: ${r.title}\nSnippet: ${r.snippet}`).join('\n\n');
+          const repoSystemPrompt = `
+            You have found information about your own codebase from your GitHub repository.
+            Use this context to answer the user's question accurately and helpfully.
+            Repository Context:
+            ${repoContext}
+          `;
+          // Inject this into the messages before final response generation
+          messages.splice(1, 0, { role: 'system', content: repoSystemPrompt });
+          // Re-generate response with new context
+          responseText = await llmService.generateResponse(messages, { max_tokens: 2000 });
+        }
       }
     }
 

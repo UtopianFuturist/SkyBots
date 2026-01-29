@@ -49,6 +49,9 @@ export const handleCommand = async (bot, post, text) => {
   }
 
   if (lowerText.startsWith('!search') || lowerText.startsWith('!google')) {
+    if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
+      return "I'm sorry, my Google Search API key is not currently configured, so I can't perform searches right now.";
+    }
     const query = lowerText.replace('!search', '').replace('!google', '').trim();
     if (!query) {
       return "Please provide a search term. Example: `!search Bluesky status`";
@@ -97,6 +100,9 @@ export const handleCommand = async (bot, post, text) => {
   }
 
   if (lowerText.startsWith('!video') || lowerText.startsWith('!youtube')) {
+    if (!config.YOUTUBE_API_KEY) {
+      return "I'm sorry, my YouTube API key is not currently configured, so I can't find videos right now.";
+    }
     const query = lowerText.replace('!video', '').replace('!youtube', '').trim();
     if (!query) {
         return "Please provide a video search term. Example: `!video how to cook tofu`";
@@ -146,6 +152,9 @@ export const handleCommand = async (bot, post, text) => {
   }
 
   if (lowerText.startsWith('!image-search')) {
+    if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
+      return "I'm sorry, my Google Search API key is not currently configured, so I can't search for images right now.";
+    }
     const imageQuery = lowerText.replace('!image-search', '').trim();
     if (!imageQuery) {
       return "Please provide a search term. Example: `!image-search cute cats`";

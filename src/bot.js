@@ -116,18 +116,6 @@ export class Bot {
     // Run cleanup on startup
     await this.cleanupOldPosts();
 
-    // Perform an autonomous post on startup after a delay to avoid initial API burst
-    setTimeout(async () => {
-      try {
-        await this.performAutonomousPost();
-      } catch (e) {
-        console.error('[Bot] Error in initial autonomous post:', e);
-      }
-    }, 30000); // 30 second delay
-
-    // Periodic autonomous post check (every hour)
-    setInterval(() => this.performAutonomousPost(), 3600000);
-
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
 

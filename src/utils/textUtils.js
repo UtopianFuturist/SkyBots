@@ -104,3 +104,37 @@ export const sanitizeDuplicateText = (text) => {
 
   return text;
 };
+
+export const isGreeting = (text) => {
+  if (!text) return false;
+  const cleaned = text.trim().toLowerCase();
+
+  // Common greetings at the start of the post
+  const greetingStarts = [
+    'hello', 'hi ', 'hi!', 'hi...', 'greetings', 'gm ', 'good morning', 'good afternoon', 'good evening',
+    'hey ', 'hey!', 'hey...', 'welcome'
+  ];
+
+  if (greetingStarts.some(start => cleaned.startsWith(start))) {
+    return true;
+  }
+
+  // Specific "Hello again" or "waiting for you" patterns mentioned by the user
+  const forbiddenPatterns = [
+    'hello again',
+    'waiting for you',
+    'ready to talk',
+    'waiting to converse',
+    'let\'s talk',
+    'how can i assist',
+    'i\'m here to help',
+    'what shall we discuss',
+    'should i decide for us'
+  ];
+
+  if (forbiddenPatterns.some(pattern => cleaned.includes(pattern))) {
+    return true;
+  }
+
+  return false;
+};

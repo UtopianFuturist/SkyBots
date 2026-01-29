@@ -9,7 +9,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Nvidia NIM Image Generation**: Creates high-quality images directly in replies using the **Stable Diffusion 3 Medium** model.
 - **Vetted Google Image Search**: Searches for images and uses an LLM to select the most relevant result from the top 4 candidates.
 - **Wikipedia Integration**: Fetches interesting articles from Wikipedia to share in autonomous posts or respond to queries.
-- **Web & YouTube Search**: Fetches and displays information from Google and YouTube as convenient link cards.
+- **Web & YouTube Search (Optional)**: Fetches and displays information from Google and YouTube as convenient link cards if API keys are provided.
 - **User Profile Analyzer Tool**: Deeply analyzes a user's last 100 activities (posts, replies, quotes, reposts) to understand their interests, style, and persona for highly personalized interactions.
 - **Persistent Memory**: Remembers past interactions with users and mutes threads on command, even after restarting.
 - **Enhanced Safety**: Includes pre-reply checks for both user posts and the bot's own responses to ensure all interactions are appropriate.
@@ -46,8 +46,8 @@ The bot is pre-configured for seamless deployment on Render.
 
 1.  A Bluesky account and an App Password.
 2.  An Nvidia NIM API Key.
-3.  A Google Cloud API Key with the **Custom Search JSON API** and **YouTube Data API v3** enabled.
-4.  A Google Custom Search Engine ID.
+3.  (Optional) A Google Cloud API Key with the **Custom Search JSON API** and **YouTube Data API v3** enabled.
+4.  (Optional) A Google Custom Search Engine ID.
 
 ### Setup
 
@@ -68,14 +68,14 @@ The bot is pre-configured for seamless deployment on Render.
 | `BLUESKY_IDENTIFIER` | Your bot's Bluesky handle (e.g., `username.bsky.social`). |
 | `BLUESKY_APP_PASSWORD`| Your Bluesky app password. |
 | `ADMIN_BLUESKY_HANDLE`| The Bluesky handle of the bot's administrator. |
-| `GOOGLE_CUSTOM_SEARCH_API_KEY` | Your Google Cloud API Key. |
-| `GOOGLE_CUSTOM_SEARCH_CX_ID` | Your Google Custom Search Engine ID. |
-| `YOUTUBE_API_KEY` | Your Google Cloud API Key (can be the same one). |
 
 ### Optional
 
 | Variable | Description | Default Value |
 | :--- | :--- | :--- |
+| `GOOGLE_CUSTOM_SEARCH_API_KEY` | Your Google Cloud API Key for web and image search. | (None) |
+| `GOOGLE_CUSTOM_SEARCH_CX_ID` | Your Google Custom Search Engine ID. | (None) |
+| `YOUTUBE_API_KEY` | Your Google Cloud API Key for YouTube search. | (None) |
 | `TEXT_SYSTEM_PROMPT` | Defines the bot's conversational persona. | (A neutral conversational persona) |
 | `SAFETY_SYSTEM_PROMPT`| Defines the safety guidelines for all content. | (A strict SFW and clean content policy) |
 | `IMAGE_PROMPT_SYSTEM_PROMPT` | A prompt to revise user-provided image prompts. | (Adds cats to prompts that don't have animals) |

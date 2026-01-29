@@ -536,7 +536,9 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       GUIDELINES:
       - Score 1 or 2 if the post content is NOT logically related to the identified "Topic" or the provided Wikipedia article/Image description.
       - RELEVANCE is mandatory. A post that ignores the topic in favor of a generic greeting or unrelated thought MUST fail (score 1-2).
-      - For Wikipedia posts, the content MUST naturally incorporate or reference the article's themes or information.
+      - For Wikipedia posts, the content MUST directly and explicitly relate to the article's specific subject matter.
+      - CRITICAL: "Tangential," "metaphorical," or "loosely related" Wikipedia links are strictly forbidden and MUST result in a score of 1 or 2.
+      - If the post text is good but the Wikipedia article is about a different concept (even if related in some abstract way), you MUST reject it (Score 1-2).
       - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+), PROVIDED they are anchored in the identified topic.
       - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
       - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.

@@ -534,10 +534,12 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       1: Fail. Completely incoherent, gibberish, or empty.
 
       GUIDELINES:
-      - PRIORITIZE persona-alignment and logical coherence over strict adherence to the "Topic".
-      - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+).
-      - Do NOT penalize posts for being conversational or assertive if that matches the persona.
-      - Only reject (score 1-2) if the post is truly broken, illogical, or a severe hallucination that makes no sense in any context.
+      - Score 1 or 2 if the post content is NOT logically related to the identified "Topic" or the provided Wikipedia article/Image description.
+      - RELEVANCE is mandatory. A post that ignores the topic in favor of a generic greeting or unrelated thought MUST fail (score 1-2).
+      - For Wikipedia posts, the content MUST naturally incorporate or reference the article's themes or information.
+      - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+), PROVIDED they are anchored in the identified topic.
+      - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
+      - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.
 
       Your response MUST be in the following format:
       Score: [1-5]

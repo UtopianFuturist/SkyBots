@@ -7,7 +7,7 @@ import { youtubeService } from './services/youtubeService.js';
 import { wikipediaService } from './services/wikipediaService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -1093,11 +1093,19 @@ export class Bot {
                !item.post.record.reply;
       });
 
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const recentGreetings = feed.data.feed.filter(item => {
+        const postDate = new Date(item.post.indexedAt);
+        return item.post.author.did === blueskyService.did &&
+               postDate > sevenDaysAgo &&
+               isGreeting(item.post.record.text);
+      });
+
       const textOnlyPostsToday = standalonePostsToday.filter(item => !item.post.embed);
       const imagePostsToday = standalonePostsToday.filter(item => item.post.embed?.images || item.post.embed?.media?.images);
       const wikiPostsToday = standalonePostsToday.filter(item => item.post.embed?.external);
 
-      console.log(`[Bot] Standalone posts today: ${standalonePostsToday.length} (Text: ${textOnlyPostsToday.length}/20, Images: ${imagePostsToday.length}/5, Wiki: ${wikiPostsToday.length}/5)`);
+      console.log(`[Bot] Standalone posts today: ${standalonePostsToday.length} (Text: ${textOnlyPostsToday.length}/20, Images: ${imagePostsToday.length}/5, Wiki: ${wikiPostsToday.length}/5). Recent greetings found: ${recentGreetings.length}`);
 
       const availablePostTypes = [];
       if (textOnlyPostsToday.length < 20) availablePostTypes.push('text');
@@ -1122,7 +1130,10 @@ export class Bot {
         .join('\n');
 
       // 1b. Global greeting constraint
-      const greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
+      let greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
+      if (recentGreetings.length > 0) {
+        greetingConstraint += "\n\nCRITICAL ERROR: Your recent history contains greeting-style posts (e.g., 'Hello again'). This behavior is strictly prohibited. You MUST NOT use any greetings or 'ready to talk' phrases in this post.";
+      }
 
       // 2. Determine Post Type based on limits
       let postType = availablePostTypes[Math.floor(Math.random() * availablePostTypes.length)];
@@ -1339,6 +1350,7 @@ export class Bot {
               Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
+              RELEVANCE: Explain why you chose this article/topic and how it relates to your identity or experience. Share how you feel about it.
               IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
               Topic context: ${topic}
               Max 3 threaded posts if needed (up to 300 characters each).${feedbackContext}
@@ -1415,7 +1427,30 @@ export class Bot {
             continue;
           }
 
-          // 5. Dedicated Coherence Check for Autonomous Post
+          // 5. Hard Greeting Check
+          if (isGreeting(postContent)) {
+            console.warn(`[Bot] Greeting detected in autonomous post on attempt ${attempts}. Rejecting.`);
+            feedback = "REJECTED: The post contains a greeting or 'ready to talk' phrase. This is strictly forbidden. Focus on a deep, internal thought instead.";
+
+            // Re-select topic from POST_TOPICS if possible
+            if (config.POST_TOPICS) {
+                const topics = config.POST_TOPICS.split('\n').filter(t => t.trim());
+                if (topics.length > 0) {
+                    topic = topics[Math.floor(Math.random() * topics.length)];
+                    console.log(`[Bot] Forcing topic from POST_TOPICS for retry: "${topic}"`);
+                    // If it was a Wikipedia post, we should probably try to get a new article too
+                    if (postType === 'wikipedia') {
+                      const articles = await wikipediaService.searchArticle(topic, 1);
+                      if (articles && articles[0]) {
+                        article = articles[0];
+                      }
+                    }
+                }
+            }
+            continue;
+          }
+
+          // 6. Dedicated Coherence Check for Autonomous Post
           console.log(`[Bot] Checking coherence for autonomous ${postType} post...`);
           const { score, reason } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
 

@@ -1028,6 +1028,28 @@ export class Bot {
     return images;
   }
 
+  async _getRecentImageSubjects() {
+    try {
+      console.log('[Bot] Fetching recent image subjects from profile...');
+      const feed = await blueskyService.agent.getAuthorFeed({
+        actor: blueskyService.did,
+        limit: 100,
+      });
+
+      const recentSubjects = feed.data.feed
+        .map(item => item.post.record.text || '')
+        .filter(text => text.startsWith('Generation Prompt: '))
+        .map(text => text.replace('Generation Prompt: ', '').trim())
+        .slice(0, 10);
+
+      console.log(`[Bot] Found ${recentSubjects.length} recent image subjects.`);
+      return recentSubjects;
+    } catch (error) {
+      console.error('[Bot] Error fetching recent image subjects:', error);
+      return [];
+    }
+  }
+
   async _getThreadHistory(uri) {
     try {
       const thread = await blueskyService.getDetailedThread(uri);
@@ -1160,12 +1182,18 @@ export class Bot {
       console.log(`[Bot] Identifying autonomous post topic for type: ${postType}...`);
       let topicPrompt = '';
       if (postType === 'image' && config.IMAGE_SUBJECTS) {
+        const recentSubjects = await this._getRecentImageSubjects();
         topicPrompt = `
           Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
           You are identifying a subject for an autonomous post containing an image.
           You MUST choose one of the following subjects from your context bank:
           ${config.IMAGE_SUBJECTS}
+
+          Recent Image Subjects (Do NOT repeat these if possible):
+          ${recentSubjects.length > 0 ? recentSubjects.map(s => `- ${s}`).join('\n') : 'None.'}
+
+          INSTRUCTION: Review the "Recent Image Subjects" list. You should prioritize selecting a different subject from the list above to ensure variety in your profile. However, if the "Recent Image Subjects" list has fewer than 10 items, or if you have already used most of the subjects in the bank, some repetition is acceptable.
 
           Consider the current network vibe and your recent interactions to pick the most relevant subject, or simply pick one that inspires you.
 

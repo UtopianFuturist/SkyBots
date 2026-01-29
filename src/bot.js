@@ -1197,19 +1197,34 @@ export class Bot {
       }
 
       // Robust Topic Extraction
+      let topicRaw = topicResponse.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
       let topic = '';
-      const boldMatch = topicResponse.match(/\*\*(.*?)\*\*/);
-      if (boldMatch) {
+
+      const labelRegex = /^(topic|theme|subject|chosen topic|selected theme|topic\/theme)\s*:?\s*/i;
+
+      // 1. Try to find anything between ** that is NOT just a label
+      const boldMatch = topicRaw.match(/\*\*(.*?)\*\*/);
+      if (boldMatch && boldMatch[1].trim().length > 0 && !labelRegex.test(boldMatch[1].trim())) {
         topic = boldMatch[1].trim();
       } else {
-        const lines = topicResponse.split('\n').filter(l => l.trim());
-        if (lines.length > 0) {
-          topic = lines[lines.length - 1].trim();
-        } else {
-          topic = topicResponse.trim();
+        // 2. Remove all bolding and split into lines
+        const cleanRaw = topicRaw.replace(/\*\*/g, '');
+        const lines = cleanRaw.split('\n').map(l => l.trim()).filter(l => l);
+
+        let candidate = lines[lines.length - 1]; // Default to last line
+
+        // 3. Look for a "Label: Value" pattern in any line
+        for (const line of lines) {
+            const match = line.match(/^(topic|theme|subject|chosen topic|selected theme|topic\/theme)\s*:\s*(.+)/i);
+            if (match && match[2].trim().length > 0) {
+                candidate = match[2].trim();
+                break;
+            }
         }
+        topic = candidate;
       }
 
+      // Cleanup quotes and trailing punctuation
       topic = topic.replace(/^["']|["']$/g, '').trim();
       console.log(`[Bot] Identified topic: "${topic}"`);
 

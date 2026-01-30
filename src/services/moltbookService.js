@@ -24,6 +24,17 @@ class MoltbookService {
     this.apiBase = 'https://moltbook.com/api/v1';
   }
 
+  async _parseResponse(response) {
+    const text = await response.text();
+    if (!text) return {};
+    try {
+      return JSON.parse(text);
+    } catch (e) {
+      // If it's not JSON, return a wrapper or the raw text
+      return { success: response.ok, message: text };
+    }
+  }
+
   async init() {
     console.log(`[Moltbook] Initializing at ${MOLTBOOK_PATH}`);
     const dbDir = path.dirname(MOLTBOOK_PATH);
@@ -61,7 +72,7 @@ class MoltbookService {
         return null;
       }
 
-      const data = await response.json();
+      const data = await this._parseResponse(response);
       if (data.agent) {
         console.log(`[Moltbook] ##################################################`);
         console.log(`[Moltbook] #                                                #`);
@@ -112,7 +123,7 @@ class MoltbookService {
         return 'api_error';
       }
 
-      const data = await response.json();
+      const data = await this._parseResponse(response);
       console.log(`[Moltbook] Raw status response: ${JSON.stringify(data)}`);
 
       // Handle both direct and wrapped response formats
@@ -156,7 +167,7 @@ class MoltbookService {
         body: JSON.stringify({ submolt, title, content })
       });
 
-      const data = await response.json();
+      const data = await this._parseResponse(response);
       if (!response.ok) {
         console.error(`[Moltbook] Post creation error (${response.status}): ${JSON.stringify(data)}`);
 
@@ -197,7 +208,7 @@ class MoltbookService {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
 
-      const data = await response.json();
+      const data = await this._parseResponse(response);
       if (!response.ok) {
         console.error(`[Moltbook] Feed fetch error (${response.status}): ${JSON.stringify(data)}`);
         return [];
@@ -239,7 +250,7 @@ class MoltbookService {
         body: JSON.stringify({ name, display_name: displayName, description })
       });
 
-      const data = await response.json();
+      const data = await this._parseResponse(response);
       if (!response.ok) {
         console.error(`[Moltbook] Submolt creation error (${response.status}): ${JSON.stringify(data)}`);
         return null;
@@ -260,7 +271,7 @@ class MoltbookService {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
 
-      const data = await response.json();
+      const data = await this._parseResponse(response);
       if (!response.ok) {
         console.error(`[Moltbook] Submolts list error (${response.status}): ${JSON.stringify(data)}`);
         return [];
@@ -282,13 +293,13 @@ class MoltbookService {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
 
-      const data = await response.json();
+      const data = await this._parseResponse(response);
       if (!response.ok) {
         console.error(`[Moltbook] Submolt subscription error (${response.status}): ${JSON.stringify(data)}`);
         return null;
       }
 
-      return data.data || data;
+      return data.data || data || { success: true };
     } catch (error) {
       console.error(`[Moltbook] Error subscribing to submolt:`, error.message);
       return null;

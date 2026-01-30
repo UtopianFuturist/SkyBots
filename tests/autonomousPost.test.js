@@ -130,8 +130,8 @@ Decentralized Social Media`);
     const postContent = 'Here is a thought about technology.';
     const altText = 'Accessible alt text';
 
-    // Mock Math.random to pick 'image' post
-    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4); // postTypes[1] is 'image'
+    // Mock Math.random to pick 'image' post (index 1 in [text, image])
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.75);
 
     llmService.generateResponse
       .mockResolvedValueOnce(topic) // Topic identification
@@ -180,8 +180,8 @@ Decentralized Social Media`);
     const topic = 'Human Portraits in Art';
     const fallbackText = 'I decided to write about the history of portraiture instead.';
 
-    // Mock Math.random to pick 'image' post
-    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4); // 'image'
+    // Mock Math.random to pick 'image' post (index 1 in [text, image])
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.75);
 
     llmService.generateResponse
       .mockResolvedValueOnce(topic) // Topic identification

@@ -45,6 +45,24 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     selectBestResult: jest.fn(),
     validateResultRelevance: jest.fn(),
     evaluateConversationVibe: jest.fn(),
+    performAgenticPlanning: jest.fn(),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/moltbookService.js', () => ({
+  moltbookService: {
+    init: jest.fn(),
+    register: jest.fn(),
+    checkStatus: jest.fn(),
+    post: jest.fn(),
+    getFeed: jest.fn(),
+    addIdentityKnowledge: jest.fn(),
+    getIdentityKnowledge: jest.fn(),
+    db: {
+      data: {
+        api_key: 'moltbook'
+      }
+    }
   },
 }));
 
@@ -133,6 +151,7 @@ describe('Bot', () => {
     llmService.shouldLikePost.mockResolvedValue(false);
     llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
     llmService.rateUserInteraction.mockResolvedValue(3);
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [], intent: 'Friendly' });
 
     blueskyService.getProfile.mockResolvedValue({ handle: 'user.bsky.social', description: 'Test bio' });
     blueskyService.getUserPosts.mockResolvedValue([]);
@@ -347,12 +366,19 @@ describe('Bot', () => {
     // Override default mock for this specific test's response
     llmService.generateResponse.mockImplementation((messages) => {
         const systemContent = messages[0].content || '';
+        const userContent = messages[messages.length - 1].content || '';
         if (systemContent.includes('intent detection AI')) return Promise.resolve('no');
         if (systemContent.toLowerCase().includes('summary')) return Promise.resolve('Yes, the sky is blue due to a phenomenon called Rayleigh scattering.');
+        if (systemContent.includes('Rayleigh scattering') || systemContent.includes('sky is blue')) return Promise.resolve('Yes, the sky is blue due to a phenomenon called Rayleigh scattering.');
         return Promise.resolve('Test response');
     });
 
     blueskyService.getExternalEmbed.mockResolvedValue({ $type: 'app.bsky.embed.external', external: {} });
+
+    llmService.performAgenticPlanning.mockResolvedValueOnce({
+      actions: [{ tool: 'search', query: 'sky is blue' }],
+      intent: 'Informational'
+    });
 
     await bot.processNotification(mockNotif);
 
@@ -389,7 +415,7 @@ describe('Bot', () => {
 
     await bot.processNotification(mockNotif);
 
-    expect(postReplySpy).toHaveBeenCalledWith(expect.anything(), '?');
+    expect(postReplySpy).toHaveBeenCalledWith(expect.anything(), '?', expect.anything());
     expect(blueskyService.agent.post).not.toHaveBeenCalled();
     expect(blueskyService.deletePost).not.toHaveBeenCalled();
 
@@ -421,7 +447,7 @@ describe('Bot', () => {
 
     await bot.processNotification(mockNotif);
 
-    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'The sky is blue.');
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'The sky is blue.', expect.anything());
     expect(blueskyService.deletePost).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/1000');
   });
 
@@ -482,7 +508,7 @@ describe('Bot', () => {
     expect(threadContext[1].role).toBe('user');
     expect(threadContext[1].content).toBe('This is a cool post!');
 
-    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'Thank you for the compliment!');
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'Thank you for the compliment!', expect.anything());
   });
 
   it('should not reply to its own post to prevent a loop', async () => {

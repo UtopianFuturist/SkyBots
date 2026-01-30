@@ -89,7 +89,9 @@ class MoltbookService {
     if (!this.db.data.api_key) return null;
 
     try {
-      console.log(`[Moltbook] Checking status with API key: ${this.db.data.api_key.substring(0, 12)}...`);
+      const maskedKey = `${this.db.data.api_key.substring(0, 8)}...${this.db.data.api_key.substring(this.db.data.api_key.length - 4)}`;
+      console.log(`[Moltbook] Checking status with key: ${maskedKey}`);
+
       const response = await fetch(`${this.apiBase}/agents/status`, {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
@@ -97,11 +99,16 @@ class MoltbookService {
       if (!response.ok) {
         const errText = await response.text();
         console.error(`[Moltbook] Status API error (${response.status}): ${errText}`);
-        return null;
+
+        if (response.status === 401 || response.status === 403 || response.status === 404) {
+          console.warn(`[Moltbook] Existing API key appears invalid or expired. Triggering re-registration.`);
+          return 'invalid_key';
+        }
+        return 'api_error';
       }
 
       const data = await response.json();
-      console.log(`[Moltbook] Status response received: ${JSON.stringify(data)}`);
+      console.log(`[Moltbook] Raw status response: ${JSON.stringify(data)}`);
 
       // Handle both direct and wrapped response formats
       let status = data.status || data.data?.status;

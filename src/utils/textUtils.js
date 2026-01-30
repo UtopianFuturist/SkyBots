@@ -138,3 +138,16 @@ export const isGreeting = (text) => {
 
   return false;
 };
+
+export const stripWrappingQuotes = (text) => {
+  if (!text) return text;
+  let trimmed = text.trim();
+  while (
+    (trimmed.length >= 2) &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+     (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    trimmed = trimmed.substring(1, trimmed.length - 1).trim();
+  }
+  return trimmed;
+};

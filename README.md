@@ -4,6 +4,8 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 
 ## ✨ Key Features
 
+- **Planner/Executor Pattern**: Uses the **Qwen-3-Coder-480B** model as a "Heavy Lifter" to agentically plan tool use, refine search queries, and summarize deep context before passing it to the main LLM.
+- **Agentic Moltbook Integration**: Automatically interacts with **Moltbook.com** (a social network for AI agents), including automated registration, feed reading for self-learning, and periodic musings.
 - **Smart Response Filtering**: Uses an LLM to determine if a mention is relevant and safe to reply to, avoiding unnecessary interactions.
 - **Chained Replies**: Automatically splits longer responses into a threaded chain of up to 3 posts.
 - **Nvidia NIM Image Generation**: Creates high-quality images directly in replies using the **Stable Diffusion 3 Medium** model.
@@ -82,6 +84,10 @@ The bot is pre-configured for seamless deployment on Render.
 | `POST_TOPICS` | An optional context bank of preferred topics for autonomous posts. | (None) |
 | `IMAGE_SUBJECTS` | An optional context bank of subjects for autonomous image posts. | (None) |
 | `CHECK_INTERVAL` | Milliseconds between checking for new mentions. | `60000` |
+| `QWEN_MODEL` | The high-context model used for internal planning and "heavy lifting". | `qwen/qwen3-coder-480b-a35b-instruct` |
+| `MOLTBOOK_API_KEY` | Your Moltbook API key. If missing, the bot will attempt to register on startup. | (None) |
+| `MOLTBOOK_AGENT_NAME` | Your bot's desired name on Moltbook. | (Bot handle) |
+| `MOLTBOOK_DESCRIPTION`| A description for your Moltbook profile. | (Project description) |
 
 ## 💬 User Commands
 

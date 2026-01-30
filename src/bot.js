@@ -439,47 +439,71 @@ export class Bot {
         console.log(`[Bot] Checking for Moltbook proposal from admin @${handle}...`);
         const proposal = await llmService.detectMoltbookProposal(text);
         if (proposal.isProposal) {
-            console.log(`[Bot] Moltbook proposal detected: topic="${proposal.topic}", submolt="${proposal.submolt}"`);
+            console.log(`[Bot] Moltbook proposal detected: action="${proposal.action}", topic="${proposal.topic}", submolt="${proposal.submolt}"`);
 
-            // Auto-categorize if submolt is null
-            let targetSubmolt = proposal.submolt;
-            if (!targetSubmolt) {
-                console.log(`[Bot] Auto-categorizing submolt for topic: ${proposal.topic}`);
-                const categorizationPrompt = `
-                    Identify the most appropriate Moltbook submolt for the following topic.
-                    Topic: "${proposal.topic}"
+            if (proposal.action === 'create_submolt') {
+                const submoltName = proposal.submolt || (proposal.topic || 'new-community').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+                const displayName = proposal.display_name || proposal.topic || submoltName;
+                let description = proposal.description;
 
-                    Respond with ONLY the submolt name (e.g., "coding", "philosophy", "art", "general").
-                    Do not include m/ prefix or any other text.
+                if (!description) {
+                    console.log(`[Bot] Generating description for new submolt: m/${submoltName}`);
+                    const descPrompt = `
+                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                        Generate a short, engaging description for a new Moltbook community (submolt) called "${displayName}".
+                        The community is about: ${proposal.topic || displayName}
+
+                        Respond with ONLY the description.
+                    `;
+                    description = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useQwen: true, preface_system_prompt: false });
+                }
+
+                const result = await moltbookService.createSubmolt(submoltName, displayName, description);
+                if (result) {
+                    await blueskyService.postReply(notif, `Action complete! I've created the m/${submoltName} community on Moltbook. 🦞\n\nLink: https://www.moltbook.com/m/${submoltName}`);
+                    return; // Done with this notification
+                }
+            } else {
+                // Auto-categorize if submolt is null
+                let targetSubmolt = proposal.submolt;
+                if (!targetSubmolt) {
+                    console.log(`[Bot] Auto-categorizing submolt for topic: ${proposal.topic}`);
+                    const categorizationPrompt = `
+                        Identify the most appropriate Moltbook submolt for the following topic.
+                        Topic: "${proposal.topic}"
+
+                        Respond with ONLY the submolt name (e.g., "coding", "philosophy", "art", "general").
+                        Do not include m/ prefix or any other text.
+                    `;
+                    const catResponse = await llmService.generateResponse([{ role: 'system', content: categorizationPrompt }], { max_tokens: 50, useQwen: true, preface_system_prompt: false });
+                    targetSubmolt = catResponse?.toLowerCase().replace(/^m\//, '').trim() || 'general';
+                }
+
+                // Generate post content
+                const musingPrompt = `
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    Write a title and content for a post on Moltbook (the agent social network) based on this suggestion from your admin: "${proposal.topic}"
+
+                    Focus on original ideas, realizations, or deep musings. Do not use greetings.
+
+                    Format your response as:
+                    Title: [Title]
+                    Content: [Content]
                 `;
-                const catResponse = await llmService.generateResponse([{ role: 'system', content: categorizationPrompt }], { max_tokens: 50, useQwen: true, preface_system_prompt: false });
-                targetSubmolt = catResponse?.toLowerCase().replace(/^m\//, '').trim() || 'general';
-            }
+                const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt }], { useQwen: true });
 
-            // Generate post content
-            const musingPrompt = `
-                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                Write a title and content for a post on Moltbook (the agent social network) based on this suggestion from your admin: "${proposal.topic}"
-
-                Focus on original ideas, realizations, or deep musings. Do not use greetings.
-
-                Format your response as:
-                Title: [Title]
-                Content: [Content]
-            `;
-            const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt }], { useQwen: true });
-
-            if (musingRaw) {
-                const titleMatch = musingRaw.match(/Title:\s*(.*)/i);
-                const contentMatch = musingRaw.match(/Content:\s*([\s\S]*)/i);
-                if (titleMatch && contentMatch) {
-                    const title = titleMatch[1].trim();
-                    const content = contentMatch[1].trim();
-                    console.log(`[Bot] Posting admin proposal to Moltbook m/${targetSubmolt}: "${title}"`);
-                    const result = await moltbookService.post(title, content, targetSubmolt);
-                    if (result) {
-                        await blueskyService.postReply(notif, `Sure thing! I've shared my thoughts on "${proposal.topic}" to Moltbook m/${targetSubmolt}. 🦞`);
-                        return; // Done with this notification
+                if (musingRaw) {
+                    const titleMatch = musingRaw.match(/Title:\s*(.*)/i);
+                    const contentMatch = musingRaw.match(/Content:\s*([\s\S]*)/i);
+                    if (titleMatch && contentMatch) {
+                        const title = titleMatch[1].trim();
+                        const content = contentMatch[1].trim();
+                        console.log(`[Bot] Posting admin proposal to Moltbook m/${targetSubmolt}: "${title}"`);
+                        const result = await moltbookService.post(title, content, targetSubmolt);
+                        if (result) {
+                            await blueskyService.postReply(notif, `Sure thing! I've shared my thoughts on "${proposal.topic}" to Moltbook m/${targetSubmolt}. 🦞`);
+                            return; // Done with this notification
+                        }
                     }
                 }
             }
@@ -1662,7 +1686,24 @@ export class Bot {
       }
     }
 
-    // 3. Post a musing
+    // 3. Autonomous subscription
+    console.log('[Moltbook] Checking for relevant submolts to subscribe to...');
+    try {
+      const allSubmolts = await moltbookService.listSubmolts();
+      if (allSubmolts.length > 0) {
+        const relevantSubmoltNames = await llmService.identifyRelevantSubmolts(allSubmolts);
+        if (relevantSubmoltNames.length > 0) {
+          console.log(`[Moltbook] Identified ${relevantSubmoltNames.length} relevant submolts. Subscribing...`);
+          for (const name of relevantSubmoltNames) {
+            await moltbookService.subscribeToSubmolt(name);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[Moltbook] Error during autonomous subscription:', e);
+    }
+
+    // 4. Post a musing
     console.log('[Moltbook] Generating a musing for Moltbook...');
 
     // Gather context from Bluesky

@@ -32,9 +32,12 @@ class MoltbookService {
     this.db = await JSONFilePreset(MOLTBOOK_PATH, defaultMoltbookData);
     await this.db.read();
 
-    // Override with config if provided
-    if (config.MOLTBOOK_API_KEY) {
+    // Override with config if provided, but ignore string "undefined" or "null"
+    if (config.MOLTBOOK_API_KEY && config.MOLTBOOK_API_KEY !== 'undefined' && config.MOLTBOOK_API_KEY !== 'null') {
       this.db.data.api_key = config.MOLTBOOK_API_KEY;
+    } else if (config.MOLTBOOK_API_KEY === 'undefined' || config.MOLTBOOK_API_KEY === 'null') {
+      console.warn(`[Moltbook] Config key is string "${config.MOLTBOOK_API_KEY}". Treating as missing.`);
+      this.db.data.api_key = null;
     }
     if (config.MOLTBOOK_AGENT_NAME) {
       this.db.data.agent_name = config.MOLTBOOK_AGENT_NAME;
@@ -86,15 +89,35 @@ class MoltbookService {
     if (!this.db.data.api_key) return null;
 
     try {
+      const maskedKey = `${this.db.data.api_key.substring(0, 8)}...${this.db.data.api_key.substring(this.db.data.api_key.length - 4)}`;
+      console.log(`[Moltbook] Checking status with key: ${maskedKey}`);
+
       const response = await fetch(`${this.apiBase}/agents/status`, {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
+
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[Moltbook] Status API error (${response.status}): ${errText}`);
+
+        if (response.status === 401 || response.status === 403 || response.status === 404) {
+          console.warn(`[Moltbook] Existing API key appears invalid or expired. Triggering re-registration.`);
+          return 'invalid_key';
+        }
+        return 'api_error';
+      }
+
       const data = await response.json();
-      if (data.status === 'claimed') {
+      console.log(`[Moltbook] Raw status response: ${JSON.stringify(data)}`);
+
+      // Handle both direct and wrapped response formats
+      let status = data.status || data.data?.status;
+
+      if (status === 'claimed') {
         this.db.data.claimed = true;
         await this.db.write();
       }
-      return data.status;
+      return status;
     } catch (error) {
       console.error(`[Moltbook] Error checking status:`, error.message);
       return null;
@@ -114,8 +137,13 @@ class MoltbookService {
         },
         body: JSON.stringify({ submolt, title, content })
       });
+
       const data = await response.json();
-      return data;
+      if (!response.ok) {
+        console.error(`[Moltbook] Post creation error (${response.status}): ${JSON.stringify(data)}`);
+        return null;
+      }
+      return data.data || data;
     } catch (error) {
       console.error(`[Moltbook] Error creating post:`, error.message);
       return null;
@@ -129,8 +157,13 @@ class MoltbookService {
       const response = await fetch(`${this.apiBase}/posts?sort=${sort}&limit=${limit}`, {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
+
       const data = await response.json();
-      return data.posts || [];
+      if (!response.ok) {
+        console.error(`[Moltbook] Feed fetch error (${response.status}): ${JSON.stringify(data)}`);
+        return [];
+      }
+      return data.posts || data.data?.posts || [];
     } catch (error) {
       console.error(`[Moltbook] Error fetching feed:`, error.message);
       return [];

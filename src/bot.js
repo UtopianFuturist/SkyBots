@@ -55,15 +55,18 @@ export class Bot {
 
     // Moltbook Registration Check
     console.log('[Bot] Checking Moltbook registration...');
-    if (!moltbookService.db.data.api_key) {
-      console.log('[Moltbook] No API key found. Starting registration...');
+    let status = null;
+    if (moltbookService.db.data.api_key) {
+      console.log('[Moltbook] API key found. Checking status...');
+      status = await moltbookService.checkStatus();
+      console.log(`[Moltbook] Current status: ${status}`);
+    }
+
+    if (!moltbookService.db.data.api_key || status === 'invalid_key') {
+      console.log('[Moltbook] No valid API key found. Starting registration...');
       const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
       const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
       await moltbookService.register(name, description);
-    } else {
-      console.log('[Moltbook] API key found. Checking status...');
-      const status = await moltbookService.checkStatus();
-      console.log(`[Moltbook] Current status: ${status}`);
     }
 
     try {

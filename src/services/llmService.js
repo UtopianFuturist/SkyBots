@@ -43,7 +43,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    const timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout
 
     try {
       console.log(`[LLMService] [${requestId}] Sending request to Nvidia NIM...`);
@@ -88,7 +88,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       return null;
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.error(`[LLMService] [${requestId}] Request timed out after 60s.`);
+        console.error(`[LLMService] [${requestId}] Request timed out after 120s.`);
       } else {
         console.error(`[LLMService] [${requestId}] Error generating response:`, error.message);
       }

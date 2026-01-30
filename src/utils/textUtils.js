@@ -56,13 +56,10 @@ export const sanitizeThinkingTags = (text) => {
   // 1. Remove closed <think>...</think> tags and their content
   let sanitized = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
 
-  // 2. Remove any unclosed <think> tag and everything following it
-  const unclosedIndex = sanitized.toLowerCase().indexOf('<think>');
-  if (unclosedIndex !== -1) {
-    sanitized = sanitized.substring(0, unclosedIndex);
-  }
-
-  // 3. Remove stray closing tags if any (e.g. if the start was already removed)
+  // 2. For unclosed tags, instead of cutting EVERYTHING after (which can lose the answer),
+  // we just strip the tags themselves. This is more resilient to model glitches
+  // while still removing the most common reasoning blocks.
+  sanitized = sanitized.replace(/<think>/gi, '');
   sanitized = sanitized.replace(/<\/think>/gi, '');
 
   return sanitized.trim();

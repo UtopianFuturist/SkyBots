@@ -6,15 +6,17 @@ class LLMService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.LLM_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5';
+    this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 2000, preface_system_prompt = true } = options;
+    const { temperature = 0.7, max_tokens = 2000, preface_system_prompt = true, useQwen = false } = options;
     const requestId = Math.random().toString(36).substring(7);
+    const actualModel = useQwen ? this.qwenModel : this.model;
 
-    console.log(`[LLMService] [${requestId}] Starting generateResponse with model: ${this.model}`);
+    console.log(`[LLMService] [${requestId}] Starting generateResponse with model: ${actualModel}`);
 
     let systemContent = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}
 
@@ -33,7 +35,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       : messages;
 
     const payload = {
-      model: this.model,
+      model: useQwen ? this.qwenModel : this.model,
       messages: finalMessages,
       temperature,
       max_tokens,
@@ -124,7 +126,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       Respond with ONLY "yes" or "no". Do not include any reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -144,7 +146,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
@@ -160,7 +162,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: responseText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
@@ -176,7 +178,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       Respond with ONLY "injection" or "clean". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
     return response?.toLowerCase().includes('injection') || false;
   }
 
@@ -195,7 +197,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Bio: ${userProfile.description}\n\nRecent Posts:\n- ${userPosts.join('\n- ')}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
 
     if (response?.toLowerCase().includes('high-risk')) {
       return { highRisk: true, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
@@ -223,7 +225,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -249,7 +251,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${currentPost}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
 
     if (response?.toLowerCase().includes('hostile')) {
       return { status: 'hostile', reason: response.split('|')[1]?.trim() || 'unspecified' };
@@ -271,7 +273,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       Respond directly with the claim. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    return await this.generateResponse(messages, { max_tokens: 2000 });
+    return await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
   }
 
   async analyzeImage(imageSource, altText) {
@@ -368,7 +370,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Interaction History:\n${historyText}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
     const matches = response?.match(/\d+/g);
     const rating = matches ? parseInt(matches[matches.length - 1], 10) : NaN;
     return isNaN(rating) ? 3 : Math.max(1, Math.min(5, rating));
@@ -388,7 +390,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Post content: "${postText}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000 });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -421,7 +423,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"${embedContext}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
 
     // Safety check: if the API fails, assume it's coherent (score 5) to avoid accidental deletion.
     if (!response) {
@@ -556,7 +558,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       { role: 'user', content: `Topic: "${topic}"\nPost Type: ${postType}\nPost Content: "${postContent}"${embedContext}` }
     ];
 
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
 
     if (!response) {
       return { score: 5, reason: 'Coherence check failed (timeout/empty). Defaulting to pass.' };
@@ -597,7 +599,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       Otherwise, respond with ONLY the number of the best result. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Results:\n${resultsList}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
 
     if (!response || response.toLowerCase().includes('none')) return null;
 
@@ -627,8 +629,67 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       Your answer must be a single word: "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Result:\n${resultInfo}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
     return response?.toLowerCase().includes('yes') || false;
+  }
+
+  async performAgenticPlanning(userPost, conversationHistory, visionContext) {
+    const historyText = conversationHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
+
+    const systemPrompt = `
+      You are an agentic planning module for a social media bot. Your task is to analyze the user's post and the conversation history to determine the best course of action.
+
+      You have access to the following capabilities:
+      1. **Search**: Search Google for information.
+      2. **Wikipedia**: Search Wikipedia for specific articles.
+      3. **YouTube**: Search for videos.
+      4. **Image Generation**: Create an image based on a prompt.
+      5. **Profile Analysis**: Analyze the user's last 100 activities for deep context.
+      6. **Vision**: You can "see" images described in the context.
+
+      Analyze the user's intent and provide a JSON response with the following structure:
+      {
+        "intent": "string (briefly describe the user's goal)",
+        "actions": [
+          {
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis",
+            "query": "string (the consolidated search query or image prompt)",
+            "reason": "string (why this tool is needed)"
+          }
+        ],
+        "requires_search": boolean,
+        "consolidated_queries": ["list of strings (queries for Google/Wiki to minimize API calls)"]
+      }
+
+      IMPORTANT:
+      - Consolidate queries to minimize API calls (limit 100 searches/day).
+      - If multiple searches are needed, try to combine them into one broad query if possible.
+      - If no tools are needed, return an empty actions array.
+      - Do not include reasoning or <think> tags.
+
+      User Post: "${userPost}"
+
+      Conversation History:
+      ${historyText}
+
+      Vision Context:
+      ${visionContext || 'None'}
+    `;
+
+    const messages = [{ role: 'system', content: systemPrompt }];
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true, preface_system_prompt: false });
+
+    try {
+      // Find JSON block if it exists
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return { intent: "unknown", actions: [], requires_search: false, consolidated_queries: [] };
+    } catch (e) {
+      console.error('[LLMService] Error parsing agentic planning response:', e);
+      return { intent: "unknown", actions: [], requires_search: false, consolidated_queries: [] };
+    }
   }
 }
 

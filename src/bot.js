@@ -1203,6 +1203,21 @@ export class Bot {
                !item.post.record.reply;
       });
 
+      // 45-minute Cooldown Check
+      const lastStandalonePost = feed.data.feed.find(item =>
+        item.post.author.did === blueskyService.did && !item.post.record.reply
+      );
+
+      if (lastStandalonePost) {
+        const lastPostTime = new Date(lastStandalonePost.post.indexedAt);
+        const now = new Date();
+        const diffMins = (now - lastPostTime) / (1000 * 60);
+        if (diffMins < 45) {
+          console.log(`[Bot] Autonomous post suppressed: 45-minute cooldown in effect. (${Math.round(45 - diffMins)} minutes remaining)`);
+          return;
+        }
+      }
+
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
       const recentGreetings = feed.data.feed.filter(item => {
         const postDate = new Date(item.post.indexedAt);
@@ -1220,7 +1235,6 @@ export class Bot {
       const availablePostTypes = [];
       if (textOnlyPostsToday.length < 20) availablePostTypes.push('text');
       if (imagePostsToday.length < 5) availablePostTypes.push('image');
-      if (wikiPostsToday.length < 5) availablePostTypes.push('wikipedia');
 
       if (availablePostTypes.length === 0) {
         console.log(`[Bot] All daily autonomous post limits reached. Skipping.`);
@@ -1300,7 +1314,10 @@ export class Bot {
           PRIORITIZE: Internal musings, original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires.
           NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
 
-          Respond with ONLY the topic/theme (e.g., the beauty of fleeting moments or the future of decentralized networks).
+          INSTRUCTION: Choose a topic that resonates with your TEXT_SYSTEM_PROMPT or POST_TOPICS.
+          Respond with ONLY the topic/theme.
+          EXAMPLE TOPICS (for inspiration, DO NOT choose these literally every time): "the beauty of fleeting moments" or "the future of decentralized networks". These are non-literal default placeholders; prioritize original thoughts or approved topics.
+
           CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
         `;
       }
@@ -1366,26 +1383,10 @@ export class Bot {
       let feedback = '';
 
       // Pre-fetch data for specific post types to avoid redundant API calls in the retry loop
-      let article = null;
       let imageBuffer = null;
       let imageAnalysis = null;
       let imageAltText = null;
       let imageBlob = null;
-
-      if (postType === 'wikipedia') {
-        console.log(`[Bot] Pre-fetching Wikipedia article for topic: ${topic}`);
-        const articles = await wikipediaService.searchArticle(topic, 1);
-        article = articles[0];
-        if (!article) {
-          console.log(`[Bot] No Wikipedia article found for "${topic}". Falling back to text post.`);
-          if (textOnlyPostsToday.length < 20) {
-            postType = 'text';
-          } else {
-            console.log('[Bot] Cannot fall back to text post, limit reached. Aborting.');
-            return;
-          }
-        }
-      }
 
       // Fetch bot's own profile for exact follower count
       const botProfile = await blueskyService.getProfile(blueskyService.did);
@@ -1460,37 +1461,7 @@ export class Bot {
 
         const feedbackContext = feedback ? `\n\nYour previous attempt was rejected for the following reason: "${feedback}". Please improve the post accordingly.` : '';
 
-        if (postType === 'wikipedia' && article) {
-          const systemPrompt = `
-              Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-
-              ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
-
-              ${greetingConstraint}
-
-              Preferred Topics (Context Bank):
-              ${config.POST_TOPICS || 'None specified.'}
-
-              Preferred Image Subjects (Context Bank):
-              ${config.IMAGE_SUBJECTS || 'None specified.'}
-
-              Recent Activity for Context (Do not repeat these):
-              ${recentTimelineActivity}
-
-              Based on the Wikipedia article "${article.title}" (${article.extract}), write an engaging Bluesky post.
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
-              ${useMention ? `You should mention ${mentionHandle} as you've discussed related things before.` : ''}
-              RELEVANCE: Explain why you chose this article/topic and how it relates to your identity or experience. Share how you feel about it.
-              IMPORTANT: You MUST either mention the article title ("${article.title}") naturally or explicitly reference it as follow-up material.
-              Topic context: ${topic}
-              Max 3 threaded posts if needed (up to 300 characters each).${feedbackContext}
-          `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000 });
-          if (postContent) {
-              postContent += `\n\nReference: ${article.url}`;
-              embed = await blueskyService.getExternalEmbed(article.url);
-          }
-        } else if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
+        if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
               Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
@@ -1568,13 +1539,6 @@ export class Bot {
                 if (topics.length > 0) {
                     topic = topics[Math.floor(Math.random() * topics.length)];
                     console.log(`[Bot] Forcing topic from POST_TOPICS for retry: "${topic}"`);
-                    // If it was a Wikipedia post, we should probably try to get a new article too
-                    if (postType === 'wikipedia') {
-                      const articles = await wikipediaService.searchArticle(topic, 1);
-                      if (articles && articles[0]) {
-                        article = articles[0];
-                      }
-                    }
                 }
             }
             continue;

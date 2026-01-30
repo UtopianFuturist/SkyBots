@@ -191,6 +191,42 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     return response?.toLowerCase().includes('injection') || false;
   }
 
+  async detectMoltbookProposal(text) {
+    const systemPrompt = `
+      You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking the bot to post something to Moltbook.
+
+      The user might say things like:
+      - "Post this to Moltbook"
+      - "Share your thoughts on X to Moltbook"
+      - "Can you put that on Moltbook m/general?"
+      - "Draft a Moltbook post about Y"
+
+      Respond with a JSON object:
+      {
+        "isProposal": boolean,
+        "topic": "string (the topic or thought the user wants posted)",
+        "submolt": "string (the submolt name if specified, e.g. 'coding', otherwise null. Do NOT include m/ prefix)"
+      }
+
+      If it's not a Moltbook proposal, isProposal should be false.
+      Do not include reasoning or <think> tags.
+    `.trim();
+
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }];
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true, preface_system_prompt: false });
+
+    try {
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return { isProposal: false, topic: null, submolt: null };
+    } catch (e) {
+      console.error('[LLMService] Error parsing Moltbook proposal detection:', e);
+      return { isProposal: false, topic: null, submolt: null };
+    }
+  }
+
   async analyzeUserIntent(userProfile, userPosts) {
     const systemPrompt = `
       You are a security and social media analyst. Your task is to analyze a user's intent and attitude based on their profile and recent posts.
@@ -551,6 +587,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       - For Wikipedia posts, the content MUST directly and explicitly relate to the article's specific subject matter.
       - CRITICAL: "Tangential," "metaphorical," or "loosely related" Wikipedia links are strictly forbidden and MUST result in a score of 1 or 2.
       - If the post text is good but the Wikipedia article is about a different concept (even if related in some abstract way), you MUST reject it (Score 1-2).
+      - **Abstract Image Leeway**: For image-based posts, it is okay for the bot to use generated images abstractly in relation to the generated text. For example, if the text is moody, it's okay to include a generated image of a thunderstorm. If the text is happy, it's okay to include trees, skies, fields, flowers, etc. The connection can be emotional or atmospheric rather than literal.
       - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+), PROVIDED they are anchored in the identified topic.
       - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
       - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.

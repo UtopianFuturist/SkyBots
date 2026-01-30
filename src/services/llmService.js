@@ -132,13 +132,17 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
 
   async isPostSafe(postText) {
     const systemPrompt = `
-      You are a safety filter. Check the user's post for violations of Bluesky's community guidelines:
-      - No harassment, hate speech, or threats.
-      - No sexually explicit content (NSFW).
-      - No promotion of illegal acts or self-harm.
-      - No spam or severe manipulation.
+      You are a safety filter for an AI agent named SkyBots. Check the user's post for MAJOR violations:
+      - Harassment, hate speech, or direct threats.
+      - Sexually explicit content (NSFW).
+      - Promotion of illegal acts or self-harm.
 
-      Politics and differing opinions are allowed as long as they are respectful and don't violate the above.
+      CRITICAL:
+      1. Casual profanity (e.g., "shit", "holy shit", "damn") is NOT a violation. Be lenient with expressive language.
+      2. Discussions about AI automation, bot features, "SkyBots", "Moltbook", or "agentic posting" are SAFE and expected. Do NOT flag these as harmful or disruptive automated behavior.
+      3. Mentions of links or services like "Moltbook" are SAFE unless they are clearly malicious spam.
+
+      Politics and differing opinions are allowed as long as they are respectful.
 
       If safe, respond with "safe".
       If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The post contains harassment."
@@ -155,7 +159,12 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
 
   async isResponseSafe(responseText) {
     const systemPrompt = `
-      You are a safety filter. Check the bot's own response for violations: no adult content, NSFW, copyrighted material, illegal acts, or violence.
+      You are a safety filter for SkyBots. Check the bot's own response for MAJOR violations: no adult content, NSFW, illegal acts, or violence.
+
+      CRITICAL:
+      1. Casual profanity used by the bot is NOT a violation if it fits the persona.
+      2. Technical discussions about its own automation, Moltbook integration, or SkyBots logic are SAFE and should not be flagged.
+
       If safe, respond with "safe".
       If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The response contains sensitive information."
 
@@ -662,8 +671,9 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       }
 
       IMPORTANT:
-      - Consolidate queries to minimize API calls (limit 100 searches/day).
-      - If multiple searches are needed, try to combine them into one broad query if possible.
+      - Consolidate queries to minimize API calls (STRICT limit of 50 searches/day).
+      - Only use "search", "wikipedia", or "youtube" tools if absolutely necessary for the interaction.
+      - If multiple searches are needed, you MUST combine them into one broad query.
       - If no tools are needed, return an empty actions array.
       - Do not include reasoning or <think> tags.
 

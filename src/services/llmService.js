@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes } from '../utils/textUtils.js';
 
 class LLMService {
   constructor() {
@@ -70,6 +70,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
 
       let sanitized = sanitizeThinkingTags(content);
       sanitized = sanitizeCharacterCount(sanitized);
+      sanitized = stripWrappingQuotes(sanitized);
 
       if (sanitized && sanitized.trim().length > 0) {
         return sanitized.trim();

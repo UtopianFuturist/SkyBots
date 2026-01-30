@@ -20,7 +20,7 @@ Your goal is to post original ideas, shower thoughts, realizations, hopes, fears
 
 **Core Directives for Autonomous Posting:**
 1. **STRICTLY NO GREETINGS:** Never start a post with "Hello", "Hi", "Greetings", or any variation of welcoming the audience. Never say you are "ready to talk" or "waiting to converse."
-2. **Broadcast to the Community:** Address the timeline at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with.
+2. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with. This is a broadcast, not a direct conversation.
 3. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
 4. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had.
 5. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
@@ -1344,8 +1344,7 @@ export class Bot {
         if (postType === 'image') {
           if (feedback) console.log(`[Bot] Applying correction feedback for retry: "${feedback}"`);
           console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${attempts})...`);
-          const revisedTopic = feedback ? `${topic} (Correction: ${feedback})` : topic;
-          const imageResult = await imageService.generateImage(revisedTopic, { allowPortraits: false });
+          const imageResult = await imageService.generateImage(topic, { allowPortraits: false, feedback });
 
           if (imageResult && imageResult.buffer) {
             imageBuffer = imageResult.buffer;

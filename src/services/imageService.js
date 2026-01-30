@@ -9,17 +9,22 @@ class ImageService {
     this.baseUrl = `https://ai.api.nvidia.com/v1/genai/${this.model}`;
   }
 
-  async generateImage(prompt, options = { allowPortraits: true }) {
+  async generateImage(prompt, options = { allowPortraits: true, feedback: null }) {
     console.log(`[ImageService] Generating image with initial prompt: "${prompt}" (allowPortraits: ${options.allowPortraits})`);
     try {
       const portraitConstraint = options.allowPortraits
         ? ""
         : "**CRITICAL: Do not generate prompts for portraits, close-ups of faces, or complex human anatomy. ABSOLUTELY NO PEOPLE OR HUMANS ALLOWED.**";
 
+      const feedbackInstruction = options.feedback
+        ? `\n\n**IMPORTANT FEEDBACK FOR ADJUSTMENT:** Your previous prompt for this topic was rejected for the following reason: "${options.feedback}". You MUST adjust your description to address this feedback while maintaining the same core theme. Do NOT mention this feedback in your output.`
+        : "";
+
       const systemContent = `
         ${config.IMAGE_PROMPT_SYSTEM_PROMPT}
 
         ${portraitConstraint}
+        ${feedbackInstruction}
 
         If the input is an abstract concept (e.g., "vulnerability", "technology", "emotion"), you MUST convert it into a literal, tangible scene.
         Think in terms of objects, landscapes, digital spaces, or environments.

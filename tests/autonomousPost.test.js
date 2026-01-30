@@ -153,7 +153,7 @@ Decentralized Social Media`);
 
     await bot.performAutonomousPost();
 
-    expect(imageService.generateImage).toHaveBeenCalledWith(topic, { allowPortraits: false });
+    expect(imageService.generateImage).toHaveBeenCalledWith(topic, { allowPortraits: false, feedback: '' });
     expect(llmService.isImageCompliant).toHaveBeenCalled();
     expect(blueskyService.post).toHaveBeenCalledWith(
       'Here is a thought about technology.',

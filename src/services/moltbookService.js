@@ -62,12 +62,16 @@ class MoltbookService {
 
       const data = await response.json();
       if (data.agent) {
-        console.log(`[Moltbook] ==========================================`);
-        console.log(`[Moltbook] REGISTRATION SUCCESSFUL!`);
-        console.log(`[Moltbook] API KEY: ${data.agent.api_key}`);
-        console.log(`[Moltbook] CLAIM URL: ${data.agent.claim_url}`);
-        console.log(`[Moltbook] VERIFICATION CODE: ${data.agent.verification_code}`);
-        console.log(`[Moltbook] ==========================================`);
+        console.log(`[Moltbook] ##################################################`);
+        console.log(`[Moltbook] #                                                #`);
+        console.log(`[Moltbook] #        MOLTBOOK REGISTRATION SUCCESSFUL!       #`);
+        console.log(`[Moltbook] #                                                #`);
+        console.log(`[Moltbook] # [Moltbook-API-Key] ${data.agent.api_key}`);
+        console.log(`[Moltbook] #                                                #`);
+        console.log(`[Moltbook] # CLAIM URL: ${data.agent.claim_url}`);
+        console.log(`[Moltbook] # VERIFICATION CODE: ${data.agent.verification_code}`);
+        console.log(`[Moltbook] #                                                #`);
+        console.log(`[Moltbook] ##################################################`);
         console.log(`[Moltbook] IMPORTANT: Visit the claim URL above and tweet the verification code.`);
 
         this.db.data.api_key = data.agent.api_key;

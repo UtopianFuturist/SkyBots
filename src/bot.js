@@ -55,18 +55,28 @@ export class Bot {
 
     // Moltbook Registration Check
     console.log('[Bot] Checking Moltbook registration...');
+    const hasEnvKey = config.MOLTBOOK_API_KEY && config.MOLTBOOK_API_KEY !== 'undefined' && config.MOLTBOOK_API_KEY !== 'null';
     let status = null;
-    if (moltbookService.db.data.api_key) {
-      console.log('[Moltbook] API key found. Checking status...');
-      status = await moltbookService.checkStatus();
-      console.log(`[Moltbook] Current status: ${status}`);
-    }
 
-    if (!moltbookService.db.data.api_key || status === 'invalid_key') {
-      console.log('[Moltbook] No valid API key found. Starting registration...');
+    if (!hasEnvKey) {
+      console.log('[Moltbook] MOLTBOOK_API_KEY environment variable is missing. FORCING new registration to obtain a fresh key.');
+      if (moltbookService.db.data.api_key) {
+        console.log(`[Moltbook] Abandoning existing local API key: ${moltbookService.db.data.api_key.substring(0, 8)}...`);
+      }
       const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
       const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
       await moltbookService.register(name, description);
+    } else {
+      console.log('[Moltbook] API key found in environment variables. Checking status...');
+      status = await moltbookService.checkStatus();
+      console.log(`[Moltbook] Current status: ${status}`);
+
+      if (status === 'invalid_key') {
+        console.log('[Moltbook] API key is invalid. Re-registering...');
+        const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
+        const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
+        await moltbookService.register(name, description);
+      }
     }
 
     try {
@@ -492,7 +502,54 @@ export class Bot {
       return;
     }
 
-    // 5. Agentic Planning & Tool Use with Qwen
+    // 5. Image Recognition (Thread-wide and quoted posts)
+    let imageAnalysisResult = '';
+    const imagesToAnalyze = [];
+
+    // Collect images from the thread
+    for (const post of threadData) {
+        if (post.images) {
+            for (const img of post.images) {
+                // Avoid duplicates
+                if (!imagesToAnalyze.some(existing => existing.url === img.url)) {
+                    imagesToAnalyze.push({ ...img, author: post.author });
+                }
+            }
+        }
+    }
+
+    // Collect images from quoted post if not already handled (quote notifications)
+    if (notif.reason === 'quote') {
+        const quotedPostUri = notif.record.embed?.record?.uri;
+        if (quotedPostUri) {
+            const quotedPost = await blueskyService.getPostDetails(quotedPostUri);
+            if (quotedPost) {
+                const quotedImages = this._extractImages(quotedPost);
+                for (const img of quotedImages) {
+                    if (!imagesToAnalyze.some(existing => existing.url === img.url)) {
+                        imagesToAnalyze.push(img);
+                    }
+                }
+            }
+        }
+    }
+
+    if (imagesToAnalyze.length > 0) {
+      console.log(`[Bot] ${imagesToAnalyze.length} images detected in context. Starting analysis...`);
+      for (const img of imagesToAnalyze) {
+        console.log(`[Bot] Analyzing thread image from @${img.author}...`);
+        const analysis = await llmService.analyzeImage(img.url, img.alt);
+        if (analysis) {
+          imageAnalysisResult += `[Image in post by @${img.author}: ${analysis}] `;
+          console.log(`[Bot] Successfully analyzed thread image from @${img.author}.`);
+        } else {
+          console.warn(`[Bot] Analysis returned empty for thread image from @${img.author}.`);
+        }
+      }
+      console.log(`[Bot] Thread-wide image analysis complete.`);
+    }
+
+    // 6. Agentic Planning & Tool Use with Qwen
     console.log(`[Bot] Performing agentic planning with Qwen for: "${text.substring(0, 50)}..."`);
     const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult);
     console.log(`[Bot] Agentic Plan: ${JSON.stringify(plan)}`);
@@ -570,53 +627,6 @@ export class Bot {
           searchContext += `\n[Consolidated Search: "${bestResult.title}". Content: ${fullContent || bestResult.snippet}]`;
         }
       }
-    }
-
-    // 6. Image Recognition (Thread-wide and quoted posts)
-    let imageAnalysisResult = '';
-    const imagesToAnalyze = [];
-
-    // Collect images from the thread
-    for (const post of threadData) {
-        if (post.images) {
-            for (const img of post.images) {
-                // Avoid duplicates
-                if (!imagesToAnalyze.some(existing => existing.url === img.url)) {
-                    imagesToAnalyze.push({ ...img, author: post.author });
-                }
-            }
-        }
-    }
-
-    // Collect images from quoted post if not already handled (quote notifications)
-    if (notif.reason === 'quote') {
-        const quotedPostUri = notif.record.embed?.record?.uri;
-        if (quotedPostUri) {
-            const quotedPost = await blueskyService.getPostDetails(quotedPostUri);
-            if (quotedPost) {
-                const quotedImages = this._extractImages(quotedPost);
-                for (const img of quotedImages) {
-                    if (!imagesToAnalyze.some(existing => existing.url === img.url)) {
-                        imagesToAnalyze.push(img);
-                    }
-                }
-            }
-        }
-    }
-
-    if (imagesToAnalyze.length > 0) {
-      console.log(`[Bot] ${imagesToAnalyze.length} images detected in context. Starting analysis...`);
-      for (const img of imagesToAnalyze) {
-        console.log(`[Bot] Analyzing thread image from @${img.author}...`);
-        const analysis = await llmService.analyzeImage(img.url, img.alt);
-        if (analysis) {
-          imageAnalysisResult += `[Image in post by @${img.author}: ${analysis}] `;
-          console.log(`[Bot] Successfully analyzed thread image from @${img.author}.`);
-        } else {
-          console.warn(`[Bot] Analysis returned empty for thread image from @${img.author}.`);
-        }
-      }
-      console.log(`[Bot] Thread-wide image analysis complete.`);
     }
 
     // 6. Profile Picture (PFP) analysis intent

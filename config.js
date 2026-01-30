@@ -87,7 +87,13 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   BACKOFF_DELAY: parseInt(process.env.BACKOFF_DELAY || '60000'),
   MAX_REPLIED_POSTS: parseInt(process.env.MAX_REPLIED_POSTS || '1000'),
   LLM_MODEL: process.env.LLM_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5',
+  QWEN_MODEL: process.env.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct',
   VISION_MODEL: process.env.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct',
+
+  // Moltbook
+  MOLTBOOK_API_KEY: process.env.MOLTBOOK_API_KEY,
+  MOLTBOOK_AGENT_NAME: process.env.MOLTBOOK_AGENT_NAME,
+  MOLTBOOK_DESCRIPTION: process.env.MOLTBOOK_DESCRIPTION,
 };
 
 // Validate configuration
@@ -101,6 +107,8 @@ console.log(`[Config] Loaded YOUTUBE_API_KEY: ${config.YOUTUBE_API_KEY ? 'Exists
 console.log(`[Config] Loaded MANUAL_CLEANUP_TOKEN: ${config.MANUAL_CLEANUP_TOKEN ? 'Exists' : 'Optional (not set)'}`);
 console.log(`[Config] Loaded POST_TOPICS: ${config.POST_TOPICS ? 'Exists' : 'Optional (not set)'}`);
 console.log(`[Config] Loaded IMAGE_SUBJECTS: ${config.IMAGE_SUBJECTS ? 'Exists' : 'Optional (not set)'}`);
+console.log(`[Config] Loaded QWEN_MODEL: ${config.QWEN_MODEL}`);
+console.log(`[Config] Loaded MOLTBOOK_API_KEY: ${config.MOLTBOOK_API_KEY ? 'Exists' : 'Optional (will register on startup if missing)'}`);
 
 
 export default config;

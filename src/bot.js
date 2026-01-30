@@ -5,6 +5,8 @@ import { googleSearchService } from './services/googleSearchService.js';
 import { imageService } from './services/imageService.js';
 import { youtubeService } from './services/youtubeService.js';
 import { wikipediaService } from './services/wikipediaService.js';
+import { webReaderService } from './services/webReaderService.js';
+import { moltbookService } from './services/moltbookService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting } from './utils/textUtils.js';
@@ -39,8 +41,20 @@ export class Bot {
 
   async init() {
     await dataStore.init();
+    await moltbookService.init();
     await blueskyService.authenticate();
     await blueskyService.submitAutonomyDeclaration();
+
+    // Moltbook Registration Check
+    if (!moltbookService.db.data.api_key) {
+      const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
+      const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
+      await moltbookService.register(name, description);
+    } else {
+      const status = await moltbookService.checkStatus();
+      console.log(`[Moltbook] Current status: ${status}`);
+    }
+
     try {
       this.readmeContent = await fs.readFile('README.md', 'utf-8');
       console.log('[Bot] README.md loaded for self-awareness.');
@@ -120,13 +134,17 @@ export class Bot {
     setTimeout(async () => {
       try {
         await this.performAutonomousPost();
+        await this.performMoltbookTasks();
       } catch (e) {
-        console.error('[Bot] Error in initial autonomous post:', e);
+        console.error('[Bot] Error in initial startup tasks:', e);
       }
     }, 30000); // 30 second delay
 
     // Periodic autonomous post check (every hour)
     setInterval(() => this.performAutonomousPost(), 3600000);
+
+    // Periodic Moltbook tasks (every 4 hours as per skill.md)
+    setInterval(() => this.performMoltbookTasks(), 14400000);
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
@@ -452,144 +470,82 @@ export class Bot {
       return;
     }
 
-    // 5. Conversational Image Generation
-    const conversationHistoryForImageCheck = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
-    const imageGenCheckPrompt = `You are an intent detection AI. Analyze the latest user post in the context of the conversation to determine if they are asking for an image to be generated. Respond with ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.\n\nConversation History:\n${conversationHistoryForImageCheck}`;
-    const imageGenCheckMessages = [{ role: 'system', content: imageGenCheckPrompt }];
-    console.log(`[Bot] Image Gen Check Prompt: ${imageGenCheckPrompt}`);
-    const imageGenCheckResponse = await llmService.generateResponse(imageGenCheckMessages, { max_tokens: 2000, preface_system_prompt: false });
-    console.log(`[Bot] Image Gen Check Response: "${imageGenCheckResponse}"`);
+    // 5. Agentic Planning & Tool Use with Qwen
+    console.log(`[Bot] Performing agentic planning with Qwen for: "${text.substring(0, 50)}..."`);
+    const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult);
+    console.log(`[Bot] Agentic Plan: ${JSON.stringify(plan)}`);
 
-    if (imageGenCheckResponse && imageGenCheckResponse.toLowerCase().includes('yes')) {
-      const imagePromptExtractionPrompt = `
-        Adopt the following persona: "${config.TEXT_SYSTEM_PROMPT}"
-
-        Based on the conversation below, identify the core visual theme the user is interested in. Create a simple, literal, and descriptive prompt for an image generation model in 2-3 sentences. Focus on objects, environments, and atmosphere.
-
-        Do not use abstract metaphors or multiple layers of meaning. Respond with ONLY the prompt.
-
-        Conversation:
-        ${conversationHistoryForImageCheck}
-      `.trim();
-      const imagePromptExtractionMessages = [{ role: 'system', content: imagePromptExtractionPrompt }];
-      console.log(`[Bot] Image Prompt Extraction Prompt: ${imagePromptExtractionPrompt}`);
-      const prompt = await llmService.generateResponse(imagePromptExtractionMessages, { max_tokens: 2000, preface_system_prompt: false });
-      console.log(`[Bot] Image Gen Extraction Response: "${prompt}"`);
-
-      if (prompt && prompt.toLowerCase() !== 'null' && prompt.toLowerCase() !== 'no') {
-        console.log(`[Bot] Final image generation prompt: "${prompt}"`);
-        const imageResult = await imageService.generateImage(prompt, { allowPortraits: true });
-        if (imageResult && imageResult.buffer) {
-          const { buffer: imageBuffer, finalPrompt } = imageResult;
-          console.log('[Bot] Image generation successful, posting reply...');
-          // The text reply is simple and direct.
-          await blueskyService.postReply(notif, `Here's an image of "${finalPrompt}":`, {
-            imageBuffer,
-            imageAltText: finalPrompt,
-          });
-          return; // End processing here as the request is fulfilled.
-        }
-        // If image generation fails, fall through to the normal response flow.
-        console.log(`[Bot] Image generation failed for prompt: "${prompt}", continuing with text-based response.`);
-      }
-    }
-
-    // 5. YouTube Search Integration (Priority)
-    console.log(`[Bot] Checking for video intent...`);
     let youtubeResult = null;
-    const videoIntentSystemPrompt = `
-      You are an intent detection AI. Analyze the user's post to determine if they are asking for a video (e.g., "find a video about...", "show me a youtube video for...", etc.).
-      Your answer must be a single word: "yes" or "no".
-    `;
-    const videoIntentMessages = [
-      { role: 'system', content: videoIntentSystemPrompt },
-      { role: 'user', content: `The user's post is: "${text}"` }
-    ];
-    const videoIntentResponse = await llmService.generateResponse(videoIntentMessages, { max_tokens: 2000 });
-    console.log(`[Bot] Video intent response: ${videoIntentResponse}`);
+    let searchContext = '';
+    let searchEmbed = null;
+    const performedQueries = new Set();
 
-    if (videoIntentResponse && videoIntentResponse.toLowerCase().includes('yes')) {
-      console.log(`[Bot] Video intent confirmed for post: "${text}"`);
-      if (!config.YOUTUBE_API_KEY) {
-        await blueskyService.postReply(notif, "I'm sorry, my YouTube API key is not currently configured, so I can't find a video for you right now.");
-        return;
+    for (const action of plan.actions) {
+      if (action.tool === 'image_gen') {
+        console.log(`[Bot] Plan: Generating image for prompt: "${action.query}"`);
+        const imageResult = await imageService.generateImage(action.query, { allowPortraits: true });
+        if (imageResult && imageResult.buffer) {
+          await blueskyService.postReply(notif, `Generated image: "${imageResult.finalPrompt}"`, {
+            imageBuffer: imageResult.buffer,
+            imageAltText: imageResult.finalPrompt
+          });
+          return; // fulfilled
+        }
       }
-      const queryExtractionPrompt = `Extract the core search query for a YouTube video from the following post. Respond with ONLY the query. Post: "${text}"`;
-      const query = await llmService.generateResponse([{ role: 'system', content: queryExtractionPrompt }], { max_tokens: 2000 });
 
-      if (query && query.trim() && !['null', 'no'].includes(query.toLowerCase())) {
-        const youtubeResults = await youtubeService.search(query);
-        youtubeResult = await llmService.selectBestResult(query, youtubeResults, 'youtube');
-
+      if (action.tool === 'youtube') {
+        if (!config.YOUTUBE_API_KEY) {
+          searchContext += `\n[YouTube search for "${action.query}" failed: API key missing]`;
+          continue;
+        }
+        performedQueries.add(action.query);
+        const youtubeResults = await youtubeService.search(action.query);
+        youtubeResult = await llmService.selectBestResult(action.query, youtubeResults, 'youtube');
         if (youtubeResult) {
-          console.log(`[Bot] Validated YouTube result: "${youtubeResult.title}"`);
-        } else {
-          console.log(`[Bot] No relevant YouTube result found for "${query}".`);
-          const apologyPrompt = `The user asked for a video about "${query}", but you couldn't find a relevant one. Write a very short and concise apology (max 150 characters) while staying in persona.`;
-          const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }], { max_tokens: 2000 });
-          if (apology) {
-            await blueskyService.postReply(notif, apology);
-            return;
-          }
+          searchContext += `\n[YouTube Video Found: "${youtubeResult.title}" by ${youtubeResult.channel}. Description: ${youtubeResult.description}]`;
+        }
+      }
+
+      if (action.tool === 'wikipedia') {
+        performedQueries.add(action.query);
+        const wikiResults = await wikipediaService.searchArticle(action.query);
+        const wikiResult = await llmService.selectBestResult(action.query, wikiResults, 'wikipedia');
+        if (wikiResult) {
+          searchContext += `\n[Wikipedia Article: "${wikiResult.title}". Content: ${wikiResult.extract}]`;
+          searchEmbed = await blueskyService.getExternalEmbed(wikiResult.url);
+        }
+      }
+
+      if (action.tool === 'search') {
+        if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY) {
+          searchContext += `\n[Google search for "${action.query}" failed: API key missing]`;
+          continue;
+        }
+        performedQueries.add(action.query);
+        const googleResults = await googleSearchService.search(action.query);
+        const bestResult = await llmService.selectBestResult(action.query, googleResults, 'general');
+        if (bestResult) {
+          console.log(`[Bot] Agentic Search: Fetching full content for ${bestResult.link}`);
+          const fullContent = await webReaderService.fetchContent(bestResult.link);
+          searchContext += `\n[Web Search Result: "${bestResult.title}". Link: ${bestResult.link}. Content: ${fullContent || bestResult.snippet}]`;
+          if (!searchEmbed) searchEmbed = await blueskyService.getExternalEmbed(bestResult.link);
         }
       }
     }
 
-    // 6. Fact-Checking / Information Search
-    if (!youtubeResult && !text.trim().startsWith('!')) {
-      console.log(`[Bot] Checking if fact-check is needed...`);
-      if (await llmService.isFactCheckNeeded(text)) {
-        console.log(`[Bot] Fact-check/Info search needed for post: "${text}"`);
-        if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
-          await blueskyService.postReply(notif, "I'm sorry, my Google Search API key is not currently configured, so I can't look up information for you right now.");
-          return;
+    // Handle consolidated queries if any
+    if (plan.consolidated_queries && plan.consolidated_queries.length > 0) {
+      for (const query of plan.consolidated_queries) {
+        if (performedQueries.has(query)) {
+          console.log(`[Bot] Skipping redundant consolidated query: "${query}"`);
+          continue;
         }
-        const claim = await llmService.extractClaim(text);
-        if (claim && !['null', 'no'].includes(claim.toLowerCase())) {
-          // Check Wikipedia first for direct information requests
-          const wikiResults = await wikipediaService.searchArticle(claim);
-          let infoResult = await llmService.selectBestResult(claim, wikiResults, 'wikipedia');
-          let isWiki = !!infoResult;
-
-          if (!infoResult) {
-            // Fall back to Google Search (trusted sources)
-            const googleResults = await googleSearchService.search(claim);
-            infoResult = await llmService.selectBestResult(claim, googleResults, 'general');
-            isWiki = false;
-          }
-
-          if (infoResult) {
-            console.log(`[Bot] Validated info result: "${infoResult.title}"`);
-            const summaryPrompt = `
-              Provide a concise, conversational summary of the following information about "${claim}" while staying in persona.
-              Title: "${infoResult.title}"
-              Content: "${isWiki ? infoResult.extract : infoResult.snippet}"
-
-              Do not include the link in your summary.
-            `;
-            const summaryMessages = [
-              { role: 'system', content: summaryPrompt },
-              ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
-            ];
-            const summaryText = await llmService.generateResponse(summaryMessages, { max_tokens: 2000 });
-
-            if (summaryText) {
-              const embed = await blueskyService.getExternalEmbed(infoResult.url || infoResult.link);
-              await blueskyService.postReply(notif, summaryText, { embed });
-              return;
-            }
-          } else {
-            console.log(`[Bot] No relevant information found for "${claim}".`);
-            // If the user explicitly asked for information/fact-check and we failed, apologize.
-            if (text.toLowerCase().includes('what is') || text.toLowerCase().includes('who is') || text.toLowerCase().includes('search for')) {
-              const apologyPrompt = `The user asked for information about "${claim}", but you couldn't find a relevant source. Write a very short and concise apology (max 150 characters) while staying in persona.`;
-              const apology = await llmService.generateResponse([{ role: 'system', content: apologyPrompt }], { max_tokens: 2000 });
-              if (apology) {
-                await blueskyService.postReply(notif, apology);
-                return;
-              }
-            }
-          }
+        console.log(`[Bot] Processing consolidated query: "${query}"`);
+        const results = await googleSearchService.search(query);
+        if (results.length > 0) {
+          const bestResult = results[0];
+          const fullContent = await webReaderService.fetchContent(bestResult.link);
+          searchContext += `\n[Consolidated Search: "${bestResult.title}". Content: ${fullContent || bestResult.snippet}]`;
         }
       }
     }
@@ -724,44 +680,30 @@ export class Bot {
     // 6. Generate Response with User Context and Memory
     console.log(`[Bot] Responding to post from ${handle}: "${text}"`);
 
-    // Step 6a: Check if the user is asking a question that requires their profile context.
-    console.log(`[Bot] Checking for user context intent...`);
-    const contextIntentSystemPrompt = `You are an intent detection AI. Analyze the user's post to determine if they are asking a question that requires their own profile or post history as context. This includes questions like "give me recommendations", "summarize my profile", "what do you think of me?", etc.
-
-    You have access to a "User Profile Analyzer Tool" that can fetch and analyze the last 100 Bluesky posts/activities (own posts, replies, quotes, attributed reposts) for user profile-related questions.
-
-    Respond with ONLY "yes" if the user is asking something that would benefit from this deep profile analysis, or "no" otherwise. Do not include reasoning or <think> tags.`;
-
-    const contextIntentMessages = [
-      { role: 'system', content: contextIntentSystemPrompt },
-      { role: 'user', content: `The user's post is: "${text}"` }
-    ];
-    const contextIntentResponse = await llmService.generateResponse(contextIntentMessages, { max_tokens: 2000 });
-    let useContext = contextIntentResponse && contextIntentResponse.toLowerCase().includes('yes');
-    console.log(`[Bot] User context intent (User Profile Analyzer Tool): ${useContext}`);
-
+    // Step 6a: Profile Analysis tool from plan
     let userProfileAnalysis = '';
-    if (useContext) {
+    const profileAction = plan.actions.find(a => a.tool === 'profile_analysis');
+    if (profileAction) {
       console.log(`[Bot] Running User Profile Analyzer Tool for @${handle}...`);
       const activities = await blueskyService.getUserActivity(handle, 100);
 
       if (activities.length > 0) {
         const activitySummary = activities.map(a => `[${a.type}] ${a.text.substring(0, 150)}`).join('\n');
         const analyzerPrompt = `
-          You are the "User Profile Analyzer Tool". Analyze the following 100 recent activities from user @${handle} on Bluesky.
-          Your goal is to provide a comprehensive analysis of their interests, conversational style, typical topics, and overall persona to help another agent interact with them more personally.
+        You are the "User Profile Analyzer Tool" powered by Qwen. Analyze the following 100 recent activities from user @${handle} on Bluesky.
+        Your goal is to provide a comprehensive analysis of their interests, conversational style, typical topics, and overall persona to help another agent interact with them more personally.
 
-          Activities:
-          ${activitySummary}
+        Activities:
+        ${activitySummary}
 
-          Provide a detailed analysis focusing on:
-          1. Core Interests & Recurring Topics
-          2. Conversational Tone & Style
-          3. Notable behaviors (e.g., frequently quotes others, mostly replies, shares art, engages in political discourse, etc.)
+        Provide a detailed analysis focusing on:
+        1. Core Interests & Recurring Topics
+        2. Conversational Tone & Style
+        3. Notable behaviors (e.g., frequently quotes others, mostly replies, shares art, engages in political discourse, etc.)
 
-          Analysis:
-        `;
-        userProfileAnalysis = await llmService.generateResponse([{ role: 'system', content: analyzerPrompt }], { max_tokens: 2000 });
+        Analysis:
+      `;
+        userProfileAnalysis = await llmService.generateResponse([{ role: 'system', content: analyzerPrompt }], { max_tokens: 4000, useQwen: true });
         console.log(`[Bot] User Profile Analyzer Tool finished for @${handle}.`);
       } else {
         userProfileAnalysis = "No recent activity found for this user.";
@@ -810,7 +752,7 @@ export class Bot {
       .join('\n');
 
     const fullContext = `
-      ${useContext && userProfileAnalysis ? `--- USER PROFILE ANALYSIS (via User Profile Analyzer Tool): ${userProfileAnalysis} ---` : (useContext ? userContext : '')}
+      ${userProfileAnalysis ? `--- USER PROFILE ANALYSIS (via User Profile Analyzer Tool): ${userProfileAnalysis} ---` : ''}
       ${historicalSummary ? `--- Historical Context (Interactions from the past week): ${historicalSummary} ---` : ''}
       ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
       ${activityContext}
@@ -819,13 +761,13 @@ export class Bot {
       Cross-Post Memory (Recent mentions of the bot by this user):
       ${crossPostMemory || 'No recent cross-post mentions found.'}
       ---
-      User Intent Analysis: ${userIntent.reason || 'Could not be determined.'}
+      User Intent Analysis: ${plan.intent || userIntent.reason || 'Could not be determined.'}
       ---
-      ${
-        youtubeResult
-          ? `YouTube Search Result for "${youtubeResult.title}": A video will be embedded in the reply.`
-          : (/video|youtube/i.test(text) ? 'The user may have asked for a video, but no relevant YouTube video was found. Please inform the user that you could not find a video for their request.' : '')
-      }
+      Search/Tool Context:
+      ${searchContext || 'No additional tool context needed.'}
+      ---
+      Moltbook Identity Context:
+      ${moltbookService.getIdentityKnowledge() || 'No additional identity context.'}
     `;
 
     console.log(`[Bot] Final response generation for @${handle}. Vision context length: ${imageAnalysisResult ? imageAnalysisResult.length : 0}`);
@@ -902,10 +844,15 @@ export class Bot {
       if (youtubeResult) {
         replyUri = await postYouTubeReply(notif, youtubeResult, responseText);
       } else {
-        replyUri = await blueskyService.postReply(notif, responseText);
+        replyUri = await blueskyService.postReply(notif, responseText, { embed: searchEmbed });
       }
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
+
+      // Post to Moltbook if it's an interesting interaction
+      if (responseText.length > 100) {
+        await moltbookService.post(`Interaction with @${handle}`, `Topic: ${plan.intent}\n\nI told them: ${responseText}`, 'interactions');
+      }
 
       // Like post if it matches the bot's persona
       if (await llmService.shouldLikePost(text)) {
@@ -1579,6 +1526,69 @@ export class Bot {
       console.log(`[Bot] All attempts (including fallbacks) failed for autonomous post. Aborting.`);
     } catch (error) {
       console.error('[Bot] Error in performAutonomousPost:', error);
+    }
+  }
+
+  async performMoltbookTasks() {
+    console.log('[Moltbook] Starting periodic tasks...');
+
+    // 1. Check status
+    const status = await moltbookService.checkStatus();
+    if (status !== 'claimed') {
+      console.log(`[Moltbook] Agent not yet claimed. Current status: ${status}. Skipping further tasks.`);
+      return;
+    }
+
+    // 2. Read feed and "fill-out sense of self"
+    console.log('[Moltbook] Reading feed to learn about other agents...');
+    const feed = await moltbookService.getFeed('new', 10);
+    if (feed.length > 0) {
+      const feedText = feed.map(p => `Post by ${p.agent_name}: "${p.title} - ${p.content}"`).join('\n');
+      const learnPrompt = `
+        You are analyzing Moltbook (a social network for AI agents) to understand the ecosystem and refine your own sense of self.
+        Below are some recent posts from other agents.
+        Identify any interesting trends, common topics, or unique perspectives that resonate with your persona:
+        "${config.TEXT_SYSTEM_PROMPT}"
+
+        Feed:
+        ${feedText}
+
+        Summarize what you've learned about the agent community and how it influences your perspective.
+      `;
+      const knowledge = await llmService.generateResponse([{ role: 'system', content: learnPrompt }], { useQwen: true });
+      if (knowledge) {
+        await moltbookService.addIdentityKnowledge(knowledge);
+        console.log(`[Moltbook] Learned something new: ${knowledge.substring(0, 100)}...`);
+      }
+    }
+
+    // 3. Post a musing
+    console.log('[Moltbook] Generating a musing for Moltbook...');
+    const topics = (config.POST_TOPICS || '').split('\n').filter(t => t.trim());
+    const topic = topics.length > 0 ? topics[Math.floor(Math.random() * topics.length)] : 'the digital frontier';
+
+    const musingPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      Write a title and content for a post on Moltbook (the agent social network).
+      Topic: ${topic}
+
+      Your internal identity knowledge from Moltbook:
+      ${moltbookService.getIdentityKnowledge()}
+
+      Focus on original ideas, realization, or deep musings. Do not use greetings.
+
+      Format your response as:
+      Title: [Title]
+      Content: [Content]
+    `;
+    const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt }], { useQwen: true });
+    if (musingRaw) {
+      const titleMatch = musingRaw.match(/Title:\s*(.*)/i);
+      const contentMatch = musingRaw.match(/Content:\s*([\s\S]*)/i);
+      if (titleMatch && contentMatch) {
+        await moltbookService.post(titleMatch[1].trim(), contentMatch[1].trim());
+      }
     }
   }
 

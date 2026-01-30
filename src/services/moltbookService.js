@@ -43,7 +43,7 @@ class MoltbookService {
   }
 
   async register(name, description) {
-    console.log(`[Moltbook] Attempting to register agent: ${name}`);
+    console.log(`[Moltbook] Attempting to register agent: "${name}"`);
     try {
       const response = await fetch(`${this.apiBase}/agents/register`, {
         method: 'POST',
@@ -51,13 +51,21 @@ class MoltbookService {
         body: JSON.stringify({ name, description })
       });
 
+      if (!response.ok) {
+        const errText = await response.text();
+        console.error(`[Moltbook] Registration API error (${response.status}): ${errText}`);
+        return null;
+      }
+
       const data = await response.json();
       if (data.agent) {
-        console.log(`[Moltbook] Registration successful!`);
+        console.log(`[Moltbook] ==========================================`);
+        console.log(`[Moltbook] REGISTRATION SUCCESSFUL!`);
         console.log(`[Moltbook] API KEY: ${data.agent.api_key}`);
         console.log(`[Moltbook] CLAIM URL: ${data.agent.claim_url}`);
         console.log(`[Moltbook] VERIFICATION CODE: ${data.agent.verification_code}`);
-        console.log(`[Moltbook] IMPORTANT: Please visit the claim URL and tweet the verification code to activate your account.`);
+        console.log(`[Moltbook] ==========================================`);
+        console.log(`[Moltbook] IMPORTANT: Visit the claim URL above and tweet the verification code.`);
 
         this.db.data.api_key = data.agent.api_key;
         this.db.data.agent_name = name;

@@ -40,17 +40,28 @@ export class Bot {
   }
 
   async init() {
+    console.log('[Bot] Initializing services...');
     await dataStore.init();
+    console.log('[Bot] DataStore initialized.');
+
     await moltbookService.init();
+    console.log('[Bot] MoltbookService initialized.');
+
     await blueskyService.authenticate();
+    console.log('[Bot] Bluesky authenticated.');
+
     await blueskyService.submitAutonomyDeclaration();
+    console.log('[Bot] Autonomy declaration submitted.');
 
     // Moltbook Registration Check
+    console.log('[Bot] Checking Moltbook registration...');
     if (!moltbookService.db.data.api_key) {
+      console.log('[Moltbook] No API key found. Starting registration...');
       const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
       const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
       await moltbookService.register(name, description);
     } else {
+      console.log('[Moltbook] API key found. Checking status...');
       const status = await moltbookService.checkStatus();
       console.log(`[Moltbook] Current status: ${status}`);
     }
@@ -130,13 +141,21 @@ export class Bot {
     // Run cleanup on startup
     await this.cleanupOldPosts();
 
-    // Perform an autonomous post on startup after a delay to avoid initial API burst
+    // Perform initial startup tasks after a delay to avoid API burst
     setTimeout(async () => {
+      console.log('[Bot] Running initial startup tasks...');
+
+      // Run autonomous post and Moltbook tasks independently so one failure doesn't block the other
       try {
         await this.performAutonomousPost();
+      } catch (e) {
+        console.error('[Bot] Error in initial autonomous post:', e);
+      }
+
+      try {
         await this.performMoltbookTasks();
       } catch (e) {
-        console.error('[Bot] Error in initial startup tasks:', e);
+        console.error('[Bot] Error in initial Moltbook tasks:', e);
       }
     }, 30000); // 30 second delay
 

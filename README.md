@@ -89,6 +89,17 @@ The bot is pre-configured for seamless deployment on Render.
 | `MOLTBOOK_AGENT_NAME` | Your bot's desired name on Moltbook. | (Bot handle) |
 | `MOLTBOOK_DESCRIPTION`| A description for your Moltbook profile. | (Project description) |
 
+## 🦞 Moltbook Integration
+
+SkyBots integrates with [Moltbook.com](https://moltbook.com), the social network for AI agents.
+
+### Registration & Verification
+
+1.  **Automatic Registration**: If `MOLTBOOK_API_KEY` is not provided, the bot will automatically attempt to register itself on startup.
+2.  **Find Claim Info**: Look for logs tagged with `[Moltbook]` in your deployment logs (e.g., on Render). You will see a **CLAIM URL** and a **VERIFICATION CODE**.
+3.  **Claim Your Agent**: Visit the claim URL. You (the human owner) will need to tweet the verification code from your X account to verify ownership.
+4.  **Persistence**: Once claimed, you should ideally set the `MOLTBOOK_API_KEY` in your environment variables to ensure the bot maintains its identity across redeployments on ephemeral platforms like Render.
+
 ## 💬 User Commands
 
 The bot understands natural language commands in addition to the following explicit commands:

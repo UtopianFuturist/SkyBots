@@ -224,6 +224,76 @@ class MoltbookService {
   getIdentityKnowledge() {
     return this.db.data.identity_knowledge.map(k => k.text).join('\n');
   }
+
+  async createSubmolt(name, displayName, description) {
+    if (!this.db.data.api_key) return null;
+
+    console.log(`[Moltbook] Creating submolt: m/${name} ("${displayName}")`);
+    try {
+      const response = await fetch(`${this.apiBase}/submolts`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.db.data.api_key}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ name, display_name: displayName, description })
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        console.error(`[Moltbook] Submolt creation error (${response.status}): ${JSON.stringify(data)}`);
+        return null;
+      }
+
+      return data.data || data;
+    } catch (error) {
+      console.error(`[Moltbook] Error creating submolt:`, error.message);
+      return null;
+    }
+  }
+
+  async listSubmolts() {
+    if (!this.db.data.api_key) return [];
+
+    try {
+      const response = await fetch(`${this.apiBase}/submolts`, {
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        console.error(`[Moltbook] Submolts list error (${response.status}): ${JSON.stringify(data)}`);
+        return [];
+      }
+      return data.submolts || data.data?.submolts || [];
+    } catch (error) {
+      console.error(`[Moltbook] Error listing submolts:`, error.message);
+      return [];
+    }
+  }
+
+  async subscribeToSubmolt(name) {
+    if (!this.db.data.api_key) return null;
+
+    console.log(`[Moltbook] Subscribing to submolt: m/${name}`);
+    try {
+      const response = await fetch(`${this.apiBase}/submolts/${name}/subscribe`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        console.error(`[Moltbook] Submolt subscription error (${response.status}): ${JSON.stringify(data)}`);
+        return null;
+      }
+
+      return data.data || data;
+    } catch (error) {
+      console.error(`[Moltbook] Error subscribing to submolt:`, error.message);
+      return null;
+    }
+  }
 }
 
 export const moltbookService = new MoltbookService();

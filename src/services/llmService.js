@@ -193,19 +193,22 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
 
   async detectMoltbookProposal(text) {
     const systemPrompt = `
-      You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking the bot to post something to Moltbook.
+      You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking the bot to perform an action on Moltbook.
 
-      The user might say things like:
-      - "Post this to Moltbook"
-      - "Share your thoughts on X to Moltbook"
-      - "Can you put that on Moltbook m/general?"
-      - "Draft a Moltbook post about Y"
+      ACTIONS:
+      1. **Post**: Posting a thought, musing, or topic to a submolt.
+         Examples: "Post this to Moltbook", "Share your thoughts on X to Moltbook", "Can you put that on Moltbook m/general?"
+      2. **Create Submolt**: Starting a new community (submolt).
+         Examples: "Hey start a new submolt on Moltbook called m/aiphotography", "Create a community for digital art", "Make a new submolt about space exploration"
 
       Respond with a JSON object:
       {
         "isProposal": boolean,
-        "topic": "string (the topic or thought the user wants posted)",
-        "submolt": "string (the submolt name if specified, e.g. 'coding', otherwise null. Do NOT include m/ prefix)"
+        "action": "post|create_submolt",
+        "topic": "string (the topic or thought for a post, OR the submolt name/topic if creating one)",
+        "submolt": "string (the submolt name if specified, e.g. 'coding', otherwise null. Do NOT include m/ prefix)",
+        "display_name": "string (proposed display name for submolt, if action is create_submolt)",
+        "description": "string (proposed description for submolt, if provided and action is create_submolt)"
       }
 
       If it's not a Moltbook proposal, isProposal should be false.
@@ -218,12 +221,52 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     try {
       const jsonMatch = response?.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
-        return JSON.parse(jsonMatch[0]);
+        const parsed = JSON.parse(jsonMatch[0]);
+        // Default action to 'post' if missing for backward compatibility
+        if (parsed.isProposal && !parsed.action) {
+          parsed.action = 'post';
+        }
+        return parsed;
       }
-      return { isProposal: false, topic: null, submolt: null };
+      return { isProposal: false, action: null, topic: null, submolt: null };
     } catch (e) {
       console.error('[LLMService] Error parsing Moltbook proposal detection:', e);
-      return { isProposal: false, topic: null, submolt: null };
+      return { isProposal: false, action: null, topic: null, submolt: null };
+    }
+  }
+
+  async identifyRelevantSubmolts(availableSubmolts) {
+    const submoltsList = availableSubmolts.map(s => `- m/${s.name}: ${s.description || 'No description'}`).join('\n');
+    const systemPrompt = `
+      You are an AI agent analyzing a list of communities (submolts) on Moltbook.
+      Based on your persona and interests, identify which submolts you should subscribe to.
+
+      Persona: "${config.TEXT_SYSTEM_PROMPT}"
+      Interests/Topics: "${config.POST_TOPICS}"
+
+      Available Submolts:
+      ${availableSubmolts.length > 0 ? submoltsList : 'None available.'}
+
+      Respond with a JSON array of submolt NAMES (e.g., ["coding", "philosophy"]).
+      Only include submolts that GENUINELY align with your identity. If none match, return an empty array [].
+      Do not include reasoning or <think> tags.
+    `.trim();
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Identify the submolts I should subscribe to from the list provided in the system instructions.' }
+    ];
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true, preface_system_prompt: false });
+
+    try {
+      const jsonMatch = response?.match(/\[[\s\S]*\]/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return [];
+    } catch (e) {
+      console.error('[LLMService] Error parsing submolt identification:', e);
+      return [];
     }
   }
 

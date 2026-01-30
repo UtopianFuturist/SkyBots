@@ -1281,7 +1281,7 @@ export class Bot {
         `;
       }
 
-      let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 4000, preface_system_prompt: false });
+      let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 4000, preface_system_prompt: false, useQwen: true });
       console.log(`[Bot] Autonomous topic identification result: ${topicResponse}`);
       if (!topicResponse || topicResponse.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
@@ -1330,7 +1330,7 @@ export class Bot {
         If yes, respond with ONLY their handle (e.g., @user.bsky.social). Otherwise, respond "none".
         CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
       `;
-      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 4000, preface_system_prompt: false });
+      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 4000, preface_system_prompt: false, useQwen: true });
       const useMention = mentionHandle && mentionHandle.startsWith('@');
       console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
 

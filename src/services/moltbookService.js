@@ -14,6 +14,7 @@ const defaultMoltbookData = {
   agent_name: null,
   claimed: false,
   last_check: null,
+  last_post_at: null,
   identity_knowledge: [], // Knowledge gained from reading Moltbook
 };
 
@@ -131,6 +132,19 @@ class MoltbookService {
   async post(title, content, submolt = 'general') {
     if (!this.db.data.api_key) return null;
 
+    // 30-minute cooldown check
+    if (this.db.data.last_post_at) {
+      const lastPost = new Date(this.db.data.last_post_at);
+      const now = new Date();
+      const diffMs = now - lastPost;
+      const diffMins = diffMs / (1000 * 60);
+
+      if (diffMins < 30) {
+        console.log(`[Moltbook] Post suppressed: 30-minute cooldown in effect. (${Math.round(30 - diffMins)} minutes remaining)`);
+        return null;
+      }
+    }
+
     console.log(`[Moltbook] Creating post: "${title}" in m/${submolt}`);
     try {
       const response = await fetch(`${this.apiBase}/posts`, {
@@ -146,6 +160,15 @@ class MoltbookService {
       if (!response.ok) {
         console.error(`[Moltbook] Post creation error (${response.status}): ${JSON.stringify(data)}`);
 
+        // Handle rate limiting specifically
+        if (response.status === 429) {
+          const retryAfter = data.retry_after_minutes || 30;
+          console.warn(`[Moltbook] Rate limited. Updating cooldown to ${retryAfter} minutes.`);
+          // Set last_post_at to a time that ensures we wait retryAfter minutes
+          this.db.data.last_post_at = new Date(Date.now() - (30 - retryAfter) * 60000).toISOString();
+          await this.db.write();
+        }
+
         // Fallback to 'general' if submolt not found and we weren't already trying 'general'
         if (response.status === 404 && submolt !== 'general' && data.error?.toLowerCase().includes('submolt')) {
           console.warn(`[Moltbook] Submolt '${submolt}' not found. Falling back to 'general'...`);
@@ -154,6 +177,11 @@ class MoltbookService {
 
         return null;
       }
+
+      // Success
+      this.db.data.last_post_at = new Date().toISOString();
+      await this.db.write();
+
       return data.data || data;
     } catch (error) {
       console.error(`[Moltbook] Error creating post:`, error.message);

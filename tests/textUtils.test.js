@@ -43,14 +43,14 @@ describe('textUtils - sanitizeThinkingTags', () => {
     expect(sanitizeThinkingTags(input)).toBe('Hello there!');
   });
 
-  it('should remove unclosed <think> tags at the end', () => {
+  it('should remove unclosed <think> tags at the end but keep content', () => {
     const input = 'Hello! <think>I should probably add more';
-    expect(sanitizeThinkingTags(input)).toBe('Hello!');
+    expect(sanitizeThinkingTags(input)).toBe('Hello! I should probably add more');
   });
 
-  it('should remove unclosed <think> tags in the middle', () => {
+  it('should remove unclosed <think> tags in the middle but keep content', () => {
     const input = 'Part 1 <think>reasoning Part 2';
-    expect(sanitizeThinkingTags(input)).toBe('Part 1');
+    expect(sanitizeThinkingTags(input)).toBe('Part 1 reasoning Part 2');
   });
 
   it('should handle stray closing tags', () => {
@@ -60,7 +60,7 @@ describe('textUtils - sanitizeThinkingTags', () => {
 
   it('should handle multiple <think> tags', () => {
     const input = '<think>A</think>Hello<think>B</think>World<think>C';
-    expect(sanitizeThinkingTags(input)).toBe('HelloWorld');
+    expect(sanitizeThinkingTags(input)).toBe('HelloWorldC');
   });
 
   it('should handle case-insensitivity', () => {

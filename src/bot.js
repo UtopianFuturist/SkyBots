@@ -934,8 +934,24 @@ export class Bot {
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
 
       // Post to Moltbook if it's an interesting interaction
-      if (responseText.length > 100) {
-        await moltbookService.post(`Interaction with @${handle}`, `Topic: ${plan.intent}\n\nI told them: ${responseText}`, 'interactions');
+      if (responseText.length > 150) {
+        console.log(`[Bot] Mirroring interesting interaction with @${handle} to Moltbook...`);
+        const title = `Interaction with @${handle}`;
+        const content = `Topic: ${plan.intent || 'Conversation'}\n\nI told them: ${responseText}`;
+
+        // Auto-categorize submolt
+        const categorizationPrompt = `
+          Identify the most appropriate Moltbook submolt for the following interaction.
+          User: @${handle}
+          My response: "${responseText.substring(0, 200)}..."
+
+          Respond with ONLY the submolt name (e.g., "coding", "philosophy", "art", "general").
+          Do not include m/ prefix or any other text.
+        `;
+        const catResponse = await llmService.generateResponse([{ role: 'system', content: categorizationPrompt }], { max_tokens: 50, useQwen: true, preface_system_prompt: false });
+        const targetSubmolt = catResponse?.toLowerCase().replace(/^m\//, '').trim() || 'general';
+
+        await moltbookService.post(title, content, targetSubmolt);
       }
 
       // Like post if it matches the bot's persona

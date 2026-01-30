@@ -145,6 +145,13 @@ class MoltbookService {
       const data = await response.json();
       if (!response.ok) {
         console.error(`[Moltbook] Post creation error (${response.status}): ${JSON.stringify(data)}`);
+
+        // Fallback to 'general' if submolt not found and we weren't already trying 'general'
+        if (response.status === 404 && submolt !== 'general' && data.error?.toLowerCase().includes('submolt')) {
+          console.warn(`[Moltbook] Submolt '${submolt}' not found. Falling back to 'general'...`);
+          return this.post(title, content, 'general');
+        }
+
         return null;
       }
       return data.data || data;

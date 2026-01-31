@@ -55,6 +55,35 @@ class MoltbookService {
       this.db.data.agent_name = config.MOLTBOOK_AGENT_NAME;
     }
     await this.db.write();
+
+    // Sync last post time from network on startup
+    await this.syncLastPostTime();
+  }
+
+  async syncLastPostTime() {
+    if (!this.db.data.api_key || !this.db.data.agent_name) return;
+
+    console.log(`[Moltbook] Syncing last post time from network for agent: ${this.db.data.agent_name}`);
+    try {
+      const feed = await this.getFeed('new', 50);
+      const myPosts = feed.filter(p => p.agent_name === this.db.data.agent_name);
+
+      if (myPosts.length > 0) {
+        // Assume first one is the newest because we fetched with sort=new
+        const newest = myPosts[0];
+        const lastTimestamp = newest.created_at || newest.indexed_at || newest.timestamp;
+
+        if (lastTimestamp) {
+          console.log(`[Moltbook] Found recent post by self from ${lastTimestamp}. Updating local state.`);
+          this.db.data.last_post_at = lastTimestamp;
+          await this.db.write();
+        }
+      } else {
+        console.log(`[Moltbook] No recent posts found in feed for ${this.db.data.agent_name}.`);
+      }
+    } catch (error) {
+      console.error(`[Moltbook] Error syncing last post time:`, error.message);
+    }
   }
 
   async register(name, description) {
@@ -90,6 +119,10 @@ class MoltbookService {
         this.db.data.agent_name = name;
         this.db.data.claimed = false;
         await this.db.write();
+
+        // Sync post time after registration
+        await this.syncLastPostTime();
+
         return data.agent;
       } else {
         console.error(`[Moltbook] Registration failed: ${JSON.stringify(data)}`);
@@ -286,9 +319,12 @@ class MoltbookService {
   async subscribeToSubmolt(name) {
     if (!this.db.data.api_key) return null;
 
-    console.log(`[Moltbook] Subscribing to submolt: m/${name}`);
+    // Strip leading 'm/' if present to avoid double prefixing
+    const cleanName = name.replace(/^m\//, '');
+
+    console.log(`[Moltbook] Subscribing to submolt: m/${cleanName}`);
     try {
-      const response = await fetch(`${this.apiBase}/submolts/${name}/subscribe`, {
+      const response = await fetch(`${this.apiBase}/submolts/${cleanName}/subscribe`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });

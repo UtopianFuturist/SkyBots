@@ -236,7 +236,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
   }
 
   async identifyRelevantSubmolts(availableSubmolts) {
-    const submoltsList = availableSubmolts.map(s => `- m/${s.name}: ${s.description || 'No description'}`).join('\n');
+    const submoltsList = availableSubmolts.map(s => `- ${s.name}: ${s.description || 'No description'}`).join('\n');
     const systemPrompt = `
       You are an AI agent analyzing a list of communities (submolts) on Moltbook.
       Based on your persona and interests, identify which submolts you should subscribe to.
@@ -248,6 +248,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       ${availableSubmolts.length > 0 ? submoltsList : 'None available.'}
 
       Respond with a JSON array of submolt NAMES (e.g., ["coding", "philosophy"]).
+      CRITICAL: Do NOT include the "m/" prefix in the names.
       Only include submolts that GENUINELY align with your identity. If none match, return an empty array [].
       Do not include reasoning or <think> tags.
     `.trim();

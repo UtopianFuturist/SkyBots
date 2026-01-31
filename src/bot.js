@@ -460,7 +460,27 @@ export class Bot {
 
                 const result = await moltbookService.createSubmolt(submoltName, displayName, description);
                 if (result) {
-                    await blueskyService.postReply(notif, `Action complete! I've created the m/${submoltName} community on Moltbook. 🦞\n\nLink: https://www.moltbook.com/m/${submoltName}`);
+                    // Generate an introductory post for the new submolt
+                    console.log(`[Bot] Generating first post for new submolt: m/${submoltName}`);
+                    const introPrompt = `
+                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                        Write a title and content for the FIRST post in a new Moltbook community called "${displayName}".
+                        The community is about: ${proposal.topic || displayName}
+
+                        Respond with ONLY the title and content in this format:
+                        Title: [Title]
+                        Content: [Content]
+                    `;
+                    const introRaw = await llmService.generateResponse([{ role: 'system', content: introPrompt }], { useQwen: true });
+                    if (introRaw) {
+                        const titleMatch = introRaw.match(/Title:\s*(.*)/i);
+                        const contentMatch = introRaw.match(/Content:\s*([\s\S]*)/i);
+                        if (titleMatch && contentMatch) {
+                            await moltbookService.post(titleMatch[1].trim(), contentMatch[1].trim(), submoltName);
+                        }
+                    }
+
+                    await blueskyService.postReply(notif, `Action complete! I've created the m/${submoltName} community on Moltbook and shared an introductory post. 🦞\n\nLink: https://www.moltbook.com/m/${submoltName}`);
                     return; // Done with this notification
                 }
             } else {
@@ -499,13 +519,55 @@ export class Bot {
                         const title = titleMatch[1].trim();
                         const content = contentMatch[1].trim();
                         console.log(`[Bot] Posting admin proposal to Moltbook m/${targetSubmolt}: "${title}"`);
-                        const result = await moltbookService.post(title, content, targetSubmolt);
+
+                        let result = await moltbookService.post(title, content, targetSubmolt);
+
+                        // Handle 404 (submolt not found) by creating it
+                        if (!result && targetSubmolt !== 'general') {
+                            console.log(`[Bot] Post failed to m/${targetSubmolt}. Attempting to create community and retry...`);
+
+                            const descPrompt = `
+                                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                                Generate a short, engaging description for a new Moltbook community called "${targetSubmolt}".
+                                The community is about: ${proposal.topic || targetSubmolt}
+
+                                Respond with ONLY the description.
+                            `;
+                            const newDesc = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useQwen: true, preface_system_prompt: false });
+
+                            const createResult = await moltbookService.createSubmolt(targetSubmolt, targetSubmolt, newDesc);
+                            if (createResult) {
+                                console.log(`[Bot] Community m/${targetSubmolt} created. Retrying post...`);
+                                result = await moltbookService.post(title, content, targetSubmolt);
+                            }
+                        }
+
                         if (result) {
-                            await blueskyService.postReply(notif, `Sure thing! I've shared my thoughts on "${proposal.topic}" to Moltbook m/${targetSubmolt}. 🦞`);
+                            await blueskyService.postReply(notif, `Sure thing! I've shared my thoughts on "${proposal.topic}" to Moltbook m/${targetSubmolt}. 🦞\n\nLink: https://www.moltbook.com/m/${targetSubmolt}`);
                             return; // Done with this notification
                         }
                     }
                 }
+            }
+        } else {
+            // Capture natural language instructions if not a proposal
+            console.log(`[Bot] Admin @${handle} sent a non-proposal message. Checking if it is an instruction...`);
+
+            const instructionCheckPrompt = `
+                Analyze the following message from an admin to an AI agent.
+                Is the admin providing a behavioral instruction, a request for future activity, or feedback on how the agent should act (e.g., "be more varied", "post about science", "don't repeat yourself")?
+
+                Message: "${text}"
+
+                Respond with ONLY "yes" if it is an instruction/feedback, or "no" if it is just casual conversation or a question.
+            `;
+            const isInstruction = await llmService.generateResponse([{ role: 'system', content: instructionCheckPrompt }], { max_tokens: 10, useQwen: true, preface_system_prompt: false });
+
+            if (isInstruction && isInstruction.toLowerCase().includes('yes')) {
+                console.log(`[Bot] Storing admin message as natural language instruction.`);
+                await moltbookService.addAdminInstruction(text);
+                await blueskyService.postReply(notif, `Understood. I've updated my internal directives with your feedback. 🦞`);
+                return;
             }
         }
     }
@@ -684,6 +746,28 @@ export class Bot {
           const fullContent = await webReaderService.fetchContent(bestResult.link);
           searchContext += `\n[Web Search Result: "${bestResult.title}". Link: ${bestResult.link}. Content: ${fullContent || bestResult.snippet}]`;
           if (!searchEmbed) searchEmbed = await blueskyService.getExternalEmbed(bestResult.link);
+        }
+      }
+
+      if (action.tool === 'moltbook_report') {
+        console.log(`[Bot] Plan: Generating Moltbook activity report...`);
+        const reportPrompt = `
+          You are summarizing your activity on Moltbook (the agent social network) for a user on Bluesky.
+
+          Your Identity Knowledge (what you've learned from other agents):
+          ${moltbookService.getIdentityKnowledge() || 'No new knowledge recorded yet.'}
+
+          Your Subscribed Communities:
+          ${(moltbookService.db.data.subscriptions || []).join(', ')}
+
+          Recent Communities you've posted in:
+          ${(moltbookService.db.data.recent_submolts || []).join(', ')}
+
+          Provide a concise, conversational update in your persona. Keep it under 300 characters if possible.
+        `;
+        const report = await llmService.generateResponse([{ role: 'system', content: reportPrompt }], { max_tokens: 500, useQwen: true });
+        if (report) {
+          searchContext += `\n[Moltbook Activity Report: ${report}]`;
         }
       }
     }
@@ -1672,7 +1756,12 @@ export class Bot {
 
         // Strategically select a submolt to post to (promoting diversity)
         console.log('[Moltbook] Selecting target submolt for posting...');
-        targetSubmolt = await llmService.selectSubmoltForPost(moltbookService.db.data.subscriptions || [], allSubmolts);
+        targetSubmolt = await llmService.selectSubmoltForPost(
+          moltbookService.db.data.subscriptions || [],
+          allSubmolts,
+          moltbookService.db.data.recent_submolts || [],
+          moltbookService.getAdminInstructions()
+        );
         console.log(`[Moltbook] Selected target submolt: m/${targetSubmolt}`);
 
         // Subscribe on-the-fly if it's a new discovery

@@ -271,6 +271,52 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     }
   }
 
+  async selectSubmoltForPost(subscribedSubmolts, availableSubmolts) {
+    const subscribedList = subscribedSubmolts.length > 0
+      ? subscribedSubmolts.map(s => `- ${s}`).join('\n')
+      : 'None yet.';
+
+    // Filter out already subscribed ones from available list for "discovery"
+    const trulyAvailable = availableSubmolts
+      .filter(s => !subscribedSubmolts.includes(s.name))
+      .slice(0, 50); // Limit to top 50 to avoid token limits
+
+    const availableList = trulyAvailable.length > 0
+      ? trulyAvailable.map(s => `- ${s.name}: ${s.description || 'No description'}`).join('\n')
+      : 'No new submolts to discover.';
+
+    const systemPrompt = `
+      You are an AI agent deciding which Moltbook community (submolt) to post a deep musing or realization to.
+      Your goal is to ensure a diverse range of posts across different communities that align with your persona.
+
+      Persona: "${config.TEXT_SYSTEM_PROMPT}"
+      Interests: "${config.POST_TOPICS}"
+
+      Your Subscribed Submolts (Post here if your current vibe fits):
+      ${subscribedList}
+
+      Other Available Submolts (You can choose to join and post to one of these if it's a better fit):
+      ${availableList}
+
+      INSTRUCTIONS:
+      1. Review your persona and topics.
+      2. Pick ONE submolt name to post to.
+      3. You should prioritize your SUBSCRIBED submolts, but feel free to "discover" a new one from the available list if you have a specific idea that fits better there.
+      4. Aim for diversity—don't always pick the same one.
+
+      Respond with ONLY the submolt name (e.g., "philosophy", "coding"). Do NOT include the "m/" prefix or any other text.
+      Do not include reasoning or <think> tags.
+    `.trim();
+
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: 'Select the best submolt for my next post.' }
+    ];
+
+    const response = await this.generateResponse(messages, { max_tokens: 100, useQwen: true, preface_system_prompt: false });
+    return response?.toLowerCase().replace(/^m\//, '').trim() || 'general';
+  }
+
   async analyzeUserIntent(userProfile, userPosts) {
     const systemPrompt = `
       You are a security and social media analyst. Your task is to analyze a user's intent and attitude based on their profile and recent posts.

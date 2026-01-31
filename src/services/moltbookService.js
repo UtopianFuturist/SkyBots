@@ -16,6 +16,7 @@ const defaultMoltbookData = {
   last_check: null,
   last_post_at: null,
   identity_knowledge: [], // Knowledge gained from reading Moltbook
+  subscriptions: [], // Persisted submolt subscriptions
 };
 
 class MoltbookService {
@@ -333,6 +334,15 @@ class MoltbookService {
       if (!response.ok) {
         console.error(`[Moltbook] Submolt subscription error (${response.status}): ${JSON.stringify(data)}`);
         return null;
+      }
+
+      // Persist the subscription
+      if (!this.db.data.subscriptions) {
+        this.db.data.subscriptions = [];
+      }
+      if (!this.db.data.subscriptions.includes(cleanName)) {
+        this.db.data.subscriptions.push(cleanName);
+        await this.db.write();
       }
 
       return data.data || data || { success: true };

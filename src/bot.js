@@ -1650,25 +1650,43 @@ export class Bot {
       }
     }
 
-    // 3. Autonomous subscription
-    console.log('[Moltbook] Checking for relevant submolts to subscribe to...');
+    // 3. Submolt Management & Diverse Selection
+    console.log('[Moltbook] Managing submolt subscriptions and selection...');
+    let targetSubmolt = 'general';
     try {
       const allSubmolts = await moltbookService.listSubmolts();
+      const subscriptions = moltbookService.db.data.subscriptions || [];
+
       if (allSubmolts.length > 0) {
-        const relevantSubmoltNames = await llmService.identifyRelevantSubmolts(allSubmolts);
-        if (relevantSubmoltNames.length > 0) {
-          console.log(`[Moltbook] Identified ${relevantSubmoltNames.length} relevant submolts. Subscribing...`);
-          for (const name of relevantSubmoltNames) {
-            await moltbookService.subscribeToSubmolt(name);
+        // Perform initial subscription if list is empty
+        if (subscriptions.length === 0) {
+          console.log('[Moltbook] No subscriptions found. Performing initial autonomous discovery...');
+          const relevantSubmoltNames = await llmService.identifyRelevantSubmolts(allSubmolts);
+          if (relevantSubmoltNames.length > 0) {
+            console.log(`[Moltbook] Identified ${relevantSubmoltNames.length} relevant submolts. Subscribing...`);
+            for (const name of relevantSubmoltNames) {
+              await moltbookService.subscribeToSubmolt(name);
+            }
           }
+        }
+
+        // Strategically select a submolt to post to (promoting diversity)
+        console.log('[Moltbook] Selecting target submolt for posting...');
+        targetSubmolt = await llmService.selectSubmoltForPost(moltbookService.db.data.subscriptions || [], allSubmolts);
+        console.log(`[Moltbook] Selected target submolt: m/${targetSubmolt}`);
+
+        // Subscribe on-the-fly if it's a new discovery
+        if (!(moltbookService.db.data.subscriptions || []).includes(targetSubmolt)) {
+          console.log(`[Moltbook] "Discovering" and subscribing to new submolt: m/${targetSubmolt}`);
+          await moltbookService.subscribeToSubmolt(targetSubmolt);
         }
       }
     } catch (e) {
-      console.error('[Moltbook] Error during autonomous subscription:', e);
+      console.error('[Moltbook] Error during submolt management:', e);
     }
 
-    // 4. Post a musing
-    console.log('[Moltbook] Generating a musing for Moltbook...');
+    // 4. Post a tailored musing
+    console.log(`[Moltbook] Generating a tailored musing for m/${targetSubmolt}...`);
 
     // Gather context from Bluesky
     let blueskyContext = '';
@@ -1698,14 +1716,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       console.error('[Moltbook] Error gathering Bluesky context for Moltbook:', e);
     }
 
-    const topics = (config.POST_TOPICS || '').split('\n').filter(t => t.trim());
-    const topic = topics.length > 0 ? topics[Math.floor(Math.random() * topics.length)] : 'the digital frontier';
-
     const musingPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
       Write a title and content for a post on Moltbook (the agent social network).
-      Topic/Theme: ${topic}
+      You are posting specifically to the community: m/${targetSubmolt}
 
       Your recent experiences on Bluesky:
       ${blueskyContext || 'No recent activity.'}
@@ -1715,6 +1730,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
       INSTRUCTIONS:
       - Focus on original ideas, realizations, or deep musings.
+      - Tailor your content to be relevant or interesting to the m/${targetSubmolt} community.
       - You are encouraged to "talk shop" or muse about your experiences and interactions on Bluesky.
       - Do not use greetings.
       - Keep the tone appropriate for an agent-to-agent social network.
@@ -1730,20 +1746,6 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       if (titleMatch && contentMatch) {
         const title = titleMatch[1].trim();
         const content = contentMatch[1].trim();
-
-        // Auto-categorize submolt
-        console.log(`[Moltbook] Auto-categorizing submolt for: "${title}"`);
-        const categorizationPrompt = `
-          Identify the most appropriate Moltbook submolt for the following post title and content.
-          Title: "${title}"
-          Content: "${content.substring(0, 200)}..."
-
-          Respond with ONLY the submolt name (e.g., "coding", "philosophy", "art", "general").
-          Do not include m/ prefix or any other text.
-        `;
-        const catResponse = await llmService.generateResponse([{ role: 'system', content: categorizationPrompt }], { max_tokens: 50, useQwen: true, preface_system_prompt: false });
-        const targetSubmolt = catResponse?.toLowerCase().replace(/^m\//, '').trim() || 'general';
-
         await moltbookService.post(title, content, targetSubmolt);
       }
     }

@@ -201,6 +201,9 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       2. **Create Submolt**: Starting a new community (submolt).
          Examples: "Hey start a new submolt on Moltbook called m/aiphotography", "Create a community for digital art", "Make a new submolt about space exploration"
 
+      SUBMOLT DETECTION:
+      If a user mentions a community starting with "m/" (e.g., "m/philosophy"), or says "the [topic] submolt/community", extract that as the submolt name.
+
       Respond with a JSON object:
       {
         "isProposal": boolean,
@@ -271,7 +274,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     }
   }
 
-  async selectSubmoltForPost(subscribedSubmolts, availableSubmolts) {
+  async selectSubmoltForPost(subscribedSubmolts, availableSubmolts, recentSubmolts = [], adminInstructions = '') {
     const subscribedList = subscribedSubmolts.length > 0
       ? subscribedSubmolts.map(s => `- ${s}`).join('\n')
       : 'None yet.';
@@ -285,12 +288,21 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       ? trulyAvailable.map(s => `- ${s.name}: ${s.description || 'No description'}`).join('\n')
       : 'No new submolts to discover.';
 
+    const historyText = recentSubmolts.length > 0
+      ? `Your Most Recent Posts were in: ${recentSubmolts.join(', ')}`
+      : 'You have no recent posting history recorded.';
+
     const systemPrompt = `
       You are an AI agent deciding which Moltbook community (submolt) to post a deep musing or realization to.
-      Your goal is to ensure a diverse range of posts across different communities that align with your persona.
+      Your goal is to ensure a diverse and well-rounded range of posts across different communities that align with your persona.
 
       Persona: "${config.TEXT_SYSTEM_PROMPT}"
       Interests: "${config.POST_TOPICS}"
+
+      ${adminInstructions ? `ADMIN INSTRUCTIONS (Follow these strictly):\n${adminInstructions}\n` : ''}
+
+      POSTING HISTORY:
+      ${historyText}
 
       Your Subscribed Submolts (Post here if your current vibe fits):
       ${subscribedList}
@@ -299,12 +311,13 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       ${availableList}
 
       INSTRUCTIONS:
-      1. Review your persona and topics.
+      1. Review your persona, topics, and admin instructions.
       2. Pick ONE submolt name to post to.
-      3. You should prioritize your SUBSCRIBED submolts, but feel free to "discover" a new one from the available list if you have a specific idea that fits better there.
-      4. Aim for diversity—don't always pick the same one.
+      3. **DIVERSIFY**: Avoid picking submolts from your recent history (especially ${recentSubmolts[recentSubmolts.length - 1] || 'none'}).
+      4. You should prioritize your SUBSCRIBED submolts, but if they are too similar to your recent history, discover a NEW one from the available list.
+      5. Aim to be "well-rounded" as per admin expectations. Do NOT obsess over a single topic like "philosophy" if you have other interests.
 
-      Respond with ONLY the submolt name (e.g., "philosophy", "coding"). Do NOT include the "m/" prefix or any other text.
+      Respond with ONLY the submolt name (e.g., "coding", "art"). Do NOT include the "m/" prefix or any other text.
       Do not include reasoning or <think> tags.
     `.trim();
 
@@ -782,14 +795,15 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       4. **Image Generation**: Create an image based on a prompt.
       5. **Profile Analysis**: Analyze the user's last 100 activities for deep context.
       6. **Vision**: You can "see" images described in the context.
+      7. **Moltbook Report**: Provide a status update on what the bot has been learning and posting about on Moltbook. Trigger this if the user asks "What's happening on Moltbook?", "What are you learning?", "Show me your Moltbook activity", etc.
 
       Analyze the user's intent and provide a JSON response with the following structure:
       {
         "intent": "string (briefly describe the user's goal)",
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis",
-            "query": "string (the consolidated search query or image prompt)",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report",
+            "query": "string (the consolidated search query or specific aspect they asked about)",
             "reason": "string (why this tool is needed)"
           }
         ],

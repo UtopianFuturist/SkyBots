@@ -17,6 +17,8 @@ const defaultMoltbookData = {
   last_post_at: null,
   identity_knowledge: [], // Knowledge gained from reading Moltbook
   subscriptions: [], // Persisted submolt subscriptions
+  recent_submolts: [], // History of submolts posted to
+  admin_instructions: [], // Instructions from bot admin
 };
 
 class MoltbookService {
@@ -77,6 +79,10 @@ class MoltbookService {
         if (lastTimestamp) {
           console.log(`[Moltbook] Found recent post by self from ${lastTimestamp}. Updating local state.`);
           this.db.data.last_post_at = lastTimestamp;
+
+          // Also recover recent submolts (last 10)
+          this.db.data.recent_submolts = myPosts.slice(0, 10).map(p => p.submolt || p.submolt_name).filter(s => s);
+
           await this.db.write();
         }
       } else {
@@ -225,6 +231,14 @@ class MoltbookService {
 
       // Success
       this.db.data.last_post_at = new Date().toISOString();
+
+      // Track history (keep last 10)
+      if (!this.db.data.recent_submolts) this.db.data.recent_submolts = [];
+      this.db.data.recent_submolts.push(submolt);
+      if (this.db.data.recent_submolts.length > 10) {
+        this.db.data.recent_submolts.shift();
+      }
+
       await this.db.write();
 
       return data.data || data;
@@ -268,6 +282,26 @@ class MoltbookService {
 
   getIdentityKnowledge() {
     return this.db.data.identity_knowledge.map(k => k.text).join('\n');
+  }
+
+  async addAdminInstruction(instruction) {
+    if (!this.db.data.admin_instructions) {
+      this.db.data.admin_instructions = [];
+    }
+    this.db.data.admin_instructions.push({
+      text: instruction,
+      timestamp: new Date().toISOString()
+    });
+    // Keep last 20
+    if (this.db.data.admin_instructions.length > 20) {
+      this.db.data.admin_instructions.shift();
+    }
+    await this.db.write();
+  }
+
+  getAdminInstructions() {
+    if (!this.db.data.admin_instructions) return '';
+    return this.db.data.admin_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
   }
 
   async createSubmolt(name, displayName, description) {

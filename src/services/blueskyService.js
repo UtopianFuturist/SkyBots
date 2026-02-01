@@ -513,6 +513,58 @@ class BlueskyService {
     }
   }
 
+  async follow(actor) {
+    try {
+      const profile = await this.getProfile(actor);
+      const res = await this.agent.follow(profile.did);
+      console.log(`[BlueskyService] Followed ${actor} (${profile.did})`);
+      return res;
+    } catch (error) {
+      console.error(`[BlueskyService] Error following ${actor}:`, error);
+      return null;
+    }
+  }
+
+  async unfollow(actor) {
+    try {
+      const profile = await this.getProfile(actor);
+      if (profile.viewer?.following) {
+        await this.agent.deleteFollow(profile.viewer.following);
+        console.log(`[BlueskyService] Unfollowed ${actor}`);
+        return true;
+      }
+      console.warn(`[BlueskyService] Not following ${actor}.`);
+      return false;
+    } catch (error) {
+      console.error(`[BlueskyService] Error unfollowing ${actor}:`, error);
+      return false;
+    }
+  }
+
+  async mute(actor) {
+    try {
+      const profile = await this.getProfile(actor);
+      await this.agent.muteActor(profile.did);
+      console.log(`[BlueskyService] Muted ${actor} (${profile.did})`);
+      return true;
+    } catch (error) {
+      console.error(`[BlueskyService] Error muting ${actor}:`, error);
+      return false;
+    }
+  }
+
+  async unmute(actor) {
+    try {
+      const profile = await this.getProfile(actor);
+      await this.agent.unmuteActor(profile.did);
+      console.log(`[BlueskyService] Unmuted ${actor} (${profile.did})`);
+      return true;
+    } catch (error) {
+      console.error(`[BlueskyService] Error unmuting ${actor}:`, error);
+      return false;
+    }
+  }
+
   async getExternalEmbed(url) {
     try {
       console.log(`[BlueskyService] Generating external embed for: ${url}`);

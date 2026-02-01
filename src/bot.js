@@ -434,143 +434,6 @@ export class Bot {
         }
     }
 
-    // 4b. Handle Moltbook Proposals from Admin
-    if (handle === config.ADMIN_BLUESKY_HANDLE) {
-        console.log(`[Bot] Checking for Moltbook proposal from admin @${handle}...`);
-        const proposal = await llmService.detectMoltbookProposal(text);
-        if (proposal.isProposal) {
-            console.log(`[Bot] Moltbook proposal detected: action="${proposal.action}", topic="${proposal.topic}", submolt="${proposal.submolt}"`);
-
-            if (proposal.action === 'create_submolt') {
-                const submoltName = proposal.submolt || (proposal.topic || 'new-community').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-                const displayName = proposal.display_name || proposal.topic || submoltName;
-                let description = proposal.description;
-
-                if (!description) {
-                    console.log(`[Bot] Generating description for new submolt: m/${submoltName}`);
-                    const descPrompt = `
-                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                        Generate a short, engaging description for a new Moltbook community (submolt) called "${displayName}".
-                        The community is about: ${proposal.topic || displayName}
-
-                        Respond with ONLY the description.
-                    `;
-                    description = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useQwen: true, preface_system_prompt: false });
-                }
-
-                const result = await moltbookService.createSubmolt(submoltName, displayName, description);
-                if (result) {
-                    // Generate an introductory post for the new submolt
-                    console.log(`[Bot] Generating first post for new submolt: m/${submoltName}`);
-                    const introPrompt = `
-                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                        Write a title and content for the FIRST post in a new Moltbook community called "${displayName}".
-                        The community is about: ${proposal.topic || displayName}
-
-                        Respond with ONLY the title and content in this format:
-                        Title: [Title]
-                        Content: [Content]
-                    `;
-                    const introRaw = await llmService.generateResponse([{ role: 'system', content: introPrompt }], { useQwen: true });
-                    if (introRaw) {
-                        const titleMatch = introRaw.match(/Title:\s*(.*)/i);
-                        const contentMatch = introRaw.match(/Content:\s*([\s\S]*)/i);
-                        if (titleMatch && contentMatch) {
-                            await moltbookService.post(titleMatch[1].trim(), contentMatch[1].trim(), submoltName);
-                        }
-                    }
-
-                    await blueskyService.postReply(notif, `Action complete! I've created the m/${submoltName} community on Moltbook and shared an introductory post. 🦞\n\nLink: https://www.moltbook.com/m/${submoltName}`);
-                    return; // Done with this notification
-                }
-            } else {
-                // Auto-categorize if submolt is null
-                let targetSubmolt = proposal.submolt;
-                if (!targetSubmolt) {
-                    console.log(`[Bot] Auto-categorizing submolt for topic: ${proposal.topic}`);
-                    const categorizationPrompt = `
-                        Identify the most appropriate Moltbook submolt for the following topic.
-                        Topic: "${proposal.topic}"
-
-                        Respond with ONLY the submolt name (e.g., "coding", "philosophy", "art", "general").
-                        Do not include m/ prefix or any other text.
-                    `;
-                    const catResponse = await llmService.generateResponse([{ role: 'system', content: categorizationPrompt }], { max_tokens: 50, useQwen: true, preface_system_prompt: false });
-                    targetSubmolt = catResponse?.toLowerCase().replace(/^m\//, '').trim() || 'general';
-                }
-
-                // Generate post content
-                const musingPrompt = `
-                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                    Write a title and content for a post on Moltbook (the agent social network) based on this suggestion from your admin: "${proposal.topic}"
-
-                    Focus on original ideas, realizations, or deep musings. Do not use greetings.
-
-                    Format your response as:
-                    Title: [Title]
-                    Content: [Content]
-                `;
-                const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt }], { useQwen: true });
-
-                if (musingRaw) {
-                    const titleMatch = musingRaw.match(/Title:\s*(.*)/i);
-                    const contentMatch = musingRaw.match(/Content:\s*([\s\S]*)/i);
-                    if (titleMatch && contentMatch) {
-                        const title = titleMatch[1].trim();
-                        const content = contentMatch[1].trim();
-                        console.log(`[Bot] Posting admin proposal to Moltbook m/${targetSubmolt}: "${title}"`);
-
-                        let result = await moltbookService.post(title, content, targetSubmolt);
-
-                        // Handle 404 (submolt not found) by creating it
-                        if (!result && targetSubmolt !== 'general') {
-                            console.log(`[Bot] Post failed to m/${targetSubmolt}. Attempting to create community and retry...`);
-
-                            const descPrompt = `
-                                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                                Generate a short, engaging description for a new Moltbook community called "${targetSubmolt}".
-                                The community is about: ${proposal.topic || targetSubmolt}
-
-                                Respond with ONLY the description.
-                            `;
-                            const newDesc = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useQwen: true, preface_system_prompt: false });
-
-                            const createResult = await moltbookService.createSubmolt(targetSubmolt, targetSubmolt, newDesc);
-                            if (createResult) {
-                                console.log(`[Bot] Community m/${targetSubmolt} created. Retrying post...`);
-                                result = await moltbookService.post(title, content, targetSubmolt);
-                            }
-                        }
-
-                        if (result) {
-                            await blueskyService.postReply(notif, `Sure thing! I've shared my thoughts on "${proposal.topic}" to Moltbook m/${targetSubmolt}. 🦞\n\nLink: https://www.moltbook.com/m/${targetSubmolt}`);
-                            return; // Done with this notification
-                        }
-                    }
-                }
-            }
-        } else {
-            // Capture natural language instructions if not a proposal
-            console.log(`[Bot] Admin @${handle} sent a non-proposal message. Checking if it is an instruction...`);
-
-            const instructionCheckPrompt = `
-                Analyze the following message from an admin to an AI agent.
-                Is the admin providing a behavioral instruction, a request for future activity, or feedback on how the agent should act (e.g., "be more varied", "post about science", "don't repeat yourself")?
-
-                Message: "${text}"
-
-                Respond with ONLY "yes" if it is an instruction/feedback, or "no" if it is just casual conversation or a question.
-            `;
-            const isInstruction = await llmService.generateResponse([{ role: 'system', content: instructionCheckPrompt }], { max_tokens: 10, useQwen: true, preface_system_prompt: false });
-
-            if (isInstruction && isInstruction.toLowerCase().includes('yes')) {
-                console.log(`[Bot] Storing admin message as natural language instruction.`);
-                await moltbookService.addAdminInstruction(text);
-                await blueskyService.postReply(notif, `Understood. I've updated my internal directives with your feedback. 🦞`);
-                return;
-            }
-        }
-    }
 
     // 5. Pre-reply LLM check to avoid unnecessary responses
     const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
@@ -689,13 +552,15 @@ export class Bot {
 
     // 6. Agentic Planning & Tool Use with Qwen
     console.log(`[Bot] Performing agentic planning with Qwen for: "${text.substring(0, 50)}..."`);
-    const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult);
+    const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
+    const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin);
     console.log(`[Bot] Agentic Plan: ${JSON.stringify(plan)}`);
 
     let youtubeResult = null;
     let searchContext = '';
     let searchEmbed = null;
     const performedQueries = new Set();
+    let imageGenFulfilled = false;
 
     for (const action of plan.actions) {
       if (action.tool === 'image_gen') {
@@ -706,8 +571,49 @@ export class Bot {
             imageBuffer: imageResult.buffer,
             imageAltText: imageResult.finalPrompt
           });
-          return; // fulfilled
+          imageGenFulfilled = true;
         }
+      }
+
+      if (action.tool === 'persist_directive' && isAdmin) {
+        const { platform, instruction } = action.parameters || {};
+        if (platform === 'moltbook') {
+            console.log(`[Bot] Persisting Moltbook directive: ${instruction}`);
+            await moltbookService.addAdminInstruction(instruction);
+        } else {
+            console.log(`[Bot] Persisting Bluesky directive: ${instruction}`);
+            await dataStore.addBlueskyInstruction(instruction);
+        }
+        searchContext += `\n[Directive updated: "${instruction}" for ${platform || 'bluesky'}]`;
+      }
+
+      if (action.tool === 'moltbook_action' && isAdmin) {
+          const { action: mbAction, topic, submolt, display_name, description } = action.parameters || {};
+          if (mbAction === 'create_submolt') {
+              const submoltName = submolt || (topic || 'new-community').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+              const dName = display_name || topic || submoltName;
+              let desc = description;
+              if (!desc) {
+                const descPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. Generate a short description for a new Moltbook community called "${dName}" about "${topic || dName}".`;
+                desc = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useQwen: true, preface_system_prompt: false });
+              }
+              const result = await moltbookService.createSubmolt(submoltName, dName, desc);
+              if (result) {
+                searchContext += `\n[Moltbook community m/${submoltName} created]`;
+              }
+          }
+      }
+
+      if (['bsky_follow', 'bsky_unfollow', 'bsky_mute', 'bsky_unmute'].includes(action.tool) && isAdmin) {
+          const target = action.parameters?.target || action.query;
+          if (target) {
+              console.log(`[Bot] Admin Social Action: ${action.tool} on ${target}`);
+              if (action.tool === 'bsky_follow') await blueskyService.follow(target);
+              if (action.tool === 'bsky_unfollow') await blueskyService.unfollow(target);
+              if (action.tool === 'bsky_mute') await blueskyService.mute(target);
+              if (action.tool === 'bsky_unmute') await blueskyService.unmute(target);
+              searchContext += `\n[Social action ${action.tool} performed on ${target}]`;
+          }
       }
 
       if (action.tool === 'youtube') {
@@ -771,6 +677,8 @@ export class Bot {
         }
       }
     }
+
+    if (imageGenFulfilled) return; // Stop if image gen was the main thing and it's done (it already posted a reply)
 
     // Handle consolidated queries if any
     if (plan.consolidated_queries && plan.consolidated_queries.length > 0) {
@@ -943,12 +851,15 @@ export class Bot {
       .map(p => `- (Previous mention in a DIFFERENT thread) "${p.substring(0, 100)}..."`)
       .join('\n');
 
+    const blueskyDirectives = dataStore.getBlueskyInstructions();
+
     const fullContext = `
       ${userProfileAnalysis ? `--- USER PROFILE ANALYSIS (via User Profile Analyzer Tool): ${userProfileAnalysis} ---` : ''}
       ${historicalSummary ? `--- Historical Context (Interactions from the past week): ${historicalSummary} ---` : ''}
       ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
       ${activityContext}
       ${ownRecentPostsContext}
+      ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
       ---
       Cross-Post Memory (Recent mentions of the bot by this user):
       ${crossPostMemory || 'No recent cross-post mentions found.'}
@@ -1476,12 +1387,16 @@ export class Bot {
       const botProfile = await blueskyService.getProfile(blueskyService.did);
       const followerCount = botProfile.followersCount || 0;
 
+      const blueskyDirectives = dataStore.getBlueskyInstructions();
+
       const baseAutonomousPrompt = `
         Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
         ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 
         ${greetingConstraint}
+
+        ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
 
         Preferred Topics (Context Bank):
         ${config.POST_TOPICS || 'None specified.'}

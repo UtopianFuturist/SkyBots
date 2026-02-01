@@ -782,8 +782,23 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     return response?.toLowerCase().includes('yes') || false;
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext) {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false) {
     const historyText = conversationHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
+
+    let adminTools = '';
+    if (isAdmin) {
+        adminTools = `
+      8. **Persist Directive**: Update persistent behavioral instructions for either Bluesky or Moltbook.
+         - Use this if the admin provides behavioral feedback, a request for future activity, or instructions on how you should act.
+         - Parameters: { "platform": "bluesky|moltbook", "instruction": "the text of the instruction" }
+         - PLATFORM DISTINCTION: If they mention "on Moltbook", platform is "moltbook". If they mention "on Bluesky", "on here", or don't specify, platform is "bluesky".
+      9. **Moltbook Action**: Perform a specific action on Moltbook like creating a submolt.
+         - Parameters: { "action": "create_submolt", "topic": "string", "submolt": "string", "display_name": "string", "description": "string" }
+      10. **Admin Social Action**: Perform administrative tasks on Bluesky.
+          - Tools: "bsky_follow", "bsky_unfollow", "bsky_mute", "bsky_unmute".
+          - Parameter: { "target": "handle or DID" }
+        `;
+    }
 
     const systemPrompt = `
       You are an agentic planning module for a social media bot. Your task is to analyze the user's post and the conversation history to determine the best course of action.
@@ -796,14 +811,16 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       5. **Profile Analysis**: Analyze the user's last 100 activities for deep context.
       6. **Vision**: You can "see" images described in the context.
       7. **Moltbook Report**: Provide a status update on what the bot has been learning and posting about on Moltbook. Trigger this if the user asks "What's happening on Moltbook?", "What are you learning?", "Show me your Moltbook activity", etc.
+      ${adminTools}
 
       Analyze the user's intent and provide a JSON response with the following structure:
       {
         "intent": "string (briefly describe the user's goal)",
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
             "query": "string (the consolidated search query or specific aspect they asked about)",
+            "parameters": object (optional, for tools that need specific fields like persist_directive or moltbook_action),
             "reason": "string (why this tool is needed)"
           }
         ],
@@ -816,6 +833,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       - Only use "search", "wikipedia", or "youtube" tools if absolutely necessary for the interaction.
       - If multiple searches are needed, you MUST combine them into one broad query.
       - If no tools are needed, return an empty actions array.
+      - **CRITICAL**: If an admin provides both a behavioral instruction AND a request for an action (e.g., "Always use more color. Now generate an image of a red cat"), you MUST include BOTH actions in the array. Do NOT skip the action just because you are updating directives.
       - Do not include reasoning or <think> tags.
 
       User Post: "${userPost}"

@@ -16,7 +16,8 @@ const defaultData = {
   userProfiles: {},
    userSummaries: {},
   userRatings: {},
-  interactions: [] // For long-term memory
+  interactions: [], // For long-term memory
+  bluesky_instructions: []
 };
 
 class DataStore {
@@ -142,6 +143,26 @@ class DataStore {
 
   getUserSummary(handle) {
     return this.db.data.userSummaries[handle] || null;
+  }
+
+  async addBlueskyInstruction(instruction) {
+    if (!this.db.data.bluesky_instructions) {
+      this.db.data.bluesky_instructions = [];
+    }
+    this.db.data.bluesky_instructions.push({
+      text: instruction,
+      timestamp: new Date().toISOString()
+    });
+    // Keep last 20
+    if (this.db.data.bluesky_instructions.length > 20) {
+      this.db.data.bluesky_instructions.shift();
+    }
+    await this.db.write();
+  }
+
+  getBlueskyInstructions() {
+    if (!this.db.data.bluesky_instructions) return '';
+    return this.db.data.bluesky_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
   }
 }
 

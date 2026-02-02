@@ -82,6 +82,7 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     updateUserRating: jest.fn(),
     updateUserSummary: jest.fn(),
     getUserSummary: jest.fn(),
+    getBlueskyInstructions: jest.fn().mockReturnValue(''),
     init: jest.fn(),
     db: {
       data: {

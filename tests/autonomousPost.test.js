@@ -31,6 +31,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
 jest.unstable_mockModule('../src/services/dataStore.js', () => ({
   dataStore: {
     init: jest.fn(),
+    getBlueskyInstructions: jest.fn().mockReturnValue(''),
     db: {
       data: {
         interactions: []

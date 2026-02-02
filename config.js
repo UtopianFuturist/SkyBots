@@ -97,6 +97,11 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
 
   // Memory Thread
   MEMORY_THREAD_HASHTAG: process.env.MEMORY_THREAD_HASHTAG || null,
+
+  // Render API
+  RENDER_API_KEY: process.env.RENDER_API_KEY || null,
+  RENDER_SERVICE_ID: process.env.RENDER_SERVICE_ID || null,
+  RENDER_SERVICE_NAME: process.env.RENDER_SERVICE_NAME || 'skybots',
 };
 
 // Validate configuration
@@ -113,6 +118,8 @@ console.log(`[Config] Loaded IMAGE_SUBJECTS: ${config.IMAGE_SUBJECTS ? 'Exists' 
 console.log(`[Config] Loaded QWEN_MODEL: ${config.QWEN_MODEL}`);
 console.log(`[Config] Loaded MOLTBOOK_API_KEY: ${config.MOLTBOOK_API_KEY ? 'Exists' : 'Optional (will register on startup if missing)'}`);
 console.log(`[Config] Loaded MEMORY_THREAD_HASHTAG: ${config.MEMORY_THREAD_HASHTAG ? config.MEMORY_THREAD_HASHTAG : 'DISABLED'}`);
+console.log(`[Config] Loaded RENDER_API_KEY: ${config.RENDER_API_KEY ? 'Exists' : 'Optional'}`);
+console.log(`[Config] Loaded RENDER_SERVICE_ID: ${config.RENDER_SERVICE_ID || 'Not set (will attempt discovery if key exists)'}`);
 
 
 export default config;

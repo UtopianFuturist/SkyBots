@@ -31,19 +31,25 @@ class DiscordService {
                 GatewayIntentBits.MessageContent,
                 GatewayIntentBits.DirectMessages,
             ],
-            partials: [Partials.Channel],
+            partials: [Partials.Channel, Partials.Message, Partials.User],
         });
 
         this.client.on('ready', () => {
             console.log(`[DiscordService] Logged in as ${this.client.user.tag}!`);
         });
 
+        this.client.on('error', (error) => {
+            console.error('[DiscordService] Client error:', error);
+        });
+
         this.client.on('messageCreate', async (message) => {
             await this.handleMessage(message);
         });
 
+        console.log('[DiscordService] Attempting to login...');
         try {
             await this.client.login(this.token);
+            console.log('[DiscordService] login() promise resolved.');
         } catch (error) {
             console.error('[DiscordService] Failed to login to Discord:', error);
             this.isEnabled = false;

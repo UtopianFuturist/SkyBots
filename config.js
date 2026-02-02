@@ -94,6 +94,9 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   MOLTBOOK_API_KEY: process.env.MOLTBOOK_API_KEY,
   MOLTBOOK_AGENT_NAME: process.env.MOLTBOOK_AGENT_NAME,
   MOLTBOOK_DESCRIPTION: process.env.MOLTBOOK_DESCRIPTION,
+
+  // Memory Thread
+  MEMORY_THREAD_HASHTAG: process.env.MEMORY_THREAD_HASHTAG || null,
 };
 
 // Validate configuration
@@ -109,6 +112,7 @@ console.log(`[Config] Loaded POST_TOPICS: ${config.POST_TOPICS ? 'Exists' : 'Opt
 console.log(`[Config] Loaded IMAGE_SUBJECTS: ${config.IMAGE_SUBJECTS ? 'Exists' : 'Optional (not set)'}`);
 console.log(`[Config] Loaded QWEN_MODEL: ${config.QWEN_MODEL}`);
 console.log(`[Config] Loaded MOLTBOOK_API_KEY: ${config.MOLTBOOK_API_KEY ? 'Exists' : 'Optional (will register on startup if missing)'}`);
+console.log(`[Config] Loaded MEMORY_THREAD_HASHTAG: ${config.MEMORY_THREAD_HASHTAG ? config.MEMORY_THREAD_HASHTAG : 'DISABLED'}`);
 
 
 export default config;

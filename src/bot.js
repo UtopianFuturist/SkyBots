@@ -7,6 +7,7 @@ import { youtubeService } from './services/youtubeService.js';
 import { wikipediaService } from './services/wikipediaService.js';
 import { webReaderService } from './services/webReaderService.js';
 import { moltbookService } from './services/moltbookService.js';
+import { memoryService } from './services/memoryService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting } from './utils/textUtils.js';
@@ -37,6 +38,9 @@ export class Bot {
     this.paused = false;
     this.proposedPosts = [];
     this.firehoseProcess = null;
+    this.autonomousPostCount = 0;
+    this.lastActivityTime = Date.now();
+    this.lastDailyWrapup = new Date().toDateString();
   }
 
   async init() {
@@ -52,6 +56,12 @@ export class Bot {
 
     await blueskyService.submitAutonomyDeclaration();
     console.log('[Bot] Autonomy declaration submitted.');
+
+    if (memoryService.isEnabled()) {
+      console.log('[Bot] Memory Thread feature enabled. Fetching recent memories...');
+      await memoryService.getRecentMemories();
+      llmService.setMemoryProvider(memoryService);
+    }
 
     // Moltbook Registration Check
     console.log('[Bot] Checking Moltbook registration...');
@@ -125,6 +135,7 @@ export class Bot {
             
             await this.processNotification(notif);
             await dataStore.addRepliedPost(notif.uri);
+            this.updateActivity();
           }
         } catch (e) {
           // Ignore non-JSON output
@@ -178,7 +189,36 @@ export class Bot {
     // Periodic Moltbook tasks (every 72 minutes to achieve ~20 posts per day)
     setInterval(() => this.performMoltbookTasks(), 4320000);
 
+    // Periodic maintenance tasks (every 5 minutes)
+    setInterval(() => this.checkMaintenanceTasks(), 300000);
+
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
+  }
+
+  async checkMaintenanceTasks() {
+    const now = new Date();
+
+    // 1. Idle downtime check (20 minutes)
+    const idleMins = (Date.now() - this.lastActivityTime) / (1000 * 60);
+    if (idleMins >= 20 && memoryService.isEnabled()) {
+      console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes. Generating downtime musing...`);
+      const context = `The bot has been idle for ${Math.round(idleMins)} minutes with no interactions or autonomous posts. It's a quiet moment.`;
+      await memoryService.createMemoryEntry('idle_musing', context);
+      this.updateActivity(); // Reset idle timer after posting memory
+    }
+
+    // 2. Daily wrap-up check (if it's a new day)
+    if (now.toDateString() !== this.lastDailyWrapup && memoryService.isEnabled()) {
+        console.log(`[Bot] New day detected. Generating daily wrap-up for ${this.lastDailyWrapup}...`);
+        const context = `It's the end of the day (${this.lastDailyWrapup}). Summarize your overall activity, interactions, and state of mind from the past 24 hours.`;
+        await memoryService.createMemoryEntry('daily_wrapup', context);
+        this.lastDailyWrapup = now.toDateString();
+        this.updateActivity();
+    }
+  }
+
+  updateActivity() {
+    this.lastActivityTime = Date.now();
   }
 
   async catchUpNotifications() {
@@ -951,6 +991,13 @@ export class Bot {
       }
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
+      this.updateActivity();
+
+      // Memory trigger: after interaction
+      if (memoryService.isEnabled()) {
+          const context = `Interaction with @${handle}. User said: "${text}". Bot replied: "${responseText}"`;
+          await memoryService.createMemoryEntry('interaction', context);
+      }
 
       // Post to Moltbook if it's an interesting interaction
       if (responseText.length > 150) {
@@ -1555,6 +1602,18 @@ export class Bot {
             if (postType === 'image' && result && generationPrompt) {
                 await blueskyService.postReply({ uri: result.uri, cid: result.cid, record: {} }, `Generation Prompt: ${generationPrompt}`);
             }
+
+            this.updateActivity();
+            this.autonomousPostCount++;
+
+            // Memory trigger: after 5 autonomous posts
+            if (this.autonomousPostCount >= 5 && memoryService.isEnabled()) {
+                console.log(`[Bot] 5 autonomous posts reached. Generating memory...`);
+                const context = `The bot has successfully posted 5 autonomous musings today.`;
+                await memoryService.createMemoryEntry('milestone', context);
+                this.autonomousPostCount = 0;
+            }
+
             return; // Success, exit function
           } else {
             console.warn(`[Bot] Autonomous post attempt ${attempts} failed coherence check (Score: ${score}/5). Reason: ${reason}`);
@@ -1604,6 +1663,16 @@ export class Bot {
             if (score >= 3) {
               console.log(`[Bot] Fallback text post passed coherence check. Performing post...`);
               await blueskyService.post(postContent, null, { maxChunks: 3 });
+
+              this.updateActivity();
+              this.autonomousPostCount++;
+
+              if (this.autonomousPostCount >= 5 && memoryService.isEnabled()) {
+                  const context = `The bot has successfully posted 5 autonomous musings today (including fallbacks).`;
+                  await memoryService.createMemoryEntry('milestone', context);
+                  this.autonomousPostCount = 0;
+              }
+
               return;
             }
           }
@@ -1751,6 +1820,14 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         const title = titleMatch[1].trim();
         const content = contentMatch[1].trim();
         await moltbookService.post(title, content, targetSubmolt);
+
+        this.updateActivity();
+
+        // Memory trigger: after Moltbook activity
+        if (memoryService.isEnabled()) {
+            const context = `Posted to Moltbook submolt m/${targetSubmolt}. Title: "${title}". Content: "${content.substring(0, 100)}..."`;
+            await memoryService.createMemoryEntry('moltbook_reflection', context);
+        }
       }
     }
   }

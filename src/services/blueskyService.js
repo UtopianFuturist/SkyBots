@@ -349,6 +349,22 @@ class BlueskyService {
      }
    }
 
+  async searchPosts(query, options = {}) {
+    const { limit = 25, sort = 'latest' } = options;
+    try {
+      console.log(`[BlueskyService] Searching posts with query: "${query}", sort: ${sort}, limit: ${limit}`);
+      const { data } = await this.agent.app.bsky.feed.searchPosts({
+        q: query,
+        limit,
+        sort,
+      });
+      return data.posts;
+    } catch (error) {
+      console.error(`[BlueskyService] Error searching posts for "${query}":`, error);
+      return [];
+    }
+  }
+
   async likePost(uri, cid) {
     try {
       await this.agent.like(uri, cid);

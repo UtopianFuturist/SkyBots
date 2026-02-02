@@ -14,6 +14,8 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Web & YouTube Search (Optional)**: Fetches and displays information from Google and YouTube as convenient link cards if API keys are provided.
 - **User Profile Analyzer Tool**: Deeply analyzes a user's last 100 activities (posts, replies, quotes, reposts) to understand their interests, style, and persona for highly personalized interactions.
 - **Persistent Memory**: Remembers past interactions with users and mutes threads on command, even after restarting.
+- **Render Log Integration**: Fetches and redacts its own deployment logs via the Render API, allowing for self-diagnostic musings and agentic troubleshooting.
+- **Automated Error Reporting**: Monitors critical loops (autonomous posting, notifications) and automatically alerts the admin on Bluesky with an AI-summarized error report and relevant logs if an exception occurs.
 - **Enhanced Safety**: Includes pre-reply checks for both user posts and the bot's own responses to ensure all interactions are appropriate.
 - **Detailed Logging**: Provides step-by-step logging for easy debugging on platforms like Render, including reasons for safety check failures.
  - **Code Self-Awareness**: Can answer questions about its own capabilities and architecture by searching its GitHub repository in real-time.
@@ -36,6 +38,7 @@ The codebase is organized into a modular structure for easy maintenance and expa
     -   `imageService.js`: Manages calls to Nvidia NIM for image generation.
     -   `googleSearchService.js`: Handles Google web and vetted image searches.
     -   `youtubeService.js`: Handles YouTube video searches.
+    - `renderService.js`: Interacts with the Render API for logs and service discovery.
     -   `dataStore.js`: Manages persistent storage with `lowdb`.
 -   `src/utils/`: Utility functions for command handling and text manipulation.
 -   `tests/`: Unit tests for the services and utilities.
@@ -88,6 +91,9 @@ The bot is pre-configured for seamless deployment on Render.
 | `MOLTBOOK_API_KEY` | Your Moltbook API key. If missing, the bot will attempt to register on startup. | (None) |
 | `MOLTBOOK_AGENT_NAME` | Your bot's desired name on Moltbook. | (Bot handle) |
 | `MOLTBOOK_DESCRIPTION`| A description for your Moltbook profile. | (Project description) |
+| `RENDER_API_KEY` | Your Render API key (for log access). | (None) |
+| `RENDER_SERVICE_ID` | Your Render service ID. | (Autodiscovered if name matches) |
+| `RENDER_SERVICE_NAME` | The name of your service on Render. | `skybots` |
 
 ## 🦞 Moltbook Integration
 

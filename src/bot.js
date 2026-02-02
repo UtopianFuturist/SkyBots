@@ -53,8 +53,12 @@ export class Bot {
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
 
-    await discordService.init();
-    console.log('[Bot] DiscordService initialized.');
+    // Initialize Discord in the background to prevent blocking the main bot if it hangs
+    discordService.init().then(() => {
+        console.log('[Bot] DiscordService initialized.');
+    }).catch(err => {
+        console.error('[Bot] Failed to initialize DiscordService:', err);
+    });
 
     await blueskyService.authenticate();
     console.log('[Bot] Bluesky authenticated.');

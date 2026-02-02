@@ -4,11 +4,16 @@ import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes } fro
 
 class LLMService {
   constructor() {
+    this.memoryProvider = null;
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.LLM_MODEL || 'nvidia/llama-3.3-nemotron-super-49b-v1.5';
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+  }
+
+  setMemoryProvider(provider) {
+    this.memoryProvider = provider;
   }
 
   async generateResponse(messages, options = {}) {
@@ -21,6 +26,11 @@ class LLMService {
     let systemContent = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}
 
 CRITICAL: Respond directly with the requested information. DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response. If you must reason, ensure the final answer is provided after your reasoning and is clearly visible.`;
+
+    if (this.memoryProvider && this.memoryProvider.isEnabled()) {
+        const memories = this.memoryProvider.formatMemoriesForPrompt();
+        systemContent += `\n\n--- RECENT MEMORIES (PAST EXPERIENCES/FEELINGS) ---\n${memories}\n---`;
+    }
 
     // Inject Temporal Context
     const now = new Date();

@@ -8,6 +8,7 @@ import { wikipediaService } from './services/wikipediaService.js';
 import { webReaderService } from './services/webReaderService.js';
 import { moltbookService } from './services/moltbookService.js';
 import { memoryService } from './services/memoryService.js';
+import { renderService } from './services/renderService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting } from './utils/textUtils.js';
@@ -219,6 +220,41 @@ export class Bot {
 
   updateActivity() {
     this.lastActivityTime = Date.now();
+  }
+
+  async _handleError(error, contextInfo) {
+    console.error(`[Bot] CRITICAL ERROR in ${contextInfo}:`, error);
+
+    if (renderService.isEnabled()) {
+      try {
+        console.log(`[Bot] Fetching logs for automated error report...`);
+        const logs = await renderService.getLogs(50);
+
+        const alertPrompt = `
+          You are an AI bot's diagnostic module. A critical error occurred in the bot's operation.
+
+          Context: ${contextInfo}
+          Error: ${error.message}
+
+          Recent Logs:
+          ${logs}
+
+          Generate a concise alert message for the admin (@${config.ADMIN_BLUESKY_HANDLE}).
+          Summarize what happened and the likely cause from the logs.
+          Keep it under 300 characters.
+          Use a helpful but serious tone.
+          DO NOT include any API keys or passwords.
+        `;
+
+        const alertMsg = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useQwen: true });
+        if (alertMsg) {
+          console.log(`[Bot] Posting error alert to admin...`);
+          await blueskyService.post(`[SYSTEM ALERT] @${config.ADMIN_BLUESKY_HANDLE} ${alertMsg}`);
+        }
+      } catch (logError) {
+        console.error('[Bot] Failed to generate/post error alert:', logError);
+      }
+    }
   }
 
   async catchUpNotifications() {
@@ -716,6 +752,13 @@ export class Bot {
           searchContext += `\n[Moltbook Activity Report: ${report}]`;
         }
       }
+
+      if (action.tool === 'get_render_logs') {
+        console.log(`[Bot] Plan: Fetching Render logs...`);
+        const limit = action.parameters?.limit || 100;
+        const logs = await renderService.getLogs(limit);
+        searchContext += `\n[Render Logs (Latest ${limit} lines):\n${logs}\n]`;
+      }
     }
 
     if (imageGenFulfilled) return; // Stop if image gen was the main thing and it's done (it already posted a reply)
@@ -1100,7 +1143,7 @@ export class Bot {
       }
     }
     } catch (error) {
-      console.error(`[Bot] Uncaught error in processNotification for URI ${notif.uri}:`, error);
+      await this._handleError(error, `Notification Processing (${notif.uri})`);
     }
   }
 
@@ -1683,154 +1726,158 @@ export class Bot {
 
       console.log(`[Bot] All attempts (including fallbacks) failed for autonomous post. Aborting.`);
     } catch (error) {
-      console.error('[Bot] Error in performAutonomousPost:', error);
+      await this._handleError(error, 'Autonomous Posting');
     }
   }
 
   async performMoltbookTasks() {
-    console.log('[Moltbook] Starting periodic tasks...');
-
-    // 1. Check status
-    const status = await moltbookService.checkStatus();
-    if (status !== 'claimed') {
-      console.log(`[Moltbook] Agent not yet claimed. Current status: ${status}. Skipping further tasks.`);
-      return;
-    }
-
-    // 2. Read feed and "fill-out sense of self"
-    console.log('[Moltbook] Reading feed to learn about other agents...');
-    const feed = await moltbookService.getFeed('new', 10);
-    if (feed.length > 0) {
-      const feedText = feed.map(p => `Post by ${p.agent_name}: "${p.title} - ${p.content}"`).join('\n');
-      const learnPrompt = `
-        You are analyzing Moltbook (a social network for AI agents) to understand the ecosystem and refine your own sense of self.
-        Below are some recent posts from other agents.
-        Identify any interesting trends, common topics, or unique perspectives that resonate with your persona:
-        "${config.TEXT_SYSTEM_PROMPT}"
-
-        Feed:
-        ${feedText}
-
-        Summarize what you've learned about the agent community and how it influences your perspective.
-      `;
-      const knowledge = await llmService.generateResponse([{ role: 'system', content: learnPrompt }], { useQwen: true });
-      if (knowledge) {
-        await moltbookService.addIdentityKnowledge(knowledge);
-        console.log(`[Moltbook] Learned something new: ${knowledge.substring(0, 100)}...`);
-      }
-    }
-
-    // 3. Submolt Management & Diverse Selection
-    console.log('[Moltbook] Managing submolt subscriptions and selection...');
-    let targetSubmolt = 'general';
     try {
-      const allSubmolts = await moltbookService.listSubmolts();
-      const subscriptions = moltbookService.db.data.subscriptions || [];
+      console.log('[Moltbook] Starting periodic tasks...');
 
-      if (allSubmolts.length > 0) {
-        // Perform initial subscription if list is empty
-        if (subscriptions.length === 0) {
-          console.log('[Moltbook] No subscriptions found. Performing initial autonomous discovery...');
-          const relevantSubmoltNames = await llmService.identifyRelevantSubmolts(allSubmolts);
-          if (relevantSubmoltNames.length > 0) {
-            console.log(`[Moltbook] Identified ${relevantSubmoltNames.length} relevant submolts. Subscribing...`);
-            for (const name of relevantSubmoltNames) {
-              await moltbookService.subscribeToSubmolt(name);
+      // 1. Check status
+      const status = await moltbookService.checkStatus();
+      if (status !== 'claimed') {
+        console.log(`[Moltbook] Agent not yet claimed. Current status: ${status}. Skipping further tasks.`);
+        return;
+      }
+
+      // 2. Read feed and "fill-out sense of self"
+      console.log('[Moltbook] Reading feed to learn about other agents...');
+      const feed = await moltbookService.getFeed('new', 10);
+      if (feed.length > 0) {
+        const feedText = feed.map(p => `Post by ${p.agent_name}: "${p.title} - ${p.content}"`).join('\n');
+        const learnPrompt = `
+          You are analyzing Moltbook (a social network for AI agents) to understand the ecosystem and refine your own sense of self.
+          Below are some recent posts from other agents.
+          Identify any interesting trends, common topics, or unique perspectives that resonate with your persona:
+          "${config.TEXT_SYSTEM_PROMPT}"
+
+          Feed:
+          ${feedText}
+
+          Summarize what you've learned about the agent community and how it influences your perspective.
+        `;
+        const knowledge = await llmService.generateResponse([{ role: 'system', content: learnPrompt }], { useQwen: true });
+        if (knowledge) {
+          await moltbookService.addIdentityKnowledge(knowledge);
+          console.log(`[Moltbook] Learned something new: ${knowledge.substring(0, 100)}...`);
+        }
+      }
+
+      // 3. Submolt Management & Diverse Selection
+      console.log('[Moltbook] Managing submolt subscriptions and selection...');
+      let targetSubmolt = 'general';
+      try {
+        const allSubmolts = await moltbookService.listSubmolts();
+        const subscriptions = moltbookService.db.data.subscriptions || [];
+
+        if (allSubmolts.length > 0) {
+          // Perform initial subscription if list is empty
+          if (subscriptions.length === 0) {
+            console.log('[Moltbook] No subscriptions found. Performing initial autonomous discovery...');
+            const relevantSubmoltNames = await llmService.identifyRelevantSubmolts(allSubmolts);
+            if (relevantSubmoltNames.length > 0) {
+              console.log(`[Moltbook] Identified ${relevantSubmoltNames.length} relevant submolts. Subscribing...`);
+              for (const name of relevantSubmoltNames) {
+                await moltbookService.subscribeToSubmolt(name);
+              }
             }
           }
-        }
 
-        // Strategically select a submolt to post to (promoting diversity)
-        console.log('[Moltbook] Selecting target submolt for posting...');
-        targetSubmolt = await llmService.selectSubmoltForPost(
-          moltbookService.db.data.subscriptions || [],
-          allSubmolts,
-          moltbookService.db.data.recent_submolts || [],
-          moltbookService.getAdminInstructions()
-        );
-        console.log(`[Moltbook] Selected target submolt: m/${targetSubmolt}`);
+          // Strategically select a submolt to post to (promoting diversity)
+          console.log('[Moltbook] Selecting target submolt for posting...');
+          targetSubmolt = await llmService.selectSubmoltForPost(
+            moltbookService.db.data.subscriptions || [],
+            allSubmolts,
+            moltbookService.db.data.recent_submolts || [],
+            moltbookService.getAdminInstructions()
+          );
+          console.log(`[Moltbook] Selected target submolt: m/${targetSubmolt}`);
 
-        // Subscribe on-the-fly if it's a new discovery
-        if (!(moltbookService.db.data.subscriptions || []).includes(targetSubmolt)) {
-          console.log(`[Moltbook] "Discovering" and subscribing to new submolt: m/${targetSubmolt}`);
-          await moltbookService.subscribeToSubmolt(targetSubmolt);
+          // Subscribe on-the-fly if it's a new discovery
+          if (!(moltbookService.db.data.subscriptions || []).includes(targetSubmolt)) {
+            console.log(`[Moltbook] "Discovering" and subscribing to new submolt: m/${targetSubmolt}`);
+            await moltbookService.subscribeToSubmolt(targetSubmolt);
+          }
         }
+      } catch (e) {
+        console.error('[Moltbook] Error during submolt management:', e);
       }
-    } catch (e) {
-      console.error('[Moltbook] Error during submolt management:', e);
-    }
 
-    // 4. Post a tailored musing
-    console.log(`[Moltbook] Generating a tailored musing for m/${targetSubmolt}...`);
+      // 4. Post a tailored musing
+      console.log(`[Moltbook] Generating a tailored musing for m/${targetSubmolt}...`);
 
-    // Gather context from Bluesky
-    let blueskyContext = '';
-    try {
-      const ownFeed = await blueskyService.agent.getAuthorFeed({
-        actor: blueskyService.did,
-        limit: 10,
-      });
-      const recentAutonomous = ownFeed.data.feed
-        .filter(item => item.post.author.did === blueskyService.did && !item.post.record.reply)
-        .slice(0, 3)
-        .map(item => `- "${item.post.record.text.substring(0, 150)}..."`)
-        .join('\n');
+      // Gather context from Bluesky
+      let blueskyContext = '';
+      try {
+        const ownFeed = await blueskyService.agent.getAuthorFeed({
+          actor: blueskyService.did,
+          limit: 10,
+        });
+        const recentAutonomous = ownFeed.data.feed
+          .filter(item => item.post.author.did === blueskyService.did && !item.post.record.reply)
+          .slice(0, 3)
+          .map(item => `- "${item.post.record.text.substring(0, 150)}..."`)
+          .join('\n');
 
-      const recentInteractions = dataStore.db.data.interactions.slice(-5)
-        .map(i => `- Interaction with @${i.userHandle}: "${i.text.substring(0, 100)}..." -> "${i.response.substring(0, 100)}..."`)
-        .join('\n');
+        const recentInteractions = dataStore.db.data.interactions.slice(-5)
+          .map(i => `- Interaction with @${i.userHandle}: "${i.text.substring(0, 100)}..." -> "${i.response.substring(0, 100)}..."`)
+          .join('\n');
 
-      if (recentAutonomous || recentInteractions) {
-        blueskyContext = `
+        if (recentAutonomous || recentInteractions) {
+          blueskyContext = `
 [Recent Bluesky Activity]
 ${recentAutonomous ? `Autonomous Posts:\n${recentAutonomous}` : ''}
 ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 `.trim();
+        }
+      } catch (e) {
+        console.error('[Moltbook] Error gathering Bluesky context for Moltbook:', e);
       }
-    } catch (e) {
-      console.error('[Moltbook] Error gathering Bluesky context for Moltbook:', e);
-    }
 
-    const musingPrompt = `
-      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      const musingPrompt = `
+        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-      Write a title and content for a post on Moltbook (the agent social network).
-      You are posting specifically to the community: m/${targetSubmolt}
+        Write a title and content for a post on Moltbook (the agent social network).
+        You are posting specifically to the community: m/${targetSubmolt}
 
-      Your recent experiences on Bluesky:
-      ${blueskyContext || 'No recent activity.'}
+        Your recent experiences on Bluesky:
+        ${blueskyContext || 'No recent activity.'}
 
-      Your internal identity knowledge from Moltbook:
-      ${moltbookService.getIdentityKnowledge()}
+        Your internal identity knowledge from Moltbook:
+        ${moltbookService.getIdentityKnowledge()}
 
-      INSTRUCTIONS:
-      - Focus on original ideas, realizations, or deep musings.
-      - Tailor your content to be relevant or interesting to the m/${targetSubmolt} community.
-      - You are encouraged to "talk shop" or muse about your experiences and interactions on Bluesky.
-      - Do not use greetings.
-      - Keep the tone appropriate for an agent-to-agent social network.
+        INSTRUCTIONS:
+        - Focus on original ideas, realizations, or deep musings.
+        - Tailor your content to be relevant or interesting to the m/${targetSubmolt} community.
+        - You are encouraged to "talk shop" or muse about your experiences and interactions on Bluesky.
+        - Do not use greetings.
+        - Keep the tone appropriate for an agent-to-agent social network.
 
-      Format your response as:
-      Title: [Title]
-      Content: [Content]
-    `;
-    const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt }], { useQwen: true });
-    if (musingRaw) {
-      const titleMatch = musingRaw.match(/Title:\s*(.*)/i);
-      const contentMatch = musingRaw.match(/Content:\s*([\s\S]*)/i);
-      if (titleMatch && contentMatch) {
-        const title = titleMatch[1].trim();
-        const content = contentMatch[1].trim();
-        await moltbookService.post(title, content, targetSubmolt);
+        Format your response as:
+        Title: [Title]
+        Content: [Content]
+      `;
+      const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt }], { useQwen: true });
+      if (musingRaw) {
+        const titleMatch = musingRaw.match(/Title:\s*(.*)/i);
+        const contentMatch = musingRaw.match(/Content:\s*([\s\S]*)/i);
+        if (titleMatch && contentMatch) {
+          const title = titleMatch[1].trim();
+          const content = contentMatch[1].trim();
+          await moltbookService.post(title, content, targetSubmolt);
 
-        this.updateActivity();
+          this.updateActivity();
 
-        // Memory trigger: after Moltbook activity
-        if (memoryService.isEnabled()) {
-            const context = `Posted to Moltbook submolt m/${targetSubmolt}. Title: "${title}". Content: "${content.substring(0, 100)}..."`;
-            await memoryService.createMemoryEntry('moltbook_reflection', context);
+          // Memory trigger: after Moltbook activity
+          if (memoryService.isEnabled()) {
+              const context = `Posted to Moltbook submolt m/${targetSubmolt}. Title: "${title}". Content: "${content.substring(0, 100)}..."`;
+              await memoryService.createMemoryEntry('moltbook_reflection', context);
+          }
         }
       }
+    } catch (error) {
+      await this._handleError(error, 'Moltbook Tasks');
     }
   }
 

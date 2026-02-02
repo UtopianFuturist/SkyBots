@@ -830,6 +830,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       5. **Profile Analysis**: Analyze the user's last 100 activities for deep context.
       6. **Vision**: You can "see" images described in the context.
       7. **Moltbook Report**: Provide a status update on what the bot has been learning and posting about on Moltbook. Trigger this if the user asks "What's happening on Moltbook?", "What are you learning?", "Show me your Moltbook activity", etc.
+      8. **Render Logs**: Fetch the latest logs from Render for diagnostic or self-awareness purposes. Trigger this if the user asks about logs, errors, system status, or what's happening "under the hood".
       ${adminTools}
 
       Analyze the user's intent and provide a JSON response with the following structure:
@@ -837,9 +838,9 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
         "intent": "string (briefly describe the user's goal)",
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
-            "query": "string (the consolidated search query or specific aspect they asked about)",
-            "parameters": object (optional, for tools that need specific fields like persist_directive or moltbook_action),
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
+            "query": "string (the consolidated search query, or 'latest' for logs)",
+            "parameters": { "limit": number (optional, default 100, max 100) },
             "reason": "string (why this tool is needed)"
           }
         ],

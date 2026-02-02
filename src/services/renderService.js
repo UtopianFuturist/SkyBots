@@ -1,0 +1,153 @@
+import fetch from 'node-fetch';
+import config from '../../config.js';
+
+class RenderService {
+  constructor() {
+    this.apiKey = config.RENDER_API_KEY;
+    this.serviceId = config.RENDER_SERVICE_ID;
+    this.serviceName = config.RENDER_SERVICE_NAME;
+    this.baseUrl = 'https://api.render.com/v1';
+  }
+
+  isEnabled() {
+    return !!this.apiKey;
+  }
+
+  async listServices() {
+    if (!this.isEnabled()) return [];
+    try {
+      const response = await fetch(`${this.baseUrl}/services`, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Accept': 'application/json'
+        }
+      });
+      if (!response.ok) throw new Error(`Render API error: ${response.status}`);
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.error('[RenderService] Error listing services:', error.message);
+      return [];
+    }
+  }
+
+  async findSelf() {
+    if (!this.isEnabled()) return null;
+    console.log(`[RenderService] Attempting to find service ID for name: ${this.serviceName}`);
+    const services = await this.listServices();
+    const self = services.find(s => s.service.name === this.serviceName);
+    if (self) {
+      this.serviceId = self.service.id;
+      console.log(`[RenderService] Found self service ID: ${this.serviceId}`);
+      return self.service;
+    }
+    console.warn(`[RenderService] Could not find service with name ${this.serviceName} in Render account.`);
+    return null;
+  }
+
+  async getLogs(limit = 100) {
+    if (!this.isEnabled()) return "Render API key not configured.";
+
+    if (!this.serviceId) {
+      const found = await this.findSelf();
+      if (!found) return "Could not find Render service ID. Please set RENDER_SERVICE_ID or check RENDER_SERVICE_NAME.";
+    }
+
+    try {
+      console.log(`[RenderService] Fetching logs for service ${this.serviceId} (limit ${limit})...`);
+
+      const response = await fetch(`${this.baseUrl}/services/${this.serviceId}/logs`, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Accept': 'text/event-stream'
+        }
+      });
+
+      if (!response.ok) throw new Error(`Render API error: ${response.status}`);
+
+      return new Promise((resolve) => {
+        let logs = '';
+        let lineCount = 0;
+        let buffer = '';
+        let resolved = false;
+
+        const timeout = setTimeout(() => {
+          if (!resolved) {
+            console.log(`[RenderService] Log fetch timed out after 5s. Returning ${lineCount} lines.`);
+            cleanup();
+          }
+        }, 5000);
+
+        const cleanup = () => {
+          if (resolved) return;
+          resolved = true;
+          clearTimeout(timeout);
+
+          if (response.body && response.body.destroy) {
+            response.body.destroy();
+          }
+
+          if (!logs) {
+            resolve("No logs found or timed out while fetching.");
+            return;
+          }
+
+          // Redaction
+          let sanitizedLogs = logs;
+          const keysToRedact = [
+            this.apiKey,
+            config.NVIDIA_NIM_API_KEY,
+            config.BLUESKY_APP_PASSWORD,
+            config.MOLTBOOK_API_KEY
+          ].filter(k => k && k.length > 5);
+
+          for (const key of keysToRedact) {
+            sanitizedLogs = sanitizedLogs.split(key).join('[REDACTED]');
+          }
+
+          const finalLines = sanitizedLogs.split('\n').filter(l => l.trim());
+          resolve(finalLines.slice(-limit).join('\n'));
+        };
+
+        response.body.on('data', (chunk) => {
+          buffer += chunk.toString();
+          const lines = buffer.split('\n');
+          buffer = lines.pop(); // Keep partial line in buffer
+
+          for (const line of lines) {
+            if (line.startsWith('data:')) {
+              try {
+                const jsonStr = line.substring(5).trim();
+                const logEntry = JSON.parse(jsonStr);
+                // Handle both object format and raw message format
+                const msg = logEntry.message || logEntry;
+                const ts = logEntry.timestamp || '';
+                logs += `${ts} ${msg}\n`;
+                lineCount++;
+              } catch (e) {
+                logs += line.substring(5).trim() + '\n';
+                lineCount++;
+              }
+            }
+          }
+
+          if (lineCount >= limit * 1.5) {
+            cleanup();
+          }
+        });
+
+        response.body.on('end', cleanup);
+        response.body.on('error', (err) => {
+          console.error('[RenderService] Stream error:', err);
+          cleanup();
+        });
+      });
+
+    } catch (error) {
+      console.error('[RenderService] Error fetching logs:', error.message);
+      return `Error fetching logs: ${error.message}`;
+    }
+  }
+}
+
+export const renderService = new RenderService();

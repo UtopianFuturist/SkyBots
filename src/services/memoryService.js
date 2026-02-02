@@ -115,7 +115,14 @@ class MemoryService {
 
   formatMemoriesForPrompt() {
     if (!this.isEnabled() || this.recentMemories.length === 0) return "No recent memories available.";
-    return this.recentMemories.map(m => `[Memory from ${m.indexedAt}]:\n${m.text}`).join('\n\n---\n\n');
+    // Strip the hashtag from memories before injecting them into prompts to prevent leakage
+    return this.recentMemories.map(m => {
+        let cleanText = m.text;
+        if (this.hashtag) {
+            cleanText = cleanText.replace(new RegExp(this.hashtag, 'g'), '').trim();
+        }
+        return `[Memory from ${m.indexedAt}]:\n${cleanText}`;
+    }).join('\n\n---\n\n');
   }
 }
 

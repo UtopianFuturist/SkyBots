@@ -44,7 +44,8 @@ export const splitText = (text, maxLength = 300) => {
     }
 
     chunks.push(chunk + '…');
-    remainingText = '…' + remainingText.slice(chunk.length).trim();
+    // Add a space after the leading ellipsis in subsequent chunks to prevent hashtag breakage
+    remainingText = '… ' + remainingText.slice(chunk.length).trim();
   }
 
     return chunks;

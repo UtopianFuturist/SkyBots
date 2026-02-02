@@ -19,7 +19,11 @@ const defaultData = {
   interactions: [], // For long-term memory
   bluesky_instructions: [],
   lastAutonomousPostTime: null,
-  moltbook_interacted_posts: [] // Track post IDs to avoid duplicate interactions
+  moltbook_interacted_posts: [], // Track post IDs to avoid duplicate interactions
+  discord_admin_available: true,
+  discord_last_replied: true,
+  discord_conversations: {}, // { channelId: [ { role, content, timestamp } ] }
+  discord_pending_mirror: null // { content, topic, timestamp }
 };
 
 class DataStore {
@@ -174,6 +178,53 @@ class DataStore {
 
   getLastAutonomousPostTime() {
     return this.db.data.lastAutonomousPostTime;
+  }
+
+  async setDiscordAdminAvailability(available) {
+    this.db.data.discord_admin_available = available;
+    await this.db.write();
+  }
+
+  getDiscordAdminAvailability() {
+    return this.db.data.discord_admin_available;
+  }
+
+  async setDiscordLastReplied(replied) {
+    this.db.data.discord_last_replied = replied;
+    await this.db.write();
+  }
+
+  getDiscordLastReplied() {
+    return this.db.data.discord_last_replied;
+  }
+
+  async saveDiscordInteraction(channelId, role, content) {
+    if (!this.db.data.discord_conversations[channelId]) {
+      this.db.data.discord_conversations[channelId] = [];
+    }
+    this.db.data.discord_conversations[channelId].push({
+      role,
+      content,
+      timestamp: Date.now()
+    });
+    // Keep last 50 per channel
+    if (this.db.data.discord_conversations[channelId].length > 50) {
+      this.db.data.discord_conversations[channelId].shift();
+    }
+    await this.db.write();
+  }
+
+  getDiscordConversation(channelId) {
+    return this.db.data.discord_conversations[channelId] || [];
+  }
+
+  async setDiscordPendingMirror(mirror) {
+    this.db.data.discord_pending_mirror = mirror;
+    await this.db.write();
+  }
+
+  getDiscordPendingMirror() {
+    return this.db.data.discord_pending_mirror;
   }
 }
 

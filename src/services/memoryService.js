@@ -61,6 +61,22 @@ class MemoryService {
       - Do NOT use reasoning or <think> tags.
     `;
 
+    if (type === 'discord_blurb') {
+        prompt = `
+          You are the memory module for an AI agent. Generate a very short, discrete, and persona-aligned blurb for your "Memory Thread" summarizing a significant conversation you had on Discord with your admin or another user.
+
+          Conversation Context:
+          ${context}
+
+          INSTRUCTIONS:
+          - Focus on what you learned or how you felt.
+          - DO NOT include private or sensitive details.
+          - Keep it very brief (under 150 characters).
+          - Use a contemplative tone that fits your persona: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the hashtag ${this.hashtag} at the very end.
+        `;
+    }
+
     const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
 
     if (!entry) {

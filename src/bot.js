@@ -1056,10 +1056,11 @@ export class Bot {
         }
       } else {
         const repoQuery = await llmService.extractClaim(text); // Use extractClaim for a clean search query
-        const repoResults = await googleSearchService.searchRepo(repoQuery);
+        if (repoQuery) {
+          const repoResults = await googleSearchService.searchRepo(repoQuery);
 
-        if (repoResults.length > 0) {
-          const repoContext = repoResults.slice(0, 3).map(r => `File/Page: ${r.title}\nSnippet: ${r.snippet}`).join('\n\n');
+          if (repoResults && repoResults.length > 0) {
+            const repoContext = repoResults.slice(0, 3).map(r => `File/Page: ${r.title}\nSnippet: ${r.snippet}`).join('\n\n');
           const repoSystemPrompt = `
             You have found information about your own codebase from your GitHub repository.
             Use this context to answer the user's question accurately and helpfully.
@@ -1068,8 +1069,9 @@ export class Bot {
           `;
           // Inject this into the messages before final response generation
           messages.splice(1, 0, { role: 'system', content: repoSystemPrompt });
-          // Re-generate response with new context
-          responseText = await llmService.generateResponse(messages, { max_tokens: 2000 });
+            // Re-generate response with new context
+            responseText = await llmService.generateResponse(messages, { max_tokens: 2000 });
+          }
         }
       }
     }

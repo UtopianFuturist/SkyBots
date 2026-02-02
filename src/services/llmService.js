@@ -44,9 +44,15 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
         ]
       : messages;
 
+    // Defensive check: ensure all messages have valid content strings
+    const validatedMessages = finalMessages.map(m => ({
+      ...m,
+      content: m.content || ''
+    }));
+
     const payload = {
       model: useQwen ? this.qwenModel : this.model,
-      messages: finalMessages,
+      messages: validatedMessages,
       temperature,
       max_tokens,
       stream: false
@@ -72,6 +78,9 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
 
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 400) {
+            console.error(`[LLMService] [${requestId}] Payload that caused 400 error:`, JSON.stringify(payload, null, 2));
+        }
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
       }
 
@@ -859,6 +868,9 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true, preface_system_prompt: false });
 
     try {
+      if (!response) {
+        return { intent: "timeout/empty", actions: [], requires_search: false, consolidated_queries: [] };
+      }
       // Find JSON block if it exists
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {

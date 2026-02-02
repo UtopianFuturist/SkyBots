@@ -46,20 +46,22 @@ export class Bot {
   }
 
   async init() {
-    console.log('[Bot] Initializing services...');
+    console.log('[Bot] [v3] Initializing services...');
     await dataStore.init();
     console.log('[Bot] DataStore initialized.');
 
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
 
+    console.log('[Bot] Triggering DiscordService.init()...');
     // Initialize Discord in the background to prevent blocking the main bot if it hangs
     discordService.init().then(() => {
-        console.log('[Bot] DiscordService initialized.');
+        console.log('[Bot] DiscordService.init() promise resolved.');
     }).catch(err => {
-        console.error('[Bot] Failed to initialize DiscordService:', err);
+        console.error('[Bot] CRITICAL: DiscordService.init() failed to even start:', err);
     });
 
+    console.log('[Bot] Proceeding to Bluesky authentication...');
     await blueskyService.authenticate();
     console.log('[Bot] Bluesky authenticated.');
 

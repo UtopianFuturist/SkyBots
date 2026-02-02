@@ -10,20 +10,24 @@ import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils
 
 class DiscordService {
     constructor() {
+        console.log('[DiscordService] Constructor starting...');
         this.client = null;
         this.token = config.DISCORD_BOT_TOKEN;
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.nickname = config.DISCORD_NICKNAME || 'SkyBots';
-        this.isEnabled = !!this.token;
+        this.isEnabled = !!this.token && this.token !== 'undefined' && this.token !== 'null';
         this.adminId = null;
+        console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
     }
 
     async init() {
+        console.log('[DiscordService] init() called.');
         if (!this.isEnabled) {
-            console.log('[DiscordService] Discord token not configured. Service disabled.');
+            console.log('[DiscordService] Discord token not configured or invalid. Service disabled.');
             return;
         }
 
+        console.log('[DiscordService] Creating client...');
         this.client = new Client({
             intents: [
                 GatewayIntentBits.Guilds,

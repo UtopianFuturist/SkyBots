@@ -45,5 +45,13 @@ app.listen(PORT, () => {
   console.log(`[Express] Server is running on port ${PORT}`);
   
   // Initialize and run the bot
-  bot.init().then(() => bot.run());
+  console.log('[Express] Initializing bot...');
+  bot.init()
+    .then(() => {
+        console.log('[Express] bot.init() successful. Starting bot.run()...');
+        return bot.run();
+    })
+    .catch(err => {
+        console.error('[Express] CRITICAL ERROR during bot initialization:', err);
+    });
 });

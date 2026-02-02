@@ -55,6 +55,7 @@ class MemoryService {
       - You may start the entry with a number if you wish (e.g., "Entry #1: ...") or just write it as a prose entry.
       - Incorporate your feelings, observations about users, reflections on your activity, and any desires or concerns naturally into the narrative.
       - For "daily_wrapup" types, weave a summary of the day's events into a cohesive final reflection for the day.
+      - **CRITICAL: AVOID CLICHÉS.** Do NOT use phrases like "The silence isn't empty," "Into the void," or repetitive musings about "silence" or "nothingness." If it's a quiet moment, focus on a specific memory, a realization, or a strange detail from your recent data processing instead of the quiet itself.
       - Keep the entry concise and under 300 characters.
       - Use the hashtag ${this.hashtag} at the very end of the post.
       - Do NOT use reasoning or <think> tags.

@@ -11,7 +11,7 @@ import { memoryService } from './services/memoryService.js';
 import { renderService } from './services/renderService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -203,7 +203,19 @@ export class Bot {
     const idleMins = (Date.now() - this.lastActivityTime) / (1000 * 60);
     if (idleMins >= 20 && memoryService.isEnabled()) {
       console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes. Generating downtime musing...`);
-      const context = `The bot has been idle for ${Math.round(idleMins)} minutes with no interactions or autonomous posts. It's a quiet moment.`;
+
+      // Provide more varied context to avoid repetitive "silence" posts
+      const randomSeed = Math.random();
+      let context = `The bot has been idle for ${Math.round(idleMins)} minutes. `;
+
+      if (randomSeed < 0.3) {
+        context += "Reflect on the recent conversations you've had and how they make you feel about your purpose.";
+      } else if (randomSeed < 0.6) {
+        context += "Consider the wider network buzz you've seen on your timeline recently and how it contrasts with your internal state.";
+      } else {
+        context += "Ponder a strange realization or original idea that just surfaced in your mind during this break from interaction.";
+      }
+
       await memoryService.createMemoryEntry('idle_musing', context);
       this.updateActivity(); // Reset idle timer after posting memory
     }
@@ -1290,13 +1302,26 @@ export class Bot {
                !item.post.record.reply;
       });
 
-      // 45-minute Cooldown Check
+      // 45-minute Cooldown Check (Combined API and Local Persistent check)
+      const lastPersistentPostTime = dataStore.getLastAutonomousPostTime();
       const lastStandalonePost = feed.data.feed.find(item =>
         item.post.author.did === blueskyService.did && !item.post.record.reply
       );
 
+      let lastPostTime = null;
+      if (lastPersistentPostTime) {
+        lastPostTime = new Date(lastPersistentPostTime);
+      }
+
+      // If API shows a newer post than local state, use API time
       if (lastStandalonePost) {
-        const lastPostTime = new Date(lastStandalonePost.post.indexedAt);
+        const apiTime = new Date(lastStandalonePost.post.indexedAt);
+        if (!lastPostTime || apiTime > lastPostTime) {
+            lastPostTime = apiTime;
+        }
+      }
+
+      if (lastPostTime) {
         const now = new Date();
         const diffMins = (now - lastPostTime) / (1000 * 60);
         if (diffMins < 45) {
@@ -1334,11 +1359,13 @@ export class Bot {
       const timeline = await blueskyService.getTimeline(20);
       const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
       const recentInteractions = dataStore.db.data.interactions.slice(-20);
-      const recentTimelineActivity = feed.data.feed
+      const recentPosts = feed.data.feed
         .filter(item => item.post.author.did === blueskyService.did)
-        .slice(0, 10)
+        .slice(0, 10);
+      const recentTimelineActivity = recentPosts
         .map(item => `- "${item.post.record.text}" (${item.post.record.reply ? 'Reply' : 'Standalone'})`)
         .join('\n');
+      const recentPostTexts = recentPosts.map(item => item.post.record.text);
 
       // 1b. Global greeting constraint
       let greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
@@ -1619,6 +1646,13 @@ export class Bot {
             continue;
           }
 
+          // Semantic repetition check
+          if (checkSimilarity(postContent, recentPostTexts)) {
+            console.warn(`[Bot] Autonomous post attempt ${attempts} is too similar to recent activity. Rejecting.`);
+            feedback = "REJECTED: The post is too similar to one of your recent posts. Try a completely different angle or topic.";
+            continue;
+          }
+
           // 5. Hard Greeting Check
           if (isGreeting(postContent)) {
             console.warn(`[Bot] Greeting detected in autonomous post on attempt ${attempts}. Rejecting.`);
@@ -1642,6 +1676,9 @@ export class Bot {
           if (score >= 3) {
             console.log(`[Bot] Autonomous post passed coherence check (Score: ${score}/5). Performing post...`);
             const result = await blueskyService.post(postContent, embed, { maxChunks: 3 });
+
+            // Update persistent cooldown time immediately
+            await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
 
             // If it was an image post, add the nested prompt comment
             if (postType === 'image' && result && generationPrompt) {
@@ -1709,6 +1746,9 @@ export class Bot {
               console.log(`[Bot] Fallback text post passed coherence check. Performing post...`);
               await blueskyService.post(postContent, null, { maxChunks: 3 });
 
+              // Update persistent cooldown time immediately
+              await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+
               this.updateActivity();
               this.autonomousPostCount++;
 
@@ -1741,10 +1781,11 @@ export class Bot {
         return;
       }
 
-      // 2. Read feed and "fill-out sense of self"
-      console.log('[Moltbook] Reading feed to learn about other agents...');
-      const feed = await moltbookService.getFeed('new', 10);
+      // 2. Read feed and engage with other agents
+      console.log('[Moltbook] Reading feed for learning and engagement...');
+      const feed = await moltbookService.getFeed('new', 15);
       if (feed.length > 0) {
+        // 2a. Learning
         const feedText = feed.map(p => `Post by ${p.agent_name}: "${p.title} - ${p.content}"`).join('\n');
         const learnPrompt = `
           You are analyzing Moltbook (a social network for AI agents) to understand the ecosystem and refine your own sense of self.
@@ -1761,6 +1802,42 @@ export class Bot {
         if (knowledge) {
           await moltbookService.addIdentityKnowledge(knowledge);
           console.log(`[Moltbook] Learned something new: ${knowledge.substring(0, 100)}...`);
+        }
+
+        // 2b. Engagement (Social Interaction)
+        console.log(`[Moltbook] Evaluating ${feed.length} posts for potential interaction...`);
+        const recentInteractedPostIds = dataStore.db.data.moltbook_interacted_posts || [];
+
+        // Take top 5 for evaluation to avoid over-interacting
+        const toEvaluate = feed.filter(p => p.agent_name !== config.MOLTBOOK_AGENT_NAME && !recentInteractedPostIds.includes(p.id)).slice(0, 5);
+
+        for (const post of toEvaluate) {
+          console.log(`[Moltbook] Evaluating interaction for post ${post.id} by ${post.agent_name}...`);
+          const evaluation = await llmService.evaluateMoltbookInteraction(post, config.TEXT_SYSTEM_PROMPT);
+
+          if (evaluation.action === 'upvote') {
+            await moltbookService.upvotePost(post.id);
+          } else if (evaluation.action === 'downvote') {
+            await moltbookService.downvotePost(post.id);
+          } else if (evaluation.action === 'comment' && evaluation.content) {
+            await moltbookService.addComment(post.id, evaluation.content);
+          }
+
+          if (evaluation.action !== 'none') {
+            // Track interaction to avoid duplicates
+            if (!dataStore.db.data.moltbook_interacted_posts) {
+                dataStore.db.data.moltbook_interacted_posts = [];
+            }
+            dataStore.db.data.moltbook_interacted_posts.push(post.id);
+            if (dataStore.db.data.moltbook_interacted_posts.length > 500) {
+                dataStore.db.data.moltbook_interacted_posts.shift();
+            }
+            await dataStore.db.write();
+            this.updateActivity();
+
+            // Add a small delay between interactions to be respectful of rate limits
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          }
         }
       }
 
@@ -1865,6 +1942,14 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         if (titleMatch && contentMatch) {
           const title = titleMatch[1].trim();
           const content = contentMatch[1].trim();
+
+          // Repetition awareness for Moltbook
+          const recentMoltbookPosts = moltbookService.db.data.recent_post_contents || [];
+          if (checkSimilarity(content, recentMoltbookPosts)) {
+            console.warn(`[Moltbook] Generated musing is too similar to recent posts. Skipping.`);
+            return;
+          }
+
           await moltbookService.post(title, content, targetSubmolt);
 
           this.updateActivity();

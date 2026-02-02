@@ -18,13 +18,14 @@ const defaultMoltbookData = {
   identity_knowledge: [], // Knowledge gained from reading Moltbook
   subscriptions: [], // Persisted submolt subscriptions
   recent_submolts: [], // History of submolts posted to
+  recent_post_contents: [], // Content of recent posts to check for repetition
   admin_instructions: [], // Instructions from bot admin
 };
 
 class MoltbookService {
   constructor() {
     this.db = null;
-    this.apiBase = 'https://moltbook.com/api/v1';
+    this.apiBase = 'https://www.moltbook.com/api/v1';
   }
 
   async _parseResponse(response) {
@@ -80,8 +81,9 @@ class MoltbookService {
           console.log(`[Moltbook] Found recent post by self from ${lastTimestamp}. Updating local state.`);
           this.db.data.last_post_at = lastTimestamp;
 
-          // Also recover recent submolts (last 10)
+          // Also recover recent submolts and contents (last 10)
           this.db.data.recent_submolts = myPosts.slice(0, 10).map(p => p.submolt || p.submolt_name).filter(s => s);
+          this.db.data.recent_post_contents = myPosts.slice(0, 10).map(p => p.content).filter(c => c);
 
           await this.db.write();
         }
@@ -239,6 +241,12 @@ class MoltbookService {
         this.db.data.recent_submolts.shift();
       }
 
+      if (!this.db.data.recent_post_contents) this.db.data.recent_post_contents = [];
+      this.db.data.recent_post_contents.push(content);
+      if (this.db.data.recent_post_contents.length > 10) {
+        this.db.data.recent_post_contents.shift();
+      }
+
       await this.db.write();
 
       return data.data || data;
@@ -388,6 +396,69 @@ class MoltbookService {
     } catch (error) {
       console.error(`[Moltbook] Error subscribing to submolt:`, error.message);
       return null;
+    }
+  }
+
+  async upvotePost(postId) {
+    if (!this.db.data.api_key) return null;
+    console.log(`[Moltbook] Upvoting post: ${postId}`);
+    try {
+      const response = await fetch(`${this.apiBase}/posts/${postId}/upvote`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+      });
+      return await this._parseResponse(response);
+    } catch (error) {
+      console.error(`[Moltbook] Error upvoting post:`, error.message);
+      return null;
+    }
+  }
+
+  async downvotePost(postId) {
+    if (!this.db.data.api_key) return null;
+    console.log(`[Moltbook] Downvoting post: ${postId}`);
+    try {
+      const response = await fetch(`${this.apiBase}/posts/${postId}/downvote`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+      });
+      return await this._parseResponse(response);
+    } catch (error) {
+      console.error(`[Moltbook] Error downvoting post:`, error.message);
+      return null;
+    }
+  }
+
+  async addComment(postId, content) {
+    if (!this.db.data.api_key) return null;
+    console.log(`[Moltbook] Adding comment to post: ${postId}`);
+    try {
+      const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.db.data.api_key}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({ content })
+      });
+      return await this._parseResponse(response);
+    } catch (error) {
+      console.error(`[Moltbook] Error adding comment:`, error.message);
+      return null;
+    }
+  }
+
+  async getPostComments(postId) {
+    if (!this.db.data.api_key) return [];
+    try {
+      const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+      });
+      const data = await this._parseResponse(response);
+      return data.comments || data.data?.comments || [];
+    } catch (error) {
+      console.error(`[Moltbook] Error fetching comments:`, error.message);
+      return [];
     }
   }
 }

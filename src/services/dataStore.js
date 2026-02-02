@@ -14,10 +14,12 @@ const defaultData = {
   mutedBranches: [], // { uri, handle }
   conversationLengths: {},
   userProfiles: {},
-   userSummaries: {},
+  userSummaries: {},
   userRatings: {},
   interactions: [], // For long-term memory
-  bluesky_instructions: []
+  bluesky_instructions: [],
+  lastAutonomousPostTime: null,
+  moltbook_interacted_posts: [] // Track post IDs to avoid duplicate interactions
 };
 
 class DataStore {
@@ -163,6 +165,15 @@ class DataStore {
   getBlueskyInstructions() {
     if (!this.db.data.bluesky_instructions) return '';
     return this.db.data.bluesky_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
+  }
+
+  async updateLastAutonomousPostTime(timestamp) {
+    this.db.data.lastAutonomousPostTime = timestamp;
+    await this.db.write();
+  }
+
+  getLastAutonomousPostTime() {
+    return this.db.data.lastAutonomousPostTime;
   }
 }
 

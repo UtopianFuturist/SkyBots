@@ -149,3 +149,28 @@ export const stripWrappingQuotes = (text) => {
   }
   return trimmed;
 };
+
+export const checkSimilarity = (newText, recentTexts, threshold = 0.6) => {
+  if (!recentTexts || recentTexts.length === 0) return false;
+
+  const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
+  const normalizedNew = normalize(newText);
+
+  for (const old of recentTexts) {
+    if (!old) continue;
+    const normalizedOld = normalize(old);
+    if (normalizedNew === normalizedOld) return true;
+
+    const wordsNew = new Set(normalizedNew.split(/\s+/));
+    const wordsOld = new Set(normalizedOld.split(/\s+/));
+
+    if (wordsNew.size === 0 || wordsOld.size === 0) continue;
+
+    const intersection = new Set([...wordsNew].filter(x => wordsOld.has(x)));
+    // Use the smaller count as denominator to catch if one post is a shorter version/subset of another
+    const similarity = intersection.size / Math.min(wordsNew.size, wordsOld.size);
+
+    if (similarity >= threshold) return true;
+  }
+  return false;
+};

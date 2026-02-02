@@ -32,6 +32,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
   dataStore: {
     init: jest.fn(),
     getBlueskyInstructions: jest.fn().mockReturnValue(''),
+    getLastAutonomousPostTime: jest.fn().mockReturnValue(null),
+    updateLastAutonomousPostTime: jest.fn(),
     db: {
       data: {
         interactions: []

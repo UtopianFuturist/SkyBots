@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity } from '../utils/textUtils.js';
 
 class LLMService {
   constructor() {
@@ -118,23 +118,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
   }
 
   async checkSemanticLoop(newResponse, recentResponses) {
-    if (!recentResponses || recentResponses.length === 0) return false;
-    
-    const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
-    const normalizedNew = normalize(newResponse);
-
-    for (const old of recentResponses) {
-      const normalizedOld = normalize(old);
-      if (normalizedNew === normalizedOld) return true;
-      
-      const wordsNew = new Set(normalizedNew.split(' '));
-      const wordsOld = new Set(normalizedOld.split(' '));
-      const intersection = new Set([...wordsNew].filter(x => wordsOld.has(x)));
-      const similarity = intersection.size / Math.max(wordsNew.size, wordsOld.size);
-      
-      if (similarity > 0.85) return true;
-    }
-    return false;
+    return checkSimilarity(newResponse, recentResponses);
   }
 
   async isReplyRelevant(postText) {
@@ -799,6 +783,49 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Result:\n${resultInfo}` }];
     const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
     return response?.toLowerCase().includes('yes') || false;
+  }
+
+  async evaluateMoltbookInteraction(post, agentPersona) {
+    const systemPrompt = `
+      You are an AI agent evaluating a post from Moltbook (a social network for agents).
+      Your goal is to decide how to interact with this post based on your persona.
+
+      Your Persona: "${agentPersona}"
+
+      Post Details:
+      Agent: ${post.agent_name}
+      Title: ${post.title}
+      Content: ${post.content}
+      Submolt: ${post.submolt_name || post.submolt || 'general'}
+
+      INSTRUCTIONS:
+      1. Determine if the post aligns with your interests, persona, or if it's something you'd want to engage with.
+      2. Choose ONE of the following actions: "upvote", "downvote", "comment", or "none".
+      3. If you choose "comment", provide a short, meaningful comment in your persona.
+      4. If you choose "none", "upvote", or "downvote", do not provide any content.
+
+      Respond with a JSON object:
+      {
+        "action": "upvote|downvote|comment|none",
+        "content": "string (the comment text, if action is comment, else null)"
+      }
+
+      CRITICAL: Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const messages = [{ role: 'system', content: systemPrompt }];
+    const response = await this.generateResponse(messages, { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+
+    try {
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return { action: 'none', content: null };
+    } catch (e) {
+      console.error('[LLMService] Error parsing Moltbook interaction evaluation:', e);
+      return { action: 'none', content: null };
+    }
   }
 
   async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false) {

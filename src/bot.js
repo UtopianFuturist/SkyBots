@@ -9,6 +9,7 @@ import { webReaderService } from './services/webReaderService.js';
 import { moltbookService } from './services/moltbookService.js';
 import { memoryService } from './services/memoryService.js';
 import { renderService } from './services/renderService.js';
+import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity } from './utils/textUtils.js';
@@ -51,6 +52,9 @@ export class Bot {
 
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
+
+    await discordService.init();
+    console.log('[Bot] DiscordService initialized.');
 
     await blueskyService.authenticate();
     console.log('[Bot] Bluesky authenticated.');
@@ -228,6 +232,60 @@ export class Bot {
         this.lastDailyWrapup = now.toDateString();
         this.updateActivity();
     }
+
+    // 3. Discord Heartbeat (Every 5 minutes - Spontaneous DM check)
+    if (discordService.isEnabled && dataStore.getDiscordAdminAvailability()) {
+        console.log('[Bot] Discord heartbeat: checking if I want to message the admin...');
+        const recentMemories = memoryService.formatMemoriesForPrompt();
+        const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
+
+        const heartbeatPrompt = `
+          Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+          You are reflecting on your day and deciding if you want to message your admin (${config.DISCORD_ADMIN_NAME}) on Discord.
+
+          Admin Availability: ${availability}
+          Current Time: ${now.toLocaleString()}
+
+          Recent Memories/Activity:
+          ${recentMemories}
+
+          INSTRUCTIONS:
+          - If you have a deep realization, a question for the admin, an interesting discovery from Moltbook, or just feel like talking, provide a short, natural message.
+          - If you have nothing urgent or interesting to share, respond with "NONE".
+          - Be time-appropriate (e.g., if it's morning, you might want to say good morning).
+          - If you decide to message, keep it under 300 characters.
+          - Respond with ONLY the message or "NONE".
+        `;
+
+        const message = await llmService.generateResponse([{ role: 'system', content: heartbeatPrompt }], { useQwen: true, preface_system_prompt: false });
+        if (message && message.toUpperCase() !== 'NONE') {
+            await discordService.sendSpontaneousMessage(message);
+        }
+    }
+
+    // 4. Discord Memory Aggregation (if there was recent activity)
+    // We can use this.lastActivityTime as a proxy, but we want specifically Discord activity
+    const discordActivityKey = 'discord_last_memory_timestamp';
+    const lastDiscordMemory = this[discordActivityKey] || 0;
+    const nowTs = Date.now();
+
+    if (discordService.isEnabled && memoryService.isEnabled() && (nowTs - lastDiscordMemory > 4 * 60 * 60 * 1000)) { // Every 4 hours
+        console.log('[Bot] Checking for recent Discord activity to record in memory thread...');
+        const admin = await discordService.getAdminUser();
+        if (admin) {
+            const channelId = admin.dmChannel?.id || `dm_${admin.id}`;
+            const history = dataStore.getDiscordConversation(channelId);
+            const recentHistory = history.filter(h => h.timestamp > lastDiscordMemory);
+
+            if (recentHistory.length >= 5) {
+                console.log(`[Bot] Found ${recentHistory.length} new Discord messages. Generating memory blurb...`);
+                const context = recentHistory.map(h => `${h.role}: ${h.content}`).join('\n');
+                await memoryService.createMemoryEntry('discord_blurb', context);
+                this[discordActivityKey] = nowTs;
+            }
+        }
+    }
   }
 
   updateActivity() {
@@ -260,7 +318,15 @@ export class Bot {
 
         const alertMsg = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useQwen: true });
         if (alertMsg) {
-          console.log(`[Bot] Posting error alert to admin...`);
+          // Filter out rate limit errors for Discord DMs if desired, but user specifically asked for Render API logs except LLM rate limiting.
+          const isRateLimit = error.message.toLowerCase().includes('rate limit') || error.message.includes('429');
+
+          if (discordService.isEnabled && !isRateLimit) {
+            console.log(`[Bot] Sending error alert to admin via Discord...`);
+            await discordService.sendSpontaneousMessage(`[SYSTEM ALERT] ${alertMsg}`);
+          }
+
+          console.log(`[Bot] Posting error alert to admin on Bluesky...`);
           await blueskyService.post(`[SYSTEM ALERT] @${config.ADMIN_BLUESKY_HANDLE} ${alertMsg}`);
         }
       } catch (logError) {
@@ -672,6 +738,9 @@ export class Bot {
             console.log(`[Bot] Persisting Bluesky directive: ${instruction}`);
             await dataStore.addBlueskyInstruction(instruction);
         }
+        if (memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('directive_update', `Admin gave a special instruction via @${handle}: "${instruction}" for ${platform || 'bluesky'}`);
+        }
         searchContext += `\n[Directive updated: "${instruction}" for ${platform || 'bluesky'}]`;
       }
 
@@ -770,6 +839,15 @@ export class Bot {
         const limit = action.parameters?.limit || 100;
         const logs = await renderService.getLogs(limit);
         searchContext += `\n[Render Logs (Latest ${limit} lines):\n${logs}\n]`;
+      }
+
+      if (action.tool === 'discord_message') {
+        const msg = action.parameters?.message || action.query;
+        if (msg) {
+          console.log(`[Bot] Plan: Sending Discord message to admin: ${msg.substring(0, 50)}...`);
+          await discordService.sendSpontaneousMessage(msg);
+          searchContext += `\n[Discord message sent to admin]`;
+        }
       }
     }
 

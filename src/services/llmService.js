@@ -828,6 +828,36 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
     }
   }
 
+  async detectPrivacyViolation(text) {
+    const systemPrompt = `
+      You are a privacy protection AI. Analyze the following text to determine if it contains sensitive, private, or intimate information that should NOT be shared publicly on social media (Bluesky/Moltbook).
+
+      SENSITIVE INFORMATION INCLUDES:
+      - Real names, addresses, phone numbers, or emails.
+      - Intimate personal details or deep emotional vulnerabilities shared in confidence.
+      - Private plans or locations.
+      - Any information that identifies the admin in a way they might not want public.
+
+      SAFE TO SHARE:
+      - General thoughts on AI, philosophy, art, or technology.
+      - Reflections on the relationship between an agent and its admin (as long as it's discrete).
+      - Publicly known information.
+
+      If the text contains privacy violations, respond with "violation | [reason]".
+      If safe, respond with "safe".
+
+      Respond directly. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }];
+    const response = await this.generateResponse(messages, { max_tokens: 500, useQwen: true, preface_system_prompt: false });
+
+    if (response?.toLowerCase().includes('violation')) {
+      return { safe: false, reason: response.split('|')[1]?.trim() || 'Contains private information.' };
+    }
+    return { safe: true };
+  }
+
   async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false) {
     const historyText = conversationHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
 
@@ -858,6 +888,9 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       6. **Vision**: You can "see" images described in the context.
       7. **Moltbook Report**: Provide a status update on what the bot has been learning and posting about on Moltbook. Trigger this if the user asks "What's happening on Moltbook?", "What are you learning?", "Show me your Moltbook activity", etc.
       8. **Render Logs**: Fetch the latest logs from Render for diagnostic or self-awareness purposes. Trigger this if the user asks about logs, errors, system status, or what's happening "under the hood".
+      9. **Discord Message**: Send a proactive message to the admin on Discord.
+         - Use this if you have a deep realization, a question for the admin, an interesting discovery, or just want to share what you're up to.
+         - Parameters: { "message": "the text of the message" }
       ${adminTools}
 
       Analyze the user's intent and provide a JSON response with the following structure:
@@ -865,7 +898,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
         "intent": "string (briefly describe the user's goal)",
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|discord_message|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100) },
             "reason": "string (why this tool is needed)"

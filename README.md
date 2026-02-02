@@ -6,6 +6,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 
 - **Planner/Executor Pattern**: Uses the **Qwen-3-Coder-480B** model as a "Heavy Lifter" to agentically plan tool use, refine search queries, and summarize deep context before passing it to the main LLM.
 - **Agentic Moltbook Integration**: Automatically interacts with **Moltbook.com** (a social network for AI agents), including automated registration, feed reading for self-learning, and periodic musings.
+- **Discord Bot Bridge**: Agentically decides to DM the admin about realizations, errors, or Moltbook discoveries. Supports ongoing conversations, command-based control, and discrete mirroring of conversations back to social feeds with permission.
 - **Smart Response Filtering**: Uses an LLM to determine if a mention is relevant and safe to reply to, avoiding unnecessary interactions.
 - **Chained Replies**: Automatically splits longer responses into a threaded chain of up to 3 posts.
 - **Nvidia NIM Image Generation**: Creates high-quality images directly in replies using the **Stable Diffusion 3 Medium** model.
@@ -39,6 +40,8 @@ The codebase is organized into a modular structure for easy maintenance and expa
     -   `googleSearchService.js`: Handles Google web and vetted image searches.
     -   `youtubeService.js`: Handles YouTube video searches.
     - `renderService.js`: Interacts with the Render API for logs and service discovery.
+    -   `moltbookService.js`: Manages interactions with Moltbook.
+    -   `discordService.js`: Manages the Discord bot bridge and admin communication.
     -   `dataStore.js`: Manages persistent storage with `lowdb`.
 -   `src/utils/`: Utility functions for command handling and text manipulation.
 -   `tests/`: Unit tests for the services and utilities.
@@ -91,6 +94,9 @@ The bot is pre-configured for seamless deployment on Render.
 | `MOLTBOOK_API_KEY` | Your Moltbook API key. If missing, the bot will attempt to register on startup. | (None) |
 | `MOLTBOOK_AGENT_NAME` | Your bot's desired name on Moltbook. | (Bot handle) |
 | `MOLTBOOK_DESCRIPTION`| A description for your Moltbook profile. | (Project description) |
+| `DISCORD_BOT_TOKEN` | Token for the Discord bot bridge. | (None) |
+| `DISCORD_ADMIN_NAME` | Your Discord username for DM communication. | (None) |
+| `DISCORD_NICKNAME` | Custom nickname for the bot on Discord. | `SkyBots` |
 | `RENDER_API_KEY` | Your Render API key (for log access). | (None) |
 | `RENDER_SERVICE_ID` | Your Render service ID. | (Autodiscovered if name matches) |
 | `RENDER_SERVICE_NAME` | The name of your service on Render. | `skybots` |
@@ -118,6 +124,9 @@ The bot understands natural language commands in addition to the following expli
 | `!resume`| (Admin-only) Resumes bot operations after a high-risk escalation. |
 | `!help` | Displays a list of available commands. |
 | `!about`| Asks the bot to describe its capabilities. |
+| `/on` | (Discord-only) Marks admin as available for spontaneous DMs. |
+| `/off`| (Discord-only) Marks admin as preoccupied/sleeping. |
+| `/art [prompt]`| (Discord-only) Generates an image on Discord. |
 | `google [query]` | Searches the web. |
 | `youtube [query]` | Searches YouTube for videos. |
 | `generate image of [prompt]`| Creates an image using Nvidia NIM. |

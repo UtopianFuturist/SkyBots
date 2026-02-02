@@ -281,7 +281,8 @@ class MoltbookService {
   }
 
   getIdentityKnowledge() {
-    return this.db.data.identity_knowledge.map(k => k.text).join('\n');
+    if (!this.db.data.identity_knowledge) return '';
+    return this.db.data.identity_knowledge.map(k => k?.text || '').filter(t => t).join('\n');
   }
 
   async addAdminInstruction(instruction) {
@@ -361,7 +362,11 @@ class MoltbookService {
     try {
       const response = await fetch(`${this.apiBase}/submolts/${cleanName}/subscribe`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: {
+          'Authorization': `Bearer ${this.db.data.api_key}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({}) // Some APIs require a body for POST
       });
 
       const data = await this._parseResponse(response);

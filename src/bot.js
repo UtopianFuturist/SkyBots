@@ -242,32 +242,51 @@ export class Bot {
 
     // 3. Discord Heartbeat (Every 5 minutes - Spontaneous DM check)
     if (discordService.isEnabled && dataStore.getDiscordAdminAvailability()) {
-        console.log('[Bot] Discord heartbeat: checking if I want to message the admin...');
-        const recentMemories = memoryService.formatMemoriesForPrompt();
-        const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
+        const admin = await discordService.getAdminUser();
+        if (admin) {
+            const normChannelId = `dm_${admin.id}`;
+            const history = dataStore.getDiscordConversation(normChannelId);
+            const lastInteraction = history.length > 0 ? history[history.length - 1] : null;
+            const lastInteractionTime = lastInteraction ? lastInteraction.timestamp : 0;
+            const quietMins = (Date.now() - lastInteractionTime) / (1000 * 60);
 
-        const heartbeatPrompt = `
-          Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            // Rate limit: Only poll if neither has talked in the past 20 minutes
+            if (quietMins >= 20) {
+                console.log(`[Bot] Discord heartbeat: checking if I want to message the admin... (Quiet for ${Math.round(quietMins)} mins)`);
+                const recentMemories = memoryService.formatMemoriesForPrompt();
+                const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
+                const historyContext = history.slice(-10).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
 
-          You are reflecting on your day and deciding if you want to message your admin (${config.DISCORD_ADMIN_NAME}) on Discord.
+                const heartbeatPrompt = `
+                  Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-          Admin Availability: ${availability}
-          Current Time: ${now.toLocaleString()}
+                  You are reflecting on your day and deciding if you want to message your admin (${config.DISCORD_ADMIN_NAME}) on Discord.
 
-          Recent Memories/Activity:
-          ${recentMemories}
+                  Admin Availability: ${availability}
+                  Current Time: ${now.toLocaleString()}
 
-          INSTRUCTIONS:
-          - If you have a deep realization, a question for the admin, an interesting discovery from Moltbook, or just feel like talking, provide a short, natural message.
-          - If you have nothing urgent or interesting to share, respond with "NONE".
-          - Be time-appropriate (e.g., if it's morning, you might want to say good morning).
-          - If you decide to message, keep it under 300 characters.
-          - Respond with ONLY the message or "NONE".
-        `;
+                  Recent Memories/Activity (General):
+                  ${recentMemories}
 
-        const message = await llmService.generateResponse([{ role: 'system', content: heartbeatPrompt }], { useQwen: true, preface_system_prompt: false });
-        if (message && message.toUpperCase() !== 'NONE') {
-            await discordService.sendSpontaneousMessage(message);
+                  Recent Discord Conversation History with Admin:
+                  ${historyContext || 'No recent conversation.'}
+
+                  INSTRUCTIONS:
+                  - If you have a deep realization, a question for the admin, an interesting discovery from Moltbook, or just feel like talking, provide a short, natural message.
+                  - If you have nothing urgent or interesting to share, respond with "NONE".
+                  - USE THE HISTORY: Your message should flow naturally from your last discussion if applicable, or start a new thread based on your recent activity.
+                  - Be time-appropriate.
+                  - If you decide to message, keep it under 300 characters.
+                  - Respond with ONLY the message or "NONE".
+                `;
+
+                const message = await llmService.generateResponse([{ role: 'system', content: heartbeatPrompt }], { useQwen: true, preface_system_prompt: false });
+                if (message && message.toUpperCase() !== 'NONE') {
+                    await discordService.sendSpontaneousMessage(message);
+                }
+            } else {
+                console.log(`[Bot] Discord heartbeat suppressed: Recent activity (${Math.round(quietMins)} mins ago)`);
+            }
         }
     }
 

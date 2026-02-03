@@ -318,6 +318,27 @@ export class Bot {
     this.lastActivityTime = Date.now();
   }
 
+  async _isDiscordConversationOngoing() {
+    if (!discordService.isEnabled) return false;
+
+    try {
+        const admin = await discordService.getAdminUser();
+        if (!admin) return false;
+
+        const normChannelId = `dm_${admin.id}`;
+        const history = dataStore.getDiscordConversation(normChannelId);
+        if (history.length === 0) return false;
+
+        const lastInteraction = history[history.length - 1];
+        const quietMins = (Date.now() - lastInteraction.timestamp) / (1000 * 60);
+
+        return quietMins < 20;
+    } catch (e) {
+        console.error('[Bot] Error checking if Discord conversation is ongoing:', e);
+        return false;
+    }
+  }
+
   async _handleError(error, contextInfo) {
     console.error(`[Bot] CRITICAL ERROR in ${contextInfo}:`, error);
 
@@ -1391,6 +1412,12 @@ export class Bot {
 
   async performAutonomousPost() {
     if (this.paused) return;
+
+    if (await this._isDiscordConversationOngoing()) {
+        console.log('[Bot] Autonomous post suppressed: Discord conversation is ongoing.');
+        return;
+    }
+
     console.log('[Bot] Checking for autonomous post eligibility...');
 
     try {
@@ -1878,6 +1905,11 @@ export class Bot {
   }
 
   async performMoltbookTasks() {
+    if (await this._isDiscordConversationOngoing()) {
+        console.log('[Moltbook] Periodic tasks suppressed: Discord conversation is ongoing.');
+        return;
+    }
+
     try {
       console.log('[Moltbook] Starting periodic tasks...');
 

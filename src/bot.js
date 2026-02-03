@@ -325,7 +325,7 @@ export class Bot {
                 `;
 
                 const message = await llmService.generateResponse([{ role: 'system', content: heartbeatPrompt }], { useQwen: true, preface_system_prompt: false });
-if (message && message.toUpperCase() !== "NONE") {
+                if (message && message.toUpperCase() !== "NONE") {
                     // Repetition check for Discord (last 15 bot messages)
                     const recentBotMsgs = history.filter(h => h.role === "assistant").slice(-15).map(h => h.content);
                     const isRepetitive = checkSimilarity(message, recentBotMsgs, 0.4);
@@ -1566,7 +1566,7 @@ if (message && message.toUpperCase() !== "NONE") {
         .join('\n');
 
       // Use a larger history for similarity check to catch "slop" cycles
-          const recentPostTexts = allOwnPosts.slice(0, 30).map(item => item.post.record.text);
+      const recentPostTexts = allOwnPosts.slice(0, 30).map(item => item.post.record.text);
 
       // 1b. Global greeting constraint
       let greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
@@ -2160,7 +2160,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
           // Repetition awareness for Moltbook
           const recentMoltbookPosts = moltbookService.db.data.recent_post_contents || [];
-        if (checkSimilarity(content, recentMoltbookPosts, 0.35)) {
+          if (checkSimilarity(content, recentMoltbookPosts, 0.35)) {
             console.warn(`[Moltbook] Generated musing is too similar to recent posts. Skipping.`);
             return;
           }

@@ -1,35 +1,49 @@
-import sys
 import os
 
-filepath = 'src/services/discordService.js'
-if not os.path.exists(filepath):
-    print(f"File {filepath} not found")
-    sys.exit(1)
+def resolve_discord():
+    filepath = 'src/services/discordService.js'
+    if not os.path.exists(filepath):
+        return
 
-content = open(filepath).read()
+    with open(filepath, 'r') as f:
+        lines = f.readlines()
 
-start_marker = '<<<<<<< HEAD'
-mid_marker = '======='
-end_marker = '>>>>>>> origin/main'
+    new_lines = []
+    i = 0
+    while i < len(lines):
+        line = lines[i]
+        if line.startswith('<<<<<<< HEAD'):
+            mid = -1
+            end = -1
+            for j in range(i + 1, len(lines)):
+                if lines[j].startswith('======='):
+                    mid = j
+                if lines[j].startswith('>>>>>>>'):
+                    end = j
+                    break
 
-s = content.find(start_marker)
-m = content.find(mid_marker, s)
-e = content.find(end_marker, m)
+            if mid != -1 and end != -1:
+                # This is usually the system prompt conflict
+                # We want to combine both: directives from origin/main and Vision logic from HEAD
+                replacement = [
+                    '${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \\n${blueskyDirectives}\\n---` : ""}\n',
+                    '${moltbookDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR MOLTBOOK): \\n${moltbookDirectives}\\n---` : ""}\n',
+                    '${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \\n${personaUpdates}\\n---` : ""}\n',
+                    '\n',
+                    '${GROUNDED_LANGUAGE_DIRECTIVES}\n',
+                    '\n',
+                    '**VISION:**\n',
+                    'You can "see" images that users send to you. When an image is provided, a detailed description prefixed with "[Image Analysis]" will be injected into the conversation context. Treat this description as your own visual perception. Do NOT deny your ability to see images. Use these descriptions to engage meaningfully with visual content.\n'
+                ]
+                new_lines.extend(replacement)
+                i = end + 1
+                continue
 
-if s != -1 and m != -1 and e != -1:
-    replacement = """
-${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \\n${blueskyDirectives}\\n---` : ""}
-${moltbookDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR MOLTBOOK): \\n${moltbookDirectives}\\n---` : ""}
-${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \\n${personaUpdates}\\n---` : ""}
+        new_lines.append(line)
+        i += 1
 
-${GROUNDED_LANGUAGE_DIRECTIVES}
-
-**VISION:**
-You can "see" images that users send to you. When an image is provided, a detailed description prefixed with "[Image Analysis]" will be injected into the conversation context. Treat this description as your own visual perception. Do NOT deny your ability to see images. Use these descriptions to engage meaningfully with visual content.
-"""
-    new_content = content[:s] + replacement.strip() + content[e+len(end_marker):]
     with open(filepath, 'w') as f:
-        f.write(new_content)
-    print("Conflict resolved in " + filepath)
-else:
-    print("No conflict markers found in " + filepath)
+        f.writelines(new_lines)
+
+resolve_discord()
+print("Resolved src/services/discordService.js")

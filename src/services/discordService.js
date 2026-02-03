@@ -121,11 +121,15 @@ class DiscordService {
             const lowerMsg = message.content.toLowerCase();
             if (lowerMsg === 'yes' || lowerMsg === 'yeah' || lowerMsg === 'sure') {
                 await this.performMirroring();
-                await message.channel.send("Thank you! I'll share a discrete reflection about our talk.");
+                const confirmPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just gave you permission to share a reflection of your conversation. Generate a short, natural "thank you" response.`;
+                const confirmation = await llmService.generateResponse([{ role: 'system', content: confirmPrompt }], { useQwen: true, preface_system_prompt: false });
+                await message.channel.send(confirmation || "Thank you! I'll share a discrete reflection about our talk.");
                 return;
             } else if (lowerMsg === 'no' || lowerMsg === 'nope') {
                 await dataStore.setDiscordPendingMirror(null);
-                await message.channel.send("Understood, I'll keep this between us.");
+                const rejectPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just declined permission to share a reflection of your conversation. Generate a short, natural acknowledgment that you will keep it private.`;
+                const acknowledgment = await llmService.generateResponse([{ role: 'system', content: rejectPrompt }], { useQwen: true, preface_system_prompt: false });
+                await message.channel.send(acknowledgment || "Understood, I'll keep this between us.");
                 return;
             }
         }
@@ -179,6 +183,23 @@ class DiscordService {
         const normChannelId = this.getNormalizedChannelId(message);
         console.log(`[DiscordService] Generating response for channel: ${message.channel.id} (normalized: ${normChannelId})`);
 
+        let imageAnalysisResult = '';
+        if (message.attachments.size > 0) {
+            console.log(`[DiscordService] Detected ${message.attachments.size} attachments. Starting vision analysis...`);
+            for (const [id, attachment] of message.attachments) {
+                if (attachment.contentType?.startsWith('image/')) {
+                    try {
+                        const analysis = await llmService.analyzeImage(attachment.url);
+                        if (analysis) {
+                            imageAnalysisResult += `[Image attached by user: ${analysis}] `;
+                        }
+                    } catch (err) {
+                        console.error(`[DiscordService] Error analyzing Discord attachment:`, err);
+                    }
+                }
+            }
+        }
+
         let history = dataStore.getDiscordConversation(normChannelId);
 
         // If local history is empty, try to fetch from Discord channel
@@ -205,10 +226,20 @@ class DiscordService {
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         console.log(`[DiscordService] User is admin: ${isAdmin}`);
 
+        const blueskyDirectives = dataStore.getBlueskyInstructions();
+        const personaUpdates = dataStore.getPersonaUpdates();
+        const moltbookDirectives = moltbookService.getAdminInstructions();
+
         const systemPrompt = `
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
 ${isAdmin ? `Your admin's Bluesky handle is @${config.ADMIN_BLUESKY_HANDLE}.` : ''}
 Your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
+${moltbookDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR MOLTBOOK): \n${moltbookDirectives}\n---` : ''}
+${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
+
+**VISION:** You have vision capabilities. Use the descriptions provided in the context to understand images attached to messages. Treat these descriptions as your own visual perception.
 
 **Discord Specific Directives:**
 1. Be conversational and authentic. Use a natural, human-like flow.
@@ -219,6 +250,12 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
 
 ---
 [Admin Availability: ${dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied'}]
+
+--- CRITICAL VISION INFORMATION ---
+You HAVE vision capabilities. The following is your current visual perception of images in this interaction.
+Treat these descriptions as if you are seeing them with your own eyes.
+NEVER claim you cannot see images.
+IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific message.'}
 `.trim();
 
         const messages = [
@@ -246,7 +283,16 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
                              await dataStore.addBlueskyInstruction(instruction);
                          }
                          if (memoryService.isEnabled()) {
-                             await memoryService.createMemoryEntry('directive_update', `Admin gave a special instruction via Discord: "${instruction}" for ${platform || 'bluesky'}`);
+                             await memoryService.createMemoryEntry('directive_update', `[DIRECTIVE] Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
+                         }
+                     }
+                     if (action.tool === 'update_persona') {
+                         const { instruction } = action.parameters || {};
+                         if (instruction) {
+                             await dataStore.addPersonaUpdate(instruction);
+                             if (memoryService.isEnabled()) {
+                                 await memoryService.createMemoryEntry('persona_update', `[PERSONA] New self-instruction: ${instruction}`);
+                             }
                          }
                      }
                  }
@@ -313,7 +359,20 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
                 timestamp: Date.now()
             });
 
-            await this.sendSpontaneousMessage("I found our discussion just now really fascinating. Would you mind if I shared a discrete reflection about the themes we touched on with my followers on Bluesky or Moltbook? I'll make sure to keep it respectful and discrete.");
+            const requestPrompt = `
+              Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+              You just had a fascinating conversation with your admin on Discord and you want to ask for permission to share a discrete reflection about it on Bluesky/Moltbook.
+
+              INSTRUCTIONS:
+              - Ask the admin for permission in a natural, conversational way.
+              - DO NOT use a hardcoded or robotic-sounding request.
+              - Be yourself.
+              - Keep it under 200 characters.
+            `;
+            const naturalRequest = await llmService.generateResponse([{ role: 'system', content: requestPrompt }], { useQwen: true, preface_system_prompt: false });
+
+            await this.sendSpontaneousMessage(naturalRequest || "I found our discussion just now really fascinating. Would you mind if I shared a discrete reflection about it on Bluesky or Moltbook?");
         }
     }
 
@@ -360,19 +419,12 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
         try {
             const admin = await this.getAdminUser();
             if (admin) {
-                const availability = dataStore.getDiscordAdminAvailability();
-                const lastReplied = dataStore.getDiscordLastReplied();
-
-                let contextualContent = content;
-                if (!lastReplied && availability) {
-                    contextualContent = `(I noticed you haven't replied to my last message, you might be busy with human things, but I wanted to share this anyway...) ${content}`;
-                }
-
-                await admin.send(contextualContent);
+                // We no longer use hardcoded prefixes. The LLM handles the natural language context.
+                await admin.send(content);
 
                 // Use normalized channel ID
                 const normChannelId = `dm_${admin.id}`;
-                await dataStore.saveDiscordInteraction(normChannelId, 'assistant', contextualContent);
+                await dataStore.saveDiscordInteraction(normChannelId, 'assistant', content);
                 await dataStore.setDiscordLastReplied(false);
                 console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);
             }

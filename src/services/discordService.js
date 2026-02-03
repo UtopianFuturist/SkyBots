@@ -76,11 +76,21 @@ class DiscordService {
         }
     }
 
+    getNormalizedChannelId(message) {
+        if (message.channel.type === ChannelType.DM) {
+            // For DMs, use a consistent ID based on the user's ID
+            // This ensures spontaneous messages (sent via user.send) and replies (received via channel) share the same history
+            const userId = message.author?.id || message.recipient?.id;
+            return `dm_${userId}`;
+        }
+        return message.channel.id;
+    }
+
     async handleMessage(message) {
         if (message.author.bot) return;
 
         const isDM = message.channel.type === ChannelType.DM;
-        const isAdmin = message.author.username === this.adminName;
+        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
 
         console.log(`[DiscordService] Evaluating message from ${message.author.username}. isDM: ${isDM}, isAdmin: ${isAdmin}, isMentioned: ${isMentioned}`);
@@ -111,11 +121,11 @@ class DiscordService {
             const lowerMsg = message.content.toLowerCase();
             if (lowerMsg === 'yes' || lowerMsg === 'yeah' || lowerMsg === 'sure') {
                 await this.performMirroring();
-                await message.reply("Thank you! I'll share a discrete reflection about our talk.");
+                await message.channel.send("Thank you! I'll share a discrete reflection about our talk.");
                 return;
             } else if (lowerMsg === 'no' || lowerMsg === 'nope') {
                 await dataStore.setDiscordPendingMirror(null);
-                await message.reply("Understood, I'll keep this between us.");
+                await message.channel.send("Understood, I'll keep this between us.");
                 return;
             }
         }
@@ -125,28 +135,28 @@ class DiscordService {
     }
 
     async handleCommand(message) {
-        const isAdmin = message.author.username === this.adminName;
+        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         const content = message.content.toLowerCase();
 
         if (content.startsWith('/on') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(true);
-            await message.reply("Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
+            await message.channel.send("Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
             return;
         }
 
         if (content.startsWith('/off') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(false);
-            await message.reply("Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
+            await message.channel.send("Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
             return;
         }
 
         if (content.startsWith('/art')) {
             const prompt = message.content.slice(5).trim();
             if (!prompt) {
-                await message.reply("Please provide a prompt for the art! Example: `/art a futuristic city`.");
+                await message.channel.send("Please provide a prompt for the art! Example: `/art a futuristic city`.");
                 return;
             }
-            await message.reply(`Generating art for: "${prompt}"...`);
+            await message.channel.send(`Generating art for: "${prompt}"...`);
             try {
                 const result = await imageService.generateImage(prompt, { allowPortraits: true });
                 if (result && result.buffer) {
@@ -155,24 +165,44 @@ class DiscordService {
                         files: [{ attachment: result.buffer, name: 'art.jpg' }]
                     });
                 } else {
-                    await message.reply("I'm sorry, I couldn't generate that image right now.");
+                    await message.channel.send("I'm sorry, I couldn't generate that image right now.");
                 }
             } catch (error) {
                 console.error('[DiscordService] Error generating art:', error);
-                await message.reply("Something went wrong while generating the art.");
+                await message.channel.send("Something went wrong while generating the art.");
             }
             return;
         }
     }
 
     async respond(message) {
-        console.log(`[DiscordService] Generating response for channel: ${message.channel.id}`);
-        const channelId = message.channel.id;
-        const history = dataStore.getDiscordConversation(channelId);
+        const normChannelId = this.getNormalizedChannelId(message);
+        console.log(`[DiscordService] Generating response for channel: ${message.channel.id} (normalized: ${normChannelId})`);
 
-        await dataStore.saveDiscordInteraction(channelId, 'user', message.content);
+        let history = dataStore.getDiscordConversation(normChannelId);
 
-        const isAdmin = message.author.username === this.adminName;
+        // If local history is empty, try to fetch from Discord channel
+        if (history.length === 0) {
+            try {
+                console.log(`[DiscordService] Local history empty, fetching from Discord...`);
+                const fetchedMessages = await message.channel.messages.fetch({ limit: 20 });
+                history = fetchedMessages
+                    .reverse()
+                    .filter(m => m.content && !m.content.startsWith('/'))
+                    .map(m => ({
+                        role: m.author.id === this.client.user.id ? 'assistant' : 'user',
+                        content: m.content,
+                        timestamp: m.createdTimestamp
+                    }));
+                console.log(`[DiscordService] Fetched ${history.length} messages from Discord.`);
+            } catch (err) {
+                console.warn(`[DiscordService] Failed to fetch history from Discord:`, err);
+            }
+        }
+
+        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
+
+        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         console.log(`[DiscordService] User is admin: ${isAdmin}`);
 
         const systemPrompt = `
@@ -181,10 +211,11 @@ ${isAdmin ? `Your admin's Bluesky handle is @${config.ADMIN_BLUESKY_HANDLE}.` : 
 Your persona: ${config.TEXT_SYSTEM_PROMPT}
 
 **Discord Specific Directives:**
-1. Be conversational and authentic.
+1. Be conversational and authentic. Use a natural, human-like flow.
 2. If the admin gives you "special instructions" or behavioral feedback, acknowledge them and implement them.
 3. You can use the \`persist_directive\` tool if the admin gives you long-term instructions.
-4. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate (e.g., greetings).
+4. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate.
+5. Continuity: You have access to the recent chat history. Use it to maintain context and recognize who you are talking to.
 
 ---
 [Admin Availability: ${dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied'}]
@@ -192,7 +223,7 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
 
         const messages = [
             { role: 'system', content: systemPrompt },
-            ...history.slice(-10).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
+            ...history.slice(-20).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
             { role: 'user', content: message.content }
         ];
 
@@ -231,13 +262,14 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
                 responseText = sanitizeThinkingTags(responseText);
                 responseText = sanitizeCharacterCount(responseText);
 
-                console.log(`[DiscordService] Sending reply to Discord...`);
-                await message.reply(responseText);
-                await dataStore.saveDiscordInteraction(channelId, 'assistant', responseText);
-                console.log(`[DiscordService] Reply sent and saved.`);
+                console.log(`[DiscordService] Sending message to Discord...`);
+                // Use channel.send instead of message.reply for a more natural feel in DMs
+                await message.channel.send(responseText);
+                await dataStore.saveDiscordInteraction(normChannelId, 'assistant', responseText);
+                console.log(`[DiscordService] Message sent and saved.`);
 
                 if (isAdmin) {
-                    await this.considerMirroring(channelId, responseText);
+                    await this.considerMirroring(normChannelId, responseText);
                 }
             }
         } catch (error) {
@@ -337,9 +369,10 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
                 }
 
                 await admin.send(contextualContent);
-                // Use a generic ID for admin DM if we don't have the channel ID yet
-                const channelId = admin.dmChannel?.id || `dm_${admin.id}`;
-                await dataStore.saveDiscordInteraction(channelId, 'assistant', contextualContent);
+
+                // Use normalized channel ID
+                const normChannelId = `dm_${admin.id}`;
+                await dataStore.saveDiscordInteraction(normChannelId, 'assistant', contextualContent);
                 await dataStore.setDiscordLastReplied(false);
                 console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);
             }

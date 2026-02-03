@@ -1,5 +1,6 @@
 import { blueskyService } from './blueskyService.js';
 import { llmService } from './llmService.js';
+import { checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES } from '../utils/textUtils.js';
 import config from '../../config.js';
 
 class MemoryService {
@@ -23,7 +24,7 @@ class MemoryService {
     if (!this.isEnabled()) return [];
     console.log(`[MemoryService] Fetching recent memories for hashtag ${this.hashtag}...`);
     const query = `from:${blueskyService.did} ${this.hashtag}`;
-    const posts = await blueskyService.searchPosts(query, { limit: 15, sort: 'latest' });
+    const posts = await blueskyService.searchPosts(query, { limit: 30, sort: 'latest' });
 
     this.recentMemories = posts.map(p => ({
         text: p.record.text,
@@ -42,6 +43,8 @@ class MemoryService {
     const memories = this.formatMemoriesForPrompt();
     let prompt = `
       You are the memory module for an AI agent. Generate a concise, natural language entry for your "Memory Thread" based on the provided context. This is for an archival thread, so be straight to the point about what you want to remember.
+
+      ${GROUNDED_LANGUAGE_DIRECTIVES}
 
       Memory Type: ${type}
       Context: ${context}
@@ -63,6 +66,8 @@ class MemoryService {
         prompt = `
           You are the memory module for an AI agent. Generate a very short, discrete, and persona-aligned blurb for your "Memory Thread" summarizing a significant conversation you had on Discord with your admin or another user.
 
+          ${GROUNDED_LANGUAGE_DIRECTIVES}
+
           Conversation Context:
           ${context}
 
@@ -75,11 +80,24 @@ class MemoryService {
         `;
     }
 
-    const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+    let entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
 
     if (!entry) {
         console.warn(`[MemoryService] Failed to generate memory entry content.`);
         return null;
+    }
+
+    // Repetition check for memory entries
+    const recentTexts = this.recentMemories.map(m => m.text);
+    if (checkSimilarity(entry, recentTexts, 0.35)) {
+        console.warn(`[MemoryService] Generated entry is too similar to recent memories. Retrying with a push for variety...`);
+        const varietyPrompt = `${prompt}\n\nCRITICAL: Your previous response was too similar to existing memories. You MUST provide a completely different perspective or focus.`;
+        entry = await llmService.generateResponse([{ role: 'system', content: varietyPrompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+
+        if (!entry || checkSimilarity(entry, recentTexts, 0.35)) {
+            console.warn(`[MemoryService] Second attempt also failed similarity check or generation. Aborting memory entry.`);
+            return null;
+        }
     }
 
     // Ensure hashtag is present
@@ -109,7 +127,7 @@ class MemoryService {
             text: finalEntry,
             indexedAt: new Date().toISOString()
         });
-        if (this.recentMemories.length > 15) {
+        if (this.recentMemories.length > 30) {
             this.recentMemories.shift();
         }
         console.log(`[MemoryService] New memory added to local state. Total count: ${this.recentMemories.length}`);

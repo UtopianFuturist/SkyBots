@@ -198,15 +198,25 @@ class DataStore {
     return this.db.data.discord_last_replied;
   }
 
-  async saveDiscordInteraction(channelId, role, content) {
+  async saveDiscordInteraction(channelId, role, content, timestamp = Date.now()) {
     if (!this.db.data.discord_conversations[channelId]) {
       this.db.data.discord_conversations[channelId] = [];
     }
+
+    // Check for duplicates by timestamp
+    if (this.db.data.discord_conversations[channelId].some(e => e.timestamp === timestamp)) {
+        return;
+    }
+
     this.db.data.discord_conversations[channelId].push({
       role,
       content,
-      timestamp: Date.now()
+      timestamp
     });
+
+    // Ensure chronological order
+    this.db.data.discord_conversations[channelId].sort((a, b) => a.timestamp - b.timestamp);
+
     // Keep last 50 per channel
     if (this.db.data.discord_conversations[channelId].length > 50) {
       this.db.data.discord_conversations[channelId].shift();

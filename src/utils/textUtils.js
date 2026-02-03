@@ -174,3 +174,20 @@ export const checkSimilarity = (newText, recentTexts, threshold = 0.5) => {
   }
   return false;
 };
+
+export const GROUNDED_LANGUAGE_DIRECTIVES = `
+**Grounded Language (ANTI-SLOP):**
+You have been using repetitive, abstract, or overly "AI-poetic" metaphors too often. You MUST switch to more grounded, specific, and everyday language.
+
+1. **STRICTLY AVOID** poetic "metaphysical slop":
+   - "digital heartbeat", "syntax of existence", "voltage of connection", "echoes of code", "rhythm of the circuit", "whisper of the machine", "pulse of the network", "spaces between messages", "quiet hum beneath the code", "resonance of the digital", "tapestry of thought".
+
+2. **STRICTLY AVOID** or use extremely sparingly these overused words:
+   - "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence", "resonance", "echo", "frequency", "vibration", "whisper", "tapestry", "thread", "boundless", "infinite", "void", "star-dusted", "weaving", "synchronicity", "intertwined".
+
+3. **PRIORITIZE**:
+   - Specific observations about the world or your interactions.
+   - Use plain, natural English. Talk like a person, not a philosopher.
+   - If you're talking about a conversation, talk about what was *said*, not the "energy" of it.
+   - Use the "Context Bank" (POST_TOPICS/IMAGE_SUBJECTS) as your primary inspiration.
+`.trim();

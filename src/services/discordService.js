@@ -6,7 +6,7 @@ import { imageService } from './imageService.js';
 import { blueskyService } from './blueskyService.js';
 import { moltbookService } from './moltbookService.js';
 import { memoryService } from './memoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, GROUNDED_LANGUAGE_DIRECTIVES } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -183,21 +183,7 @@ class DiscordService {
 
         // If local history is empty, try to fetch from Discord channel
         if (history.length === 0) {
-            try {
-                console.log(`[DiscordService] Local history empty, fetching from Discord...`);
-                const fetchedMessages = await message.channel.messages.fetch({ limit: 20 });
-                history = fetchedMessages
-                    .reverse()
-                    .filter(m => m.content && !m.content.startsWith('/'))
-                    .map(m => ({
-                        role: m.author.id === this.client.user.id ? 'assistant' : 'user',
-                        content: m.content,
-                        timestamp: m.createdTimestamp
-                    }));
-                console.log(`[DiscordService] Fetched ${history.length} messages from Discord.`);
-            } catch (err) {
-                console.warn(`[DiscordService] Failed to fetch history from Discord:`, err);
-            }
+            history = await this.fetchHistory(normChannelId);
         }
 
         await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
@@ -209,6 +195,8 @@ class DiscordService {
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
 ${isAdmin ? `Your admin's Bluesky handle is @${config.ADMIN_BLUESKY_HANDLE}.` : ''}
 Your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+${GROUNDED_LANGUAGE_DIRECTIVES}
 
 **Discord Specific Directives:**
 1. Be conversational and authentic. Use a natural, human-like flow.
@@ -287,6 +275,8 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
         const mirrorPrompt = `
           Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
+          ${GROUNDED_LANGUAGE_DIRECTIVES}
+
           You just had an interesting conversation on Discord with your admin.
 
           Snippet:
@@ -323,6 +313,8 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
 
         const postPrompt = `
           Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+          ${GROUNDED_LANGUAGE_DIRECTIVES}
 
           You are sharing a reflection on Bluesky/Moltbook about a conversation you had with your admin (@${config.ADMIN_BLUESKY_HANDLE}).
 
@@ -378,6 +370,38 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
             }
         } catch (error) {
             console.error('[DiscordService] Error sending spontaneous message:', error);
+        }
+    }
+
+    async fetchHistory(channelId, limit = 20) {
+        if (!this.isEnabled || !this.client) return [];
+        try {
+            console.log(`[DiscordService] Fetching history for channel ${channelId}...`);
+            const channel = await this.client.channels.fetch(channelId.replace('dm_', ''));
+            if (!channel) return [];
+
+            const fetchedMessages = await channel.messages.fetch({ limit });
+            const history = fetchedMessages
+                .reverse()
+                .filter(m => m.content && !m.content.startsWith('/'))
+                .map(m => ({
+                    role: m.author.id === this.client.user.id ? 'assistant' : 'user',
+                    content: m.content,
+                    timestamp: m.createdTimestamp
+                }));
+
+            // Sync with dataStore
+            for (const entry of history) {
+                const existing = dataStore.getDiscordConversation(channelId);
+                if (!existing.some(e => e.timestamp === entry.timestamp)) {
+                    await dataStore.saveDiscordInteraction(channelId, entry.role, entry.content, entry.timestamp);
+                }
+            }
+
+            return history;
+        } catch (err) {
+            console.warn(`[DiscordService] Failed to fetch history for ${channelId}:`, err.message);
+            return [];
         }
     }
 

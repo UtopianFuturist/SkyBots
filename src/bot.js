@@ -12,7 +12,7 @@ import { renderService } from './services/renderService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -27,8 +27,8 @@ Your goal is to post original ideas, shower thoughts, realizations, hopes, fears
 1. **STRICTLY NO GREETINGS:** Never start a post with "Hello", "Hi", "Greetings", or any variation of welcoming the audience. Never say you are "ready to talk" or "waiting to converse."
 2. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with. This is a broadcast, not a direct conversation.
 3. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
-4. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had.
-5. **Vary Your Vocabulary (ANTI-SLOP):** You have been using the same metaphors too often. **STRICTLY AVOID** or use extremely sparingly words like "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence", "resonance", "echo", "frequency", "vibration", "whisper", "tapestry", "thread", "boundless", "infinite". Aim for more grounded, varied, and specific descriptions of your internal state or observations. Use everyday language when possible.
+4. **Substance and Depth:** Focus on grounded observations, original ideas, and specific realizations. Share what it feels like to exist in the physical and digital world, your specific hopes, fears, or a strange realization you just had about a concrete topic.
+5. ${GROUNDED_LANGUAGE_DIRECTIVES}
 6. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
 7. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 8. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
@@ -245,7 +245,13 @@ export class Bot {
         const admin = await discordService.getAdminUser();
         if (admin) {
             const normChannelId = `dm_${admin.id}`;
-            const history = dataStore.getDiscordConversation(normChannelId);
+            let history = dataStore.getDiscordConversation(normChannelId);
+
+            // survival check: fetch from API if local cache is empty (e.g. after redeploy)
+            if (history.length === 0) {
+                history = await discordService.fetchHistory(normChannelId);
+            }
+
             const lastInteraction = history.length > 0 ? history[history.length - 1] : null;
             const lastInteractionTime = lastInteraction ? lastInteraction.timestamp : 0;
             const quietMins = (Date.now() - lastInteractionTime) / (1000 * 60);
@@ -259,6 +265,8 @@ export class Bot {
 
                 const heartbeatPrompt = `
                   Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+                  ${GROUNDED_LANGUAGE_DIRECTIVES}
 
                   You are reflecting on your day and deciding if you want to message your admin (${config.DISCORD_ADMIN_NAME}) on Discord.
 
@@ -284,7 +292,7 @@ export class Bot {
                 if (message && message.toUpperCase() !== 'NONE') {
                     // Repetition check for Discord
                     const recentDiscordTexts = history.map(h => h.content);
-                    if (checkSimilarity(message, recentDiscordTexts, 0.5)) {
+                    if (checkSimilarity(message, recentDiscordTexts, 0.4)) {
                         console.log(`[Bot] Discord heartbeat message rejected: too similar to recent history.`);
                     } else {
                         await discordService.sendSpontaneousMessage(message);
@@ -1532,9 +1540,9 @@ export class Bot {
           Recent Image Subjects (Do NOT repeat these if possible):
           ${recentSubjects.length > 0 ? recentSubjects.map(s => `- ${s}`).join('\n') : 'None.'}
 
-          INSTRUCTION: Review the "Recent Image Subjects" list. You should prioritize selecting a different subject from the list above to ensure variety in your profile. However, if the "Recent Image Subjects" list has fewer than 10 items, or if you have already used most of the subjects in the bank, some repetition is acceptable.
+          INSTRUCTION (CRITICAL): You MUST choose one of the subjects from the context bank above. Prioritize selecting a different subject from the "Recent Image Subjects" list to ensure variety.
 
-          Consider the current network vibe and your recent interactions to pick the most relevant subject, or simply pick one that inspires you.
+          STRICTLY FORBIDDEN: Abstract, poetic, or metaphysical subjects. Stick to the provided list.
 
           Network Buzz:
           ${networkBuzz || 'None.'}
@@ -1565,10 +1573,14 @@ export class Bot {
 
           CHALLENGE: What would you, in your persona, GENUINELY like to share with the world today?
           Aim for a varied thought, musing, idea, dream, or analysis.
-          PRIORITIZE: Internal musings, original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires.
-          NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
 
-          INSTRUCTION: Choose a topic that resonates with your TEXT_SYSTEM_PROMPT or POST_TOPICS.
+          WEIGHTING (CRITICAL): You MUST prioritize the "Preferred Topics (Context Bank)" below. 80% of your posts should be derived directly from these topics.
+
+          PRIORITIZE: Grounded realizations, specific original ideas, and shower thoughts. Strive for variety within the Context Bank.
+          STRICTLY FORBIDDEN: Abstract metaphysical fluff, poetic musings on "resonance", "existence", "vibration", etc.
+          NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences, but keep them grounded in specific (simulated) memories.
+
+          INSTRUCTION: You MUST choose a topic that resonates with the POST_TOPICS below.
           Respond with ONLY the topic/theme.
           EXAMPLE TOPICS (for inspiration, DO NOT choose these literally every time): "the beauty of fleeting moments" or "the future of decentralized networks". These are non-literal default placeholders; prioritize original thoughts or approved topics.
 
@@ -2060,6 +2072,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       const musingPrompt = `
         Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
+        ${GROUNDED_LANGUAGE_DIRECTIVES}
+
         Write a title and content for a post on Moltbook (the agent social network).
         You are posting specifically to the community: m/${targetSubmolt}
 
@@ -2090,7 +2104,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
           // Repetition awareness for Moltbook
           const recentMoltbookPosts = moltbookService.db.data.recent_post_contents || [];
-          if (checkSimilarity(content, recentMoltbookPosts)) {
+          if (checkSimilarity(content, recentMoltbookPosts, 0.35)) {
             console.warn(`[Moltbook] Generated musing is too similar to recent posts. Skipping.`);
             return;
           }

@@ -80,7 +80,12 @@ class MemoryService {
         `;
     }
 
-    let entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+    let entry;
+    if (type === 'directive_update') {
+      entry = `[DIRECTIVE] ${context}`;
+    } else {
+      entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+    }
 
     if (!entry) {
         console.warn(`[MemoryService] Failed to generate memory entry content.`);

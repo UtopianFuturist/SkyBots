@@ -80,33 +80,36 @@ class MemoryService {
         `;
     }
 
-    let entry;
-    if (type === 'directive_update') {
-      entry = `[DIRECTIVE] ${context}`;
+    let finalEntry;
+    if (type === 'directive_update' || type === 'persona_update') {
+        // For recovery-critical updates, use the exact context string as the entry
+        finalEntry = context;
     } else {
-      entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
-    }
+        const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
 
-    if (!entry) {
-        console.warn(`[MemoryService] Failed to generate memory entry content.`);
-        return null;
-    }
-
-    // Repetition check for memory entries
-    const recentTexts = this.recentMemories.map(m => m.text);
-    if (checkSimilarity(entry, recentTexts, 0.35)) {
-        console.warn(`[MemoryService] Generated entry is too similar to recent memories. Retrying with a push for variety...`);
-        const varietyPrompt = `${prompt}\n\nCRITICAL: Your previous response was too similar to existing memories. You MUST provide a completely different perspective or focus.`;
-        entry = await llmService.generateResponse([{ role: 'system', content: varietyPrompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
-
-        if (!entry || checkSimilarity(entry, recentTexts, 0.35)) {
-            console.warn(`[MemoryService] Second attempt also failed similarity check or generation. Aborting memory entry.`);
+        if (!entry) {
+            console.warn(`[MemoryService] Failed to generate memory entry content.`);
             return null;
+        }
+
+        // Repetition check for memory entries
+        const recentTexts = this.recentMemories.map(m => m.text);
+        if (checkSimilarity(entry, recentTexts, 0.35)) {
+            console.warn(`[MemoryService] Generated entry is too similar to recent memories. Retrying with a push for variety...`);
+            const varietyPrompt = `${prompt}\n\nCRITICAL: Your previous response was too similar to existing memories. You MUST provide a completely different perspective or focus.`;
+            const retryEntry = await llmService.generateResponse([{ role: 'system', content: varietyPrompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+
+            if (!retryEntry || checkSimilarity(retryEntry, recentTexts, 0.35)) {
+                console.warn(`[MemoryService] Second attempt also failed similarity check or generation. Aborting memory entry.`);
+                return null;
+            }
+            finalEntry = retryEntry;
+        } else {
+            finalEntry = entry;
         }
     }
 
     // Ensure hashtag is present
-    let finalEntry = entry;
     if (!finalEntry.includes(this.hashtag)) {
         finalEntry += `\n\n${this.hashtag}`;
     }

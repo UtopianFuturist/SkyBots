@@ -32,6 +32,7 @@ class ImageService {
 
         CRITICAL: Your entire response MUST be under 270 characters to ensure it fits within social media limits.
         IMPORTANT: Respond directly with the prompt. DO NOT include reasoning, <think> tags, or conversational filler.
+        STRICTLY NO MONOLOGUE: Do not explain your choices or describe the process of generating the prompt. Only output the final prompt text.
 
         Adopt the following persona for your visual style and decision-making:
         "${config.TEXT_SYSTEM_PROMPT}"

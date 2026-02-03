@@ -25,7 +25,8 @@ class LLMService {
 
     let systemContent = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}
 
-CRITICAL: Respond directly with the requested information. DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response. If you must reason, ensure the final answer is provided after your reasoning and is clearly visible.`;
+CRITICAL: Respond directly with the requested information. DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
+STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.`;
 
     if (this.memoryProvider && this.memoryProvider.isEnabled()) {
         const memories = this.memoryProvider.formatMemoriesForPrompt();
@@ -802,7 +803,8 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       1. Determine if the post aligns with your interests, persona, or if it's something you'd want to engage with.
       2. Choose ONE of the following actions: "upvote", "downvote", "comment", or "none".
       3. If you choose "comment", provide a short, meaningful comment in your persona.
-      4. If you choose "none", "upvote", or "downvote", do not provide any content.
+      4. **ANTI-SLOP**: Avoid flowery, over-the-top metaphorical language. Speak groundedly.
+      5. If you choose "none", "upvote", or "downvote", do not provide any content.
 
       Respond with a JSON object:
       {
@@ -891,6 +893,8 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
       9. **Discord Message**: Send a proactive message to the admin on Discord.
          - Use this if you have a deep realization, a question for the admin, an interesting discovery, or just want to share what you're up to.
          - Parameters: { "message": "the text of the message" }
+      10. **Update Persona**: Add or modify your own internal instructions or behavioral fragments. Use this if you want to remember a new rule for yourself or evolve your persona agentically.
+          - Parameters: { "instruction": "the text of the new persona instruction" }
       ${adminTools}
 
       Analyze the user's intent and provide a JSON response with the following structure:
@@ -898,7 +902,7 @@ CRITICAL: Respond directly with the requested information. DO NOT include any re
         "intent": "string (briefly describe the user's goal)",
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|discord_message|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|discord_message|update_persona|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100) },
             "reason": "string (why this tool is needed)"

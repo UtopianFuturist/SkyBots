@@ -209,12 +209,18 @@ class DiscordService {
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         console.log(`[DiscordService] User is admin: ${isAdmin}`);
 
+        const blueskyDirectives = dataStore.getBlueskyInstructions();
+        const personaUpdates = dataStore.getPersonaUpdates();
+        const moltbookDirectives = moltbookService.getAdminInstructions();
+
         const systemPrompt = `
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
 ${isAdmin ? `Your admin's Bluesky handle is @${config.ADMIN_BLUESKY_HANDLE}.` : ''}
 Your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-${isAdmin ? `**Administrative Instructions (Directives):**\n${dataStore.getBlueskyInstructions()}\n` : ''}
+${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
+${moltbookDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR MOLTBOOK): \n${moltbookDirectives}\n---` : ''}
+${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
 
 ${GROUNDED_LANGUAGE_DIRECTIVES}
 

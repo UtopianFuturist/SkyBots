@@ -1,5 +1,5 @@
 {
-  "name": "dearest-llama",
+  "name": "skybots",
   "version": "1.0.0",
   "type": "module",
   "description": "A Bluesky bot that responds to mentions with Llama 4 Maverick and generates images with Nvidia NIM Flux Dev",
@@ -9,7 +9,7 @@
   },
   "scripts": {
     "start": "node index.js",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "NODE_OPTIONS=--experimental-vm-modules jest"
   },
   "keywords": [
     "bluesky",
@@ -24,20 +24,27 @@
   "author": "UtopianFuturist",
   "license": "ISC",
   "dependencies": {
-    "@atproto/api": "latest",
+    "@atproto/api": "0.18.8",
     "axios": "^1.7.7",
+    "discord.js": "^14.25.1",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
     "form-data": "^4.0.0",
+    "lodash-es": "^4.17.22",
+    "lowdb": "^7.0.1",
     "node-fetch": "^3.3.2",
+    "sentiment": "^5.0.2",
     "sharp": "^0.33.5"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/UtopianFuturist/dearest-llama.git"
+    "url": "https://github.com/UtopianFuturist/skybots.git"
   },
   "bugs": {
-    "url": "https://github.com/UtopianFuturist/dearest-llama/issues"
+    "url": "https://github.com/UtopianFuturist/skybots/issues"
   },
-  "homepage": "https://github.com/UtopianFuturist/dearest-llama#readme"
+  "homepage": "https://github.com/UtopianFuturist/skybots#readme",
+  "devDependencies": {
+    "jest": "^30.2.0"
+  }
 }

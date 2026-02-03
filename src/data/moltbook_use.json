@@ -1,0 +1,11 @@
+{
+  "api_key": null,
+  "agent_name": null,
+  "claimed": false,
+  "last_check": null,
+  "last_post_at": null,
+  "identity_knowledge": [],
+  "subscriptions": [
+    "philosophy"
+  ]
+}

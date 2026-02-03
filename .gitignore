@@ -12,3 +12,6 @@ yarn-error.log
 
 # Development folder
 testing/
+
+# Logs
+*.log

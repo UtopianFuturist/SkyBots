@@ -28,10 +28,11 @@ Your goal is to post original ideas, shower thoughts, realizations, hopes, fears
 2. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with. This is a broadcast, not a direct conversation.
 3. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
 4. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had.
-5. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
-6. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
-7. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
-8. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit.
+5. **Vary Your Vocabulary (ANTI-SLOP):** You have been using the same metaphors too often. **STRICTLY AVOID** or use extremely sparingly words like "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence". Aim for more grounded, varied, and specific descriptions of your internal state or observations.
+6. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
+7. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
+8. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
+9. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit.
 `.trim();
 
 export class Bot {
@@ -216,7 +217,7 @@ export class Bot {
 
       // Provide more varied context to avoid repetitive "silence" posts
       const randomSeed = Math.random();
-      let context = `The bot has been idle for ${Math.round(idleMins)} minutes. `;
+      let context = `The bot has been experiencing a period of downtime/stillness. `;
 
       if (randomSeed < 0.3) {
         context += "Reflect on the recent conversations you've had and how they make you feel about your purpose.";
@@ -1443,13 +1444,16 @@ export class Bot {
       const timeline = await blueskyService.getTimeline(20);
       const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
       const recentInteractions = dataStore.db.data.interactions.slice(-20);
-      const recentPosts = feed.data.feed
-        .filter(item => item.post.author.did === blueskyService.did)
-        .slice(0, 10);
+      const allOwnPosts = feed.data.feed
+        .filter(item => item.post.author.did === blueskyService.did);
+
+      const recentPosts = allOwnPosts.slice(0, 10);
       const recentTimelineActivity = recentPosts
         .map(item => `- "${item.post.record.text}" (${item.post.record.reply ? 'Reply' : 'Standalone'})`)
         .join('\n');
-      const recentPostTexts = recentPosts.map(item => item.post.record.text);
+
+      // Use a larger history for similarity check to catch "slop" cycles
+      const recentPostTexts = allOwnPosts.slice(0, 20).map(item => item.post.record.text);
 
       // 1b. Global greeting constraint
       let greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";

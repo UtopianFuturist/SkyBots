@@ -150,7 +150,7 @@ export const stripWrappingQuotes = (text) => {
   return trimmed;
 };
 
-export const checkSimilarity = (newText, recentTexts, threshold = 0.6) => {
+export const checkSimilarity = (newText, recentTexts, threshold = 0.5) => {
   if (!recentTexts || recentTexts.length === 0) return false;
 
   const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();

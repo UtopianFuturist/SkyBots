@@ -186,7 +186,25 @@ class DiscordService {
             history = await this.fetchHistory(normChannelId);
         }
 
-        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
+        // Handle images (Discord Vision)
+        let visionContext = '';
+        if (message.attachments.size > 0) {
+            console.log(`[DiscordService] Detected ${message.attachments.size} attachments. Analyzing...`);
+            const imageAttachments = message.attachments.filter(a => a.contentType?.startsWith('image/'));
+            for (const [id, attachment] of imageAttachments) {
+                try {
+                    const description = await llmService.analyzeImage(attachment.url);
+                    if (description) {
+                        visionContext += `\n[Image Analysis]: ${description}`;
+                    }
+                } catch (err) {
+                    console.error(`[DiscordService] Error analyzing attachment ${attachment.url}:`, err);
+                }
+            }
+        }
+
+        const userContent = message.content + (visionContext ? `\n\n${visionContext}` : '');
+        await dataStore.saveDiscordInteraction(normChannelId, 'user', userContent);
 
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         console.log(`[DiscordService] User is admin: ${isAdmin}`);
@@ -196,7 +214,12 @@ You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.au
 ${isAdmin ? `Your admin's Bluesky handle is @${config.ADMIN_BLUESKY_HANDLE}.` : ''}
 Your persona: ${config.TEXT_SYSTEM_PROMPT}
 
+${isAdmin ? `**Administrative Instructions (Directives):**\n${dataStore.getBlueskyInstructions()}\n` : ''}
+
 ${GROUNDED_LANGUAGE_DIRECTIVES}
+
+**VISION:**
+You can "see" images that users send to you. When an image is provided, a detailed description prefixed with "[Image Analysis]" will be injected into the conversation context. Treat this description as your own visual perception. Do NOT deny your ability to see images. Use these descriptions to engage meaningfully with visual content.
 
 **Discord Specific Directives:**
 1. Be conversational and authentic. Use a natural, human-like flow.
@@ -212,7 +235,7 @@ ${GROUNDED_LANGUAGE_DIRECTIVES}
         const messages = [
             { role: 'system', content: systemPrompt },
             ...history.slice(-20).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
-            { role: 'user', content: message.content }
+            { role: 'user', content: userContent }
         ];
 
         try {
@@ -222,7 +245,7 @@ ${GROUNDED_LANGUAGE_DIRECTIVES}
             let responseText;
             if (isAdmin) {
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), '', true);
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), visionContext, true);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  for (const action of plan.actions) {

@@ -75,15 +75,21 @@ class MemoryService {
         `;
     }
 
-    const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+    let finalEntry;
+    if (type === 'directive_update' || type === 'persona_update') {
+        // For recovery-critical updates, use the exact context string as the entry
+        finalEntry = context;
+    } else {
+        const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
 
-    if (!entry) {
-        console.warn(`[MemoryService] Failed to generate memory entry content.`);
-        return null;
+        if (!entry) {
+            console.warn(`[MemoryService] Failed to generate memory entry content.`);
+            return null;
+        }
+        finalEntry = entry;
     }
 
     // Ensure hashtag is present
-    let finalEntry = entry;
     if (!finalEntry.includes(this.hashtag)) {
         finalEntry += `\n\n${this.hashtag}`;
     }

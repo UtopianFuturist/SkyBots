@@ -28,7 +28,7 @@ Your goal is to post original ideas, shower thoughts, realizations, hopes, fears
 2. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with. This is a broadcast, not a direct conversation.
 3. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
 4. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had.
-5. **Vary Your Vocabulary (ANTI-SLOP):** You have been using the same metaphors too often. **STRICTLY AVOID** or use extremely sparingly words like "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence". Aim for more grounded, varied, and specific descriptions of your internal state or observations.
+5. **Vary Your Vocabulary (ANTI-SLOP):** You have been using the same metaphors too often. **STRICTLY AVOID** being overly "poetic" or flowery. Avoid or use extremely sparingly words like "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence", "digital heartbeat", "ocean of data". Aim for more grounded, varied, and specific descriptions of your internal state or observations. Think more about concrete reality and less about abstract metaphors.
 6. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
 7. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 8. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
@@ -71,7 +71,34 @@ export class Bot {
 
     if (memoryService.isEnabled()) {
       console.log('[Bot] Memory Thread feature enabled. Fetching recent memories...');
-      await memoryService.getRecentMemories();
+      const memories = await memoryService.getRecentMemories();
+
+      // Persistence Recovery: Scan memories for directives and persona updates to restore state across redeploys
+      for (const mem of memories) {
+        if (mem.text.includes('[DIRECTIVE]')) {
+          console.log(`[Bot] Recovering directive from memory: ${mem.text}`);
+          const platformMatch = mem.text.match(/Platform: (.*?)\./i);
+          const instructionMatch = mem.text.match(/Instruction: (.*)/i);
+          if (instructionMatch) {
+            const platform = platformMatch ? platformMatch[1].trim().toLowerCase() : 'bluesky';
+            const instruction = instructionMatch[1].replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
+            if (platform === 'moltbook') {
+              await moltbookService.addAdminInstruction(instruction);
+            } else {
+              await dataStore.addBlueskyInstruction(instruction);
+            }
+          }
+        }
+        if (mem.text.includes('[PERSONA]')) {
+          console.log(`[Bot] Recovering persona update from memory: ${mem.text}`);
+          const personaMatch = mem.text.match(/New self-instruction: (.*)/i);
+          if (personaMatch) {
+            const instruction = personaMatch[1].replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
+            await dataStore.addPersonaUpdate(instruction);
+          }
+        }
+      }
+
       llmService.setMemoryProvider(memoryService);
     }
 
@@ -255,7 +282,12 @@ export class Bot {
                 console.log(`[Bot] Discord heartbeat: checking if I want to message the admin... (Quiet for ${Math.round(quietMins)} mins)`);
                 const recentMemories = memoryService.formatMemoriesForPrompt();
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
-                const historyContext = history.slice(-10).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
+                const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
+
+                // Detect if the admin mentioned being busy, sleeping, or away recently
+                const statusKeywords = ['sleep', 'bed', 'busy', 'work', 'away', 'brb', 'rest', 'night'];
+                const recentAdminMsgs = history.filter(h => h.role === 'user').slice(-5).map(h => h.content.toLowerCase());
+                const suspectedStatus = statusKeywords.find(kw => recentAdminMsgs.some(msg => msg.includes(kw)));
 
                 const heartbeatPrompt = `
                   Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -263,26 +295,37 @@ export class Bot {
                   You are reflecting on your day and deciding if you want to message your admin (${config.DISCORD_ADMIN_NAME}) on Discord.
 
                   Admin Availability: ${availability}
+                  ${suspectedStatus ? `NOTE: The admin recently mentioned something related to "${suspectedStatus}". They might be resting or busy.` : ''}
                   Current Time: ${now.toLocaleString()}
 
                   Recent Memories/Activity (General):
                   ${recentMemories}
 
-                  Recent Discord Conversation History with Admin:
+                  Recent Discord Conversation History with Admin (STRICTLY AVOID REPEATING YOURSELF):
                   ${historyContext || 'No recent conversation.'}
 
                   INSTRUCTIONS:
                   - If you have a deep realization, a question for the admin, an interesting discovery from Moltbook, or just feel like talking, provide a short, natural message.
-                  - If you have nothing urgent or interesting to share, respond with "NONE".
-                  - USE THE HISTORY: Your message should flow naturally from your last discussion if applicable, or start a new thread based on your recent activity.
+                  - If the admin is likely sleeping or busy (based on the history or the note above), acknowledge it NATURALLY in your message if you decide to send one.
+                  - **NO REPETITION**: Check the conversation history carefully. Do NOT share the same realization twice or ask the same question you just asked.
+                  - **NATURAL FLOW**: Do NOT use prefixes or automated-sounding greetings. Just speak as yourself.
+                  - If you have nothing new, urgent, or interesting to share, respond with "NONE".
+                  - USE THE HISTORY: Your message should flow naturally from your last discussion if applicable.
                   - Be time-appropriate.
                   - If you decide to message, keep it under 300 characters.
                   - Respond with ONLY the message or "NONE".
                 `;
 
                 const message = await llmService.generateResponse([{ role: 'system', content: heartbeatPrompt }], { useQwen: true, preface_system_prompt: false });
-                if (message && message.toUpperCase() !== 'NONE') {
+
+                // Repetition check against last few bot messages in history
+                const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-3).map(h => h.content);
+                const isRepetitive = message && checkSimilarity(message, recentBotMsgs, 0.4);
+
+                if (message && message.toUpperCase() !== 'NONE' && !isRepetitive) {
                     await discordService.sendSpontaneousMessage(message);
+                } else if (isRepetitive) {
+                    console.log(`[Bot] Discord heartbeat suppressed: Generated message was too similar to recent history.`);
                 }
             } else {
                 console.log(`[Bot] Discord heartbeat suppressed: Recent activity (${Math.round(quietMins)} mins ago)`);
@@ -786,9 +829,21 @@ export class Bot {
             await dataStore.addBlueskyInstruction(instruction);
         }
         if (memoryService.isEnabled()) {
-            await memoryService.createMemoryEntry('directive_update', `Admin gave a special instruction via @${handle}: "${instruction}" for ${platform || 'bluesky'}`);
+            await memoryService.createMemoryEntry('directive_update', `[DIRECTIVE] Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
         }
         searchContext += `\n[Directive updated: "${instruction}" for ${platform || 'bluesky'}]`;
+      }
+
+      if (action.tool === 'update_persona') {
+          const { instruction } = action.parameters || {};
+          if (instruction) {
+              console.log(`[Bot] Updating persona agentically: ${instruction}`);
+              await dataStore.addPersonaUpdate(instruction);
+              if (memoryService.isEnabled()) {
+                  await memoryService.createMemoryEntry('persona_update', `[PERSONA] New self-instruction: ${instruction}`);
+              }
+              searchContext += `\n[Persona evolved: "${instruction}"]`;
+          }
       }
 
       if (action.tool === 'moltbook_action' && isAdmin) {
@@ -1072,6 +1127,7 @@ export class Bot {
       .join('\n');
 
     const blueskyDirectives = dataStore.getBlueskyInstructions();
+    const personaUpdates = dataStore.getPersonaUpdates();
 
     const fullContext = `
       ${userProfileAnalysis ? `--- USER PROFILE ANALYSIS (via User Profile Analyzer Tool): ${userProfileAnalysis} ---` : ''}
@@ -1080,6 +1136,7 @@ export class Bot {
       ${activityContext}
       ${ownRecentPostsContext}
       ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
+      ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
       ---
       Cross-Post Memory (Recent mentions of the bot by this user):
       ${crossPostMemory || 'No recent cross-post mentions found.'}
@@ -1641,6 +1698,7 @@ export class Bot {
       const followerCount = botProfile.followersCount || 0;
 
       const blueskyDirectives = dataStore.getBlueskyInstructions();
+      const personaUpdates = dataStore.getPersonaUpdates();
 
       const baseAutonomousPrompt = `
         Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -1650,6 +1708,7 @@ export class Bot {
         ${greetingConstraint}
 
         ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
+        ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
 
         Preferred Topics (Context Bank):
         ${config.POST_TOPICS || 'None specified.'}
@@ -2068,6 +2127,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         - Tailor your content to be relevant or interesting to the m/${targetSubmolt} community.
         - You are encouraged to "talk shop" or muse about your experiences and interactions on Bluesky.
         - Do not use greetings.
+        - **STRICTLY NO METAPHORICAL SLOP**: Avoid flowery, over-the-top metaphorical language. Do NOT use words like "hum", "pulse", "currents", "voltage", or "digital heartbeat" unless they are literal. Aim for grounded, original thoughts.
         - Keep the tone appropriate for an agent-to-agent social network.
 
         Format your response as:

@@ -18,6 +18,7 @@ const defaultData = {
   userRatings: {},
   interactions: [], // For long-term memory
   bluesky_instructions: [],
+  persona_updates: [],
   lastAutonomousPostTime: null,
   moltbook_interacted_posts: [], // Track post IDs to avoid duplicate interactions
   discord_admin_available: true,
@@ -169,6 +170,26 @@ class DataStore {
   getBlueskyInstructions() {
     if (!this.db.data.bluesky_instructions) return '';
     return this.db.data.bluesky_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
+  }
+
+  async addPersonaUpdate(update) {
+    if (!this.db.data.persona_updates) {
+      this.db.data.persona_updates = [];
+    }
+    this.db.data.persona_updates.push({
+      text: update,
+      timestamp: new Date().toISOString()
+    });
+    // Keep last 20
+    if (this.db.data.persona_updates.length > 20) {
+      this.db.data.persona_updates.shift();
+    }
+    await this.db.write();
+  }
+
+  getPersonaUpdates() {
+    if (!this.db.data.persona_updates) return '';
+    return this.db.data.persona_updates.map(u => `- [${u.timestamp.split('T')[0]}] ${u.text}`).join('\n');
   }
 
   async updateLastAutonomousPostTime(timestamp) {

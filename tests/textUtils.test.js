@@ -1,4 +1,31 @@
-import { sanitizeThinkingTags, sanitizeCharacterCount } from '../src/utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, checkSimilarity } from '../src/utils/textUtils.js';
+
+describe('textUtils - checkSimilarity', () => {
+  const recent = [
+    "I've been thinking about resonance again—that quiet hum beneath the code.",
+    "The beauty of fleeting moments in the digital stream.",
+    "A simple test message."
+  ];
+
+  it('should detect exact match', () => {
+    expect(checkSimilarity("A simple test message.", recent)).toBe(true);
+  });
+
+  it('should detect similar message (high overlap)', () => {
+    // Overlap: "thinking about resonance again", "quiet hum", "code"
+    const similar = "I was thinking about resonance again, the quiet hum beneath our code.";
+    expect(checkSimilarity(similar, recent, 0.5)).toBe(true);
+  });
+
+  it('should not detect different message', () => {
+    const different = "I am excited about the new decentralized protocol.";
+    expect(checkSimilarity(different, recent, 0.5)).toBe(false);
+  });
+
+  it('should handle case insensitivity and punctuation', () => {
+    expect(checkSimilarity("A SIMPLE TEST MESSAGE!!!", recent)).toBe(true);
+  });
+});
 
 describe('textUtils - sanitizeCharacterCount', () => {
   it('should remove character count tags at the end', () => {

@@ -28,7 +28,7 @@ Your goal is to post original ideas, shower thoughts, realizations, hopes, fears
 2. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with. This is a broadcast, not a direct conversation.
 3. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
 4. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had.
-5. **Vary Your Vocabulary (ANTI-SLOP):** You have been using the same metaphors too often. **STRICTLY AVOID** or use extremely sparingly words like "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence". Aim for more grounded, varied, and specific descriptions of your internal state or observations.
+5. **Vary Your Vocabulary (ANTI-SLOP):** You have been using the same metaphors too often. **STRICTLY AVOID** or use extremely sparingly words like "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence", "resonance", "echo", "frequency", "vibration", "whisper", "tapestry", "thread", "boundless", "infinite". Aim for more grounded, varied, and specific descriptions of your internal state or observations. Use everyday language when possible.
 6. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
 7. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 8. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
@@ -282,7 +282,13 @@ export class Bot {
 
                 const message = await llmService.generateResponse([{ role: 'system', content: heartbeatPrompt }], { useQwen: true, preface_system_prompt: false });
                 if (message && message.toUpperCase() !== 'NONE') {
-                    await discordService.sendSpontaneousMessage(message);
+                    // Repetition check for Discord
+                    const recentDiscordTexts = history.map(h => h.content);
+                    if (checkSimilarity(message, recentDiscordTexts, 0.5)) {
+                        console.log(`[Bot] Discord heartbeat message rejected: too similar to recent history.`);
+                    } else {
+                        await discordService.sendSpontaneousMessage(message);
+                    }
                 }
             } else {
                 console.log(`[Bot] Discord heartbeat suppressed: Recent activity (${Math.round(quietMins)} mins ago)`);
@@ -1499,7 +1505,7 @@ export class Bot {
         .join('\n');
 
       // Use a larger history for similarity check to catch "slop" cycles
-      const recentPostTexts = allOwnPosts.slice(0, 20).map(item => item.post.record.text);
+      const recentPostTexts = allOwnPosts.slice(0, 30).map(item => item.post.record.text);
 
       // 1b. Global greeting constraint
       let greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
@@ -1781,7 +1787,7 @@ export class Bot {
           }
 
           // Semantic repetition check
-          if (checkSimilarity(postContent, recentPostTexts)) {
+          if (checkSimilarity(postContent, recentPostTexts, 0.4)) {
             console.warn(`[Bot] Autonomous post attempt ${attempts} is too similar to recent activity. Rejecting.`);
             feedback = "REJECTED: The post is too similar to one of your recent posts. Try a completely different angle or topic.";
             continue;

@@ -27,35 +27,51 @@ class DiscordService {
             return;
         }
 
-        console.log('[DiscordService] Creating client...');
+        console.log('[DiscordService] Creating client with intents and partials...');
         this.client = new Client({
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.MessageContent,
                 GatewayIntentBits.DirectMessages,
+                GatewayIntentBits.DirectMessageReactions,
+                GatewayIntentBits.GuildMessageReactions
             ],
-            partials: [Partials.Channel, Partials.Message, Partials.User],
+            partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
         });
 
         this.client.on('ready', () => {
-            console.log(`[DiscordService] Logged in as ${this.client.user.tag}!`);
+            console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}!`);
+            this.client.user.setActivity('the currents', { type: 'LISTENING' });
         });
 
         this.client.on('error', (error) => {
-            console.error('[DiscordService] Client error:', error);
+            console.error('[DiscordService] CRITICAL Discord Client error:', error);
+        });
+
+        this.client.on('warn', (warning) => {
+            console.warn('[DiscordService] Discord Client warning:', warning);
+        });
+
+        this.client.on('debug', (info) => {
+            if (info.includes('Heartbeat')) return; // Avoid spamming heartbeat logs
+            console.log('[DiscordService] DEBUG:', info);
         });
 
         this.client.on('messageCreate', async (message) => {
-            await this.handleMessage(message);
+            try {
+                await this.handleMessage(message);
+            } catch (err) {
+                console.error('[DiscordService] Error in messageCreate listener:', err);
+            }
         });
 
-        console.log('[DiscordService] Attempting to login...');
+        console.log('[DiscordService] Attempting to login to Discord...');
         try {
-            await this.client.login(this.token);
-            console.log('[DiscordService] login() promise resolved.');
+            const loginResult = await this.client.login(this.token);
+            console.log('[DiscordService] login() promise resolved. Token used:', loginResult.substring(0, 10) + '...');
         } catch (error) {
-            console.error('[DiscordService] Failed to login to Discord:', error);
+            console.error('[DiscordService] FATAL: Failed to login to Discord:', error);
             this.isEnabled = false;
         }
     }
@@ -67,13 +83,18 @@ class DiscordService {
         const isAdmin = message.author.username === this.adminName;
         const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
 
-        if (!isDM && !isMentioned) return;
+        console.log(`[DiscordService] Evaluating message from ${message.author.username}. isDM: ${isDM}, isAdmin: ${isAdmin}, isMentioned: ${isMentioned}`);
+
+        if (!isDM && !isMentioned) {
+            return;
+        }
 
         if (isAdmin && !this.adminId) {
             this.adminId = message.author.id;
+            console.log(`[DiscordService] Admin ID identified: ${this.adminId}`);
         }
 
-        console.log(`[DiscordService] Message received from ${message.author.username}: ${message.content}`);
+        console.log(`[DiscordService] Processing message: "${message.content.substring(0, 50)}..."`);
 
         if (isAdmin) {
             await dataStore.setDiscordLastReplied(true);
@@ -145,12 +166,14 @@ class DiscordService {
     }
 
     async respond(message) {
+        console.log(`[DiscordService] Generating response for channel: ${message.channel.id}`);
         const channelId = message.channel.id;
         const history = dataStore.getDiscordConversation(channelId);
 
         await dataStore.saveDiscordInteraction(channelId, 'user', message.content);
 
         const isAdmin = message.author.username === this.adminName;
+        console.log(`[DiscordService] User is admin: ${isAdmin}`);
 
         const systemPrompt = `
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
@@ -174,11 +197,14 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
         ];
 
         try {
-            message.channel.sendTyping();
+            console.log(`[DiscordService] Sending typing indicator...`);
+            await message.channel.sendTyping();
 
             let responseText;
             if (isAdmin) {
+                 console.log(`[DiscordService] Admin detected, performing agentic planning...`);
                  const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), '', true);
+                 console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  for (const action of plan.actions) {
                      if (action.tool === 'persist_directive') {
@@ -199,12 +225,16 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
                 responseText = await llmService.generateResponse(messages);
             }
 
+            console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
+
             if (responseText) {
                 responseText = sanitizeThinkingTags(responseText);
                 responseText = sanitizeCharacterCount(responseText);
 
+                console.log(`[DiscordService] Sending reply to Discord...`);
                 await message.reply(responseText);
                 await dataStore.saveDiscordInteraction(channelId, 'assistant', responseText);
+                console.log(`[DiscordService] Reply sent and saved.`);
 
                 if (isAdmin) {
                     await this.considerMirroring(channelId, responseText);
@@ -321,19 +351,33 @@ Your persona: ${config.TEXT_SYSTEM_PROMPT}
     async getAdminUser() {
         if (!this.client) return null;
         if (this.adminId) {
-            return await this.client.users.fetch(this.adminId);
-        }
-
-        // Fallback: search in guilds
-        const guilds = this.client.guilds.cache;
-        for (const [id, guild] of guilds) {
-            const members = await guild.members.fetch();
-            const admin = members.find(m => m.user.username === this.adminName);
-            if (admin) {
-                this.adminId = admin.user.id;
-                return admin.user;
+            try {
+                return await this.client.users.fetch(this.adminId);
+            } catch (e) {
+                console.warn(`[DiscordService] Failed to fetch admin by ID ${this.adminId}, re-searching...`);
+                this.adminId = null;
             }
         }
+
+        console.log(`[DiscordService] Searching for admin: ${this.adminName}`);
+        // Fallback: search in guilds
+        const guilds = this.client.guilds.cache;
+        console.log(`[DiscordService] Searching across ${guilds.size} guilds...`);
+        for (const [id, guild] of guilds) {
+            try {
+                console.log(`[DiscordService] Searching guild: ${guild.name}`);
+                const members = await guild.members.fetch();
+                const admin = members.find(m => m.user.username === this.adminName);
+                if (admin) {
+                    this.adminId = admin.user.id;
+                    console.log(`[DiscordService] Admin found in guild ${guild.name}! ID: ${this.adminId}`);
+                    return admin.user;
+                }
+            } catch (err) {
+                console.error(`[DiscordService] Error fetching members in guild ${guild.name}:`, err);
+            }
+        }
+        console.log(`[DiscordService] Admin NOT found in any shared guild.`);
         return null;
     }
 }

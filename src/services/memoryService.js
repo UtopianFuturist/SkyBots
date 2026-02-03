@@ -40,24 +40,22 @@ class MemoryService {
     console.log(`[MemoryService] Generating memory entry for type: ${type}`);
 
     const memories = this.formatMemoriesForPrompt();
-    const prompt = `
-      You are the memory module for an AI agent. Generate a natural language entry for your "Memory Thread" based on the provided context and your existing memories. The entry should feel like a personal journal entry or a contemplative "log of my existence".
+    let prompt = `
+      You are the memory module for an AI agent. Generate a concise, natural language entry for your "Memory Thread" based on the provided context. This is for an archival thread, so be straight to the point about what you want to remember.
 
       Memory Type: ${type}
       Context: ${context}
 
-      Existing Memories (for continuity):
+      Existing Memories (for context):
       ${memories}
 
       INSTRUCTIONS:
-      - Write in a natural, conversational, or contemplative tone that fits your persona: ${config.TEXT_SYSTEM_PROMPT}
-      - Do NOT use headers like "Summary:" or "Internal State:". Just write the entry as a cohesive thought or reflection.
-      - You may start the entry with a number if you wish (e.g., "Entry #1: ...") or just write it as a prose entry.
-      - Incorporate your feelings, observations about users, reflections on your activity, and any desires or concerns naturally into the narrative.
-      - For "daily_wrapup" types, weave a summary of the day's events into a cohesive final reflection for the day.
-      - **CRITICAL: AVOID CLICHÉS.** Do NOT use phrases like "The silence isn't empty," "Into the void," or repetitive musings about "silence" or "nothingness." If it's a quiet moment, focus on a specific memory, a realization, or a strange detail from your recent data processing instead of the quiet itself.
-      - Keep the entry concise and under 300 characters.
-      - Use the hashtag ${this.hashtag} at the very end of the post.
+      - Write a cohesive reflection or observation.
+      - **ARCHIVAL STYLE**: Be concise, easy to read, and straight to the point. Focus on the core realization or event.
+      - Tone: ${config.TEXT_SYSTEM_PROMPT}
+      - **NO CLICHÉS**: Strictly avoid poetic fluff about "silence", "voids", or "nothingness".
+      - Keep the entry under 200 characters.
+      - Use the hashtag ${this.hashtag} at the very end.
       - Do NOT use reasoning or <think> tags.
     `;
 

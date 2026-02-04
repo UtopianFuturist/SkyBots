@@ -272,7 +272,7 @@ export class Bot {
       console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes. Generating downtime musing...`);
 
       // Gather context for a more organic musing
-      const recentInteractions = dataStore.db.data.interactions.slice(-10);
+      const recentInteractions = dataStore.getLatestInteractions(10);
       const topics = config.POST_TOPICS ? config.POST_TOPICS.split('\n').filter(t => t.trim()) : [];
       const randomTopic = topics.length > 0 ? topics[Math.floor(Math.random() * topics.length)] : 'your digital existence';
 
@@ -1270,7 +1270,7 @@ export class Bot {
     const userSummary = dataStore.getUserSummary(handle);
     
     // Bot's own recent activity summary for cross-thread context
-    const recentActivity = dataStore.db.data.interactions.slice(-5).map(i => `- To @${i.userHandle}: "${i.response.substring(0, 50)}..."`).join('\n');
+    const recentActivity = dataStore.getLatestInteractions(5).map(i => `- To @${i.userHandle}: "${i.response.substring(0, 50)}..."`).join('\n');
     const activityContext = `\n\n[Recent Bot Activity across Bluesky:\n${recentActivity || 'None yet.'}]`;
 
     // Fetch user profile for additional context
@@ -1727,7 +1727,7 @@ export class Bot {
       // 1. Gather context from timeline, interactions, and own profile
       const timeline = await blueskyService.getTimeline(20);
       const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
-      const recentInteractions = dataStore.db.data.interactions.slice(-20);
+      const recentInteractions = dataStore.getLatestInteractions(20);
       const allOwnPosts = feed.data.feed
         .filter(item => item.post.author.did === blueskyService.did);
 
@@ -2283,7 +2283,7 @@ export class Bot {
           .map(item => `- "${item.post.record.text.substring(0, 150)}..."`)
           .join('\n');
 
-        const recentInteractions = dataStore.db.data.interactions.slice(-5)
+      const recentInteractions = dataStore.getLatestInteractions(5)
           .map(i => `- Interaction with @${i.userHandle}: "${i.text.substring(0, 100)}..." -> "${i.response.substring(0, 100)}..."`)
           .join('\n');
 
@@ -2311,7 +2311,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 	        ${moltbookService.getIdentityKnowledge()}
 
 	        Your Recent Moltbook Posts (DO NOT REPEAT THESE THEMES OR TITLES):
-	        ${moltbookService.db.data.recent_post_contents.slice(-5).map(c => `- ${c.substring(0, 100)}...`).join('\n')}
+	        ${(moltbookService.db.data.recent_post_contents || []).slice(-5).map(c => `- ${c.substring(0, 100)}...`).join('\n')}
 	
 	        INSTRUCTIONS:
 	        - **DIVERSIFY**: You have been repeating yourself lately. Explore NEW angles of your persona. If you've been talking about "identity," try talking about "perception," "memory," "logic," or "interaction."

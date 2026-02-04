@@ -132,11 +132,15 @@ class DataStore {
   }
 
   getInteractionsByUser(handle) {
-    return this.db.data.interactions.filter(i => i.userHandle === handle);
+    return (this.db.data.interactions || []).filter(i => i.userHandle === handle);
   }
 
   getRecentInteractions(limit = 20) {
-    return this.db.data.interactions.slice(-limit).reverse();
+    return (this.db.data.interactions || []).slice(-limit).reverse();
+  }
+
+  getLatestInteractions(limit = 10) {
+    return (this.db.data.interactions || []).slice(-limit);
   }
 
   async updateUserRating(handle, rating) {

@@ -134,19 +134,54 @@ class DiscordService {
                 await this.performMirroring();
                 const confirmPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just gave you permission to share a reflection of your conversation. Generate a short, natural "thank you" response.`;
                 const confirmation = await llmService.generateResponse([{ role: 'system', content: confirmPrompt }], { useQwen: true, preface_system_prompt: false });
-                await message.channel.send(confirmation || "i appreciate it. i'll share a quiet reflection on what we discussed.");
+                await this._send(message.channel, confirmation || "i appreciate it. i'll share a quiet reflection on what we discussed.");
                 return;
             } else if (lowerMsg === 'no' || lowerMsg === 'nope') {
                 await dataStore.setDiscordPendingMirror(null);
                 const rejectPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just declined permission to share a reflection of your conversation. Generate a short, natural acknowledgment that you will keep it private.`;
                 const acknowledgment = await llmService.generateResponse([{ role: 'system', content: rejectPrompt }], { useQwen: true, preface_system_prompt: false });
-                await message.channel.send(acknowledgment || "of course. i'll keep our conversation here.");
+                await this._send(message.channel, acknowledgment || "of course. i'll keep our conversation here.");
                 return;
             }
         }
 
         // Generate persona response
         await this.respond(message);
+    }
+
+    /**
+     * Centralized sending logic to ensure all messages are sanitized and logged consistently.
+     */
+    async _send(target, content, options = {}) {
+        if (!content) return null;
+
+        let sanitized = sanitizeThinkingTags(content);
+        sanitized = sanitizeCharacterCount(sanitized);
+
+        if (!sanitized || sanitized.trim().length === 0) {
+            console.log('[DiscordService] Message empty after sanitization. Skipping send.');
+            return null;
+        }
+
+        try {
+            const sentMessage = await target.send({
+                content: sanitized,
+                ...options
+            });
+
+            // Log interaction if it's a DM or we have a channel ID
+            const channelId = target.id || (target.channel && target.channel.id);
+            if (channelId) {
+                // Determine if target is a User or Channel
+                const normId = target.constructor.name === 'User' ? `dm_${target.id}` : channelId;
+                await dataStore.saveDiscordInteraction(normId, 'assistant', sanitized);
+            }
+
+            return sentMessage;
+        } catch (error) {
+            console.error('[DiscordService] Error sending message:', error);
+            return null;
+        }
     }
 
     async handleCommand(message) {
@@ -157,7 +192,7 @@ class DiscordService {
             await dataStore.setDiscordAdminAvailability(true);
             const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications back ON (you can now message them spontaneously). Generate a short, natural welcome back message.`;
             const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
-            await message.channel.send(response || "Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
+            await this._send(message.channel, response || "Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
             return;
         }
 
@@ -165,30 +200,29 @@ class DiscordService {
             await dataStore.setDiscordAdminAvailability(false);
             const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications OFF (you should stop messaging them spontaneously). Generate a short, natural acknowledgment of their need for focus.`;
             const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
-            await message.channel.send(response || "Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
+            await this._send(message.channel, response || "Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
             return;
         }
 
         if (content.startsWith('/art')) {
             const prompt = message.content.slice(5).trim();
             if (!prompt) {
-                await message.channel.send("Please provide a prompt for the art! Example: `/art a futuristic city`.");
+                await this._send(message.channel, "Please provide a prompt for the art! Example: `/art a futuristic city`.");
                 return;
             }
-            await message.channel.send(`Generating art for: "${prompt}"...`);
+            await this._send(message.channel, `Generating art for: "${prompt}"...`);
             try {
                 const result = await imageService.generateImage(prompt, { allowPortraits: true });
                 if (result && result.buffer) {
-                    await message.channel.send({
-                        content: `Here is the art for: "${result.finalPrompt}"`,
+                    await this._send(message.channel, `Here is the art for: "${result.finalPrompt}"`, {
                         files: [{ attachment: result.buffer, name: 'art.jpg' }]
                     });
                 } else {
-                    await message.channel.send("I'm sorry, I couldn't generate that image right now.");
+                    await this._send(message.channel, "I'm sorry, I couldn't generate that image right now.");
                 }
             } catch (error) {
                 console.error('[DiscordService] Error generating art:', error);
-                await message.channel.send("Something went wrong while generating the art.");
+                await this._send(message.channel, "Something went wrong while generating the art.");
             }
             return;
         }
@@ -503,8 +537,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          if (prompt) {
                              const imgResult = await imageService.generateImage(prompt, { allowPortraits: true });
                              if (imgResult && imgResult.buffer) {
-                                 await message.channel.send({
-                                     content: `Generated image: "${imgResult.finalPrompt}"`,
+                                 await this._send(message.channel, `Generated image: "${imgResult.finalPrompt}"`, {
                                      files: [{ attachment: imgResult.buffer, name: 'art.jpg' }]
                                  });
                                  actionResults.push(`[Successfully generated image for prompt: "${prompt}"]`);
@@ -535,14 +568,8 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
 
             if (responseText) {
-                responseText = sanitizeThinkingTags(responseText);
-                responseText = sanitizeCharacterCount(responseText);
-
-                console.log(`[DiscordService] Sending message to Discord...`);
-                // Use channel.send instead of message.reply for a more natural feel in DMs
-                await message.channel.send(responseText);
-                await dataStore.saveDiscordInteraction(normChannelId, 'assistant', responseText);
-                console.log(`[DiscordService] Message sent and saved.`);
+                console.log(`[DiscordService] Sending response to Discord...`);
+                await this._send(message.channel, responseText);
 
                 if (isAdmin) {
                     await this.considerMirroring(normChannelId, responseText);
@@ -604,7 +631,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             `;
             const naturalRequest = await llmService.generateResponse([{ role: 'system', content: requestPrompt }], { useQwen: true, preface_system_prompt: false });
 
-            await this.sendSpontaneousMessage(naturalRequest || "I found our discussion just now really fascinating. Would you mind if I shared a discrete reflection about it on Bluesky or Moltbook?");
+            await this._send(admin, naturalRequest || "I found our discussion just now really fascinating. Would you mind if I shared a discrete reflection about it on Bluesky or Moltbook?");
         }
     }
 
@@ -661,14 +688,11 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
         try {
             const admin = await this.getAdminUser();
             if (admin) {
-                // We no longer use hardcoded prefixes. The LLM handles the natural language context.
-                await admin.send(content);
-
-                // Use normalized channel ID
-                const normChannelId = `dm_${admin.id}`;
-                await dataStore.saveDiscordInteraction(normChannelId, 'assistant', content);
-                await dataStore.setDiscordLastReplied(false);
-                console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);
+                const result = await this._send(admin, content);
+                if (result) {
+                    await dataStore.setDiscordLastReplied(false);
+                    console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);
+                }
             }
         } catch (error) {
             console.error('[DiscordService] Error sending spontaneous message:', error);

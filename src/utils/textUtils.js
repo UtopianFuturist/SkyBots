@@ -58,28 +58,23 @@ export const sanitizeThinkingTags = (text) => {
   let sanitized = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
 
   // 2. Handle unclosed <think> tags.
-  // If an unclosed <think> tag remains, we need to be more aggressive.
+  // If an unclosed <think> tag remains, we discard EVERYTHING after the first instance.
+  // This is the most aggressive way to prevent reasoning leakage.
   if (sanitized.toLowerCase().includes('<think>')) {
-    const parts = sanitized.split(/<think>/i);
-    let newSanitized = parts[0]; // Keep anything before the first <think> tag
-
-    for (let i = 1; i < parts.length; i++) {
-        const afterThink = parts[i];
-        // Look for a double newline which often separates reasoning from the actual answer
-        const separatorIndex = afterThink.indexOf('\n\n');
-        if (separatorIndex !== -1) {
-            newSanitized += afterThink.substring(separatorIndex).trim();
-        } else {
-            // If no clear separator, and it started with <think>, it's likely all monologue.
-            // We discard this part to avoid leaking reasoning.
-        }
-    }
-    sanitized = newSanitized;
+    console.log('[TextUtils] Unclosed <think> tag detected. Truncating response to prevent leakage.');
+    sanitized = sanitized.split(/<think>/i)[0];
   }
 
   // 3. Final cleanup of any remaining tags themselves
   sanitized = sanitized.replace(/<think>/gi, '');
   sanitized = sanitized.replace(/<\/think>/gi, '');
+
+  // 4. Also handle common patterns like "Thought:", "Reasoning:", or "Monologue:" if they appear at the start
+  // but only if they seem to be model-generated artifacts.
+  const artifacts = [/^\s*(thought|reasoning|monologue|chain of thought)\s*:\s*/i];
+  for (const pattern of artifacts) {
+      sanitized = sanitized.replace(pattern, '');
+  }
 
   return sanitized.trim();
 };

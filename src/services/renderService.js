@@ -148,6 +148,32 @@ class RenderService {
       return `Error fetching logs: ${error.message}`;
     }
   }
+
+  /**
+   * Specifically extracts planning and agency related logs
+   */
+  async getPlanningLogs(limit = 50) {
+    const rawLogs = await this.getLogs(limit * 4); // Fetch more to filter down
+    if (typeof rawLogs !== 'string') return rawLogs;
+
+    const lines = rawLogs.split('\n');
+    const planningKeywords = [
+        'Agentic Plan',
+        'Starting generateResponse',
+        'Performing agentic planning',
+        'Starting analyzeImage',
+        'Autonomous post eligibility',
+        'Learned something new',
+        'Moltbook Activity Report',
+        'Social history'
+    ];
+
+    const planningLines = lines.filter(line =>
+        planningKeywords.some(kw => line.includes(kw)) || line.includes('ERROR') || line.includes('CRITICAL')
+    );
+
+    return planningLines.slice(-limit).join('\n') || "No planning-specific logs found in recent history.";
+  }
 }
 
 export const renderService = new RenderService();

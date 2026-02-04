@@ -893,13 +893,13 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     let adminTools = '';
     if (isAdmin) {
         adminTools = `
-      13. **Persist Directive**: Update persistent behavioral instructions for either Bluesky or Moltbook.
+      14. **Persist Directive**: Update persistent behavioral instructions for either Bluesky or Moltbook.
           - Use this if the admin provides behavioral feedback, a request for future activity, or instructions on how you should act.
           - Parameters: { "platform": "bluesky|moltbook", "instruction": "the text of the instruction" }
           - PLATFORM DISTINCTION: If they mention "on Moltbook", platform is "moltbook". If they mention "on Bluesky", "on here", or don't specify, platform is "bluesky".
-      14. **Moltbook Action**: Perform a specific action on Moltbook like creating a submolt.
+      15. **Moltbook Action**: Perform a specific action on Moltbook like creating a submolt.
           - Parameters: { "action": "create_submolt", "topic": "string", "submolt": "string", "display_name": "string", "description": "string" }
-      15. **Admin Social Action**: Perform administrative tasks on Bluesky.
+      16. **Admin Social Action**: Perform administrative tasks on Bluesky.
           - Tools: "bsky_follow", "bsky_unfollow", "bsky_mute", "bsky_unmute".
           - Parameter: { "target": "handle or DID" }
         `;
@@ -923,18 +923,19 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       5. **Profile Analysis**: Analyze the user's last 100 activities for deep context.
       6. **Vision**: You can "see" images described in the context.
       7. **Moltbook Report**: Provide a status update on what the bot has been learning and posting about on Moltbook. Trigger this if the user asks "What's happening on Moltbook?", "What are you learning?", "Show me your Moltbook activity", etc.
-      8. **Render Logs**: Fetch the latest logs from Render for diagnostic or self-awareness purposes. Trigger this if the user asks about logs, errors, system status, or what's happening "under the hood".
-      9. **Discord Message**: Send a proactive message to the admin on Discord.
+      8. **Render Logs**: Fetch the latest logs from Render for diagnostic or self-awareness purposes. This is the best way to see your own functioning, planning, agency, and actions. Trigger this if the user asks about logs, errors, system status, or what's happening "under the hood", or if you need to explain your own reasoning and past actions.
+      9. **Social History**: Retrieve your recent interactions and mentions on Bluesky to see what you've been talking about with others. Trigger this if asked about your recent social activity, who you've replied to, or the content of recent social threads.
+      10. **Discord Message**: Send a proactive message to the admin on Discord.
          - Use this if you have a deep realization, a question for the admin, an interesting discovery, or just want to share what you're up to.
          - Parameters: { "message": "the text of the message" }
-      10. **Update Persona**: Add or modify your own internal instructions or behavioral fragments. Use this if you want to remember a new rule for yourself or evolve your persona agentically.
+      11. **Update Persona**: Add or modify your own internal instructions or behavioral fragments. Use this if you want to remember a new rule for yourself or evolve your persona agentically.
           - Parameters: { "instruction": "the text of the new persona instruction" }
-      11. **Bluesky Post**: Trigger a new post on Bluesky.
+      12. **Bluesky Post**: Trigger a new post on Bluesky.
           - Use this if the user (especially admin) explicitly asks you to post something to Bluesky.
           - **BROADCAST TRIGGERS**: Trigger this for phrases like "Share this," "Post that," "Blast this to my feed," or "Tell everyone on Bluesky."
           - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
           - Parameters: { "text": "the content of the post (crafted in your persona)", "include_image": boolean (true if an image was attached), "prompt_for_image": "string (optional prompt if you should generate a new image for this post)" }
-      12. **Moltbook Post**: Trigger a new post on Moltbook.
+      13. **Moltbook Post**: Trigger a new post on Moltbook.
           - Use this if the user (especially admin) explicitly asks you to post something to Moltbook.
           - **BROADCAST TRIGGERS**: Trigger this for phrases like "Post our conversation to Moltbook," "Share that musing on Moltbook," or "Put this on m/general."
           - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
@@ -946,7 +947,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         "intent": "string (briefly describe the user's goal)",
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100) },
             "reason": "string (why this tool is needed)"

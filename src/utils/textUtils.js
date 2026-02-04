@@ -172,9 +172,15 @@ export const GROUNDED_LANGUAGE_DIRECTIVES = `
 `.trim();
 
 export const checkSimilarity = (newText, recentTexts, threshold = 0.4) => {
-  if (!recentTexts || recentTexts.length === 0) return false;
+  if (!recentTexts || recentTexts.length === 0 || !newText) return false;
 
-  const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();
+  const normalize = (str) => {
+      if (typeof str !== 'string') return '';
+      return str.toLowerCase()
+        .replace(/[^\w\s]/g, '')
+        .replace(/\s+/g, ' ')
+        .trim();
+  };
   const normalizedNew = normalize(newText);
 
   for (const old of recentTexts) {

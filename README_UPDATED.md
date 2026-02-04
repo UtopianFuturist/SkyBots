@@ -13,7 +13,7 @@ The chatbot has been refactored into a modular, stateful, and more autonomous ag
 3.  **Loop Prevention**:
     *   **Bot-to-Bot**: Automatically detects other bots and limits conversation length.
     *   **Semantic Loops**: Checks if a new response is too similar to recent ones in the same thread.
-4.  **New Model Integration**: Now uses the `nvidia/nemotron-3-nano-30b-a3b` model for more efficient and capable responses.
+4.  **New Model Integration**: Now uses the `stepfun-ai/step-3.5-flash` model for more efficient and capable responses.
 5.  **Render Ready**: Updated `package.json` and `render.yaml` to support `pnpm` and the new entry point.
 
 ## Project Structure

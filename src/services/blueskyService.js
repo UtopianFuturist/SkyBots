@@ -464,13 +464,24 @@ class BlueskyService {
     }
   }
 
-  async post(text, embed = null, options = { maxChunks: 3 }) {
+  async post(text, embedOrOptions = null, options = {}) {
+    let finalOptions = options;
+    let explicitEmbed = null;
+
+    // Handle case where second argument is options instead of embed
+    if (embedOrOptions && !embedOrOptions.$type && (embedOrOptions.imageUrl || embedOrOptions.imageBuffer || embedOrOptions.imagesToEmbed || embedOrOptions.maxChunks)) {
+        finalOptions = { ...embedOrOptions, ...options };
+    } else {
+        explicitEmbed = embedOrOptions;
+    }
+
+    const { maxChunks = 3 } = finalOptions;
     console.log('[BlueskyService] Creating new post (potentially threaded)...');
     try {
       let textChunks = splitText(text);
-      if (textChunks.length > options.maxChunks) {
-        console.warn(`[BlueskyService] Post content exceeds ${options.maxChunks} chunks. Truncating.`);
-        textChunks = textChunks.slice(0, options.maxChunks);
+      if (textChunks.length > maxChunks) {
+        console.warn(`[BlueskyService] Post content exceeds ${maxChunks} chunks. Truncating.`);
+        textChunks = textChunks.slice(0, maxChunks);
       }
 
       let currentParent = null;
@@ -489,15 +500,50 @@ class BlueskyService {
           createdAt: new Date().toISOString(),
         };
 
-        // If no embed is provided for the first post, try to generate a link card
-        let finalEmbed = i === 0 ? embed : null;
-        if (i === 0 && !finalEmbed) {
-          const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
-            ?.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link')?.uri;
+        // Only add the embed to the first post in the chain
+        let finalEmbed = i === 0 ? explicitEmbed : null;
 
-          if (firstUrl) {
-            finalEmbed = await this.getExternalEmbed(firstUrl);
-          }
+        if (i === 0) {
+            // Precedence: explicit embed > image URLs/buffers > automatic link card
+            if (finalOptions.imageUrl && finalOptions.imageAltText && !finalEmbed) {
+                try {
+                    console.log(`[BlueskyService] Uploading image from URL: ${finalOptions.imageUrl}`);
+                    const response = await fetch(finalOptions.imageUrl);
+                    if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
+                    const arrayBuffer = await response.arrayBuffer();
+                    const imageBuffer = new Uint8Array(arrayBuffer);
+                    const contentType = response.headers.get('content-type') || 'image/jpeg';
+                    const { data: uploadData } = await this.agent.uploadBlob(imageBuffer, { encoding: contentType });
+                    finalEmbed = {
+                        $type: 'app.bsky.embed.images',
+                        images: [{ image: uploadData.blob, alt: finalOptions.imageAltText }],
+                    };
+                } catch (err) {
+                    console.error('[BlueskyService] Error uploading image for post:', err);
+                }
+            } else if (finalOptions.imageBuffer && finalOptions.imageAltText && !finalEmbed) {
+                try {
+                    const { data: uploadData } = await this.agent.uploadBlob(finalOptions.imageBuffer, { encoding: 'image/jpeg' });
+                    finalEmbed = {
+                        $type: 'app.bsky.embed.images',
+                        images: [{ image: uploadData.blob, alt: finalOptions.imageAltText }],
+                    };
+                } catch (err) {
+                    console.error('[BlueskyService] Error uploading image buffer for post:', err);
+                }
+            } else if (finalOptions.imagesToEmbed && finalOptions.imagesToEmbed.length > 0 && !finalEmbed) {
+                finalEmbed = await this.uploadImages(finalOptions.imagesToEmbed);
+            }
+
+            // Fallback to automatic link card detection if no other embed is provided
+            if (!finalEmbed) {
+                const firstUrl = rt.facets?.find(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
+                    ?.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link')?.uri;
+
+                if (firstUrl) {
+                    finalEmbed = await this.getExternalEmbed(firstUrl);
+                }
+            }
         }
 
         if (finalEmbed) {

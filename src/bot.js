@@ -333,7 +333,64 @@ export class Bot {
         }
     }
 
-    // 4. Discord Memory Aggregation (if there was recent activity)
+    // 4. Scheduled Posts Processing
+    const scheduledPosts = dataStore.getScheduledPosts();
+    if (scheduledPosts.length > 0) {
+        console.log(`[Bot] Checking ${scheduledPosts.length} scheduled posts...`);
+        for (let i = 0; i < scheduledPosts.length; i++) {
+            const post = scheduledPosts[i];
+            let canPost = false;
+
+            if (post.platform === 'bluesky') {
+                const lastPostTime = dataStore.getLastAutonomousPostTime();
+                const cooldown = config.BLUESKY_POST_COOLDOWN * 60 * 1000;
+                const nowTs = Date.now();
+                const diff = lastPostTime ? nowTs - new Date(lastPostTime).getTime() : cooldown;
+                if (diff >= cooldown) canPost = true;
+            } else if (post.platform === 'moltbook') {
+                const lastPostAt = moltbookService.db.data.last_post_at;
+                const cooldown = config.MOLTBOOK_POST_COOLDOWN * 60 * 1000;
+                const nowTs = Date.now();
+                const diff = lastPostAt ? nowTs - new Date(lastPostAt).getTime() : cooldown;
+                if (diff >= cooldown) canPost = true;
+            }
+
+            if (canPost) {
+                console.log(`[Bot] Executing scheduled post for ${post.platform}...`);
+                let success = false;
+                try {
+                    if (post.platform === 'bluesky') {
+                        let embed = null;
+                        if (post.embed && post.embed.imageUrl) {
+                            embed = { imageUrl: post.embed.imageUrl, imageAltText: post.embed.imageAltText || 'Scheduled image' };
+                        }
+                        const result = await blueskyService.post(post.content, embed);
+                        if (result) {
+                            success = true;
+                            await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                            console.log(`[Bot] Successfully executed scheduled Bluesky post: ${result.uri}`);
+                        }
+                    } else if (post.platform === 'moltbook') {
+                        const { title, content, submolt } = post.content;
+                        const result = await moltbookService.post(title, content, submolt || 'general');
+                        if (result) {
+                            success = true;
+                            console.log(`[Bot] Successfully executed scheduled Moltbook post in m/${submolt || 'general'}`);
+                        }
+                    }
+
+                    if (success) {
+                        await dataStore.removeScheduledPost(i);
+                        i--; // Adjust index for next iteration
+                    }
+                } catch (err) {
+                    console.error(`[Bot] Error executing scheduled post for ${post.platform}:`, err);
+                }
+            }
+        }
+    }
+
+    // 5. Discord Memory Aggregation (if there was recent activity)
     // We can use this.lastActivityTime as a proxy, but we want specifically Discord activity
     const discordActivityKey = 'discord_last_memory_timestamp';
     const lastDiscordMemory = this[discordActivityKey] || 0;
@@ -413,11 +470,11 @@ export class Bot {
 
           if (discordService.isEnabled && !isRateLimit) {
             console.log(`[Bot] Sending error alert to admin via Discord...`);
-            await discordService.sendSpontaneousMessage(`[SYSTEM ALERT] ${alertMsg}`);
+            await discordService.sendSpontaneousMessage(`${alertMsg}`);
           }
 
           console.log(`[Bot] Posting error alert to admin on Bluesky...`);
-          await blueskyService.post(`[SYSTEM ALERT] @${config.ADMIN_BLUESKY_HANDLE} ${alertMsg}`);
+          await blueskyService.post(`@${config.ADMIN_BLUESKY_HANDLE} ${alertMsg}`);
         }
       } catch (logError) {
         console.error('[Bot] Failed to generate/post error alert:', logError);
@@ -1512,8 +1569,9 @@ export class Bot {
       if (lastPostTime) {
         const now = new Date();
         const diffMins = (now - lastPostTime) / (1000 * 60);
-        if (diffMins < 45) {
-          console.log(`[Bot] Autonomous post suppressed: 45-minute cooldown in effect. (${Math.round(45 - diffMins)} minutes remaining)`);
+        const cooldown = config.BLUESKY_POST_COOLDOWN;
+        if (diffMins < cooldown) {
+          console.log(`[Bot] Autonomous post suppressed: ${cooldown}-minute cooldown in effect. (${Math.round(cooldown - diffMins)} minutes remaining)`);
           return;
         }
       }

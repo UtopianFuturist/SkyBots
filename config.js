@@ -103,6 +103,10 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   // Memory Thread
   MEMORY_THREAD_HASHTAG: process.env.MEMORY_THREAD_HASHTAG || null,
 
+  // Cooldowns (in minutes)
+  BLUESKY_POST_COOLDOWN: parseInt(process.env.BLUESKY_POST_COOLDOWN || '45'),
+  MOLTBOOK_POST_COOLDOWN: parseInt(process.env.MOLTBOOK_POST_COOLDOWN || '30'),
+
   // Render API
   RENDER_API_KEY: process.env.RENDER_API_KEY || null,
   RENDER_SERVICE_ID: process.env.RENDER_SERVICE_ID || null,

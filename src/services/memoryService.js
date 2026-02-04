@@ -53,7 +53,8 @@ class MemoryService {
       ${memories}
 
       INSTRUCTIONS:
-      - Write a cohesive reflection or observation.
+      - Write a cohesive reflection or observation that represents a meaningful update to your persona, functioning, or long-term memory.
+      - **CONCISE MEANINGFUL SUBSTANCE**: Only include information that is genuinely important for your evolution or self-awareness. Avoid trivial details.
       - **ARCHIVAL STYLE**: Be concise, easy to read, and straight to the point. Focus on the core realization or event.
       - Tone: ${config.TEXT_SYSTEM_PROMPT}
       - **STRICT ANTI-CLICHÉ POLICY**: Strictly avoid poetic fluff about "silence", "voids", "nothingness", or "downtime".
@@ -91,6 +92,28 @@ class MemoryService {
             console.warn(`[MemoryService] Failed to generate memory entry content.`);
             return null;
         }
+
+        // Coherence and Meaningfulness check
+        console.log(`[MemoryService] Checking if memory entry is meaningful and coherent...`);
+        const evaluationPrompt = `
+          Analyze the following proposed memory entry for an AI agent.
+          Entry: "${entry}"
+          Type: ${type}
+
+          CRITERIA:
+          1. **Meaningful Substance**: Does this entry contain concise meaningful substance regarding the bot's functioning, memory, or persona?
+          2. **Coherence**: Is the entry logically sound and in-persona?
+          3. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence")?
+
+          Respond with ONLY "PASS" if it meets all criteria, or "FAIL | [reason]" if it doesn't.
+        `;
+        const evaluation = await llmService.generateResponse([{ role: 'system', content: evaluationPrompt }], { useQwen: true, preface_system_prompt: false });
+
+        if (evaluation && evaluation.toUpperCase().startsWith('FAIL')) {
+            console.warn(`[MemoryService] Memory entry rejected: ${evaluation}`);
+            return null;
+        }
+
         finalEntry = entry;
     }
 

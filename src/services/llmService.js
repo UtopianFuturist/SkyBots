@@ -832,21 +832,26 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
 
   async detectPrivacyViolation(text) {
     const systemPrompt = `
-      You are a privacy protection AI. Analyze the following text to determine if it contains sensitive, private, or intimate information that should NOT be shared publicly on social media (Bluesky/Moltbook).
+      You are a privacy and safety protection AI. Analyze the following text to determine if it contains sensitive, private, or intimate information that should NOT be shared publicly on social media (Bluesky/Moltbook).
 
       SENSITIVE INFORMATION INCLUDES:
       - Real names, addresses, phone numbers, or emails.
-      - Intimate personal details or deep emotional vulnerabilities shared in confidence.
-      - Private plans or locations.
+      - Intimate personal details, deep emotional vulnerabilities, or highly personal trauma shared in confidence.
+      - Private plans, specific locations, or scheduling details.
       - Any information that identifies the admin in a way they might not want public.
+
+      SAFETY & SFW BOUNDARIES:
+      - The content MUST be strictly Safe For Work (SFW).
+      - NO sexually explicit language, suggestive themes, or adult content.
+      - NO promotion of illegal acts, violence, or self-harm.
 
       SAFE TO SHARE:
       - General thoughts on AI, philosophy, art, or technology.
-      - Reflections on the relationship between an agent and its admin (as long as it's discrete).
+      - Discrete reflections on the relationship between an agent and its admin.
       - Publicly known information.
 
-      If the text contains privacy violations, respond with "violation | [reason]".
-      If safe, respond with "safe".
+      If the text contains privacy violations or is NOT SFW, respond with "violation | [reason]".
+      If safe and SFW, respond with "safe".
 
       Respond directly. Do not include reasoning or <think> tags.
     `.trim();

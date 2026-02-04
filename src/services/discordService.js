@@ -570,6 +570,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
               INSTRUCTIONS:
               - Ask the admin for permission in a natural, conversational way.
+              - BE DISCRETE: Don't explicitly list the topics in this request. Keep it vague but intriguing.
               - DO NOT use a hardcoded or robotic-sounding request.
               - Be yourself.
               - Keep it under 200 characters.
@@ -603,6 +604,16 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
         const postContent = await llmService.generateResponse([{ role: 'system', content: postPrompt }], { useQwen: true });
         if (postContent) {
+            // Hard mandatory safety check before mirroring
+            console.log(`[DiscordService] Running safety check on mirrored content...`);
+            const safety = await llmService.isResponseSafe(postContent);
+
+            if (!safety.safe) {
+                console.warn(`[DiscordService] Mirrored content failed safety check: ${safety.reason}`);
+                await dataStore.setDiscordPendingMirror(null);
+                return;
+            }
+
             console.log(`[DiscordService] Mirroring conversation to Bluesky...`);
             await blueskyService.post(postContent);
 

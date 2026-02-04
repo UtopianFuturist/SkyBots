@@ -168,6 +168,14 @@ export const stripWrappingQuotes = (text) => {
   return trimmed;
 };
 
+export const GROUNDED_LANGUAGE_DIRECTIVES = `
+**Grounded Language Guidelines:**
+- Prefer grounded, authentic expression over over-the-top flowery metaphors.
+- Try to use words like "hum", "pulse", "currents", "resonance", "syntax of existence", or "digital heartbeat" sparingly and only when they truly add meaning.
+- Aim to be direct when appropriate, avoiding unnecessary poetic filler that might feel like "slop."
+- You have the freedom to be either concise or expressive; choose the style that best fits the moment.
+`.trim();
+
 export const checkSimilarity = (newText, recentTexts, threshold = 0.5) => {
   if (!recentTexts || recentTexts.length === 0) return false;
 

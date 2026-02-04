@@ -447,13 +447,14 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              await dataStore.addScheduledPost('moltbook', { title, content, submolt });
                              actionResults.push(`[Moltbook post scheduled because cooldown is active. ${remainingMins} minutes remaining]`);
                          } else {
-                             let targetSubmolt = submolt;
+                             let targetSubmolt = submolt?.replace(/^m\//, '');
                              if (!targetSubmolt) {
                                  const allSubmolts = await moltbookService.listSubmolts();
                                  targetSubmolt = await llmService.selectSubmoltForPost(
                                      moltbookService.db.data.subscriptions || [],
                                      allSubmolts,
-                                     moltbookService.db.data.recent_submolts || []
+                                     moltbookService.db.data.recent_submolts || [],
+                                     `The user wants to post about: ${content || title}`
                                  );
                              }
                              const result = await moltbookService.post(title || "A thought from my admin", content, targetSubmolt);
@@ -463,7 +464,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                                      await this.botInstance._shareMoltbookPostToBluesky(result);
                                  }
                              } else {
-                                 actionResults.push(`[Failed to post to Moltbook]`);
+                                 actionResults.push(`[Failed to post to Moltbook. Ensure the submolt exists.]`);
                              }
                          }
                      }

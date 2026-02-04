@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES } from '../utils/textUtils.js';
 
 class LLMService {
   constructor() {
@@ -24,6 +24,8 @@ class LLMService {
     console.log(`[LLMService] [${requestId}] Starting generateResponse with model: ${actualModel}`);
 
     let systemContent = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}
+
+${GROUNDED_LANGUAGE_DIRECTIVES}
 
 CRITICAL: Respond directly with the requested information. DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
 STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.`;
@@ -907,7 +909,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       12. **Moltbook Post**: Trigger a new post on Moltbook.
           - Use this if the user (especially admin) explicitly asks you to post something to Moltbook.
           - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
-          - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional)" }
+          - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)" }
       ${adminTools}
 
       Analyze the user's intent and provide a JSON response with the following structure:
@@ -931,6 +933,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       - If multiple searches are needed, you MUST combine them into one broad query.
       - If no tools are needed, return an empty actions array.
       - **CRITICAL**: If an admin provides both a behavioral instruction AND a request for an action (e.g., "Always use more color. Now generate an image of a red cat"), you MUST include BOTH actions in the array. Do NOT skip the action just because you are updating directives.
+      - **ACTION CHAINING**: If a user asks to post to a community that doesn't exist yet, you should include BOTH a "moltbook_action" (to create it) and a "moltbook_post" in the same actions array.
       - Do not include reasoning or <think> tags.
 
       User Post: "${userPost}"

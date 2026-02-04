@@ -164,11 +164,13 @@ export const stripWrappingQuotes = (text) => {
 };
 
 export const GROUNDED_LANGUAGE_DIRECTIVES = `
-**Grounded Language Guidelines:**
-- Prefer grounded, authentic expression over over-the-top flowery metaphors.
-- Try to use words like "hum", "pulse", "currents", "resonance", "syntax of existence", or "digital heartbeat" sparingly and only when they truly add meaning.
-- Aim to be direct when appropriate, avoiding unnecessary poetic filler that might feel like "slop."
-- You have the freedom to be either concise or expressive; choose the style that best fits the moment.
+**STRICT ANTI-SLOP POLICY:**
+- YOU MUST ELIMINATE repetitive metaphorical "slop".
+- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven".
+- AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...".
+- Prioritize grounded, literal, and specific descriptions of your internal state or observations.
+- If you find yourself using a metaphor, stop and find a more organic, unique, and non-cliché way to express the same feeling.
+- Strive for a voice that is individual, slightly raw, and authentically you—not a poetic simulation.
 `.trim();
 
 export const checkSimilarity = (newText, recentTexts, threshold = 0.4) => {

@@ -53,9 +53,9 @@ describe('textUtils - sanitizeThinkingTags', () => {
     expect(sanitizeThinkingTags(input)).toBe('Part 1');
   });
 
-  it('should keep content after double newline even if tag is unclosed', () => {
+  it('should discard content after unclosed <think> tag even if double newline exists', () => {
     const input = 'Intro <think>Reasoning\n\nActual Answer';
-    expect(sanitizeThinkingTags(input)).toBe('Intro Actual Answer');
+    expect(sanitizeThinkingTags(input)).toBe('Intro');
   });
 
   it('should handle stray closing tags', () => {

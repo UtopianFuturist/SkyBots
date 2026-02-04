@@ -54,16 +54,36 @@ class RenderService {
     }
 
     try {
-      console.log(`[RenderService] Fetching logs for service ${this.serviceId} (limit ${limit})...`);
+      console.log(`[RenderService] Fetching logs for service "${this.serviceId}" (limit ${limit})...`);
 
-      const response = await fetch(`${this.baseUrl}/services/${this.serviceId}/logs`, {
+      let response = await fetch(`${this.baseUrl}/services/${this.serviceId}/logs`, {
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Accept': 'text/event-stream'
         }
       });
 
-      if (!response.ok) throw new Error(`Render API error: ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 404) {
+            console.warn(`[RenderService] 404 error for service ID ${this.serviceId}. Attempting to re-discover service ID by name: ${this.serviceName}`);
+            const self = await this.findSelf();
+            if (self && self.id !== this.serviceId) {
+                console.log(`[RenderService] Found different service ID: ${self.id}. Retrying fetch...`);
+                this.serviceId = self.id;
+                response = await fetch(`${this.baseUrl}/services/${this.serviceId}/logs`, {
+                    headers: {
+                        'Authorization': `Bearer ${this.apiKey}`,
+                        'Accept': 'text/event-stream'
+                    }
+                });
+            }
+        }
+
+        if (!response.ok) {
+            const errBody = await response.text().catch(() => 'No body');
+            throw new Error(`Render API error: ${response.status} - ${errBody}`);
+        }
+      }
 
       return new Promise((resolve) => {
         let logs = '';

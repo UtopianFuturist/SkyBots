@@ -2,6 +2,7 @@ import { JSONFilePreset } from 'lowdb/node';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import { memoryService } from './memoryService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, '../../src/data');
@@ -282,7 +283,7 @@ class DataStore {
     }
   }
 
-  async addRecentThought(platform, content) {
+  async addRecentThought(platform, content, options = {}) {
     if (!this.db.data.recent_thoughts) {
       this.db.data.recent_thoughts = [];
     }
@@ -296,6 +297,11 @@ class DataStore {
       this.db.data.recent_thoughts.shift();
     }
     await this.db.write();
+
+    // Persist to memory thread unless skipped (e.g. during recovery)
+    if (memoryService.isEnabled() && !options.skipSync) {
+        await memoryService.createMemoryEntry('recent_thought_sync', `[THOUGHT] Platform: ${platform}. Thought: ${content}`);
+    }
   }
 
   getRecentThoughts() {

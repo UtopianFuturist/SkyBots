@@ -123,6 +123,16 @@ export class Bot {
             await dataStore.addPersonaUpdate(instruction);
           }
         }
+        if (mem.text.includes('[THOUGHT]')) {
+          console.log(`[Bot] Recovering recent thought from memory: ${mem.text}`);
+          const thoughtMatch = mem.text.match(/Thought: (.*)/i);
+          const platformMatch = mem.text.match(/Platform: (.*?)\./i);
+          if (thoughtMatch) {
+              const platform = platformMatch ? platformMatch[1].trim().toLowerCase() : 'bluesky';
+              const thought = thoughtMatch[1].replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
+              await dataStore.addRecentThought(platform, thought, { skipSync: true });
+          }
+        }
       }
 
       llmService.setMemoryProvider(memoryService);
@@ -384,9 +394,12 @@ export class Bot {
 
                 const message = await llmService.generateResponse([{ role: 'system', content: heartbeatPrompt }], { useQwen: true, preface_system_prompt: false });
 
-                // Repetition check against last few bot messages in history
-                const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-3).map(h => h.content);
-                const isRepetitive = message && checkSimilarity(message, recentBotMsgs, 0.4);
+                // Repetition check against last few bot messages in history and recent cross-platform thoughts
+                const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5).map(h => h.content);
+                const recentThoughtsList = recentThoughts.map(t => t.content);
+                const combinedHistory = [...recentBotMsgs, ...recentThoughtsList];
+
+                const isRepetitive = message && checkSimilarity(message, combinedHistory, 0.4);
 
                 if (message && message.toUpperCase() !== 'NONE' && !isRepetitive) {
                     await discordService.sendSpontaneousMessage(message);

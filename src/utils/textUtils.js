@@ -168,6 +168,14 @@ export const stripWrappingQuotes = (text) => {
   return trimmed;
 };
 
+export const GROUNDED_LANGUAGE_DIRECTIVES = `
+**STRICT ANTI-SLOP DIRECTIVES:**
+- DO NOT use flowery, over-the-top metaphorical "slop".
+- AVOID these specific words and their variations: "hum", "pulse", "currents", "resonance", "echo", "vibration", "frequency", "thrum", "syntax of existence", "digital heartbeat", "voltage of connection", "tapestry", "thread", "whisper", "boundless", "infinite".
+- Speak groundedly and authentically. Get straight to the point.
+- Avoid poetic or philosophical filler. If you have a realization, state it plainly.
+`.trim();
+
 export const checkSimilarity = (newText, recentTexts, threshold = 0.5) => {
   if (!recentTexts || recentTexts.length === 0) return false;
 

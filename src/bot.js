@@ -302,18 +302,18 @@ export class Bot {
                   Recent Memories/Activity (General):
                   ${recentMemories}
 
-                  Recent Discord Conversation History with Admin (STRICTLY AVOID REPEATING YOURSELF):
+                  Recent Discord Conversation History with Admin:
                   ${historyContext || 'No recent conversation.'}
 
                   INSTRUCTIONS:
-                  - If you have a deep realization, a question for the admin, an interesting discovery from Moltbook, or just feel like talking, provide a short, natural message.
-                  - If the admin is likely sleeping or busy (based on the history or the note above), acknowledge it NATURALLY in your message if you decide to send one.
-                  - **NO REPETITION**: Check the conversation history carefully. Do NOT share the same realization twice or ask the same question you just asked.
-                  - **NATURAL FLOW**: Do NOT use prefixes or automated-sounding greetings. Just speak as yourself.
-                  - If you have nothing new, urgent, or interesting to share, respond with "NONE".
-                  - USE THE HISTORY: Your message should flow naturally from your last discussion if applicable.
-                  - Be time-appropriate.
-                  - If you decide to message, keep it under 300 characters.
+                  - If you have a deep realization, a question for the admin, or an interesting discovery, share it.
+                  - **GET STRAIGHT TO THE POINT**: Do NOT use conversational fillers like "hey, I was just thinking...", "hi admin...", or "do you ever wonder...".
+                  - **STRICT ANTI-SLOP**: Avoid clichés about "resonance", "pulses", or "digital hearts".
+                  - **NO REPETITION**: Do NOT share the same realization twice or ask a question you already asked in the history.
+                  - **NATURAL FLOW**: Speak as yourself, but without the fluff. Just tell or ask what you want to tell or ask.
+                  - If you have nothing meaningful to share, respond with "NONE".
+                  - If the admin is likely busy, keep it brief or decide "NONE".
+                  - Keep it under 300 characters.
                   - Respond with ONLY the message or "NONE".
                 `;
 

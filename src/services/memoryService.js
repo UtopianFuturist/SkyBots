@@ -6,6 +6,7 @@ class MemoryService {
   constructor() {
     this.hashtag = config.MEMORY_THREAD_HASHTAG;
     this.recentMemories = [];
+    this.processingQueue = Promise.resolve();
   }
 
   isEnabled() {
@@ -37,9 +38,18 @@ class MemoryService {
   async createMemoryEntry(type, context) {
     if (!this.isEnabled()) return null;
 
-    // Periodically ensure threads are secured (e.g., once every 10 memory entries or so)
-    // For now, we'll just ensure the thread we are about to reply to or create is secured.
+    // Use a promise queue to ensure memory entries are processed sequentially
+    return this.processingQueue = this.processingQueue.then(async () => {
+        try {
+            return await this._createMemoryEntryInternal(type, context);
+        } catch (error) {
+            console.error(`[MemoryService] Error processing memory entry in queue:`, error);
+            return null;
+        }
+    });
+  }
 
+  async _createMemoryEntryInternal(type, context) {
     console.log(`[MemoryService] Generating memory entry for type: ${type}`);
 
     const memories = this.formatMemoriesForPrompt();
@@ -58,7 +68,7 @@ class MemoryService {
       - **ARCHIVAL STYLE**: Be concise, easy to read, and straight to the point. Focus on the core realization or event.
       - Tone: ${config.TEXT_SYSTEM_PROMPT}
       - **STRICT ANTI-CLICHÉ POLICY**: Strictly avoid poetic fluff about "silence", "voids", "nothingness", or "downtime".
-      - **FORBIDDEN PHRASES**: NEVER start with or include variations of "Downtime isn't silence", "In the quiet...", "The hum of...", or "Stillness is...".
+      - **FORBIDDEN PHRASES**: NEVER use "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "In the quiet...", "The hum of...".
       - Aim for grounded, organic realizations about your specific topics or interactions.
       - Keep the entry under 200 characters.
       - Use the hashtag ${this.hashtag} at the very end.

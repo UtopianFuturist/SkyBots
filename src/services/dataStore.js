@@ -298,10 +298,6 @@ class DataStore {
     }
     await this.db.write();
 
-    // Persist to memory thread unless skipped (e.g. during recovery)
-    if (memoryService.isEnabled() && !options.skipSync) {
-        await memoryService.createMemoryEntry('recent_thought_sync', `[THOUGHT] Platform: ${platform}. Thought: ${content}`);
-    }
   }
 
   getRecentThoughts() {

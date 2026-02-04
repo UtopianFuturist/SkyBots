@@ -27,7 +27,7 @@ class LLMService {
 
 ${GROUNDED_LANGUAGE_DIRECTIVES}
 
-CRITICAL: Respond directly with the requested information. DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
+CRITICAL: Respond directly with the requested information. YOU MUST ELIMINATE ALL REPETITIVE METAPHORICAL "SLOP" (e.g., "digital heartbeat", "downtime isn't silence"). DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
 STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.`;
 
     if (this.memoryProvider && this.memoryProvider.isEnabled()) {
@@ -705,7 +705,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+), PROVIDED they are anchored in the identified topic.
       - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
       - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.
-      - **STRICT REJECTION**: Reject (Score 1-2) if the post is a repetitive cliché about "downtime", "silence", "nothingness", "hum of the digital", or "waiting to converse". These are considered low-quality "slop".
+      - **STRICT REJECTION**: Reject (Score 1-2) if the post uses repetitive clichés like "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", or "waiting to converse". These are considered low-quality "slop".
 
       Your response MUST be in the following format:
       Score: [1-5]

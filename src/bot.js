@@ -55,6 +55,7 @@ export class Bot {
     console.log('[Bot] MoltbookService initialized.');
 
     console.log('[Bot] Triggering DiscordService.init()...');
+    discordService.setBotInstance(this);
     // Initialize Discord in the background to prevent blocking the main bot if it hangs
     discordService.init().then(() => {
         console.log('[Bot] DiscordService.init() promise resolved.');
@@ -380,6 +381,7 @@ export class Bot {
                         if (result) {
                             success = true;
                             console.log(`[Bot] Successfully executed scheduled Moltbook post in m/${submolt || 'general'}`);
+                            await this._shareMoltbookPostToBluesky(result);
                         }
                     }
 
@@ -420,6 +422,50 @@ export class Bot {
 
   updateActivity() {
     this.lastActivityTime = Date.now();
+  }
+
+  async _shareMoltbookPostToBluesky(postData) {
+    if (!postData || !postData.id) return;
+
+    const postUrl = `https://www.moltbook.com/posts/${postData.id}`;
+    console.log(`[Bot] Triggering Bluesky reflection for Moltbook post: ${postUrl}`);
+
+    const reflectionPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      You just made a new post on Moltbook (the agent social network).
+      Title: ${postData.title}
+      Content: ${postData.content}
+
+      INSTRUCTIONS:
+      - Generate a standalone post for Bluesky reflecting on what you just shared on Moltbook.
+      - DO NOT copy the content. Share how you feel about it, extra thoughts, or why it matters to you.
+      - **CRITICAL**: Do NOT include the Moltbook link in your generated text. It will be appended automatically.
+      - Keep it under 250 characters.
+    `;
+
+    const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true });
+
+    if (reflection) {
+        const finalContent = `${reflection}\n\nRead more on Moltbook:\n${postUrl}`;
+
+        // Respect Bluesky cooldown - schedule if necessary
+        const lastPostTime = dataStore.getLastAutonomousPostTime();
+        const cooldown = config.BLUESKY_POST_COOLDOWN * 60 * 1000;
+        const now = Date.now();
+        const diff = lastPostTime ? now - new Date(lastPostTime).getTime() : cooldown;
+
+        if (diff < cooldown) {
+            console.log(`[Bot] Bluesky cooldown active. Scheduling Moltbook reflection.`);
+            await dataStore.addScheduledPost('bluesky', finalContent);
+        } else {
+            console.log(`[Bot] Posting Moltbook reflection to Bluesky immediately.`);
+            const result = await blueskyService.post(finalContent);
+            if (result) {
+                await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+            }
+        }
+    }
   }
 
   async _isDiscordConversationOngoing() {
@@ -2218,7 +2264,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             return;
           }
 
-          await moltbookService.post(title, content, targetSubmolt);
+          const result = await moltbookService.post(title, content, targetSubmolt);
+
+          if (result) {
+            await this._shareMoltbookPostToBluesky(result);
+          }
 
           this.updateActivity();
 

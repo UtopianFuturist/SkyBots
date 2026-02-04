@@ -16,6 +16,7 @@ import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils
 class DiscordService {
     constructor() {
         console.log('[DiscordService] Constructor starting...');
+        this.botInstance = null;
         this.client = null;
         this.token = config.DISCORD_BOT_TOKEN;
         this.adminName = config.DISCORD_ADMIN_NAME;
@@ -23,6 +24,10 @@ class DiscordService {
         this.isEnabled = !!this.token && this.token !== 'undefined' && this.token !== 'null';
         this.adminId = null;
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
+    }
+
+    setBotInstance(bot) {
+        this.botInstance = bot;
     }
 
     async init() {
@@ -454,6 +459,9 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              const result = await moltbookService.post(title || "A thought from my admin", content, targetSubmolt);
                              if (result) {
                                  actionResults.push(`[Successfully posted to Moltbook m/${targetSubmolt}]`);
+                                 if (this.botInstance) {
+                                     await this.botInstance._shareMoltbookPostToBluesky(result);
+                                 }
                              } else {
                                  actionResults.push(`[Failed to post to Moltbook]`);
                              }
@@ -570,6 +578,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
               INSTRUCTIONS:
               - Ask the admin for permission in a natural, conversational way.
+              - BE DISCRETE: Don't explicitly list the topics in this request. Keep it vague but intriguing.
               - DO NOT use a hardcoded or robotic-sounding request.
               - Be yourself.
               - Keep it under 200 characters.
@@ -603,6 +612,16 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
         const postContent = await llmService.generateResponse([{ role: 'system', content: postPrompt }], { useQwen: true });
         if (postContent) {
+            // Hard mandatory safety check before mirroring
+            console.log(`[DiscordService] Running safety check on mirrored content...`);
+            const safety = await llmService.isResponseSafe(postContent);
+
+            if (!safety.safe) {
+                console.warn(`[DiscordService] Mirrored content failed safety check: ${safety.reason}`);
+                await dataStore.setDiscordPendingMirror(null);
+                return;
+            }
+
             console.log(`[DiscordService] Mirroring conversation to Bluesky...`);
             await blueskyService.post(postContent);
 

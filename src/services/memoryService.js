@@ -37,6 +37,9 @@ class MemoryService {
   async createMemoryEntry(type, context) {
     if (!this.isEnabled()) return null;
 
+    // Periodically ensure threads are secured (e.g., once every 10 memory entries or so)
+    // For now, we'll just ensure the thread we are about to reply to or create is secured.
+
     console.log(`[MemoryService] Generating memory entry for type: ${type}`);
 
     const memories = this.formatMemoriesForPrompt();
@@ -121,6 +124,10 @@ class MemoryService {
             this.recentMemories.shift();
         }
         console.log(`[MemoryService] New memory added to local state. Total count: ${this.recentMemories.length}`);
+
+        // Ensure the thread is secured after adding a new post
+        const rootUri = latestPost ? (latestPost.record.reply?.root?.uri || latestPost.uri) : result.uri;
+        await this.secureThread(rootUri);
     }
 
     return result;
@@ -133,7 +140,77 @@ class MemoryService {
         text = `Initializing my Memory Thread. This space will serve as an archive of my experiences, thoughts, and evolution. ${this.hashtag}`;
     }
     const result = await blueskyService.post(text);
+    if (result) {
+        // Immediately secure the new thread
+        await this.secureThread(result.uri);
+    }
     return result;
+  }
+
+  async secureAllThreads() {
+    if (!this.isEnabled()) return;
+    console.log(`[MemoryService] Securing all memory threads for hashtag ${this.hashtag}...`);
+
+    try {
+        const query = `from:${blueskyService.did} ${this.hashtag}`;
+        const posts = await blueskyService.searchPosts(query, { limit: 100, sort: 'latest' });
+
+        const rootUris = new Set();
+        for (const post of posts) {
+            const rootUri = post.record.reply?.root?.uri || post.uri;
+            rootUris.add(rootUri);
+        }
+
+        console.log(`[MemoryService] Found ${rootUris.size} potential memory threads to secure.`);
+
+        for (const rootUri of rootUris) {
+            await this.secureThread(rootUri);
+        }
+    } catch (error) {
+        console.error(`[MemoryService] Error securing all threads:`, error);
+    }
+  }
+
+  async secureThread(rootUri) {
+    try {
+        console.log(`[MemoryService] Securing thread: ${rootUri}`);
+
+        // 1. Get the full thread to find all replies from others
+        const thread = await blueskyService.getDetailedThread(rootUri);
+        if (!thread) return;
+
+        const repliesToHide = [];
+        const collectOtherReplies = (node) => {
+            if (node.replies) {
+                for (const reply of node.replies) {
+                    if (reply.post) {
+                        // If the author of the reply is not the bot, add it to hide list
+                        if (reply.post.author.did !== blueskyService.did) {
+                            repliesToHide.push(reply.post.uri);
+                        }
+                        collectOtherReplies(reply);
+                    }
+                }
+            }
+        };
+
+        collectOtherReplies(thread);
+
+        // 2. Upsert threadgate with allow: [] (Nobody) and the collected hidden replies
+        const existingGate = await blueskyService.getThreadGate(rootUri);
+        let allHidden = new Set(repliesToHide);
+        if (existingGate && existingGate.value?.hiddenReplies) {
+            existingGate.value.hiddenReplies.forEach(uri => allHidden.add(uri));
+        }
+
+        await blueskyService.upsertThreadGate(rootUri, {
+            allow: [], // Nobody
+            hiddenReplies: Array.from(allHidden)
+        });
+        console.log(`[MemoryService] Thread ${rootUri} secured. Hidden replies: ${allHidden.size}`);
+    } catch (error) {
+        console.error(`[MemoryService] Failed to secure thread ${rootUri}:`, error);
+    }
   }
 
   formatMemoriesForPrompt() {

@@ -301,7 +301,8 @@ class BlueskyService {
             type,
             text: record.text || '',
             indexedAt: post.indexedAt,
-            uri: post.uri
+            uri: post.uri,
+            replyTo: record.reply?.parent?.uri || null
           };
         });
 

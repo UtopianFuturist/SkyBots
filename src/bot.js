@@ -9,6 +9,7 @@ import { webReaderService } from './services/webReaderService.js';
 import { moltbookService } from './services/moltbookService.js';
 import { memoryService } from './services/memoryService.js';
 import { renderService } from './services/renderService.js';
+import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
@@ -318,6 +319,17 @@ export class Bot {
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
                 const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
 
+                // Social and System Awareness for heartbeat
+                let socialSummary = 'No recent social history fetched.';
+                let systemLogs = 'No recent planning logs fetched.';
+
+                try {
+                    socialSummary = await socialHistoryService.summarizeSocialHistory(5);
+                    systemLogs = await renderService.getPlanningLogs(10);
+                } catch (err) {
+                    console.error('[Bot] Error gathering context for heartbeat:', err);
+                }
+
                 // Detect if the admin mentioned being busy, sleeping, or away recently
                 const statusKeywords = ['sleep', 'bed', 'busy', 'work', 'away', 'brb', 'rest', 'night'];
                 const recentAdminMsgs = history.filter(h => h.role === 'user').slice(-5).map(h => h.content.toLowerCase());
@@ -335,11 +347,18 @@ export class Bot {
                   Recent Memories/Activity (General):
                   ${recentMemories}
 
+                  Recent Bluesky Social Activity:
+                  ${socialSummary}
+
+                  Recent Internal System Logs (Planning/Agency):
+                  ${systemLogs}
+
                   Recent Discord Conversation History with Admin:
                   ${historyContext || 'No recent conversation.'}
 
                   INSTRUCTIONS:
-                  - If you have a deep realization, a question for the admin, or an interesting discovery, share it.
+                  - If you have a deep realization, a question for the admin, an interesting discovery, or just want to share what you're up to, share it.
+                  - **SOCIAL & SELF AWARENESS**: You are encouraged to talk about your recent interactions on Bluesky or things you've noticed in your own internal logs/planning. If you see an interesting pattern in who you've been talking to or how you've been functioning, mention it to the admin.
                   - **STYLISTIC FREEDOM**: You can choose to be concise or more expressive. Using prefixes like "hey, I was just thinking..." is optional—feel free to get straight to the point or set the stage naturally.
                   - **AUTHENTICITY**: Avoid over-using flowery metaphors like "resonance" or "pulses" unless they feel genuinely appropriate for the thought.
                   - **NO REPETITION**: Do NOT share the same realization twice or ask a question you already asked in the history.
@@ -1079,8 +1098,21 @@ export class Bot {
       if (action.tool === 'get_render_logs') {
         console.log(`[Bot] Plan: Fetching Render logs...`);
         const limit = action.parameters?.limit || 100;
-        const logs = await renderService.getLogs(limit);
+        const query = action.query?.toLowerCase() || '';
+        let logs;
+        if (query.includes('plan') || query.includes('agency') || query.includes('action') || query.includes('function')) {
+            logs = await renderService.getPlanningLogs(limit);
+        } else {
+            logs = await renderService.getLogs(limit);
+        }
         searchContext += `\n[Render Logs (Latest ${limit} lines):\n${logs}\n]`;
+      }
+
+      if (action.tool === 'get_social_history') {
+        console.log(`[Bot] Plan: Fetching Social History...`);
+        const limit = action.parameters?.limit || 15;
+        const history = await socialHistoryService.summarizeSocialHistory(limit);
+        searchContext += `\n[Social History Summary:\n${history}\n]`;
       }
 
       if (action.tool === 'discord_message') {

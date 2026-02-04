@@ -11,6 +11,7 @@ import { wikipediaService } from './wikipediaService.js';
 import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
+import { socialHistoryService } from './socialHistoryService.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
 
 class DiscordService {
@@ -422,8 +423,20 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
                      if (action.tool === 'get_render_logs') {
                          const limit = action.parameters?.limit || 100;
-                         const logs = await renderService.getLogs(limit);
+                         const query = action.query?.toLowerCase() || '';
+                         let logs;
+                         if (query.includes('plan') || query.includes('agency') || query.includes('action') || query.includes('function')) {
+                             logs = await renderService.getPlanningLogs(limit);
+                         } else {
+                             logs = await renderService.getLogs(limit);
+                         }
                          actionResults.push(`[Render Logs (Latest ${limit} lines):\n${logs}\n]`);
+                     }
+
+                     if (action.tool === 'get_social_history') {
+                         const limit = action.parameters?.limit || 15;
+                         const history = await socialHistoryService.summarizeSocialHistory(limit);
+                         actionResults.push(`[Bluesky Social History:\n${history}\n]`);
                      }
 
                      if (action.tool === 'discord_message') {

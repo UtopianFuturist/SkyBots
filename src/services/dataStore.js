@@ -135,6 +135,10 @@ class DataStore {
     return this.db.data.interactions.filter(i => i.userHandle === handle);
   }
 
+  getRecentInteractions(limit = 20) {
+    return this.db.data.interactions.slice(-limit).reverse();
+  }
+
   async updateUserRating(handle, rating) {
     this.db.data.userRatings[handle] = rating;
     await this.db.write();

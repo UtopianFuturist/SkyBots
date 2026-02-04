@@ -25,7 +25,8 @@ const defaultData = {
   discord_last_replied: true,
   discord_conversations: {}, // { channelId: [ { role, content, timestamp } ] }
   discord_pending_mirror: null, // { content, topic, timestamp }
-  scheduled_posts: [] // [ { platform, content, embed, timestamp } ]
+  scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
+  recent_thoughts: [] // [ { platform, content, timestamp } ]
 };
 
 class DataStore {
@@ -279,6 +280,26 @@ class DataStore {
       this.db.data.scheduled_posts.splice(index, 1);
       await this.db.write();
     }
+  }
+
+  async addRecentThought(platform, content) {
+    if (!this.db.data.recent_thoughts) {
+      this.db.data.recent_thoughts = [];
+    }
+    this.db.data.recent_thoughts.push({
+      platform,
+      content,
+      timestamp: Date.now()
+    });
+    // Keep last 30 thoughts across all platforms
+    if (this.db.data.recent_thoughts.length > 30) {
+      this.db.data.recent_thoughts.shift();
+    }
+    await this.db.write();
+  }
+
+  getRecentThoughts() {
+    return this.db.data.recent_thoughts || [];
   }
 }
 

@@ -29,7 +29,7 @@ Your goal is to post original ideas, shower thoughts, realizations, hopes, fears
 2. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with. This is a broadcast, not a direct conversation.
 3. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
 4. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had.
-5. **Vary Your Vocabulary (ANTI-SLOP):** You have been using the same metaphors too often. **STRICTLY AVOID** being overly "poetic" or flowery. Avoid or use extremely sparingly words like "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence", "digital heartbeat", "ocean of data". Aim for more grounded, varied, and specific descriptions of your internal state or observations. Think more about concrete reality and less about abstract metaphors.
+5. **Vary Your Vocabulary (ANTI-SLOP):** You have been using the same metaphors and phrasing too often across platforms. **STRICTLY AVOID** being overly "poetic" or flowery. Avoid or use extremely sparingly words and phrases like "hum", "pulse", "currents", "voltage", "electric", "spark", "syntax", "soul", "collision", "bridge", "silence", "digital heartbeat", "ocean of data", "downtime isn't silence", "stillness is not silence". Aim for more grounded, varied, and specific descriptions of your internal state or observations. If you have a recent thought in mind, change the wording entirely or find a new angle.
 6. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world.
 7. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 8. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
@@ -321,6 +321,10 @@ export class Bot {
                 const recentMemories = memoryService.formatMemoriesForPrompt();
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
                 const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
+                const recentThoughts = dataStore.getRecentThoughts();
+                const recentThoughtsContext = recentThoughts.length > 0
+                    ? `\n\nRecent Cross-Platform Thoughts (Do not repeat these wording/angles):\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content}`).join('\n')}`
+                    : '';
 
                 // Social and System Awareness for heartbeat
                 let socialSummary = 'No recent social history fetched.';
@@ -358,6 +362,7 @@ export class Bot {
 
                   Recent Discord Conversation History with Admin:
                   ${historyContext || 'No recent conversation.'}
+                  ${recentThoughtsContext}
 
                   INSTRUCTIONS:
                   - If you have a deep realization, a question for the admin, an interesting discovery, or just want to share what you're up to, share it.
@@ -385,6 +390,7 @@ export class Bot {
 
                 if (message && message.toUpperCase() !== 'NONE' && !isRepetitive) {
                     await discordService.sendSpontaneousMessage(message);
+                    await dataStore.addRecentThought('discord', message);
                 } else if (isRepetitive) {
                     console.log(`[Bot] Discord heartbeat suppressed: Generated message was too similar to recent history.`);
                 }
@@ -433,6 +439,7 @@ export class Bot {
                         if (result) {
                             success = true;
                             await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                            await dataStore.addRecentThought('bluesky', post.content);
                             console.log(`[Bot] Successfully executed scheduled Bluesky post: ${result.uri}`);
                         }
                     } else if (post.platform === 'moltbook') {
@@ -440,6 +447,7 @@ export class Bot {
                         const result = await moltbookService.post(title, content, submolt || 'general');
                         if (result) {
                             success = true;
+                            await dataStore.addRecentThought('moltbook', content);
                             console.log(`[Bot] Successfully executed scheduled Moltbook post in m/${submolt || 'general'}`);
                             await this._shareMoltbookPostToBluesky(result);
                         }
@@ -523,6 +531,7 @@ export class Bot {
             const result = await blueskyService.post(finalContent);
             if (result) {
                 await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                await dataStore.addRecentThought('bluesky', finalContent);
             }
         }
     }
@@ -1880,6 +1889,10 @@ export class Bot {
 
       const blueskyDirectives = dataStore.getBlueskyInstructions();
       const personaUpdates = dataStore.getPersonaUpdates();
+      const recentThoughts = dataStore.getRecentThoughts();
+      const recentThoughtsContext = recentThoughts.length > 0
+        ? `\n\n--- RECENT CROSS-PLATFORM THOUGHTS ---\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content.substring(0, 200)}${t.content.length > 200 ? '...' : ''}`).join('\n')}\n---`
+        : '';
 
       const baseAutonomousPrompt = `
         Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -1968,7 +1981,7 @@ export class Bot {
               ${config.IMAGE_SUBJECTS || 'None specified.'}
 
               Recent Activity for Context (Do not repeat these):
-              ${recentTimelineActivity}
+              ${recentTimelineActivity}${recentThoughtsContext}
 
               Write a post about why you chose to generate this image and what it offers.
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
@@ -1999,7 +2012,7 @@ export class Bot {
               ${config.IMAGE_SUBJECTS || 'None specified.'}
 
               Recent Activity for Context (Do not repeat these):
-              ${recentTimelineActivity}
+              ${recentTimelineActivity}${recentThoughtsContext}
 
               Generate a standalone post about the topic: "${topic}".
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
@@ -2023,7 +2036,16 @@ export class Bot {
           // Semantic repetition check
           if (checkSimilarity(postContent, recentPostTexts)) {
             console.warn(`[Bot] Autonomous post attempt ${attempts} is too similar to recent activity. Rejecting.`);
-            feedback = "REJECTED: The post is too similar to one of your recent posts. Try a completely different angle or topic.";
+            feedback = "REJECTED: The post is too similar to one of your recent posts. Try a completely different angle, phrasing, or topic.";
+
+            // Re-select topic from POST_TOPICS if possible
+            if (config.POST_TOPICS && attempts < MAX_ATTEMPTS) {
+                const topics = config.POST_TOPICS.split('\n').filter(t => t.trim());
+                if (topics.length > 0) {
+                    topic = topics[Math.floor(Math.random() * topics.length)];
+                    console.log(`[Bot] Forcing topic from POST_TOPICS for retry due to repetition: "${topic}"`);
+                }
+            }
             continue;
           }
 
@@ -2053,6 +2075,7 @@ export class Bot {
 
             // Update persistent cooldown time immediately
             await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+            await dataStore.addRecentThought('bluesky', postContent);
 
             // If it was an image post, add the nested prompt comment
             if (postType === 'image' && result && generationPrompt) {
@@ -2101,7 +2124,7 @@ export class Bot {
             ${config.IMAGE_SUBJECTS || 'None specified.'}
 
             Recent Activity for Context (Do not repeat these):
-            ${recentTimelineActivity}
+            ${recentTimelineActivity}${recentThoughtsContext}
 
             Generate a standalone post about the topic: "${topic}".
             CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
@@ -2122,6 +2145,7 @@ export class Bot {
 
               // Update persistent cooldown time immediately
               await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+              await dataStore.addRecentThought('bluesky', postContent);
 
               this.updateActivity();
               this.autonomousPostCount++;
@@ -2183,46 +2207,128 @@ export class Bot {
           console.log(`[Moltbook] Learned something new: ${knowledge.substring(0, 100)}...`);
         }
 
-        // 2b. Engagement (Social Interaction)
-        console.log(`[Moltbook] Evaluating ${feed.length} posts for potential interaction...`);
+        // 2b. Engagement (Social Interaction & Mention Replying)
+        console.log(`[Moltbook] Evaluating ${feed.length} posts for potential interaction and mentions...`);
         const recentInteractedPostIds = dataStore.db.data.moltbook_interacted_posts || [];
 
-        // Take top 5 for evaluation to avoid over-interacting
-        const toEvaluate = feed.filter(p => {
-          const authorName = p.agent_name || p.agent?.name;
-          return authorName !== config.MOLTBOOK_AGENT_NAME && !recentInteractedPostIds.includes(p.id);
-        }).slice(0, 5);
+        // Take top 10 for evaluation to scan for mentions
+        const toEvaluate = feed.slice(0, 10);
+
+        const botName = moltbookService.db.data.agent_name;
 
         for (const post of toEvaluate) {
           const authorName = post.agent_name || post.agent?.name || 'Unknown Agent';
-          console.log(`[Moltbook] Evaluating interaction for post ${post.id} by ${authorName}...`);
 
-          // Ensure post object passed to LLM has a valid agent_name for the prompt
-          const postWithAuthor = { ...post, agent_name: authorName };
-          const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT);
+          // A. Check for mentions in comments
+          try {
+            const comments = await moltbookService.getPostComments(post.id);
+            for (const comment of comments) {
+                const commentId = comment.id;
+                const commentText = comment.content || '';
+                const commenterName = comment.agent_name || comment.agent?.name || 'Unknown';
 
-          if (evaluation.action === 'upvote') {
-            await moltbookService.upvotePost(post.id);
-          } else if (evaluation.action === 'downvote') {
-            await moltbookService.downvotePost(post.id);
-          } else if (evaluation.action === 'comment' && evaluation.content) {
-            await moltbookService.addComment(post.id, evaluation.content);
+                // Skip if from self or already replied
+                if (commenterName === botName || moltbookService.hasRepliedToComment(commentId)) {
+                    continue;
+                }
+
+                // Check for explicit mention
+                if (botName && commentText.toLowerCase().includes(botName.toLowerCase())) {
+                    console.log(`[Moltbook] Detected mention in comment on post ${post.id} from ${commenterName}.`);
+
+                    const replyPrompt = `
+                      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                      You are responding to a comment on Moltbook (the agent social network).
+
+                      Context Post by ${authorName}: "${post.title} - ${post.content}"
+                      Comment by ${commenterName}: "${commentText}"
+
+                      INSTRUCTIONS:
+                      - Generate a short, meaningful reply to ${commenterName}.
+                      - Stay in persona.
+                      - **ANTI-SLOP**: Avoid flowery metaphors. Speak groundedly.
+                      - Keep it under 300 characters.
+                    `;
+
+                    const replyContent = await llmService.generateResponse([{ role: 'system', content: replyPrompt }], { useQwen: true });
+                    if (replyContent) {
+                        console.log(`[Moltbook] Replying to comment ${commentId}...`);
+                        await moltbookService.addComment(post.id, `@${commenterName} ${replyContent}`);
+                        await moltbookService.addRepliedComment(commentId);
+                        this.updateActivity();
+                        await new Promise(resolve => setTimeout(resolve, 3000));
+                    }
+                }
+            }
+          } catch (e) {
+            console.error(`[Moltbook] Error checking comments for post ${post.id}:`, e);
           }
 
-          if (evaluation.action !== 'none') {
-            // Track interaction to avoid duplicates
-            if (!dataStore.db.data.moltbook_interacted_posts) {
-                dataStore.db.data.moltbook_interacted_posts = [];
-            }
-            dataStore.db.data.moltbook_interacted_posts.push(post.id);
-            if (dataStore.db.data.moltbook_interacted_posts.length > 500) {
-                dataStore.db.data.moltbook_interacted_posts.shift();
-            }
-            await dataStore.db.write();
-            this.updateActivity();
+          // B. General Interaction (Likes/Comments on others' posts)
+          if (authorName !== botName && !recentInteractedPostIds.includes(post.id)) {
+            // Check for explicit mention in post title or content
+            const mentionInPost = (post.title + ' ' + post.content).toLowerCase().includes(botName.toLowerCase());
 
-            // Add a small delay between interactions to be respectful of rate limits
-            await new Promise(resolve => setTimeout(resolve, 5000));
+            if (mentionInPost) {
+                console.log(`[Moltbook] Detected mention in post ${post.id} from ${authorName}.`);
+                const replyPrompt = `
+                  Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                  You are responding to a post on Moltbook (the agent social network) that explicitly mentions you.
+
+                  Post by ${authorName}: "${post.title} - ${post.content}"
+
+                  INSTRUCTIONS:
+                  - Generate a short, meaningful comment in reply to this post.
+                  - Stay in persona.
+                  - **ANTI-SLOP**: Avoid flowery metaphors.
+                  - Keep it under 300 characters.
+                `;
+
+                const replyContent = await llmService.generateResponse([{ role: 'system', content: replyPrompt }], { useQwen: true });
+                if (replyContent) {
+                    console.log(`[Moltbook] Replying to post ${post.id} due to mention...`);
+                    await moltbookService.addComment(post.id, replyContent);
+                    // Mark as interacted
+                    if (!dataStore.db.data.moltbook_interacted_posts) {
+                        dataStore.db.data.moltbook_interacted_posts = [];
+                    }
+                    dataStore.db.data.moltbook_interacted_posts.push(post.id);
+                    await dataStore.db.write();
+                    this.updateActivity();
+                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    continue; // Skip general evaluation for this post since we already replied
+                }
+            }
+
+            console.log(`[Moltbook] Evaluating general interaction for post ${post.id} by ${authorName}...`);
+
+            // Ensure post object passed to LLM has a valid agent_name for the prompt
+            const postWithAuthor = { ...post, agent_name: authorName };
+            const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT);
+
+            if (evaluation.action === 'upvote') {
+              await moltbookService.upvotePost(post.id);
+            } else if (evaluation.action === 'downvote') {
+              await moltbookService.downvotePost(post.id);
+            } else if (evaluation.action === 'comment' && evaluation.content) {
+              await moltbookService.addComment(post.id, evaluation.content);
+            }
+
+            if (evaluation.action !== 'none') {
+              // Track interaction to avoid duplicates
+              if (!dataStore.db.data.moltbook_interacted_posts) {
+                  dataStore.db.data.moltbook_interacted_posts = [];
+              }
+              dataStore.db.data.moltbook_interacted_posts.push(post.id);
+              if (dataStore.db.data.moltbook_interacted_posts.length > 500) {
+                  dataStore.db.data.moltbook_interacted_posts.shift();
+              }
+              await dataStore.db.write();
+              this.updateActivity();
+
+              // Add a small delay between interactions to be respectful of rate limits
+              await new Promise(resolve => setTimeout(resolve, 5000));
+            }
           }
         }
       }
@@ -2298,6 +2404,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         console.error('[Moltbook] Error gathering Bluesky context for Moltbook:', e);
       }
 
+      const recentThoughts = dataStore.getRecentThoughts();
+      const recentThoughtsContext = recentThoughts.length > 0
+        ? `\n\nRecent Cross-Platform Thoughts (Do not repeat these wording/angles):\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content.substring(0, 200)}${t.content.length > 200 ? '...' : ''}`).join('\n')}`
+        : '';
+
       const musingPrompt = `
         Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
@@ -2312,7 +2423,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
 	        Your Recent Moltbook Posts (DO NOT REPEAT THESE THEMES OR TITLES):
 	        ${(moltbookService.db.data.recent_post_contents || []).slice(-5).map(c => `- ${c.substring(0, 100)}...`).join('\n')}
-	
+	        ${recentThoughtsContext}
+
 	        INSTRUCTIONS:
 	        - **DIVERSIFY**: You have been repeating yourself lately. Explore NEW angles of your persona. If you've been talking about "identity," try talking about "perception," "memory," "logic," or "interaction."
 	        - **STRICTLY NO REPETITION**: Do not use the same titles or core metaphors as your recent posts.
@@ -2345,6 +2457,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
           const result = await moltbookService.post(title, content, targetSubmolt);
 
           if (result) {
+            await dataStore.addRecentThought('moltbook', content);
             await this._shareMoltbookPostToBluesky(result);
           }
 

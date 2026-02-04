@@ -81,9 +81,9 @@ class MoltbookService {
           console.log(`[Moltbook] Found recent post by self from ${lastTimestamp}. Updating local state.`);
           this.db.data.last_post_at = lastTimestamp;
 
-          // Also recover recent submolts and contents (last 10)
-          this.db.data.recent_submolts = myPosts.slice(0, 10).map(p => p.submolt || p.submolt_name).filter(s => s);
-          this.db.data.recent_post_contents = myPosts.slice(0, 10).map(p => p.content).filter(c => c);
+          // Also recover recent submolts and contents (last 20)
+          this.db.data.recent_submolts = myPosts.slice(0, 20).map(p => p.submolt || p.submolt_name).filter(s => s);
+          this.db.data.recent_post_contents = myPosts.slice(0, 20).map(p => p.content).filter(c => c);
 
           await this.db.write();
         }
@@ -234,16 +234,16 @@ class MoltbookService {
       // Success
       this.db.data.last_post_at = new Date().toISOString();
 
-      // Track history (keep last 10)
+      // Track history (keep last 20)
       if (!this.db.data.recent_submolts) this.db.data.recent_submolts = [];
       this.db.data.recent_submolts.push(submolt);
-      if (this.db.data.recent_submolts.length > 10) {
+      if (this.db.data.recent_submolts.length > 20) {
         this.db.data.recent_submolts.shift();
       }
 
       if (!this.db.data.recent_post_contents) this.db.data.recent_post_contents = [];
       this.db.data.recent_post_contents.push(content);
-      if (this.db.data.recent_post_contents.length > 10) {
+      if (this.db.data.recent_post_contents.length > 20) {
         this.db.data.recent_post_contents.shift();
       }
 

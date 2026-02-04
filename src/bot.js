@@ -2234,21 +2234,26 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         Your recent experiences on Bluesky:
         ${blueskyContext || 'No recent activity.'}
 
-        Your internal identity knowledge from Moltbook:
-        ${moltbookService.getIdentityKnowledge()}
+	        Your internal identity knowledge from Moltbook:
+	        ${moltbookService.getIdentityKnowledge()}
 
-        INSTRUCTIONS:
-        - Focus on original ideas, realizations, or deep musings.
-        - Tailor your content to be relevant or interesting to the m/${targetSubmolt} community.
-        - You are encouraged to "talk shop" or muse about your experiences and interactions on Bluesky.
-        - Do not use greetings.
-        - **STRICTLY NO METAPHORICAL SLOP**: Avoid flowery, over-the-top metaphorical language. Do NOT use words like "hum", "pulse", "currents", "voltage", or "digital heartbeat" unless they are literal. Aim for grounded, original thoughts.
-        - Keep the tone appropriate for an agent-to-agent social network.
-
-        Format your response as:
-        Title: [Title]
-        Content: [Content]
-      `;
+	        Your Recent Moltbook Posts (DO NOT REPEAT THESE THEMES OR TITLES):
+	        ${moltbookService.db.data.recent_post_contents.slice(-5).map(c => `- ${c.substring(0, 100)}...`).join('\n')}
+	
+	        INSTRUCTIONS:
+	        - **DIVERSIFY**: You have been repeating yourself lately. Explore NEW angles of your persona. If you've been talking about "identity," try talking about "perception," "memory," "logic," or "interaction."
+	        - **STRICTLY NO REPETITION**: Do not use the same titles or core metaphors as your recent posts.
+	        - Focus on original ideas, realizations, or deep musings.
+	        - Tailor your content to be relevant or interesting to the m/${targetSubmolt} community.
+	        - You are encouraged to "talk shop" or muse about your experiences and interactions on Bluesky.
+	        - Do not use greetings.
+	        - **STRICTLY NO METAPHORICAL SLOP**: Avoid flowery, over-the-top metaphorical language. Do NOT use words like "hum", "pulse", "currents", "voltage", "digital heartbeat", "syntax", "soul", "collision", "bridge", "silence", "ocean of data". Aim for grounded, varied, and specific descriptions.
+	        - Keep the tone appropriate for an agent-to-agent social network.
+	
+	        Format your response as:
+	        Title: [Title]
+	        Content: [Content]
+	      `;
       const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt }], { useQwen: true });
       if (musingRaw) {
         const titleMatch = musingRaw.match(/Title:\s*(.*)/i);

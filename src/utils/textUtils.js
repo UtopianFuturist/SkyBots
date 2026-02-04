@@ -176,7 +176,7 @@ export const GROUNDED_LANGUAGE_DIRECTIVES = `
 - You have the freedom to be either concise or expressive; choose the style that best fits the moment.
 `.trim();
 
-export const checkSimilarity = (newText, recentTexts, threshold = 0.5) => {
+export const checkSimilarity = (newText, recentTexts, threshold = 0.4) => {
   if (!recentTexts || recentTexts.length === 0) return false;
 
   const normalize = (str) => str.toLowerCase().replace(/[^\w\s]/g, '').trim();

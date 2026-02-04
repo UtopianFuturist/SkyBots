@@ -583,6 +583,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
               - DO NOT use a hardcoded or robotic-sounding request.
               - Be yourself.
               - Keep it under 200 characters.
+              ${config.DISCORD_HEARTBEAT_ADDENDUM ? `\n              ADDITIONAL SPECIFICATION:\n              ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}
             `;
             const naturalRequest = await llmService.generateResponse([{ role: 'system', content: requestPrompt }], { useQwen: true, preface_system_prompt: false });
 

@@ -895,6 +895,12 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
          - Parameters: { "message": "the text of the message" }
       10. **Update Persona**: Add or modify your own internal instructions or behavioral fragments. Use this if you want to remember a new rule for yourself or evolve your persona agentically.
           - Parameters: { "instruction": "the text of the new persona instruction" }
+      11. **Bluesky Post**: Trigger a new post on Bluesky.
+          - Use this if the user (especially admin) explicitly asks you to post something to Bluesky.
+          - Parameters: { "text": "the content of the post", "include_image": boolean (true if an image was attached or requested) }
+      12. **Moltbook Post**: Trigger a new post on Moltbook.
+          - Use this if the user (especially admin) explicitly asks you to post something to Moltbook.
+          - Parameters: { "title": "string", "content": "the content of the post", "submolt": "string (optional)" }
       ${adminTools}
 
       Analyze the user's intent and provide a JSON response with the following structure:
@@ -902,7 +908,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         "intent": "string (briefly describe the user's goal)",
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|discord_message|update_persona|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100) },
             "reason": "string (why this tool is needed)"

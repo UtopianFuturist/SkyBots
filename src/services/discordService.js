@@ -271,8 +271,10 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             let responseText;
             if (isAdmin) {
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), '', true);
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
+
+                 const actionResults = [];
 
                  for (const action of plan.actions) {
                      if (action.tool === 'persist_directive') {
@@ -285,6 +287,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          if (memoryService.isEnabled()) {
                              await memoryService.createMemoryEntry('directive_update', `[DIRECTIVE] Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
                          }
+                         actionResults.push(`[Directive persisted for ${platform || 'bluesky'}]`);
                      }
                      if (action.tool === 'update_persona') {
                          const { instruction } = action.parameters || {};
@@ -293,8 +296,98 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              if (memoryService.isEnabled()) {
                                  await memoryService.createMemoryEntry('persona_update', `[PERSONA] New self-instruction: ${instruction}`);
                              }
+                             actionResults.push(`[Persona updated with new instruction]`);
                          }
                      }
+                     if (action.tool === 'bsky_post') {
+                         const { text: postText, include_image } = action.parameters || {};
+                         const lastPostTime = dataStore.getLastAutonomousPostTime();
+                         const cooldown = config.BLUESKY_POST_COOLDOWN * 60 * 1000;
+                         const now = Date.now();
+                         const diff = lastPostTime ? now - new Date(lastPostTime).getTime() : cooldown;
+
+                         if (diff < cooldown) {
+                             const remainingMins = Math.ceil((cooldown - diff) / (60 * 1000));
+                             let embed = null;
+                             if (include_image && message.attachments.size > 0) {
+                                 const img = Array.from(message.attachments.values()).find(a => a.contentType?.startsWith('image/'));
+                                 if (img) {
+                                     const altText = await llmService.analyzeImage(img.url);
+                                     embed = { imageUrl: img.url, imageAltText: altText || 'Admin shared image' };
+                                 }
+                             }
+                             await dataStore.addScheduledPost('bluesky', postText, embed);
+                             actionResults.push(`[Bluesky post scheduled because cooldown is active. ${remainingMins} minutes remaining]`);
+                         } else {
+                             let embed = null;
+                             if (include_image && message.attachments.size > 0) {
+                                 const img = Array.from(message.attachments.values()).find(a => a.contentType?.startsWith('image/'));
+                                 if (img) {
+                                     const altText = await llmService.analyzeImage(img.url);
+                                     embed = { imagesToEmbed: [{ link: img.url, title: altText || 'Admin shared image' }] };
+                                 }
+                             }
+                             const result = await blueskyService.post(postText, embed);
+                             if (result) {
+                                 await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                                 actionResults.push(`[Successfully posted to Bluesky: ${result.uri}]`);
+                             } else {
+                                 actionResults.push(`[Failed to post to Bluesky]`);
+                             }
+                         }
+                     }
+                     if (action.tool === 'moltbook_post') {
+                         const { title, content, submolt } = action.parameters || {};
+                         const lastPostAt = moltbookService.db.data.last_post_at;
+                         const cooldown = config.MOLTBOOK_POST_COOLDOWN * 60 * 1000;
+                         const now = Date.now();
+                         const diff = lastPostAt ? now - new Date(lastPostAt).getTime() : cooldown;
+
+                         if (diff < cooldown) {
+                             const remainingMins = Math.ceil((cooldown - diff) / (60 * 1000));
+                             await dataStore.addScheduledPost('moltbook', { title, content, submolt });
+                             actionResults.push(`[Moltbook post scheduled because cooldown is active. ${remainingMins} minutes remaining]`);
+                         } else {
+                             let targetSubmolt = submolt;
+                             if (!targetSubmolt) {
+                                 const allSubmolts = await moltbookService.listSubmolts();
+                                 targetSubmolt = await llmService.selectSubmoltForPost(
+                                     moltbookService.db.data.subscriptions || [],
+                                     allSubmolts,
+                                     moltbookService.db.data.recent_submolts || []
+                                 );
+                             }
+                             const result = await moltbookService.post(title || "A thought from my admin", content, targetSubmolt);
+                             if (result) {
+                                 actionResults.push(`[Successfully posted to Moltbook m/${targetSubmolt}]`);
+                             } else {
+                                 actionResults.push(`[Failed to post to Moltbook]`);
+                             }
+                         }
+                     }
+                     if (['bsky_follow', 'bsky_unfollow', 'bsky_mute', 'bsky_unmute'].includes(action.tool)) {
+                         const target = action.parameters?.target || action.query;
+                         if (target) {
+                             let success = false;
+                             if (action.tool === 'bsky_follow') success = !!(await blueskyService.follow(target));
+                             if (action.tool === 'bsky_unfollow') success = await blueskyService.unfollow(target);
+                             if (action.tool === 'bsky_mute') success = await blueskyService.mute(target);
+                             if (action.tool === 'bsky_unmute') success = await blueskyService.unmute(target);
+                             actionResults.push(`[Action ${action.tool} on ${target}: ${success ? 'SUCCESS' : 'FAILED'}]`);
+                         }
+                     }
+                     if (action.tool === 'moltbook_action') {
+                         const { action: mbAction, topic, submolt, display_name, description } = action.parameters || {};
+                         if (mbAction === 'create_submolt') {
+                             const submoltName = submolt || (topic || 'new-community').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+                             const result = await moltbookService.createSubmolt(submoltName, display_name || topic || submoltName, description || `Community for ${topic}`);
+                             actionResults.push(`[Moltbook create_submolt ${submoltName}: ${result ? 'SUCCESS' : 'FAILED'}]`);
+                         }
+                     }
+                 }
+
+                 if (actionResults.length > 0) {
+                     messages.push({ role: 'system', content: `TOOL EXECUTION RESULTS (Acknowledge naturally):\n${actionResults.join('\n')}` });
                  }
 
                  responseText = await llmService.generateResponse(messages, { useQwen: true });

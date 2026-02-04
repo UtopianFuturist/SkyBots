@@ -24,7 +24,8 @@ const defaultData = {
   discord_admin_available: true,
   discord_last_replied: true,
   discord_conversations: {}, // { channelId: [ { role, content, timestamp } ] }
-  discord_pending_mirror: null // { content, topic, timestamp }
+  discord_pending_mirror: null, // { content, topic, timestamp }
+  scheduled_posts: [] // [ { platform, content, embed, timestamp } ]
 };
 
 class DataStore {
@@ -246,6 +247,30 @@ class DataStore {
 
   getDiscordPendingMirror() {
     return this.db.data.discord_pending_mirror;
+  }
+
+  async addScheduledPost(platform, content, embed = null) {
+    if (!this.db.data.scheduled_posts) {
+      this.db.data.scheduled_posts = [];
+    }
+    this.db.data.scheduled_posts.push({
+      platform,
+      content,
+      embed,
+      timestamp: Date.now()
+    });
+    await this.db.write();
+  }
+
+  getScheduledPosts() {
+    return this.db.data.scheduled_posts || [];
+  }
+
+  async removeScheduledPost(index) {
+    if (this.db.data.scheduled_posts && this.db.data.scheduled_posts[index]) {
+      this.db.data.scheduled_posts.splice(index, 1);
+      await this.db.write();
+    }
   }
 }
 

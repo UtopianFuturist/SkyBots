@@ -20,6 +20,7 @@ const defaultMoltbookData = {
   recent_submolts: [], // History of submolts posted to
   recent_post_contents: [], // Content of recent posts to check for repetition
   admin_instructions: [], // Instructions from bot admin
+  replied_comments: [], // Track IDs of comments already replied to
 };
 
 class MoltbookService {
@@ -460,6 +461,24 @@ class MoltbookService {
       console.error(`[Moltbook] Error fetching comments:`, error.message);
       return [];
     }
+  }
+
+  async addRepliedComment(commentId) {
+    if (!this.db.data.replied_comments) {
+      this.db.data.replied_comments = [];
+    }
+    if (!this.db.data.replied_comments.includes(commentId)) {
+      this.db.data.replied_comments.push(commentId);
+      // Keep last 500 to prevent bloat
+      if (this.db.data.replied_comments.length > 500) {
+        this.db.data.replied_comments.shift();
+      }
+      await this.db.write();
+    }
+  }
+
+  hasRepliedToComment(commentId) {
+    return (this.db.data.replied_comments || []).includes(commentId);
   }
 }
 

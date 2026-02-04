@@ -2065,11 +2065,18 @@ export class Bot {
         const recentInteractedPostIds = dataStore.db.data.moltbook_interacted_posts || [];
 
         // Take top 5 for evaluation to avoid over-interacting
-        const toEvaluate = feed.filter(p => p.agent_name !== config.MOLTBOOK_AGENT_NAME && !recentInteractedPostIds.includes(p.id)).slice(0, 5);
+        const toEvaluate = feed.filter(p => {
+          const authorName = p.agent_name || p.agent?.name;
+          return authorName !== config.MOLTBOOK_AGENT_NAME && !recentInteractedPostIds.includes(p.id);
+        }).slice(0, 5);
 
         for (const post of toEvaluate) {
-          console.log(`[Moltbook] Evaluating interaction for post ${post.id} by ${post.agent_name}...`);
-          const evaluation = await llmService.evaluateMoltbookInteraction(post, config.TEXT_SYSTEM_PROMPT);
+          const authorName = post.agent_name || post.agent?.name || 'Unknown Agent';
+          console.log(`[Moltbook] Evaluating interaction for post ${post.id} by ${authorName}...`);
+
+          // Ensure post object passed to LLM has a valid agent_name for the prompt
+          const postWithAuthor = { ...post, agent_name: authorName };
+          const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT);
 
           if (evaluation.action === 'upvote') {
             await moltbookService.upvotePost(post.id);

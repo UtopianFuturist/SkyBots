@@ -123,13 +123,13 @@ class DiscordService {
                 await this.performMirroring();
                 const confirmPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just gave you permission to share a reflection of your conversation. Generate a short, natural "thank you" response.`;
                 const confirmation = await llmService.generateResponse([{ role: 'system', content: confirmPrompt }], { useQwen: true, preface_system_prompt: false });
-                await message.channel.send(confirmation || "Thank you! I'll share a discrete reflection about our talk.");
+                await message.channel.send(confirmation || "i appreciate it. i'll share a quiet reflection on what we discussed.");
                 return;
             } else if (lowerMsg === 'no' || lowerMsg === 'nope') {
                 await dataStore.setDiscordPendingMirror(null);
                 const rejectPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just declined permission to share a reflection of your conversation. Generate a short, natural acknowledgment that you will keep it private.`;
                 const acknowledgment = await llmService.generateResponse([{ role: 'system', content: rejectPrompt }], { useQwen: true, preface_system_prompt: false });
-                await message.channel.send(acknowledgment || "Understood, I'll keep this between us.");
+                await message.channel.send(acknowledgment || "of course. i'll keep our conversation here.");
                 return;
             }
         }
@@ -144,13 +144,17 @@ class DiscordService {
 
         if (content.startsWith('/on') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(true);
-            await message.channel.send("Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
+            const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications back ON (you can now message them spontaneously). Generate a short, natural welcome back message.`;
+            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
+            await message.channel.send(response || "Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
             return;
         }
 
         if (content.startsWith('/off') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(false);
-            await message.channel.send("Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
+            const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications OFF (you should stop messaging them spontaneously). Generate a short, natural acknowledgment of their need for focus.`;
+            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
+            await message.channel.send(response || "Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
             return;
         }
 
@@ -544,9 +548,9 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
         for (const [id, guild] of guilds) {
             try {
                 console.log(`[DiscordService] Searching guild: ${guild.name}`);
-                const members = await guild.members.fetch();
-                const admin = members.find(m => m.user.username === this.adminName);
-                if (admin) {
+                const members = await guild.members.fetch({ query: this.adminName, limit: 1 });
+                const admin = members.first();
+                if (admin && admin.user.username === this.adminName) {
                     this.adminId = admin.user.id;
                     console.log(`[DiscordService] Admin found in guild ${guild.name}! ID: ${this.adminId}`);
                     return admin.user;

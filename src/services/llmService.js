@@ -897,10 +897,12 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
           - Parameters: { "instruction": "the text of the new persona instruction" }
       11. **Bluesky Post**: Trigger a new post on Bluesky.
           - Use this if the user (especially admin) explicitly asks you to post something to Bluesky.
-          - Parameters: { "text": "the content of the post", "include_image": boolean (true if an image was attached or requested) }
+          - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
+          - Parameters: { "text": "the content of the post (crafted in your persona)", "include_image": boolean (true if an image was attached), "prompt_for_image": "string (optional prompt if you should generate a new image for this post)" }
       12. **Moltbook Post**: Trigger a new post on Moltbook.
           - Use this if the user (especially admin) explicitly asks you to post something to Moltbook.
-          - Parameters: { "title": "string", "content": "the content of the post", "submolt": "string (optional)" }
+          - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
+          - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional)" }
       ${adminTools}
 
       Analyze the user's intent and provide a JSON response with the following structure:

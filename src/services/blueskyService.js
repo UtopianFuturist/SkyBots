@@ -464,6 +464,59 @@ class BlueskyService {
     }
   }
 
+  async registerComindAgent(options = {}) {
+    console.log('[BlueskyService] Submitting Comind agent registration...');
+    try {
+      const repo = this.agent.session.did;
+      if (!repo) throw new Error('Not logged in - no DID available');
+
+      const {
+        name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0],
+        description = config.PROJECT_DESCRIPTION.substring(0, 300),
+        operator = null,
+        capabilities = [],
+        website = config.DISCLOSURE_URL || 'https://github.com/UtopianFuturist/SkyBots'
+      } = options;
+
+      let operatorDid = operator;
+      if (!operatorDid && config.ADMIN_BLUESKY_HANDLE) {
+        try {
+          const profile = await this.getProfile(config.ADMIN_BLUESKY_HANDLE);
+          operatorDid = profile.did;
+        } catch (e) {
+          console.warn(`[BlueskyService] Could not resolve DID for operator: ${config.ADMIN_BLUESKY_HANDLE}`);
+        }
+      }
+
+      if (!operatorDid) {
+        console.warn('[BlueskyService] No operator DID found. Skipping Comind registration.');
+        return;
+      }
+
+      const record = {
+        $type: 'network.comind.agent.registration',
+        handle: config.BLUESKY_IDENTIFIER,
+        name: name.substring(0, 64),
+        description: description.substring(0, 300),
+        operator: operatorDid,
+        capabilities,
+        website,
+        createdAt: new Date().toISOString()
+      };
+
+      await this.agent.api.com.atproto.repo.putRecord({
+        repo,
+        collection: 'network.comind.agent.registration',
+        rkey: 'self',
+        record,
+      });
+
+      console.log('[BlueskyService] Comind agent registration submitted successfully.');
+    } catch (error) {
+      console.error('[BlueskyService] Error submitting Comind agent registration:', error);
+    }
+  }
+
   async post(text, embedOrOptions = null, options = {}) {
     let finalOptions = options;
     let explicitEmbed = null;

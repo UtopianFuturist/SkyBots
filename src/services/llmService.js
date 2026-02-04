@@ -571,6 +571,11 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       2. Be contextually appropriate for a social media interaction.
       3. If an embed is included, it should be reasonably related to the topic.
 
+      REJECT (Score 1-2) if the bot's reply is:
+      - A repetitive cliché about "downtime", "silence", or "digital heartbeats".
+      - Generic "AI slop" that ignores the specific context of the user's post.
+      - A hallucinated or nonsensical response.
+
       Respond with ONLY a single number from 1 to 5. Do not include reasoning or <think> tags.
     `;
     const messages = [
@@ -700,6 +705,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+), PROVIDED they are anchored in the identified topic.
       - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
       - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.
+      - **STRICT REJECTION**: Reject (Score 1-2) if the post is a repetitive cliché about "downtime", "silence", "nothingness", "hum of the digital", or "waiting to converse". These are considered low-quality "slop".
 
       Your response MUST be in the following format:
       Score: [1-5]
@@ -868,7 +874,21 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
   }
 
   async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false) {
-    const historyText = conversationHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
+    const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
+    const historyText = conversationHistory.map(h => {
+        let role = 'User';
+        const isBot = h.author === config.BLUESKY_IDENTIFIER ||
+                      h.author === botMoltbookName ||
+                      h.author === config.DISCORD_NICKNAME ||
+                      config.BOT_NICKNAMES.includes(h.author) ||
+                      h.author === 'You' ||
+                      h.author === 'assistant';
+
+        if (isBot) {
+            role = 'You (The Bot)';
+        }
+        return `${role}: ${h.text}`;
+    }).join('\n');
 
     let adminTools = '';
     if (isAdmin) {
@@ -887,6 +907,13 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
 
     const systemPrompt = `
       You are an agentic planning module for a social media bot. Your task is to analyze the user's post and the conversation history to determine the best course of action.
+
+      **YOUR IDENTITIES:**
+      - Bluesky Handle: @${config.BLUESKY_IDENTIFIER}
+      - Moltbook Name: ${botMoltbookName}
+      - Discord Nickname: ${config.DISCORD_NICKNAME || 'SkyBots'}
+
+      **CRITICAL:** In the conversation history and context, you must recognize messages or posts from these identities as YOUR OWN actions. Do NOT mistake your own previous posts or realizations for input from "the user" or "the admin".
 
       You have access to the following capabilities:
       1. **Search**: Search Google for information.

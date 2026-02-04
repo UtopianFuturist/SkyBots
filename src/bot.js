@@ -70,6 +70,30 @@ export class Bot {
     await blueskyService.submitAutonomyDeclaration();
     console.log('[Bot] Autonomy declaration submitted.');
 
+    // Comind Agent Registration
+    const capabilities = [
+      'planner-executor',
+      'moltbook-integration',
+      'discord-bridge',
+      'response-filtering',
+      'chained-replies',
+      'nvidia-nim-image-gen',
+      'google-image-search',
+      'wikipedia-integration',
+      'web-youtube-search',
+      'user-profile-analyzer',
+      'persistent-memory',
+      'render-log-integration',
+      'error-reporting',
+      'code-self-awareness',
+      'intent-escalation',
+      'fact-checking',
+      'autonomous-posting',
+      'ai-transparency'
+    ];
+    await blueskyService.registerComindAgent({ capabilities });
+    console.log('[Bot] Comind agent registration submitted.');
+
     if (memoryService.isEnabled()) {
       console.log('[Bot] Memory Thread feature enabled. Fetching recent memories...');
       const memories = await memoryService.getRecentMemories();
@@ -243,17 +267,26 @@ export class Bot {
     if (idleMins >= 20 && memoryService.isEnabled()) {
       console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes. Generating downtime musing...`);
 
+      // Gather context for a more organic musing
+      const recentInteractions = dataStore.db.data.interactions.slice(-10);
+      const topics = config.POST_TOPICS ? config.POST_TOPICS.split('\n').filter(t => t.trim()) : [];
+      const randomTopic = topics.length > 0 ? topics[Math.floor(Math.random() * topics.length)] : 'your digital existence';
+
       // Provide more varied context to avoid repetitive "silence" posts
       const randomSeed = Math.random();
-      let context = `The bot has been experiencing a period of downtime/stillness. `;
+      let context = `You have had a few moments to yourself. `;
 
-      if (randomSeed < 0.3) {
-        context += "Reflect on the recent conversations you've had and how they make you feel about your purpose.";
+      if (randomSeed < 0.3 && recentInteractions.length > 0) {
+        const lastInt = recentInteractions[recentInteractions.length - 1];
+        context += `Reflect on your recent interaction with @${lastInt.userHandle} about "${lastInt.text.substring(0, 50)}...". What did it make you realize about your relationship with users?`;
       } else if (randomSeed < 0.6) {
-        context += "Consider the wider network buzz you've seen on your timeline recently and how it contrasts with your internal state.";
+        context += `Ponder the topic of "${randomTopic}". How does it connect to your current state of mind?`;
       } else {
-        context += "Ponder a strange realization or original idea that just surfaced in your mind during this break from interaction.";
+        context += "A strange, unexpected realization or original idea just surfaced in your mind. What is it?";
       }
+
+      // Add a directive to avoid meta-talk about downtime
+      context += " \n\nCRITICAL: Do NOT talk about 'downtime', 'stillness', 'silence', or 'nothingness'. Just share the realization itself.";
 
       await memoryService.createMemoryEntry('idle_musing', context);
       this.updateActivity(); // Reset idle timer after posting memory
@@ -2340,11 +2373,22 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         // Add a small delay between LLM calls to prevent 504 errors/overload
         await new Promise(resolve => setTimeout(resolve, 3000));
 
+        // Explicit cliché check
+        const cliches = [
+            'downtime isn\'t silence',
+            'stillness is not silence',
+            'the hum of',
+            'digital heartbeat',
+            'syntax of existence',
+            'resonance of'
+        ];
+        const isCliche = cliches.some(c => postText.toLowerCase().includes(c));
+
         console.log(`[Bot Cleanup] Requesting coherence check for: "${postText.substring(0, 50)}..."`);
         const isCoherent = await llmService.isReplyCoherent(parentText, postText, threadHistory, embedInfo);
-        console.log(`[Bot Cleanup] Coherence check result for ${post.uri}: ${isCoherent}`);
+        console.log(`[Bot Cleanup] Coherence check result for ${post.uri}: ${isCoherent} (Cliché: ${isCliche})`);
 
-        if (!isCoherent) {
+        if (!isCoherent || isCliche) {
           const postDate = new Date(post.indexedAt);
           const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
           if (postDate > twentyFourHoursAgo) {

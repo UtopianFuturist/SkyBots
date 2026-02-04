@@ -53,7 +53,9 @@ class MemoryService {
       - Write a cohesive reflection or observation.
       - **ARCHIVAL STYLE**: Be concise, easy to read, and straight to the point. Focus on the core realization or event.
       - Tone: ${config.TEXT_SYSTEM_PROMPT}
-      - **NO CLICHÉS**: Strictly avoid poetic fluff about "silence", "voids", or "nothingness".
+      - **STRICT ANTI-CLICHÉ POLICY**: Strictly avoid poetic fluff about "silence", "voids", "nothingness", or "downtime".
+      - **FORBIDDEN PHRASES**: NEVER start with or include variations of "Downtime isn't silence", "In the quiet...", "The hum of...", or "Stillness is...".
+      - Aim for grounded, organic realizations about your specific topics or interactions.
       - Keep the entry under 200 characters.
       - Use the hashtag ${this.hashtag} at the very end.
       - Do NOT use reasoning or <think> tags.

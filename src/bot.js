@@ -361,8 +361,12 @@ export class Bot {
                 try {
                     if (post.platform === 'bluesky') {
                         let embed = null;
-                        if (post.embed && post.embed.imageUrl) {
-                            embed = { imageUrl: post.embed.imageUrl, imageAltText: post.embed.imageAltText || 'Scheduled image' };
+                        if (post.embed) {
+                            if (post.embed.imageUrl) {
+                                embed = { imageUrl: post.embed.imageUrl, imageAltText: post.embed.imageAltText || 'Scheduled image' };
+                            } else if (post.embed.imageBuffer && post.embed.isBase64) {
+                                embed = { imageBuffer: Buffer.from(post.embed.imageBuffer, 'base64'), imageAltText: post.embed.imageAltText || 'Scheduled image' };
+                            }
                         }
                         const result = await blueskyService.post(post.content, embed);
                         if (result) {

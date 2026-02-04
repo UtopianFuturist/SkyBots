@@ -6,6 +6,11 @@ import { imageService } from './imageService.js';
 import { blueskyService } from './blueskyService.js';
 import { moltbookService } from './moltbookService.js';
 import { memoryService } from './memoryService.js';
+import { googleSearchService } from './googleSearchService.js';
+import { wikipediaService } from './wikipediaService.js';
+import { youtubeService } from './youtubeService.js';
+import { renderService } from './renderService.js';
+import { webReaderService } from './webReaderService.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
 
 class DiscordService {
@@ -304,40 +309,125 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          }
                      }
                      if (action.tool === 'bsky_post') {
-                         const { text: postText, include_image } = action.parameters || {};
+                         const { text: postText, include_image, prompt_for_image } = action.parameters || {};
                          const lastPostTime = dataStore.getLastAutonomousPostTime();
                          const cooldown = config.BLUESKY_POST_COOLDOWN * 60 * 1000;
                          const now = Date.now();
                          const diff = lastPostTime ? now - new Date(lastPostTime).getTime() : cooldown;
 
+                         let embed = null;
+                         if (prompt_for_image) {
+                             console.log(`[DiscordService] Generating image for Bluesky post: "${prompt_for_image}"`);
+                             const imgResult = await imageService.generateImage(prompt_for_image, { allowPortraits: true });
+                             if (imgResult && imgResult.buffer) {
+                                 embed = { imageBuffer: imgResult.buffer, imageAltText: imgResult.finalPrompt };
+                             }
+                         } else if (include_image && message.attachments.size > 0) {
+                             const img = Array.from(message.attachments.values()).find(a => a.contentType?.startsWith('image/'));
+                             if (img) {
+                                 const altText = await llmService.analyzeImage(img.url);
+                                 embed = { imageUrl: img.url, imageAltText: altText || 'Admin shared image' };
+                             }
+                         }
+
                          if (diff < cooldown) {
                              const remainingMins = Math.ceil((cooldown - diff) / (60 * 1000));
-                             let embed = null;
-                             if (include_image && message.attachments.size > 0) {
-                                 const img = Array.from(message.attachments.values()).find(a => a.contentType?.startsWith('image/'));
-                                 if (img) {
-                                     const altText = await llmService.analyzeImage(img.url);
-                                     embed = { imageUrl: img.url, imageAltText: altText || 'Admin shared image' };
-                                 }
+                             if (embed && embed.imageBuffer) {
+                                 // Convert buffer to base64 for scheduling
+                                 embed.imageBuffer = embed.imageBuffer.toString('base64');
+                                 embed.isBase64 = true;
                              }
                              await dataStore.addScheduledPost('bluesky', postText, embed);
                              actionResults.push(`[Bluesky post scheduled because cooldown is active. ${remainingMins} minutes remaining]`);
                          } else {
-                             let embed = null;
-                             if (include_image && message.attachments.size > 0) {
-                                 const img = Array.from(message.attachments.values()).find(a => a.contentType?.startsWith('image/'));
-                                 if (img) {
-                                     const altText = await llmService.analyzeImage(img.url);
-                                     embed = { imagesToEmbed: [{ link: img.url, title: altText || 'Admin shared image' }] };
+                             let postEmbed = null;
+                             if (embed) {
+                                 if (embed.imageUrl) {
+                                     postEmbed = { imagesToEmbed: [{ link: embed.imageUrl, title: embed.imageAltText }] };
+                                 } else if (embed.imageBuffer) {
+                                     postEmbed = { imageBuffer: embed.imageBuffer, imageAltText: embed.imageAltText };
                                  }
                              }
-                             const result = await blueskyService.post(postText, embed);
+                             const result = await blueskyService.post(postText, postEmbed);
                              if (result) {
                                  await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                                  actionResults.push(`[Successfully posted to Bluesky: ${result.uri}]`);
                              } else {
                                  actionResults.push(`[Failed to post to Bluesky]`);
                              }
+                         }
+                     }
+
+                     if (action.tool === 'search') {
+                         const query = action.query;
+                         if (query) {
+                             const results = await googleSearchService.search(query);
+                             const bestResult = await llmService.selectBestResult(query, results, 'general');
+                             if (bestResult) {
+                                 const fullContent = await webReaderService.fetchContent(bestResult.link);
+                                 actionResults.push(`[Web Search Result: "${bestResult.title}". Content: ${fullContent || bestResult.snippet}]`);
+                             } else {
+                                 actionResults.push(`[No relevant search results found for: ${query}]`);
+                             }
+                         }
+                     }
+
+                     if (action.tool === 'wikipedia') {
+                         const query = action.query;
+                         if (query) {
+                             const results = await wikipediaService.searchArticle(query);
+                             const bestResult = await llmService.selectBestResult(query, results, 'wikipedia');
+                             if (bestResult) {
+                                 actionResults.push(`[Wikipedia Article: "${bestResult.title}". Content: ${bestResult.extract}]`);
+                             } else {
+                                 actionResults.push(`[No relevant Wikipedia article found for: ${query}]`);
+                             }
+                         }
+                     }
+
+                     if (action.tool === 'youtube') {
+                         const query = action.query;
+                         if (query) {
+                             const results = await youtubeService.search(query);
+                             const bestResult = await llmService.selectBestResult(query, results, 'youtube');
+                             if (bestResult) {
+                                 actionResults.push(`[YouTube Video Found: "${bestResult.title}" by ${bestResult.channel}. Description: ${bestResult.description}]`);
+                             } else {
+                                 actionResults.push(`[No relevant YouTube videos found for: ${query}]`);
+                             }
+                         }
+                     }
+
+                     if (action.tool === 'profile_analysis') {
+                         const handle = action.query || config.ADMIN_BLUESKY_HANDLE;
+                         const activities = await blueskyService.getUserActivity(handle, 100);
+                         if (activities.length > 0) {
+                             const summary = activities.map(a => `[${a.type}] ${a.text.substring(0, 100)}`).join('\n');
+                             actionResults.push(`[Profile Analysis for @${handle} (Recent activity):\n${summary.substring(0, 2000)}]`);
+                         } else {
+                             actionResults.push(`[No recent activity found for @${handle}]`);
+                         }
+                     }
+
+                     if (action.tool === 'moltbook_report') {
+                         const knowledge = moltbookService.getIdentityKnowledge();
+                         const subs = (moltbookService.db.data.subscriptions || []).join(', ');
+                         actionResults.push(`[Moltbook Report: Subscribed to m/${subs || 'none'}. Knowledge: ${knowledge.substring(0, 1000) || 'None'}]`);
+                     }
+
+                     if (action.tool === 'get_render_logs') {
+                         const limit = action.parameters?.limit || 100;
+                         const logs = await renderService.getLogs(limit);
+                         actionResults.push(`[Render Logs (Latest ${limit} lines):\n${logs}\n]`);
+                     }
+
+                     if (action.tool === 'discord_message') {
+                         const msg = action.parameters?.message || action.query;
+                         if (msg) {
+                             // Proactive DM to admin, but since we're ALREADY in a conversation,
+                             // we just acknowledge it's being "sent" (it might be to a different channel/DM)
+                             await this.sendSpontaneousMessage(msg);
+                             actionResults.push(`[Discord message sent to admin: "${msg}"]`);
                          }
                      }
                      if (action.tool === 'moltbook_post') {
@@ -378,6 +468,23 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              if (action.tool === 'bsky_mute') success = await blueskyService.mute(target);
                              if (action.tool === 'bsky_unmute') success = await blueskyService.unmute(target);
                              actionResults.push(`[Action ${action.tool} on ${target}: ${success ? 'SUCCESS' : 'FAILED'}]`);
+                         }
+                     }
+
+                     // Add missing tools for admin
+                     if (action.tool === 'image_gen') {
+                         const prompt = action.query || action.parameters?.prompt;
+                         if (prompt) {
+                             const imgResult = await imageService.generateImage(prompt, { allowPortraits: true });
+                             if (imgResult && imgResult.buffer) {
+                                 await message.channel.send({
+                                     content: `Generated image: "${imgResult.finalPrompt}"`,
+                                     files: [{ attachment: imgResult.buffer, name: 'art.jpg' }]
+                                 });
+                                 actionResults.push(`[Successfully generated image for prompt: "${prompt}"]`);
+                             } else {
+                                 actionResults.push(`[Failed to generate image]`);
+                             }
                          }
                      }
                      if (action.tool === 'moltbook_action') {

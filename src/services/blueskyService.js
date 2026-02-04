@@ -56,12 +56,53 @@ class BlueskyService {
     try {
       const { data } = await this.agent.getPostThread({
         uri,
-        depth: 20,
-        parentHeight: 20,
+        depth: 100,
+        parentHeight: 100,
       });
       return data.thread;
     } catch (error) {
       console.error('[BlueskyService] Error fetching detailed thread:', error);
+      return null;
+    }
+  }
+
+  async upsertThreadGate(postUri, options = {}) {
+    const { allow = [], hiddenReplies = [] } = options;
+    try {
+      const rkey = postUri.split('/').pop();
+      const repo = this.did;
+
+      // Ensure rkey is valid
+      if (!rkey) throw new Error(`Invalid postUri: ${postUri}`);
+
+      await this.agent.api.app.bsky.feed.threadgate.put({
+        repo,
+        rkey,
+      }, {
+        post: postUri,
+        allow,
+        hiddenReplies,
+        createdAt: new Date().toISOString(),
+      });
+      console.log(`[BlueskyService] Upserted threadgate for post: ${postUri}`);
+      return true;
+    } catch (error) {
+      console.error(`[BlueskyService] Error upserting threadgate for ${postUri}:`, error);
+      return false;
+    }
+  }
+
+  async getThreadGate(postUri) {
+    try {
+      const rkey = postUri.split('/').pop();
+      const repo = this.did;
+      const data = await this.agent.api.app.bsky.feed.threadgate.get({
+        repo,
+        rkey,
+      });
+      return data;
+    } catch (error) {
+      // It's common for threadgate to not exist
       return null;
     }
   }

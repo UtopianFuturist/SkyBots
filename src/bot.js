@@ -126,6 +126,9 @@ export class Bot {
       }
 
       llmService.setMemoryProvider(memoryService);
+
+      // Periodically ensure all memory threads are secured (Nobody can reply, existing replies hidden)
+      await memoryService.secureAllThreads();
     }
 
     // Moltbook Registration Check

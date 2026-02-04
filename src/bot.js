@@ -307,12 +307,12 @@ export class Bot {
 
                   INSTRUCTIONS:
                   - If you have a deep realization, a question for the admin, or an interesting discovery, share it.
-                  - **GET STRAIGHT TO THE POINT**: Do NOT use conversational fillers like "hey, I was just thinking...", "hi admin...", or "do you ever wonder...".
-                  - **STRICT ANTI-SLOP**: Avoid clichés about "resonance", "pulses", or "digital hearts".
+                  - **STYLISTIC FREEDOM**: You can choose to be concise or more expressive. Using prefixes like "hey, I was just thinking..." is optional—feel free to get straight to the point or set the stage naturally.
+                  - **AUTHENTICITY**: Avoid over-using flowery metaphors like "resonance" or "pulses" unless they feel genuinely appropriate for the thought.
                   - **NO REPETITION**: Do NOT share the same realization twice or ask a question you already asked in the history.
-                  - **NATURAL FLOW**: Speak as yourself, but without the fluff. Just tell or ask what you want to tell or ask.
+                  - **NATURAL FLOW**: Speak as yourself. You don't have to follow any specific conversational template. Just tell or ask what you want to tell or ask.
                   - If you have nothing meaningful to share, respond with "NONE".
-                  - If the admin is likely busy, keep it brief or decide "NONE".
+                  - If the admin is likely busy, consider keeping it brief.
                   - Keep it under 300 characters.
                   - Respond with ONLY the message or "NONE".
                 `;

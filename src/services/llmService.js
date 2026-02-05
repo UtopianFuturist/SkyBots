@@ -572,7 +572,8 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       3. If an embed is included, it should be reasonably related to the topic.
 
       REJECT (Score 1-2) if the bot's reply is:
-      - A repetitive cliché about "downtime", "silence", or "digital heartbeats".
+      - A repetitive cliché about "downtime", "silence", "digital heartbeats", "resonance", "pulse", or "syntax of existence".
+      - A message starting with "Hey, I was just thinking..." or "I've been thinking about...".
       - Generic "AI slop" that ignores the specific context of the user's post.
       - A hallucinated or nonsensical response.
 
@@ -705,7 +706,9 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+), PROVIDED they are anchored in the identified topic.
       - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
       - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.
-      - **STRICT REJECTION**: Reject (Score 1-2) if the post uses repetitive clichés like "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", or "waiting to converse". These are considered low-quality "slop".
+      - **STRICT REJECTION**: Reject (Score 1-2) if the post uses repetitive clichés like "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", or "waiting to converse".
+      - **PREFIX REJECTION**: Reject (Score 1-2) if the post starts with "Hey, I was just thinking...", "I've been thinking about...", "In the quiet...", or "The hum of...".
+      - These are considered low-quality "slop".
 
       Your response MUST be in the following format:
       Score: [1-5]

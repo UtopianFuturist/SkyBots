@@ -113,7 +113,7 @@ class MemoryService {
           CRITERIA:
           1. **Meaningful Substance**: Does this entry contain concise meaningful substance regarding the bot's functioning, memory, or persona?
           2. **Coherence**: Is the entry logically sound and in-persona?
-          3. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence")?
+          3. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence", "digital heartbeat", "resonance", "Hey, I was just thinking...")?
 
           Respond with ONLY "PASS" if it meets all criteria, or "FAIL | [reason]" if it doesn't.
         `;

@@ -19,7 +19,7 @@ class DiscordService {
         console.log('[DiscordService] Constructor starting...');
         this.botInstance = null;
         this.client = null;
-        this.token = config.DISCORD_BOT_TOKEN;
+        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '');
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.nickname = config.DISCORD_NICKNAME || 'SkyBots';
         this.isEnabled = !!this.token && this.token !== 'undefined' && this.token !== 'null';
@@ -70,8 +70,20 @@ class DiscordService {
         });
 
         this.client.on('debug', (info) => {
-            if (info.includes('Heartbeat')) return; // Avoid spamming heartbeat logs
+            // Log everything for now to catch where it hangs
             console.log('[DiscordService] DEBUG:', info);
+        });
+
+        this.client.on('shardError', (error) => {
+            console.error('[DiscordService] Shard Error:', error);
+        });
+
+        this.client.on('shardDisconnect', (event) => {
+            console.warn('[DiscordService] Shard Disconnected:', event);
+        });
+
+        this.client.on('reconnecting', () => {
+            console.log('[DiscordService] Client reconnecting...');
         });
 
         this.client.on('messageCreate', async (message) => {
@@ -82,18 +94,22 @@ class DiscordService {
             }
         });
 
-        console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length})`);
+        console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
+        if (this.token) {
+            console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
+        }
+
         try {
-            // Set a timeout for login
+            // Set a timeout for login - increase to 120s
             let timeoutHandle;
             const loginPromise = this.client.login(this.token);
             const timeoutPromise = new Promise((_, reject) =>
-                timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 60s')), 60000)
+                timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 120s')), 120000)
             );
 
             const loginResult = await Promise.race([loginPromise, timeoutPromise]);
             clearTimeout(timeoutHandle);
-            console.log('[DiscordService] login() promise resolved. Token used:', loginResult.substring(0, 10) + '...');
+            console.log('[DiscordService] SUCCESS: login() promise resolved. Logged in as:', this.client.user?.tag);
         } catch (error) {
             console.error('[DiscordService] FATAL: Failed to login to Discord:', error);
             // Don't disable it completely yet, maybe it's a transient network issue

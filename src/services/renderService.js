@@ -39,7 +39,8 @@ class RenderService {
     }
     console.log(`[RenderService] Attempting to find service ID for name: ${this.serviceName}`);
     const services = await this.listServices();
-    const self = services.find(s => s.service.name === this.serviceName);
+    const searchName = this.serviceName.trim().toLowerCase();
+    const self = services.find(s => s.service.name.trim().toLowerCase() === searchName);
     if (self) {
       this.serviceId = self.service.id;
       console.log(`[RenderService] Found self service ID: ${this.serviceId}`);

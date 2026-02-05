@@ -908,7 +908,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     return { safe: true };
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky') {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = []) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = conversationHistory.map(h => {
         let role = 'User';
@@ -995,6 +995,11 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       Analyze the user's intent and provide a JSON response with the following structure:
       {
         "intent": "string (briefly describe the user's goal)",
+        "strategy": {
+          "angle": "Analytical|Supportive|Challenging|Curious|Playful|Serious|Stoic|Poetic (but grounded)",
+          "tone": "Succinct|Detailed|Casual|Formal|Assertive|Inquisitive",
+          "theme": "string (a very brief 1-2 word theme for this specific response)"
+        },
         "actions": [
           {
             "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours",
@@ -1006,6 +1011,10 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         "requires_search": boolean,
         "consolidated_queries": ["list of strings (queries for Google/Wiki to minimize API calls)"]
       }
+
+      **TEMPORAL VARIETY:**
+      Avoid repeating the same 'theme' or 'angle' too many times in a row.
+      ${exhaustedThemes.length > 0 ? `The following themes are currently EXHAUSTED (avoid these): ${exhaustedThemes.join(', ')}` : ''}
 
       IMPORTANT:
       - Consolidate queries to minimize API calls (STRICT limit of 50 searches/day).

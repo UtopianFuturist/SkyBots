@@ -47,6 +47,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     validateResultRelevance: jest.fn(),
     evaluateConversationVibe: jest.fn(),
     performAgenticPlanning: jest.fn(),
+    checkVariety: jest.fn().mockResolvedValue({ repetitive: false }),
   },
 }));
 
@@ -64,6 +65,12 @@ jest.unstable_mockModule('../src/services/moltbookService.js', () => ({
         api_key: 'moltbook'
       }
     }
+  },
+}));
+
+jest.unstable_mockModule('../src/services/socialHistoryService.js', () => ({
+  socialHistoryService: {
+    getHierarchicalSummary: jest.fn().mockResolvedValue({ shortTerm: 'recent', dailyNarrative: 'today' }),
   },
 }));
 
@@ -88,6 +95,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getUserSummary: jest.fn(),
     getBlueskyInstructions: jest.fn().mockReturnValue(''),
     getPersonaUpdates: jest.fn().mockReturnValue(''),
+    getExhaustedThemes: jest.fn().mockReturnValue([]),
+    addExhaustedTheme: jest.fn(),
     init: jest.fn(),
     db: {
       data: {
@@ -126,6 +135,7 @@ jest.unstable_mockModule('../src/services/imageService.js', () => ({
 const { Bot } = await import('../src/bot.js');
 const { blueskyService } = await import('../src/services/blueskyService.js');
 const { llmService } = await import('../src/services/llmService.js');
+const { socialHistoryService } = await import('../src/services/socialHistoryService.js');
 const { dataStore } = await import('../src/services/dataStore.js');
 const { googleSearchService } = await import('../src/services/googleSearchService.js');
 const { wikipediaService } = await import('../src/services/wikipediaService.js');

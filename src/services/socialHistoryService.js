@@ -64,6 +64,69 @@ class SocialHistoryService {
     }
     return summary;
   }
+
+  /**
+   * Provides a hierarchical summary of social activity:
+   * 1. Short-term: Highly detailed activity from the last 60 minutes.
+   * 2. Daily Narrative: A broader summary of the day's interactions.
+   */
+  async getHierarchicalSummary(limit = 20) {
+    const history = await this.getRecentSocialContext(limit);
+    if (history.length === 0) return { shortTerm: "No recent activity.", dailyNarrative: "The day has been quiet." };
+
+    const now = Date.now();
+    const oneHourAgo = now - (60 * 60 * 1000);
+    const todayStart = new Date().setHours(0, 0, 0, 0);
+
+    const lastHour = history.filter(h => new Date(h.timestamp).getTime() > oneHourAgo);
+    const earlierToday = history.filter(h => {
+        const ts = new Date(h.timestamp).getTime();
+        return ts > todayStart && ts <= oneHourAgo;
+    });
+
+    let shortTerm = "RECENT (Last Hour):\n";
+    if (lastHour.length === 0) {
+        shortTerm += "- No interactions in the last hour.\n";
+    } else {
+        for (const item of lastHour) {
+            const timeStr = new Date(item.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+            shortTerm += `- [${timeStr}] ${item.type === 'reply' ? `To ${item.to}` : 'Post'}: ${item.text.substring(0, 80)}...\n`;
+        }
+    }
+
+    let dailyNarrative = "DAILY NARRATIVE:\n";
+    const todayAll = history.filter(h => new Date(h.timestamp).getTime() > todayStart);
+    if (todayAll.length === 0) {
+        dailyNarrative += "- No activity recorded today.";
+    } else {
+        // Group by user if possible
+        const userInteractions = {};
+        let standaloneCount = 0;
+
+        for (const item of todayAll) {
+            if (item.type === 'reply' && item.to) {
+                userInteractions[item.to] = (userInteractions[item.to] || 0) + 1;
+            } else {
+                standaloneCount++;
+            }
+        }
+
+        const userList = Object.entries(userInteractions)
+            .map(([user, count]) => `${user} (${count}x)`)
+            .join(', ');
+
+        dailyNarrative += `- Total Interactions: ${todayAll.length}\n`;
+        if (userList) dailyNarrative += `- Talking with: ${userList}\n`;
+        dailyNarrative += `- Standalone Musing count: ${standaloneCount}\n`;
+
+        // Add a "vibe" summary based on the most recent posts
+        const lastFew = todayAll.slice(0, 3);
+        const themes = lastFew.map(h => h.text.substring(0, 30)).join('; ');
+        dailyNarrative += `- Recent Themes: ${themes}...`;
+    }
+
+    return { shortTerm, dailyNarrative };
+  }
 }
 
 export const socialHistoryService = new SocialHistoryService();

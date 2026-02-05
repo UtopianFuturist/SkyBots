@@ -25,6 +25,14 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     isAutonomousPostCoherent: jest.fn(),
     analyzeImage: jest.fn(),
     isImageCompliant: jest.fn(),
+    checkVariety: jest.fn().mockResolvedValue({ repetitive: false }),
+    performAgenticPlanning: jest.fn().mockResolvedValue({ strategy: { angle: 'natural', tone: 'conversational', theme: 'test' }, actions: [] }),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/socialHistoryService.js', () => ({
+  socialHistoryService: {
+    getHierarchicalSummary: jest.fn().mockResolvedValue({ shortTerm: 'recent', dailyNarrative: 'today' }),
   },
 }));
 
@@ -36,6 +44,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getLatestInteractions: jest.fn().mockReturnValue([]),
     getRecentThoughts: jest.fn().mockReturnValue([]),
     addRecentThought: jest.fn(),
+    getExhaustedThemes: jest.fn().mockReturnValue([]),
+    addExhaustedTheme: jest.fn(),
     getLastAutonomousPostTime: jest.fn().mockReturnValue(null),
     updateLastAutonomousPostTime: jest.fn(),
     db: {
@@ -61,6 +71,7 @@ jest.unstable_mockModule('../src/services/imageService.js', () => ({
 const { Bot } = await import('../src/bot.js');
 const { blueskyService } = await import('../src/services/blueskyService.js');
 const { llmService } = await import('../src/services/llmService.js');
+const { socialHistoryService } = await import('../src/services/socialHistoryService.js');
 const { imageService } = await import('../src/services/imageService.js');
 
 describe('Bot Autonomous Posting', () => {

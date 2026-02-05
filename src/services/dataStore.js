@@ -31,6 +31,7 @@ const defaultData = {
   discord_quiet_hours: { start: 23, end: 8 }, // 24h format
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
   recent_thoughts: [], // [ { platform, content, timestamp } ]
+  exhausted_themes: [], // [ { theme, timestamp } ]
   lastMemoryCleanupTime: 0
 };
 
@@ -358,6 +359,39 @@ class DataStore {
 
   getLastMemoryCleanupTime() {
     return this.db.data.lastMemoryCleanupTime || 0;
+  }
+
+  async addExhaustedTheme(theme) {
+    if (!this.db.data.exhausted_themes) {
+      this.db.data.exhausted_themes = [];
+    }
+    // Remove if already exists to update timestamp
+    this.db.data.exhausted_themes = this.db.data.exhausted_themes.filter(t => t.theme.toLowerCase() !== theme.toLowerCase());
+
+    this.db.data.exhausted_themes.push({
+      theme,
+      timestamp: Date.now()
+    });
+
+    await this.db.write();
+  }
+
+  getExhaustedThemes() {
+    this.clearExpiredExhaustedThemes();
+    return (this.db.data.exhausted_themes || []).map(t => t.theme);
+  }
+
+  async clearExpiredExhaustedThemes() {
+    if (!this.db.data.exhausted_themes) return;
+
+    const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+    const initialLength = this.db.data.exhausted_themes.length;
+
+    this.db.data.exhausted_themes = this.db.data.exhausted_themes.filter(t => t.timestamp > fourHoursAgo);
+
+    if (this.db.data.exhausted_themes.length !== initialLength) {
+      await this.db.write();
+    }
   }
 }
 

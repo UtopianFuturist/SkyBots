@@ -12,7 +12,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -570,7 +570,39 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      messages.push({ role: 'system', content: `TOOL EXECUTION RESULTS (Acknowledge naturally):\n${actionResults.join('\n')}` });
                  }
 
-                 responseText = await llmService.generateResponse(messages, { useQwen: true });
+                 let attempts = 0;
+                 let feedback = '';
+                 const MAX_ATTEMPTS = 3;
+                 const recentThoughts = dataStore.getRecentThoughts();
+
+                 while (attempts < MAX_ATTEMPTS) {
+                     attempts++;
+                     const finalMessages = feedback
+                        ? [...messages, { role: 'system', content: `[RETRY FEEDBACK]: ${feedback}` }]
+                        : messages;
+
+                     responseText = await llmService.generateResponse(finalMessages, { useQwen: true });
+                     if (!responseText) break;
+
+                     // Variety & Repetition Check
+                     const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5).map(h => h.content);
+                     const formattedHistory = [
+                         ...recentBotMsgs.map(m => ({ platform: 'discord', content: m })),
+                         ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
+                     ];
+
+                     const isJaccardRepetitive = checkSimilarity(responseText, formattedHistory.map(h => h.content), 0.4);
+                     const containsSlop = isSlop(responseText);
+                     const varietyCheck = await llmService.checkVariety(responseText, formattedHistory);
+
+                     if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive) {
+                         break;
+                     } else {
+                         feedback = containsSlop ? "REJECTED: Response contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Response was too similar to recent history.");
+                         console.log(`[DiscordService] Response attempt ${attempts} rejected: ${feedback}`);
+                         responseText = null; // Prevent sending the rejected response
+                     }
+                 }
             } else {
                 responseText = await llmService.generateResponse(messages);
             }

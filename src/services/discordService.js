@@ -555,6 +555,27 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              actionResults.push(`[Moltbook create_submolt ${submoltName}: ${result ? 'SUCCESS' : 'FAILED'}]`);
                          }
                      }
+                     if (action.tool === 'set_relationship' && isAdmin) {
+                         const mode = action.parameters?.mode;
+                         if (mode) {
+                             await dataStore.setDiscordRelationshipMode(mode);
+                             actionResults.push(`[Discord relationship mode set to ${mode}]`);
+                         }
+                     }
+                     if (action.tool === 'set_schedule' && isAdmin) {
+                         const times = action.parameters?.times;
+                         if (Array.isArray(times)) {
+                             await dataStore.setDiscordScheduledTimes(times);
+                             actionResults.push(`[Discord spontaneous schedule set to: ${times.join(', ')}]`);
+                         }
+                     }
+                     if (action.tool === 'set_quiet_hours' && isAdmin) {
+                         const { start, end } = action.parameters || {};
+                         if (start !== undefined && end !== undefined) {
+                             await dataStore.setDiscordQuietHours(start, end);
+                             actionResults.push(`[Discord quiet hours set to ${start}:00 - ${end}:00]`);
+                         }
+                     }
                  }
 
                  if (actionResults.length > 0) {

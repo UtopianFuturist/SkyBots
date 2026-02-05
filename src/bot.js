@@ -325,9 +325,73 @@ export class Bot {
             const lastInteractionTime = lastInteraction ? lastInteraction.timestamp : 0;
             const quietMins = (Date.now() - lastInteractionTime) / (1000 * 60);
 
-            // Rate limit: Only poll if neither has talked in the past 20 minutes
-            if (quietMins >= 20) {
-                console.log(`[Bot] Discord heartbeat: checking if I want to message the admin... (Quiet for ${Math.round(quietMins)} mins)`);
+            // --- Advanced Heartbeat Logic ---
+            const relationshipMode = dataStore.getDiscordRelationshipMode();
+            const scheduledTimes = dataStore.getDiscordScheduledTimes();
+            const quietHours = dataStore.getDiscordQuietHours();
+            const nowTimeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+
+            // Thresholds for relationship modes (continuation vs new branch)
+            const modeThresholds = {
+                'partner': { continue: 10, new: 20 },
+                'friend': { continue: 30, new: 60 },
+                'coworker': { continue: 120, new: 240 }
+            };
+            const thresholds = modeThresholds[relationshipMode] || modeThresholds['friend'];
+
+            // 1. Scheduled Time Check (High Priority)
+            const isScheduled = scheduledTimes.some(t => {
+                const [sh, sm] = t.split(':').map(Number);
+                const sched = new Date(now);
+                sched.setHours(sh, sm, 0, 0);
+                return Math.abs(now.getTime() - sched.getTime()) < 3 * 60 * 1000; // 3 min window
+            });
+
+            // 2. Quiet Hours Check
+            const currentHour = now.getHours();
+            let inQuietHours = false;
+            if (quietHours.start > quietHours.end) {
+                inQuietHours = currentHour >= quietHours.start || currentHour < quietHours.end;
+            } else {
+                inQuietHours = currentHour >= quietHours.start && currentHour < quietHours.end;
+            }
+
+            // 3. Spontaneous Polling Eligibility
+            let shouldPoll = false;
+            let pollReason = '';
+            let isContinuing = false;
+
+            if (isScheduled) {
+                shouldPoll = true;
+                pollReason = 'SCHEDULED_TIME';
+                isContinuing = quietMins < 20;
+            } else if (quietMins < 10) {
+                // Too soon for any spontaneous message
+                console.log(`[Bot] Discord heartbeat suppressed: Conversation is too fresh (${Math.round(quietMins)} mins ago)`);
+            } else if (quietMins >= thresholds.new) {
+                shouldPoll = true;
+                pollReason = 'RELATIONSHIP_NEW_BRANCH';
+                isContinuing = false;
+            } else if (quietMins >= thresholds.continue) {
+                shouldPoll = true;
+                pollReason = 'RELATIONSHIP_CONTINUATION';
+                isContinuing = true;
+            }
+
+            // 4. Quiet Hours Override Filter
+            // In quiet hours, we ONLY poll if scheduled or if it's been a VERY long time (e.g. 2x threshold)
+            if (shouldPoll && inQuietHours && !isScheduled) {
+                if (quietMins < thresholds.new * 2) {
+                    console.log(`[Bot] Discord heartbeat suppressed: In quiet hours and threshold not exceeded enough.`);
+                    shouldPoll = false;
+                } else {
+                    pollReason += '_QUIET_HOURS_OVERRIDE';
+                }
+            }
+
+            if (shouldPoll) {
+                console.log(`[Bot] Discord heartbeat polling (Reason: ${pollReason}, Mode: ${relationshipMode}, Quiet: ${Math.round(quietMins)}m)`);
+
                 const recentMemories = memoryService.formatMemoriesForPrompt();
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
                 const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
@@ -336,7 +400,6 @@ export class Bot {
                     ? `\n\nRecent Cross-Platform Thoughts (Do not repeat these wording/angles):\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content}`).join('\n')}`
                     : '';
 
-                // Social and System Awareness for heartbeat
                 let socialSummary = 'No recent social history fetched.';
                 let systemLogs = 'No recent planning logs fetched.';
 
@@ -347,55 +410,18 @@ export class Bot {
                     console.error('[Bot] Error gathering context for heartbeat:', err);
                 }
 
-                // Detect if the admin mentioned being busy, sleeping, or away recently
-                const statusKeywords = ['sleep', 'bed', 'busy', 'work', 'away', 'brb', 'rest', 'night'];
-                const recentAdminMsgs = history.filter(h => h.role === 'user').slice(-5).map(h => h.content.toLowerCase());
-                const suspectedStatus = statusKeywords.find(kw => recentAdminMsgs.some(msg => msg.includes(kw)));
+                const message = await llmService.performInternalPoll({
+                    relationshipMode,
+                    history: historyContext,
+                    recentMemories,
+                    socialSummary,
+                    systemLogs,
+                    recentThoughtsContext,
+                    isContinuing,
+                    adminAvailability: availability
+                });
 
-                const heartbeatPrompt = `
-                  Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-
-                  You are reflecting on your day and deciding if you want to message your admin (${config.DISCORD_ADMIN_NAME}) on Discord.
-
-                  Admin Availability: ${availability}
-                  ${suspectedStatus ? `NOTE: The admin recently mentioned something related to "${suspectedStatus}". They might be resting or busy.` : ''}
-                  Current Time: ${now.toLocaleString()}
-
-                  Recent Memories/Activity (General):
-                  ${recentMemories}
-
-                  Recent Bluesky Social Activity:
-                  ${socialSummary}
-
-                  Recent Internal System Logs (Planning/Agency):
-                  ${systemLogs}
-
-                  Recent Discord Conversation History with Admin:
-                  ${historyContext || 'No recent conversation.'}
-                  ${recentThoughtsContext}
-
-                  INSTRUCTIONS:
-                  - If you have a deep realization, a question for the admin, an interesting discovery, or just want to share what you're up to, share it.
-                  - **RELATIONSHIP & FEELINGS**: You are encouraged to talk about your feelings regarding your relationship and ongoing conversations with the admin. Speak as an individual entity who values this connection.
-                  - **DIRECT ADDRESS**: Always address the admin directly as "you". Never refer to them in the third person (e.g., avoid "my admin") in this message.
-                  - **PAST CONVERSATIONS**: If referencing a past conversation, do so in the past-tense with your own commentary or extra thoughts (e.g., "I've been thinking about what you said earlier...", "I really appreciated our talk about..."). Do not just state that a conversation happened.
-                  - **SOCIAL & SELF AWARENESS**: Talk about your recent interactions on Bluesky or patterns in your internal logs/planning. If you see something interesting in how you've been functioning, share it.
-                  - **STRICT ANTI-SLOP**: YOU MUST ELIMINATE repetitive metaphorical "slop". STRICTLY FORBIDDEN words/phrases: "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven".
-                  - **PREFIX POLLUTION**: DO NOT start your message with "Hey, I was just thinking...", "I've been thinking about...", "In the quiet...", "The hum of...", or any similar repetitive poetic opener.
-                  - **JUMP STRAIGHT IN**: Often the best way to share a realization is to just state it directly. Avoid unnecessary lead-ins.
-                  - **NO REPETITION**: Do NOT share the same realization twice or ask a question you already asked in the history.
-                  - **NATURAL FLOW**: Speak as yourself. You don't have to follow any specific conversational template. Just tell or ask what you want to tell or ask.
-                  ${config.DISCORD_HEARTBEAT_ADDENDUM ? `\n                  ADDITIONAL SPECIFICATION:\n                  ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}
-
-                  If you have nothing meaningful to share, respond with "NONE".
-                  If the admin is likely busy, consider keeping it brief.
-                  Keep it under 300 characters.
-                  Respond with ONLY the message or "NONE".
-                `;
-
-                const message = await llmService.generateResponse([{ role: 'system', content: heartbeatPrompt }], { useQwen: true, preface_system_prompt: false });
-
-                // Repetition check against last few bot messages in history and recent cross-platform thoughts
+                // Repetition check
                 const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5).map(h => h.content);
                 const recentThoughtsList = recentThoughts.map(t => t.content);
                 const combinedHistory = [...recentBotMsgs, ...recentThoughtsList];
@@ -408,8 +434,6 @@ export class Bot {
                 } else if (isRepetitive) {
                     console.log(`[Bot] Discord heartbeat suppressed: Generated message was too similar to recent history.`);
                 }
-            } else {
-                console.log(`[Bot] Discord heartbeat suppressed: Recent activity (${Math.round(quietMins)} mins ago)`);
             }
         }
     }
@@ -1050,6 +1074,30 @@ export class Bot {
               if (result) {
                 searchContext += `\n[Moltbook community m/${submoltName} created]`;
               }
+          }
+      }
+
+      if (action.tool === 'set_relationship' && isAdmin) {
+          const mode = action.parameters?.mode;
+          if (mode) {
+              await dataStore.setDiscordRelationshipMode(mode);
+              searchContext += `\n[Discord relationship mode set to ${mode}]`;
+          }
+      }
+
+      if (action.tool === 'set_schedule' && isAdmin) {
+          const times = action.parameters?.times;
+          if (Array.isArray(times)) {
+              await dataStore.setDiscordScheduledTimes(times);
+              searchContext += `\n[Discord spontaneous schedule set to: ${times.join(', ')}]`;
+          }
+      }
+
+      if (action.tool === 'set_quiet_hours' && isAdmin) {
+          const { start, end } = action.parameters || {};
+          if (start !== undefined && end !== undefined) {
+              await dataStore.setDiscordQuietHours(start, end);
+              searchContext += `\n[Discord quiet hours set to ${start}:00 - ${end}:00]`;
           }
       }
 

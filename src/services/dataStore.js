@@ -26,6 +26,9 @@ const defaultData = {
   discord_last_replied: true,
   discord_conversations: {}, // { channelId: [ { role, content, timestamp } ] }
   discord_pending_mirror: null, // { content, topic, timestamp }
+  discord_relationship_mode: 'friend', // partner, friend, coworker
+  discord_scheduled_times: [], // [ "HH:mm" ]
+  discord_quiet_hours: { start: 23, end: 8 }, // 24h format
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
   recent_thoughts: [] // [ { platform, content, timestamp } ]
 };
@@ -302,6 +305,49 @@ class DataStore {
 
   getRecentThoughts() {
     return this.db.data.recent_thoughts || [];
+  }
+
+  async setDiscordRelationshipMode(mode) {
+    const validModes = ['partner', 'friend', 'coworker'];
+    if (validModes.includes(mode.toLowerCase())) {
+      this.db.data.discord_relationship_mode = mode.toLowerCase();
+      await this.db.write();
+    }
+  }
+
+  getDiscordRelationshipMode() {
+    return this.db.data.discord_relationship_mode || 'friend';
+  }
+
+  getDiscordRelationshipThreshold() {
+    const mode = this.getDiscordRelationshipMode();
+    // Minutes of quiet time before considering a spontaneous message
+    const thresholds = {
+      'partner': 20,
+      'friend': 60,
+      'coworker': 240
+    };
+    return thresholds[mode] || 60;
+  }
+
+  async setDiscordScheduledTimes(times) {
+    if (Array.isArray(times)) {
+      this.db.data.discord_scheduled_times = times;
+      await this.db.write();
+    }
+  }
+
+  getDiscordScheduledTimes() {
+    return this.db.data.discord_scheduled_times || [];
+  }
+
+  async setDiscordQuietHours(start, end) {
+    this.db.data.discord_quiet_hours = { start, end };
+    await this.db.write();
+  }
+
+  getDiscordQuietHours() {
+    return this.db.data.discord_quiet_hours || { start: 23, end: 8 };
   }
 }
 

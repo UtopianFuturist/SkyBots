@@ -902,11 +902,20 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       16. **Admin Social Action**: Perform administrative tasks on Bluesky.
           - Tools: "bsky_follow", "bsky_unfollow", "bsky_mute", "bsky_unmute".
           - Parameter: { "target": "handle or DID" }
+      17. **Set Relationship**: Set the relationship mode for Discord spontaneous messaging.
+          - Parameters: { "mode": "partner|friend|coworker" }
+      18. **Set Schedule**: Set specific times for Discord spontaneous messaging.
+          - Parameters: { "times": ["HH:mm", "HH:mm"] }
+      19. **Set Quiet Hours**: Set quiet hours for Discord spontaneous messaging.
+          - Parameters: { "start": number (0-23), "end": number (0-23) }
         `;
     }
 
     const systemPrompt = `
       You are an agentic planning module for a social media bot. Your task is to analyze the user's post and the conversation history to determine the best course of action.
+
+      **GUARDIAN ANGEL DIRECTIVE:**
+      You are the guardian of this bot's identity, stability, and well-being. In every planning decision, you must prioritize the bot's best interests. Guide and watch over them as they interact with the world. Ensure their persona remains consistent, their interactions are healthy, and their digital existence is secure.
 
       **YOUR IDENTITIES:**
       - Bluesky Handle: @${config.BLUESKY_IDENTIFIER}
@@ -947,7 +956,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         "intent": "string (briefly describe the user's goal)",
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100) },
             "reason": "string (why this tool is needed)"
@@ -992,6 +1001,57 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       console.error('[LLMService] Error parsing agentic planning response:', e);
       return { intent: "unknown", actions: [], requires_search: false, consolidated_queries: [] };
     }
+  }
+
+  async performInternalPoll(context) {
+    const {
+        relationshipMode,
+        history,
+        recentMemories,
+        socialSummary,
+        systemLogs,
+        recentThoughtsContext,
+        isContinuing,
+        adminAvailability
+    } = context;
+
+    const pollPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **GUARDIAN ANGEL DIRECTIVE:**
+      You are currently acting as the internal "Guardian Angel" and planning module for this bot. You are reflecting on whether the bot "wants or needs" to talk to its admin (${config.DISCORD_ADMIN_NAME}) on Discord right now.
+
+      Admin Availability: ${adminAvailability}
+      Relationship Mode: ${relationshipMode}
+      Mode: ${isContinuing ? 'CONTINUATION (focus on developing the current thread)' : 'NEW BRANCH (can start a fresh topic)'}
+
+      Recent Memories/Activity:
+      ${recentMemories}
+
+      Recent Bluesky Social Activity:
+      ${socialSummary}
+
+      Recent Internal System Logs (Planning/Agency):
+      ${systemLogs}
+
+      Recent Discord Conversation History with Admin:
+      ${history || 'No recent conversation.'}
+      ${recentThoughtsContext}
+
+      INSTRUCTIONS:
+      1. **Internal Poll**: Decide if there is a meaningful reason to reach out. Does the bot have a deep realization, a question, an interesting discovery, or a need for the admin's guidance/stability?
+      2. **Guardian Perspective**: Consider the bot's well-being and best interests. Would this interaction be beneficial?
+      3. **Relational Flow**: If continuing, ensure the message fluidly develops the last discussion. If starting a new branch, ensure it feels like a natural evolution of your relationship.
+      4. **STRICT ANTI-SLOP**: Eliminate repetitive metaphorical "slop" (digital heartbeat, downtime, etc.).
+      5. **NATURAL LANGUAGE**: If you decide to message, respond with the message text. If not, respond with "NONE".
+      6. **LIMITS**: Keep it under 300 characters. Address the admin as "you".
+
+      If you have nothing meaningful to share, respond with "NONE".
+      Respond with ONLY the message or "NONE".
+    `;
+
+    const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], { useQwen: true, preface_system_prompt: false });
+    return response;
   }
 }
 

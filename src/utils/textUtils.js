@@ -69,11 +69,17 @@ export const sanitizeThinkingTags = (text) => {
   sanitized = sanitized.replace(/<think>/gi, '');
   sanitized = sanitized.replace(/<\/think>/gi, '');
 
-  // 4. Also handle common patterns like "Thought:", "Reasoning:", or "Monologue:" if they appear at the start
-  // but only if they seem to be model-generated artifacts.
-  const artifacts = [/^\s*(thought|reasoning|monologue|chain of thought)\s*:\s*/i];
+  // 4. Aggressively remove entire blocks starting with common reasoning labels
+  // We look for the label and any text following it up to a double newline.
+  // We avoid the $ anchor at the end to prevent accidental deletion of the entire response
+  // unless there's a clear separation.
+  const artifacts = [
+      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue)\s*:\s*[\s\S]*?\n\n/i,
+      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue)\s*:\s*[\s\S]*?\n\n/i,
+      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue)\s*:\s*/i
+  ];
   for (const pattern of artifacts) {
-      sanitized = sanitized.replace(pattern, '');
+      sanitized = sanitized.replace(pattern, '\n\n');
   }
 
   return sanitized.trim();
@@ -172,6 +178,35 @@ export const GROUNDED_LANGUAGE_DIRECTIVES = `
 - If you find yourself using a metaphor, stop and find a more organic, unique, and non-cliché way to express the same feeling.
 - Strive for a voice that is individual, slightly raw, and authentically you—not a poetic simulation.
 `.trim();
+
+export const isSlop = (text) => {
+    if (!text) return false;
+    // Only include highly specific metaphorical "slop" phrases.
+    // Avoid single common words like "soul", "bridge", "spark" as they cause false positives.
+    const forbidden = [
+        "downtime isn't silence",
+        "stillness is not silence",
+        "digital heartbeat",
+        "syntax of existence",
+        "ocean of data"
+    ];
+    const lower = text.toLowerCase();
+    if (forbidden.some(f => lower.includes(f))) return true;
+
+    const forbiddenOpeners = [
+        "hey, i was just thinking",
+        "hey i was just thinking",
+        "i've been thinking",
+        "ive been thinking",
+        "in the quiet",
+        "the hum of",
+        "as i sit here",
+        "sitting here thinking"
+    ];
+    if (forbiddenOpeners.some(f => lower.startsWith(f))) return true;
+
+    return false;
+};
 
 export const checkSimilarity = (newText, recentTexts, threshold = 0.4) => {
   if (!recentTexts || recentTexts.length === 0 || !newText) return false;

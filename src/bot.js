@@ -13,7 +13,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -427,12 +427,15 @@ export class Bot {
                 const combinedHistory = [...recentBotMsgs, ...recentThoughtsList];
 
                 const isRepetitive = message && checkSimilarity(message, combinedHistory, 0.4);
+                const containsSlop = message && isSlop(message);
 
-                if (message && message.toUpperCase() !== 'NONE' && !isRepetitive) {
+                if (message && message.toUpperCase() !== 'NONE' && !isRepetitive && !containsSlop) {
                     await discordService.sendSpontaneousMessage(message);
                     await dataStore.addRecentThought('discord', message);
                 } else if (isRepetitive) {
                     console.log(`[Bot] Discord heartbeat suppressed: Generated message was too similar to recent history.`);
+                } else if (containsSlop) {
+                    console.log(`[Bot] Discord heartbeat suppressed: Generated message contained slop.`);
                 }
             }
         }
@@ -2095,10 +2098,10 @@ export class Bot {
             continue;
           }
 
-          // Semantic repetition check
-          if (checkSimilarity(postContent, recentPostTexts)) {
-            console.warn(`[Bot] Autonomous post attempt ${attempts} is too similar to recent activity. Rejecting.`);
-            feedback = "REJECTED: The post is too similar to one of your recent posts. Try a completely different angle, phrasing, or topic.";
+          // Semantic repetition and slop check
+          if (checkSimilarity(postContent, recentPostTexts) || isSlop(postContent)) {
+            console.warn(`[Bot] Autonomous post attempt ${attempts} is too similar to recent activity or contains slop. Rejecting.`);
+            feedback = "REJECTED: The post is too similar to one of your recent posts or contains repetitive metaphorical 'slop'. Try a completely different angle, phrasing, or topic.";
 
             // Re-select topic from POST_TOPICS if possible
             if (config.POST_TOPICS && attempts < MAX_ATTEMPTS) {

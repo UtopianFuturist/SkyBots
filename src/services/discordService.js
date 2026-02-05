@@ -12,7 +12,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -160,6 +160,11 @@ class DiscordService {
 
         if (!sanitized || sanitized.trim().length === 0) {
             console.log('[DiscordService] Message empty after sanitization. Skipping send.');
+            return null;
+        }
+
+        if (isSlop(sanitized)) {
+            console.log('[DiscordService] Message contained forbidden slop. Skipping send.');
             return null;
         }
 

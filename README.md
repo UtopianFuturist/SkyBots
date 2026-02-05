@@ -97,10 +97,27 @@ The bot is pre-configured for seamless deployment on Render.
 | `DISCORD_BOT_TOKEN` | Token for the Discord bot bridge. | (None) |
 | `DISCORD_ADMIN_NAME` | Your Discord username for DM communication. | (None) |
 | `DISCORD_NICKNAME` | Custom nickname for the bot on Discord. | `SkyBots` |
+| `DISCORD_GUILD_ID` | (Optional) The specific Guild ID (Server ID) to search for the admin in. Highly recommended for reliability. | (None) |
 | `DISCORD_HEARTBEAT_ADDENDUM` | Optional additional specification for spontaneous Discord messages. | (None) |
 | `RENDER_API_KEY` | Your Render API key (for log access). | (None) |
 | `RENDER_SERVICE_ID` | Your Render service ID. | (Autodiscovered if name matches) |
 | `RENDER_SERVICE_NAME` | The name of your service on Render for autodiscovery. | (None) |
+
+## 🤖 Discord Integration
+
+The Discord bot bridge allows the bot to communicate with its administrator via Direct Messages and provides command-based control over the bot's behavior.
+
+### Setting up Discord
+
+1.  **Create a Bot**: Create a new application and bot in the [Discord Developer Portal](https://discord.com/developers/applications).
+2.  **Enable Intents**: In the **Bot** settings, you **MUST** enable the following **Privileged Gateway Intents**:
+    -   `GUILD MEMBERS INTENT` (Required for finding the admin in the server).
+    -   `MESSAGE CONTENT INTENT` (Required for the bot to read your messages).
+3.  **Find your Guild ID**:
+    -   In Discord, go to **User Settings** -> **Advanced** and enable **Developer Mode**.
+    -   Right-click on the server (guild) you share with the bot and select **Copy Server ID**.
+    -   Set this as `DISCORD_GUILD_ID` in your environment variables for maximum reliability.
+4.  **Bot Permissions**: Ensure the bot has permissions to `Send Messages`, `Read Message History`, and `View Channels` in the target guild.
 
 ## 🦞 Moltbook Integration
 

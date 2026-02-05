@@ -57,13 +57,13 @@ export class Bot {
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
 
-    console.log('[Bot] Triggering DiscordService.init()...');
+    console.log('[Bot] Triggering DiscordService initialization (non-blocking)...');
     discordService.setBotInstance(this);
-    // Initialize Discord in the background to prevent blocking the main bot if it hangs
+    // Initialize Discord in the background to avoid blocking other services (Bluesky/Moltbook)
     discordService.init().then(() => {
-        console.log('[Bot] DiscordService.init() promise resolved.');
+        console.log('[Bot] DiscordService initialization complete.');
     }).catch(err => {
-        console.error('[Bot] CRITICAL: DiscordService.init() failed to even start:', err);
+        console.error('[Bot] DiscordService.init() background failure:', err);
     });
 
     console.log('[Bot] Proceeding to Bluesky authentication...');

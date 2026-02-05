@@ -112,10 +112,16 @@ class DiscordService {
             console.log('[DiscordService] SUCCESS: login() promise resolved. Logged in as:', this.client.user?.tag);
         } catch (error) {
             console.error('[DiscordService] FATAL: Failed to login to Discord:', error);
-            // Don't disable it completely yet, maybe it's a transient network issue
-            // but we need to know why it failed.
+
             if (error.message.includes('Used disallowed intents')) {
-                console.error('[DiscordService] INTENT ERROR: Please check if GUILD_MEMBERS and other privileged intents are enabled in the Discord Developer Portal.');
+                console.error('[DiscordService] INTENT ERROR: The bot tried to use privileged intents (GUILD_MEMBERS, MESSAGE_CONTENT).');
+                console.error('[DiscordService] ACTION REQUIRED: Enable "GUILD MEMBERS INTENT" and "MESSAGE CONTENT INTENT" in the Discord Developer Portal (under Bot -> Privileged Gateway Intents).');
+                this.isEnabled = false; // Disable to prevent repeated failed attempts if it's a config issue
+            }
+
+            if (error.message.includes('TOKEN_INVALID')) {
+                console.error('[DiscordService] TOKEN ERROR: The provided Discord token is invalid.');
+                this.isEnabled = false;
             }
         }
     }

@@ -43,6 +43,7 @@ class DiscordService {
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent,
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.DirectMessageReactions,
@@ -53,6 +54,10 @@ class DiscordService {
 
         this.client.on('ready', () => {
             console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}!`);
+            console.log(`[DiscordService] Currently in ${this.client.guilds.cache.size} guilds.`);
+            this.client.guilds.cache.forEach(guild => {
+                console.log(`[DiscordService] - Guild: ${guild.name} (ID: ${guild.id})`);
+            });
             this.client.user.setActivity('the currents', { type: 'LISTENING' });
         });
 
@@ -77,13 +82,25 @@ class DiscordService {
             }
         });
 
-        console.log('[DiscordService] Attempting to login to Discord...');
+        console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length})`);
         try {
-            const loginResult = await this.client.login(this.token);
+            // Set a timeout for login
+            let timeoutHandle;
+            const loginPromise = this.client.login(this.token);
+            const timeoutPromise = new Promise((_, reject) =>
+                timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 60s')), 60000)
+            );
+
+            const loginResult = await Promise.race([loginPromise, timeoutPromise]);
+            clearTimeout(timeoutHandle);
             console.log('[DiscordService] login() promise resolved. Token used:', loginResult.substring(0, 10) + '...');
         } catch (error) {
             console.error('[DiscordService] FATAL: Failed to login to Discord:', error);
-            this.isEnabled = false;
+            // Don't disable it completely yet, maybe it's a transient network issue
+            // but we need to know why it failed.
+            if (error.message.includes('Used disallowed intents')) {
+                console.error('[DiscordService] INTENT ERROR: Please check if GUILD_MEMBERS and other privileged intents are enabled in the Discord Developer Portal.');
+            }
         }
     }
 
@@ -705,8 +722,12 @@ INSTRUCTIONS:
 
         console.log(`[DiscordService] Searching for admin: ${this.adminName}`);
         // Fallback: search in guilds
+        if (!this.client.isReady()) {
+            console.warn('[DiscordService] Client is NOT ready yet. Guild cache might be empty.');
+        }
+
         const guilds = this.client.guilds.cache;
-        console.log(`[DiscordService] Searching across ${guilds.size} guilds...`);
+        console.log(`[DiscordService] Searching across ${guilds.size} guilds... Client status: ${this.client.ws?.status}`);
         for (const [id, guild] of guilds) {
             try {
                 console.log(`[DiscordService] Searching guild: ${guild.name}`);

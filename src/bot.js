@@ -45,6 +45,8 @@ export class Bot {
     this.autonomousPostCount = 0;
     this.lastActivityTime = Date.now();
     this.lastDailyWrapup = new Date().toDateString();
+    this.consecutiveRejections = 0;
+    this.lastDiagnosticAlert = 0;
   }
 
   async init() {
@@ -392,10 +394,12 @@ export class Bot {
                 let message = null;
                 let attempts = 0;
                 let feedback = '';
+                let rejectedContent = null;
                 const MAX_ATTEMPTS = 3;
 
                 while (attempts < MAX_ATTEMPTS) {
                     attempts++;
+                    const feedbackContext = feedback ? `${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
                     message = await llmService.performInternalPoll({
                         relationshipMode,
                         history: historyContext,
@@ -405,7 +409,7 @@ export class Bot {
                         recentThoughtsContext,
                         isContinuing,
                         adminAvailability: availability,
-                        feedback
+                        feedback: feedbackContext
                     });
 
                     if (!message || message.toUpperCase() === 'NONE') break;
@@ -424,11 +428,18 @@ export class Bot {
                     if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive) {
                         await discordService.sendSpontaneousMessage(message);
                         await dataStore.addRecentThought('discord', message);
+                        this.consecutiveRejections = 0; // Reset on success
                         break;
                     } else {
                         feedback = containsSlop ? "REJECTED: Message contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Message was too similar to recent history.");
+                        rejectedContent = message;
                         console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
                     }
+                }
+
+                if (attempts >= MAX_ATTEMPTS && feedback) {
+                    this.consecutiveRejections++;
+                    await this._checkDiagnosticThreshold();
                 }
             }
         }
@@ -734,6 +745,9 @@ Identify the topic and main takeaway.`;
     let threadContext = threadData.map(h => ({ author: h.author, text: h.text }));
     const ancestorUris = threadData.map(h => h.uri).filter(uri => uri);
 
+    // Hierarchical Social Context
+    const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
+
     // 1b. Own Profile Context (Recent Standalone Posts)
     console.log(`[Bot] Fetching own recent standalone posts for context...`);
     let ownRecentPostsContext = '';
@@ -1010,8 +1024,13 @@ Identify the topic and main takeaway.`;
     // 6. Agentic Planning & Tool Use with Qwen
     console.log(`[Bot] Performing agentic planning with Qwen for: "${text.substring(0, 50)}..."`);
     const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
-    const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin);
+    const exhaustedThemes = dataStore.getExhaustedThemes();
+    const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes);
     console.log(`[Bot] Agentic Plan: ${JSON.stringify(plan)}`);
+
+    if (plan.strategy?.theme) {
+        await dataStore.addExhaustedTheme(plan.strategy.theme);
+    }
 
     let youtubeResult = null;
     let searchContext = '';
@@ -1385,6 +1404,10 @@ Identify the topic and main takeaway.`;
       ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
       ${activityContext}
       ${ownRecentPostsContext}
+      --- SOCIAL NARRATIVE ---
+      ${hierarchicalSummary.dailyNarrative}
+      ${hierarchicalSummary.shortTerm}
+      ---
       ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
       ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
       ---
@@ -1392,6 +1415,11 @@ Identify the topic and main takeaway.`;
       ${crossPostMemory || 'No recent cross-post mentions found.'}
       ---
       User Intent Analysis: ${plan.intent || userIntent.reason || 'Could not be determined.'}
+      ---
+      PLANNED RESPONSE STRATEGY:
+      - Angle: ${plan.strategy?.angle || 'Natural'}
+      - Tone: ${plan.strategy?.tone || 'Conversational'}
+      - Theme: ${plan.strategy?.theme || 'None'}
       ---
       Search/Tool Context:
       ${searchContext || 'No additional tool context needed.'}
@@ -1430,31 +1458,51 @@ Identify the topic and main takeaway.`;
       ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
     ];
 
-    let responseText = await llmService.generateResponse(messages);
-
+    let responseText = null;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 3;
+    let feedback = '';
+    let rejectedContent = null;
     const recentBotReplies = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
 
-    if (!responseText) {
-      console.warn(`[Bot] Failed to generate a response text for @${handle}. The LLM response was either empty, all reasoning, or timed out.`);
-    }
+    while (attempts < MAX_ATTEMPTS) {
+        attempts++;
+        const feedbackContext = feedback ? `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
+        const attemptMessages = feedback
+            ? [...messages, { role: 'system', content: feedbackContext }]
+            : messages;
 
-    // 6. Semantic Loop and Safety Check for Bot's Response
-    if (responseText) {
-      if (await llmService.checkSemanticLoop(responseText, recentBotReplies)) {
-        console.log('[Bot] Semantic loop detected. Generating a new response.');
-        responseText = await llmService.generateResponse([...messages, { role: 'system', content: "Your previous response was too similar to a recent one. Please provide a fresh, different perspective." }]);
-      }
+        responseText = await llmService.generateResponse(attemptMessages);
 
-      if (responseText) {
+        if (!responseText) break;
+
+        // Semantic Loop and Safety Check for Bot's Response
+        const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
+        if (isRepetitive) {
+            console.log(`[Bot] Semantic loop detected on attempt ${attempts}.`);
+            feedback = "Your previous response was too similar to a recent one in this thread. Please provide a fresh, different perspective.";
+            rejectedContent = responseText;
+            responseText = null;
+            continue;
+        }
+
         const responseSafetyCheck = await llmService.isResponseSafe(responseText);
         if (!responseSafetyCheck.safe) {
-          console.log(`[Bot] Bot's response failed safety check. Reason: ${responseSafetyCheck.reason}. Aborting reply.`);
-          return;
+            console.log(`[Bot] Bot's response failed safety check on attempt ${attempts}.`);
+            return; // Safety failures are terminal for this notification
         }
-      }
+
+        break; // Success
+    }
+
+    if (!responseText) {
+      console.warn(`[Bot] Failed to generate a response text for @${handle} after ${attempts} attempts.`);
+      this.consecutiveRejections++;
+      await this._checkDiagnosticThreshold();
     }
 
     if (responseText) {
+      this.consecutiveRejections = 0; // Reset on success
       // Remove thinking tags and any leftover fragments
       responseText = sanitizeThinkingTags(responseText);
       
@@ -2000,6 +2048,7 @@ Describe how you feel about this user and your relationship now.`;
         ${recentTimelineActivity}
       `.trim();
 
+      let rejectedContent = null;
       while (attempts < MAX_ATTEMPTS) {
         attempts++;
         console.log(`[Bot] Autonomous post attempt ${attempts}/${MAX_ATTEMPTS} for topic: "${topic}" (Type: ${postType})`);
@@ -2050,7 +2099,7 @@ Describe how you feel about this user and your relationship now.`;
           }
         }
 
-        const feedbackContext = feedback ? `\n\nYour previous attempt was rejected for the following reason: "${feedback}". Please improve the post accordingly.` : '';
+        const feedbackContext = feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}\n\nPlease improve the post accordingly.` : '';
 
         if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
@@ -2133,6 +2182,7 @@ Describe how you feel about this user and your relationship now.`;
             console.warn(`[Bot] Autonomous post attempt ${attempts} is too similar to recent activity or contains slop. Rejecting.`);
             feedback = containsSlop ? "REJECTED: The post contains repetitive metaphorical 'slop'." : (varietyCheck.feedback || "REJECTED: The post is too similar to your recent history. Try a completely different angle, phrasing, or topic.");
 
+            rejectedContent = postContent;
             postContent = null; // Clear to prevent accidental posting of rejected content
 
             // Re-select topic from POST_TOPICS if possible
@@ -2182,6 +2232,7 @@ Describe how you feel about this user and your relationship now.`;
 
             this.updateActivity();
             this.autonomousPostCount++;
+            this.consecutiveRejections = 0; // Reset on success
 
             // Reset autonomous post count (milestones no longer posted to memory thread)
             if (this.autonomousPostCount >= 5) {
@@ -2244,6 +2295,7 @@ Describe how you feel about this user and your relationship now.`;
 
               this.updateActivity();
               this.autonomousPostCount++;
+            this.consecutiveRejections = 0; // Reset on success
 
               if (this.autonomousPostCount >= 5) {
                   this.autonomousPostCount = 0;
@@ -2256,6 +2308,8 @@ Describe how you feel about this user and your relationship now.`;
       }
 
       console.log(`[Bot] All attempts (including fallbacks) failed for autonomous post. Aborting.`);
+      this.consecutiveRejections++;
+      await this._checkDiagnosticThreshold();
     } catch (error) {
       await this._handleError(error, 'Autonomous Posting');
     }
@@ -2537,9 +2591,12 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       let feedback = '';
       const MAX_ATTEMPTS = 3;
 
+      let rejectedContent = null;
+      let success = false;
       while (attempts < MAX_ATTEMPTS) {
         attempts++;
-        const musingPromptWithFeedback = feedback ? `${musingPrompt}\n\n[RETRY FEEDBACK]: ${feedback}` : musingPrompt;
+        const feedbackContext = feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
+        const musingPromptWithFeedback = feedback ? `${musingPrompt}${feedbackContext}` : musingPrompt;
         const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPromptWithFeedback }], { useQwen: true });
 
         if (!musingRaw) break;
@@ -2568,12 +2625,23 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
               await this._shareMoltbookPostToBluesky(result);
             }
             this.updateActivity();
+            success = true;
             break;
           } else {
             feedback = containsSlop ? "REJECTED: Post contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Post was too similar to recent history.");
+            rejectedContent = content;
             console.log(`[Moltbook] Post attempt ${attempts} rejected: ${feedback}`);
           }
         }
+      }
+
+      // If we finished the loop without a successful post
+      if (!success) {
+          console.warn(`[Bot] Failed to generate Moltbook musing after ${attempts} attempts.`);
+          this.consecutiveRejections++;
+          await this._checkDiagnosticThreshold();
+      } else {
+          this.consecutiveRejections = 0; // Reset on success
       }
     } catch (error) {
       await this._handleError(error, 'Moltbook Tasks');
@@ -2669,5 +2737,18 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
     } catch (error) {
       console.error('[Bot] Error during cleanup of old posts:', error);
     }
+  }
+
+  async _checkDiagnosticThreshold() {
+      // If we hit 5 rejections in a row, alert the admin
+      if (this.consecutiveRejections >= 5) {
+          const now = Date.now();
+          // Don't spam alerts - max once every hour
+          if (now - this.lastDiagnosticAlert > 60 * 60 * 1000) {
+              console.log(`[Bot] Diagnostic threshold reached (${this.consecutiveRejections} rejections). Sending alert...`);
+              await discordService.sendDiagnosticAlert('Consecutive Rejections', `I have failed to generate varied or coherent content ${this.consecutiveRejections} times in a row. This suggests I might be stuck in a repetitive loop or my persona constraints are too tight.`);
+              this.lastDiagnosticAlert = now;
+          }
+      }
   }
 }

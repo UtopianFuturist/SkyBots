@@ -262,6 +262,9 @@ class DiscordService {
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         console.log(`[DiscordService] User is admin: ${isAdmin}`);
 
+        // Hierarchical Social Context
+        const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
+
         const blueskyDirectives = dataStore.getBlueskyInstructions();
         const personaUpdates = dataStore.getPersonaUpdates();
         const moltbookDirectives = moltbookService.getAdminInstructions();
@@ -287,9 +290,13 @@ ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${persona
 7. You can use the \`persist_directive\` tool if the admin gives you long-term instructions.
 8. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate.
 9. Continuity: You have access to the recent chat history. Use it to maintain context and recognize who you are talking to.
-${config.DISCORD_HEARTBEAT_ADDENDUM ? `9. ADDITIONAL SPECIFICATION: ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}
+${config.DISCORD_HEARTBEAT_ADDENDUM ? `10. ADDITIONAL SPECIFICATION: ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}
 
+--- SOCIAL NARRATIVE ---
+${hierarchicalSummary.dailyNarrative}
+${hierarchicalSummary.shortTerm}
 ---
+
 [Admin Availability: ${dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied'}]
 
 --- CRITICAL VISION INFORMATION ---
@@ -312,8 +319,22 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             let responseText;
             if (isAdmin) {
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord');
+                 const exhaustedThemes = dataStore.getExhaustedThemes();
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
+
+                 if (plan.strategy?.theme) {
+                     await dataStore.addExhaustedTheme(plan.strategy.theme);
+                 }
+
+                 const strategyContext = `
+--- PLANNED RESPONSE STRATEGY ---
+- Angle: ${plan.strategy?.angle || 'Natural'}
+- Tone: ${plan.strategy?.tone || 'Conversational'}
+- Theme: ${plan.strategy?.theme || 'None'}
+---
+`;
+                 messages.push({ role: 'system', content: strategyContext });
 
                  const actionResults = [];
 
@@ -572,13 +593,15 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
                  let attempts = 0;
                  let feedback = '';
+                 let rejectedContent = null;
                  const MAX_ATTEMPTS = 3;
                  const recentThoughts = dataStore.getRecentThoughts();
 
                  while (attempts < MAX_ATTEMPTS) {
                      attempts++;
+                     const feedbackContext = feedback ? `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
                      const finalMessages = feedback
-                        ? [...messages, { role: 'system', content: `[RETRY FEEDBACK]: ${feedback}` }]
+                        ? [...messages, { role: 'system', content: feedbackContext }]
                         : messages;
 
                      responseText = await llmService.generateResponse(finalMessages, { useQwen: true });
@@ -600,6 +623,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      } else {
                          feedback = containsSlop ? "REJECTED: Response contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Response was too similar to recent history.");
                          console.log(`[DiscordService] Response attempt ${attempts} rejected: ${feedback}`);
+                         rejectedContent = responseText;
                          responseText = null; // Prevent sending the rejected response
                      }
                  }
@@ -633,6 +657,38 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             }
         } catch (error) {
             console.error('[DiscordService] Error sending spontaneous message:', error);
+        }
+    }
+
+    /**
+     * Proactively sends a diagnostic alert to the admin about system issues.
+     */
+    async sendDiagnosticAlert(type, details) {
+        if (!this.isEnabled) return;
+
+        console.log(`[DiscordService] Sending diagnostic alert: ${type}`);
+
+        const alertPrompt = `
+Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+You are reporting a system issue or a pattern of rejections to your admin.
+
+Type: ${type}
+Details: ${details}
+
+INSTRUCTIONS:
+- Be concise and grounded.
+- Explain what's happening and that you're attempting to self-correct.
+- Keep it under 400 characters.
+- Do NOT use metaphorical slop.
+`;
+
+        try {
+            const response = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useQwen: true, preface_system_prompt: false });
+            if (response) {
+                await this.sendSpontaneousMessage(`🚨 **System Diagnostic**: ${response}`);
+            }
+        } catch (err) {
+            console.error('[DiscordService] Error generating/sending diagnostic alert:', err);
         }
     }
 

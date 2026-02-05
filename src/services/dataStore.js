@@ -30,7 +30,8 @@ const defaultData = {
   discord_scheduled_times: [], // [ "HH:mm" ]
   discord_quiet_hours: { start: 23, end: 8 }, // 24h format
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
-  recent_thoughts: [] // [ { platform, content, timestamp } ]
+  recent_thoughts: [], // [ { platform, content, timestamp } ]
+  lastMemoryCleanupTime: 0
 };
 
 class DataStore {
@@ -348,6 +349,15 @@ class DataStore {
 
   getDiscordQuietHours() {
     return this.db.data.discord_quiet_hours || { start: 23, end: 8 };
+  }
+
+  async updateLastMemoryCleanupTime(timestamp) {
+    this.db.data.lastMemoryCleanupTime = timestamp;
+    await this.db.write();
+  }
+
+  getLastMemoryCleanupTime() {
+    return this.db.data.lastMemoryCleanupTime || 0;
   }
 }
 

@@ -1,4 +1,5 @@
 import { Client, GatewayIntentBits, Partials, ChannelType } from 'discord.js';
+import fetch from 'node-fetch';
 import config from '../../config.js';
 import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
@@ -61,6 +62,10 @@ class DiscordService {
             this.client.user.setActivity('the currents', { type: 'LISTENING' });
         });
 
+        this.client.on('shardReady', (id) => {
+            console.log(`[DiscordService] Shard ${id} is ready.`);
+        });
+
         this.client.on('error', (error) => {
             console.error('[DiscordService] CRITICAL Discord Client error:', error);
         });
@@ -86,6 +91,10 @@ class DiscordService {
             console.log('[DiscordService] Client reconnecting...');
         });
 
+        this.client.on('invalidated', () => {
+            console.error('[DiscordService] Client session invalidated.');
+        });
+
         this.client.on('messageCreate', async (message) => {
             try {
                 await this.handleMessage(message);
@@ -95,8 +104,18 @@ class DiscordService {
         });
 
         console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
+        console.log('[DiscordService] Available env keys:', Object.keys(process.env).filter(k => k.includes('DISCORD') || k.includes('TOKEN')));
+
         if (this.token) {
             console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
+        }
+
+        try {
+            console.log('[DiscordService] Testing connectivity to Discord Gateway API...');
+            const gatewayResp = await fetch('https://discord.com/api/v10/gateway').catch(e => ({ ok: false, error: e.message }));
+            console.log(`[DiscordService] Gateway API Reachability: ${gatewayResp.ok ? 'OK' : 'FAILED (' + gatewayResp.error + ')'}`);
+        } catch (e) {
+            console.error('[DiscordService] Gateway connectivity check threw error:', e.message);
         }
 
         try {
@@ -112,16 +131,15 @@ class DiscordService {
             console.log('[DiscordService] SUCCESS: login() promise resolved. Logged in as:', this.client.user?.tag);
         } catch (error) {
             console.error('[DiscordService] FATAL: Failed to login to Discord:', error);
+            this.isEnabled = false; // Disable on ANY fatal login failure
 
             if (error.message.includes('Used disallowed intents')) {
                 console.error('[DiscordService] INTENT ERROR: The bot tried to use privileged intents (GUILD_MEMBERS, MESSAGE_CONTENT).');
                 console.error('[DiscordService] ACTION REQUIRED: Enable "GUILD MEMBERS INTENT" and "MESSAGE CONTENT INTENT" in the Discord Developer Portal (under Bot -> Privileged Gateway Intents).');
-                this.isEnabled = false; // Disable to prevent repeated failed attempts if it's a config issue
             }
 
             if (error.message.includes('TOKEN_INVALID')) {
                 console.error('[DiscordService] TOKEN ERROR: The provided Discord token is invalid.');
-                this.isEnabled = false;
             }
         }
     }

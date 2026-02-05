@@ -761,11 +761,31 @@ INSTRUCTIONS:
         }
 
         console.log(`[DiscordService] Searching for admin: ${this.adminName}`);
-        // Fallback: search in guilds
+
         if (!this.client.isReady()) {
             console.warn('[DiscordService] Client is NOT ready yet. Guild cache might be empty.');
         }
 
+        // 1. Priority: Search in specifically configured guild
+        if (config.DISCORD_GUILD_ID) {
+            try {
+                console.log(`[DiscordService] Searching for admin in configured guild: ${config.DISCORD_GUILD_ID}`);
+                const guild = await this.client.guilds.fetch(config.DISCORD_GUILD_ID);
+                if (guild) {
+                    const members = await guild.members.fetch({ query: this.adminName, limit: 1 });
+                    const admin = members.first();
+                    if (admin && admin.user.username === this.adminName) {
+                        this.adminId = admin.user.id;
+                        console.log(`[DiscordService] Admin found in configured guild ${guild.name}! ID: ${this.adminId}`);
+                        return admin.user;
+                    }
+                }
+            } catch (err) {
+                console.error(`[DiscordService] Error searching specifically in guild ${config.DISCORD_GUILD_ID}:`, err.message);
+            }
+        }
+
+        // 2. Fallback: search across all cached guilds
         const guilds = this.client.guilds.cache;
         console.log(`[DiscordService] Searching across ${guilds.size} guilds... Client status: ${this.client.ws?.status}`);
         for (const [id, guild] of guilds) {

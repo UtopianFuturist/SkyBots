@@ -99,6 +99,7 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   DISCORD_BOT_TOKEN: process.env.DISCORD_BOT_TOKEN,
   DISCORD_ADMIN_NAME: process.env.DISCORD_ADMIN_NAME,
   DISCORD_NICKNAME: process.env.DISCORD_NICKNAME,
+  DISCORD_GUILD_ID: process.env.DISCORD_GUILD_ID,
   DISCORD_HEARTBEAT_ADDENDUM: process.env.DISCORD_HEARTBEAT_ADDENDUM || '',
 
   // Memory Thread
@@ -128,6 +129,7 @@ console.log(`[Config] Loaded IMAGE_SUBJECTS: ${config.IMAGE_SUBJECTS ? 'Exists' 
 console.log(`[Config] Loaded QWEN_MODEL: ${config.QWEN_MODEL}`);
 console.log(`[Config] Loaded MOLTBOOK_API_KEY: ${config.MOLTBOOK_API_KEY ? 'Exists' : 'Optional (will register on startup if missing)'}`);
 console.log(`[Config] Loaded DISCORD_BOT_TOKEN: ${config.DISCORD_BOT_TOKEN ? 'Exists' : 'Optional'}`);
+console.log(`[Config] Loaded DISCORD_GUILD_ID: ${config.DISCORD_GUILD_ID || 'Not set'}`);
 console.log(`[Config] Loaded DISCORD_HEARTBEAT_ADDENDUM: ${config.DISCORD_HEARTBEAT_ADDENDUM ? 'Exists' : 'Not set'}`);
 console.log(`[Config] Loaded MEMORY_THREAD_HASHTAG: ${config.MEMORY_THREAD_HASHTAG ? config.MEMORY_THREAD_HASHTAG : 'DISABLED'}`);
 console.log(`[Config] Loaded RENDER_API_KEY: ${config.RENDER_API_KEY ? 'Exists' : 'Optional'}`);

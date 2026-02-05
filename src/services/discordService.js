@@ -330,7 +330,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             let responseText;
             if (isAdmin) {
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true);
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord');
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  const actionResults = [];
@@ -486,10 +486,11 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      if (action.tool === 'discord_message') {
                          const msg = action.parameters?.message || action.query;
                          if (msg) {
-                             // Proactive DM to admin, but since we're ALREADY in a conversation,
-                             // we just acknowledge it's being "sent" (it might be to a different channel/DM)
-                             await this.sendSpontaneousMessage(msg);
-                             actionResults.push(`[Discord message sent to admin: "${msg}"]`);
+                             // HARDCODED FIX: Avoid double-posting.
+                             // If we are already in the respond() flow on Discord, we don't need to send another DM.
+                             // We just acknowledge the intent so the LLM can incorporate it into its natural response.
+                             console.log(`[DiscordService] Suppressing discord_message tool to prevent double-post on Discord.`);
+                             actionResults.push(`[System: The discord_message tool was suppressed because you are already talking to the admin on Discord. Do NOT send another message via tool; just respond naturally in this conversation.]`);
                          }
                      }
                      if (action.tool === 'moltbook_post') {

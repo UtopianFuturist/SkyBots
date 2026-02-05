@@ -873,7 +873,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     return { safe: true };
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false) {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky') {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = conversationHistory.map(h => {
         let role = 'User';
@@ -936,6 +936,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       9. **Social History**: Retrieve your recent interactions and mentions on Bluesky to see what you've been talking about with others. Trigger this if asked about your recent social activity, who you've replied to, or the content of recent social threads.
       10. **Discord Message**: Send a proactive message to the admin on Discord.
          - Use this if you have a deep realization, a question for the admin, an interesting discovery, or just want to share what you're up to.
+         - **STRICT RESTRICTION**: Do NOT use this tool if you are already in a Discord conversation with the admin. If you are already talking on Discord, simply respond naturally. This tool is ONLY for initiating new, proactive messages when there is no active conversation.
          - Parameters: { "message": "the text of the message" }
       11. **Update Persona**: Add or modify your own internal instructions or behavioral fragments. Use this if you want to remember a new rule for yourself or evolve your persona agentically.
           - Parameters: { "instruction": "the text of the new persona instruction" }
@@ -950,6 +951,11 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
           - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
           - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)" }
       ${adminTools}
+
+      ---
+      **CURRENT PLATFORM:** ${platform.toUpperCase()}
+      ${platform === 'discord' ? 'CRITICAL: You are currently talking to the admin on Discord. DO NOT use the "discord_message" tool. Just respond naturally.' : ''}
+      ---
 
       Analyze the user's intent and provide a JSON response with the following structure:
       {

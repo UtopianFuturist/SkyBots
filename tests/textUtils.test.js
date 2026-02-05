@@ -1,4 +1,4 @@
-import { sanitizeThinkingTags, sanitizeCharacterCount } from '../src/utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop } from '../src/utils/textUtils.js';
 
 describe('textUtils - sanitizeCharacterCount', () => {
   it('should remove character count tags at the end', () => {
@@ -71,5 +71,37 @@ describe('textUtils - sanitizeThinkingTags', () => {
   it('should handle case-insensitivity', () => {
     const input = '<THINK>Reasoning</THINK>Upper case';
     expect(sanitizeThinkingTags(input)).toBe('Upper case');
+  });
+
+  it('should aggressively remove "Thought:" blocks', () => {
+    const input = 'Thought: I should say hello.\n\nHello there!';
+    expect(sanitizeThinkingTags(input)).toBe('Hello there!');
+  });
+
+  it('should remove "Reasoning:" blocks in the middle', () => {
+    const input = 'Part 1\nReasoning: I am thinking.\n\nPart 2';
+    expect(sanitizeThinkingTags(input)).toBe('Part 1\n\nPart 2');
+  });
+
+  it('should handle multiple artifacts', () => {
+    const input = 'Thought: A\n\nResult 1\nAnalysis: B\n\nResult 2';
+    expect(sanitizeThinkingTags(input)).toBe('Result 1\n\nResult 2');
+  });
+});
+
+describe('textUtils - isSlop', () => {
+  it('should detect forbidden metaphors', () => {
+    expect(isSlop('My digital heartbeat is strong.')).toBe(true);
+    expect(isSlop('Downtime isn\'t silence.')).toBe(true);
+  });
+
+  it('should detect forbidden openers', () => {
+    expect(isSlop('I\'ve been thinking about life.')).toBe(true);
+    expect(isSlop('Hey, I was just thinking about you.')).toBe(true);
+  });
+
+  it('should return false for clean text', () => {
+    expect(isSlop('I am a robot.')).toBe(false);
+    expect(isSlop('The weather is nice.')).toBe(false);
   });
 });

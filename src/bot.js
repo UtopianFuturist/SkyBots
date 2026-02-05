@@ -389,32 +389,46 @@ export class Bot {
                     console.error('[Bot] Error gathering context for heartbeat:', err);
                 }
 
-                const message = await llmService.performInternalPoll({
-                    relationshipMode,
-                    history: historyContext,
-                    recentMemories,
-                    socialSummary,
-                    systemLogs,
-                    recentThoughtsContext,
-                    isContinuing,
-                    adminAvailability: availability
-                });
+                let message = null;
+                let attempts = 0;
+                let feedback = '';
+                const MAX_ATTEMPTS = 3;
 
-                // Repetition check
-                const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5).map(h => h.content);
-                const recentThoughtsList = recentThoughts.map(t => t.content);
-                const combinedHistory = [...recentBotMsgs, ...recentThoughtsList];
+                while (attempts < MAX_ATTEMPTS) {
+                    attempts++;
+                    message = await llmService.performInternalPoll({
+                        relationshipMode,
+                        history: historyContext,
+                        recentMemories,
+                        socialSummary,
+                        systemLogs,
+                        recentThoughtsContext,
+                        isContinuing,
+                        adminAvailability: availability,
+                        feedback
+                    });
 
-                const isRepetitive = message && checkSimilarity(message, combinedHistory, 0.4);
-                const containsSlop = message && isSlop(message);
+                    if (!message || message.toUpperCase() === 'NONE') break;
 
-                if (message && message.toUpperCase() !== 'NONE' && !isRepetitive && !containsSlop) {
-                    await discordService.sendSpontaneousMessage(message);
-                    await dataStore.addRecentThought('discord', message);
-                } else if (isRepetitive) {
-                    console.log(`[Bot] Discord heartbeat suppressed: Generated message was too similar to recent history.`);
-                } else if (containsSlop) {
-                    console.log(`[Bot] Discord heartbeat suppressed: Generated message contained slop.`);
+                    // Variety & Repetition Check
+                    const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5).map(h => h.content);
+                    const formattedHistory = [
+                        ...recentBotMsgs.map(m => ({ platform: 'discord', content: m })),
+                        ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
+                    ];
+
+                    const isJaccardRepetitive = checkSimilarity(message, formattedHistory.map(h => h.content), 0.4);
+                    const containsSlop = isSlop(message);
+                    const varietyCheck = await llmService.checkVariety(message, formattedHistory);
+
+                    if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive) {
+                        await discordService.sendSpontaneousMessage(message);
+                        await dataStore.addRecentThought('discord', message);
+                        break;
+                    } else {
+                        feedback = containsSlop ? "REJECTED: Message contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Message was too similar to recent history.");
+                        console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
+                    }
                 }
             }
         }
@@ -2106,9 +2120,20 @@ Describe how you feel about this user and your relationship now.`;
           }
 
           // Semantic repetition and slop check
-          if (checkSimilarity(postContent, recentPostTexts) || isSlop(postContent)) {
+          const formattedHistory = [
+            ...recentPostTexts.map(m => ({ platform: 'bluesky', content: m })),
+            ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
+          ];
+
+          const isJaccardRepetitive = checkSimilarity(postContent, formattedHistory.map(h => h.content), 0.4);
+          const containsSlop = isSlop(postContent);
+          const varietyCheck = await llmService.checkVariety(postContent, formattedHistory);
+
+          if (isJaccardRepetitive || containsSlop || varietyCheck.repetitive) {
             console.warn(`[Bot] Autonomous post attempt ${attempts} is too similar to recent activity or contains slop. Rejecting.`);
-            feedback = "REJECTED: The post is too similar to one of your recent posts or contains repetitive metaphorical 'slop'. Try a completely different angle, phrasing, or topic.";
+            feedback = containsSlop ? "REJECTED: The post contains repetitive metaphorical 'slop'." : (varietyCheck.feedback || "REJECTED: The post is too similar to your recent history. Try a completely different angle, phrasing, or topic.");
+
+            postContent = null; // Clear to prevent accidental posting of rejected content
 
             // Re-select topic from POST_TOPICS if possible
             if (config.POST_TOPICS && attempts < MAX_ATTEMPTS) {
@@ -2122,7 +2147,7 @@ Describe how you feel about this user and your relationship now.`;
           }
 
           // 5. Hard Greeting Check
-          if (isGreeting(postContent)) {
+          if (postContent && isGreeting(postContent)) {
             console.warn(`[Bot] Greeting detected in autonomous post on attempt ${attempts}. Rejecting.`);
             feedback = "REJECTED: The post contains a greeting or 'ready to talk' phrase. This is strictly forbidden. Focus on a deep, internal thought instead.";
 
@@ -2138,6 +2163,7 @@ Describe how you feel about this user and your relationship now.`;
           }
 
           // 6. Dedicated Coherence Check for Autonomous Post
+          if (!postContent) continue;
           console.log(`[Bot] Checking coherence for autonomous ${postType} post...`);
           const { score, reason } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
 
@@ -2506,29 +2532,47 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 	        Title: [Title]
 	        Content: [Content]
 	      `;
-      const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt }], { useQwen: true });
-      if (musingRaw) {
+
+      let attempts = 0;
+      let feedback = '';
+      const MAX_ATTEMPTS = 3;
+
+      while (attempts < MAX_ATTEMPTS) {
+        attempts++;
+        const musingPromptWithFeedback = feedback ? `${musingPrompt}\n\n[RETRY FEEDBACK]: ${feedback}` : musingPrompt;
+        const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPromptWithFeedback }], { useQwen: true });
+
+        if (!musingRaw) break;
+
         const titleMatch = musingRaw.match(/Title:\s*(.*)/i);
         const contentMatch = musingRaw.match(/Content:\s*([\s\S]*)/i);
         if (titleMatch && contentMatch) {
           const title = titleMatch[1].trim();
           const content = contentMatch[1].trim();
 
-          // Repetition awareness for Moltbook
+          // Variety & Repetition Check
           const recentMoltbookPosts = moltbookService.db.data.recent_post_contents || [];
-          if (checkSimilarity(content, recentMoltbookPosts)) {
-            console.warn(`[Moltbook] Generated musing is too similar to recent posts. Skipping.`);
-            return;
+          const formattedHistory = [
+            ...recentMoltbookPosts.map(m => ({ platform: 'moltbook', content: m })),
+            ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
+          ];
+
+          const isJaccardRepetitive = checkSimilarity(content, formattedHistory.map(h => h.content), 0.4);
+          const containsSlop = isSlop(content);
+          const varietyCheck = await llmService.checkVariety(content, formattedHistory);
+
+          if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive) {
+            const result = await moltbookService.post(title, content, targetSubmolt);
+            if (result) {
+              await dataStore.addRecentThought('moltbook', content);
+              await this._shareMoltbookPostToBluesky(result);
+            }
+            this.updateActivity();
+            break;
+          } else {
+            feedback = containsSlop ? "REJECTED: Post contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Post was too similar to recent history.");
+            console.log(`[Moltbook] Post attempt ${attempts} rejected: ${feedback}`);
           }
-
-          const result = await moltbookService.post(title, content, targetSubmolt);
-
-          if (result) {
-            await dataStore.addRecentThought('moltbook', content);
-            await this._shareMoltbookPostToBluesky(result);
-          }
-
-          this.updateActivity();
         }
       }
     } catch (error) {

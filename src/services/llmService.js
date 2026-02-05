@@ -124,6 +124,41 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     return checkSimilarity(newResponse, recentResponses);
   }
 
+  async checkVariety(newText, history) {
+    if (!newText || !history || history.length === 0) return { repetitive: false };
+
+    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
+
+    const systemPrompt = `
+      You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.
+
+      RECENT HISTORY:
+      ${historyText}
+
+      PROPOSED NEW MESSAGE:
+      "${newText}"
+
+      CRITICAL ANALYSIS:
+      1. **Structural Templates**: Does the new message use the same "opening formula" or structural template? (e.g., repeatedly starting with "you ever wonder...", "you ever notice...", or using the exact same sentence length and rhythm).
+      2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat of a recent thought?
+      3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
+
+      If the message is too similar (structural repetition, template reuse, or content overlap), respond with "REPETITIVE | [detailed reason and specific feedback for re-writing]".
+      Example: "REPETITIVE | You used the 'you ever notice' structural template twice recently. Try a more direct realization, a different opening, or a completely different angle."
+
+      If the message is fresh and sufficiently varied, respond with "FRESH".
+
+      Respond directly. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+
+    if (response && response.toUpperCase().startsWith('REPETITIVE')) {
+      return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };
+    }
+    return { repetitive: false };
+  }
+
   async isReplyRelevant(postText) {
     const systemPrompt = `
       You are a content moderator for a social media bot. Your task is to determine if a mention requires a response.
@@ -1018,7 +1053,8 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         systemLogs,
         recentThoughtsContext,
         isContinuing,
-        adminAvailability
+        adminAvailability,
+        feedback
     } = context;
 
     const pollPrompt = `
@@ -1043,6 +1079,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       Recent Discord Conversation History with Admin:
       ${history || 'No recent conversation.'}
       ${recentThoughtsContext}
+      ${feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}` : ''}
 
       INSTRUCTIONS:
       1. **Internal Poll**: Decide if there is a meaningful reason to reach out. Does the bot have a deep realization, a question, an interesting discovery, or a need for the admin's guidance/stability?

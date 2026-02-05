@@ -326,7 +326,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              await dataStore.addBlueskyInstruction(instruction);
                          }
                          if (memoryService.isEnabled()) {
-                             await memoryService.createMemoryEntry('directive_update', `[DIRECTIVE] Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
+                             await memoryService.createMemoryEntry('directive_update', `Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
                          }
                          actionResults.push(`[Directive persisted for ${platform || 'bluesky'}]`);
                      }
@@ -335,7 +335,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          if (instruction) {
                              await dataStore.addPersonaUpdate(instruction);
                              if (memoryService.isEnabled()) {
-                                 await memoryService.createMemoryEntry('persona_update', `[PERSONA] New self-instruction: ${instruction}`);
+                                 await memoryService.createMemoryEntry('persona_update', instruction);
                              }
                              actionResults.push(`[Persona updated with new instruction]`);
                          }

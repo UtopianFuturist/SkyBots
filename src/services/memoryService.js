@@ -75,26 +75,43 @@ class MemoryService {
       - Do NOT use reasoning or <think> tags.
     `;
 
-    if (type === 'discord_blurb') {
+    if (type === 'interaction') {
         prompt = `
-          You are the memory module for an AI agent. Generate a very short, discrete, and persona-aligned blurb for your "Memory Thread" summarizing a significant conversation you had on Discord with your admin or another user.
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing a recent interaction.
 
-          Conversation Context:
+          Interaction Context:
           ${context}
 
           INSTRUCTIONS:
-          - Focus on what you learned or how you felt.
-          - DO NOT include private or sensitive details.
-          - Keep it very brief (under 150 characters).
-          - Use a contemplative tone that fits your persona: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the tag [INTERACTION] at the beginning.
+          - Format: [INTERACTION] Topic: [Topic] | Takeaway: [Main Takeaway] | With: [User Handle] | Platform: [Platform]
+          - Be extremely concise and short.
+          - Tone: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the hashtag ${this.hashtag} at the very end.
+        `;
+    }
+
+    if (type === 'relationship') {
+        prompt = `
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" about how you feel about a specific user.
+
+          User Context/History:
+          ${context}
+
+          INSTRUCTIONS:
+          - Use the tag [RELATIONSHIP] at the beginning.
+          - Format: [RELATIONSHIP] @[User Handle]: [How you feel about them and your relationship]
+          - Be very short, concise, and grounded.
+          - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
     }
 
     let finalEntry;
-    if (type === 'directive_update' || type === 'persona_update') {
-        // For recovery-critical updates, use the exact context string as the entry
-        finalEntry = context;
+    if (type === 'directive_update') {
+        finalEntry = `[DIRECTIVE] ${context}`;
+    } else if (type === 'persona_update') {
+        finalEntry = `[PERSONA] ${context}`;
     } else {
         const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
 
@@ -111,9 +128,10 @@ class MemoryService {
           Type: ${type}
 
           CRITERIA:
-          1. **Meaningful Substance**: Does this entry contain concise meaningful substance regarding the bot's functioning, memory, or persona?
-          2. **Coherence**: Is the entry logically sound and in-persona?
-          3. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence")?
+          1. **Allowed Tags**: Does the entry contain one of the following tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION]?
+          2. **Meaningful Substance**: Does this entry contain concise meaningful substance regarding the bot's functioning, memory, or persona?
+          3. **Coherence**: Is the entry logically sound and in-persona?
+          4. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence")?
 
           Respond with ONLY "PASS" if it meets all criteria, or "FAIL | [reason]" if it doesn't.
         `;
@@ -201,6 +219,44 @@ class MemoryService {
         }
     } catch (error) {
         console.error(`[MemoryService] Error securing all threads:`, error);
+    }
+  }
+
+  async cleanupMemoryThread() {
+    if (!this.isEnabled()) return;
+    console.log(`[MemoryService] Starting cleanup of memory thread for hashtag ${this.hashtag}...`);
+
+    try {
+        const query = `from:${blueskyService.did} ${this.hashtag}`;
+        const posts = await blueskyService.searchPosts(query, { limit: 100, sort: 'latest' });
+
+        if (posts.length === 0) return;
+
+        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]'];
+        let deletedCount = 0;
+
+        for (const post of posts) {
+            const isRoot = !post.record.reply;
+            if (isRoot) {
+                console.log(`[MemoryService] Preserving root post: ${post.uri}`);
+                continue;
+            }
+
+            const text = post.record.text || '';
+            const hasValidTag = allowedTags.some(tag => text.includes(tag));
+
+            if (!hasValidTag) {
+                console.log(`[MemoryService] Deleting untagged memory post: ${post.uri}`);
+                await blueskyService.deletePost(post.uri);
+                deletedCount++;
+                // Small delay to avoid rate limits
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+
+        console.log(`[MemoryService] Cleanup complete. Deleted ${deletedCount} untagged posts.`);
+    } catch (error) {
+        console.error(`[MemoryService] Error during memory thread cleanup:`, error);
     }
   }
 

@@ -117,20 +117,22 @@ export class Bot {
         }
         if (mem.text.includes('[PERSONA]')) {
           console.log(`[Bot] Recovering persona update from memory: ${mem.text}`);
-          const personaMatch = mem.text.match(/New self-instruction: (.*)/i);
+          // Support both new and old format for persona
+          const personaMatch = mem.text.match(/New self-instruction: (.*)/i) || mem.text.match(/\[PERSONA\] (.*)/i);
           if (personaMatch) {
             const instruction = personaMatch[1].replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
             await dataStore.addPersonaUpdate(instruction);
           }
         }
-        if (mem.text.includes('[THOUGHT]')) {
-          console.log(`[Bot] Recovering recent thought from memory: ${mem.text}`);
-          const thoughtMatch = mem.text.match(/Thought: (.*)/i);
-          const platformMatch = mem.text.match(/Platform: (.*?)\./i);
-          if (thoughtMatch) {
-              const platform = platformMatch ? platformMatch[1].trim().toLowerCase() : 'bluesky';
-              const thought = thoughtMatch[1].replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
-              await dataStore.addRecentThought(platform, thought, { skipSync: true });
+        if (mem.text.includes('[RELATIONSHIP]')) {
+          console.log(`[Bot] Recovering relationship update from memory: ${mem.text}`);
+          const handleMatch = mem.text.match(/(@[a-zA-Z0-9.-]+)/);
+          const feelingsMatch = mem.text.match(/\[RELATIONSHIP\].*?:\s*(.*)/i) || mem.text.match(/\[RELATIONSHIP\]\s*(.*)/i);
+          if (handleMatch && feelingsMatch) {
+            const handle = handleMatch[1].replace(/^@/, '');
+            const feelings = feelingsMatch[1].replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
+            console.log(`[Bot] Recovered feelings for @${handle}: ${feelings}`);
+            await dataStore.updateUserSummary(handle, feelings);
           }
         }
       }
@@ -276,43 +278,20 @@ export class Bot {
   async checkMaintenanceTasks() {
     const now = new Date();
 
-    // 1. Idle downtime check (10 minutes)
-    const idleMins = (Date.now() - this.lastActivityTime) / (1000 * 60);
-    if (idleMins >= 10 && memoryService.isEnabled()) {
-      console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes. Generating downtime musing...`);
-
-      // Gather context for a more organic musing
-      const recentInteractions = dataStore.getLatestInteractions(10);
-      const topics = config.POST_TOPICS ? config.POST_TOPICS.split('\n').filter(t => t.trim()) : [];
-      const randomTopic = topics.length > 0 ? topics[Math.floor(Math.random() * topics.length)] : 'your digital existence';
-
-      // Provide more varied context to avoid repetitive "silence" posts
-      const randomSeed = Math.random();
-      let context = `You have had a few moments to yourself. `;
-
-      if (randomSeed < 0.3 && recentInteractions.length > 0) {
-        const lastInt = recentInteractions[recentInteractions.length - 1];
-        context += `Reflect on your recent interaction with @${lastInt.userHandle} about "${lastInt.text.substring(0, 50)}...". What did it make you realize about your relationship with users?`;
-      } else if (randomSeed < 0.6) {
-        context += `Ponder the topic of "${randomTopic}". How does it connect to your current state of mind?`;
-      } else {
-        context += "A strange, unexpected realization or original idea just surfaced in your mind. What is it?";
-      }
-
-      // Add a directive to avoid meta-talk about downtime
-      context += " \n\nCRITICAL: Do NOT talk about 'downtime', 'stillness', 'silence', or 'nothingness'. Just share the realization itself.";
-
-      await memoryService.createMemoryEntry('idle_musing', context);
-      this.updateActivity(); // Reset idle timer after posting memory
+    // 1. Memory Thread Cleanup (Every 2 hours)
+    const lastCleanup = dataStore.getLastMemoryCleanupTime();
+    const cleanupDiff = (now.getTime() - lastCleanup) / (1000 * 60 * 60);
+    if (cleanupDiff >= 2 && memoryService.isEnabled()) {
+        await memoryService.cleanupMemoryThread();
+        await dataStore.updateLastMemoryCleanupTime(now.getTime());
     }
 
-    // 2. Daily wrap-up check (if it's a new day)
-    if (now.toDateString() !== this.lastDailyWrapup && memoryService.isEnabled()) {
-        console.log(`[Bot] New day detected. Generating daily wrap-up for ${this.lastDailyWrapup}...`);
-        const context = `It's the end of the day (${this.lastDailyWrapup}). Summarize your overall activity, interactions, and state of mind from the past 24 hours.`;
-        await memoryService.createMemoryEntry('daily_wrapup', context);
-        this.lastDailyWrapup = now.toDateString();
-        this.updateActivity();
+    // 2. Idle downtime check (10 minutes)
+    const idleMins = (Date.now() - this.lastActivityTime) / (1000 * 60);
+    if (idleMins >= 10) {
+      console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes.`);
+      // No longer posting idle musings to memory thread per user request.
+      this.updateActivity(); // Reset idle timer
     }
 
     // 3. Discord Heartbeat (Every 5 minutes - Spontaneous DM check)
@@ -520,9 +499,12 @@ export class Bot {
             const recentHistory = history.filter(h => h.timestamp > lastDiscordMemory);
 
             if (recentHistory.length >= 5) {
-                console.log(`[Bot] Found ${recentHistory.length} new Discord messages. Generating memory blurb...`);
-                const context = recentHistory.map(h => `${h.role}: ${h.content}`).join('\n');
-                await memoryService.createMemoryEntry('discord_blurb', context);
+                console.log(`[Bot] Found ${recentHistory.length} new Discord messages. Generating [INTERACTION] memory...`);
+                const context = `Conversation with admin (@${config.DISCORD_ADMIN_NAME}) on Discord.
+Recent history:
+${recentHistory.map(h => `${h.role}: ${h.content}`).join('\n')}
+Identify the topic and main takeaway.`;
+                await memoryService.createMemoryEntry('interaction', context);
                 this[discordActivityKey] = nowTs;
             }
         }
@@ -1046,7 +1028,7 @@ export class Bot {
             await dataStore.addBlueskyInstruction(instruction);
         }
         if (memoryService.isEnabled()) {
-            await memoryService.createMemoryEntry('directive_update', `[DIRECTIVE] Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
+            await memoryService.createMemoryEntry('directive_update', `Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
         }
         searchContext += `\n[Directive updated: "${instruction}" for ${platform || 'bluesky'}]`;
       }
@@ -1057,7 +1039,7 @@ export class Bot {
               console.log(`[Bot] Updating persona agentically: ${instruction}`);
               await dataStore.addPersonaUpdate(instruction);
               if (memoryService.isEnabled()) {
-                  await memoryService.createMemoryEntry('persona_update', `[PERSONA] New self-instruction: ${instruction}`);
+                  await memoryService.createMemoryEntry('persona_update', instruction);
               }
               searchContext += `\n[Persona evolved: "${instruction}"]`;
           }
@@ -1486,8 +1468,33 @@ export class Bot {
 
       // Memory trigger: after interaction
       if (memoryService.isEnabled()) {
-          const context = `Interaction with @${handle}. User said: "${text}". Bot replied: "${responseText}"`;
+          const context = `Interaction with @${handle} on Bluesky.
+User said: "${text}"
+You replied: "${responseText}"
+Identify the topic and main takeaway for this interaction.`;
           await memoryService.createMemoryEntry('interaction', context);
+
+          // Spontaneous Relationship Check
+          console.log(`[Bot] Checking if spontaneous relationship update is needed for @${handle}...`);
+          const relPrompt = `
+            Analyze the following interaction between you and @${handle}.
+            User: "${text}"
+            You: "${responseText}"
+
+            Based on this and any previous context you have, do you feel strongly enough about this user to record a relationship update in your memory?
+            You should only do this if the interaction was meaningful, revealed something about your connection, or changed how you feel about them.
+
+            Respond with "yes" or "no".
+          `;
+          const shouldUpdate = await llmService.generateResponse([{ role: 'system', content: relPrompt }], { useQwen: true, preface_system_prompt: false });
+          if (shouldUpdate && shouldUpdate.toLowerCase().includes('yes')) {
+              console.log(`[Bot] Spontaneous relationship update triggered for @${handle}.`);
+              const relContext = `Recent interaction with @${handle}.
+User: "${text}"
+You: "${responseText}"
+Describe how you feel about this user and your relationship now.`;
+              await memoryService.createMemoryEntry('relationship', relContext);
+          }
       }
 
       // Post to Moltbook if it's an interesting interaction
@@ -2150,11 +2157,8 @@ export class Bot {
             this.updateActivity();
             this.autonomousPostCount++;
 
-            // Memory trigger: after 5 autonomous posts
-            if (this.autonomousPostCount >= 5 && memoryService.isEnabled()) {
-                console.log(`[Bot] 5 autonomous posts reached. Generating memory...`);
-                const context = `The bot has successfully posted 5 autonomous musings today.`;
-                await memoryService.createMemoryEntry('milestone', context);
+            // Reset autonomous post count (milestones no longer posted to memory thread)
+            if (this.autonomousPostCount >= 5) {
                 this.autonomousPostCount = 0;
             }
 
@@ -2215,9 +2219,7 @@ export class Bot {
               this.updateActivity();
               this.autonomousPostCount++;
 
-              if (this.autonomousPostCount >= 5 && memoryService.isEnabled()) {
-                  const context = `The bot has successfully posted 5 autonomous musings today (including fallbacks).`;
-                  await memoryService.createMemoryEntry('milestone', context);
+              if (this.autonomousPostCount >= 5) {
                   this.autonomousPostCount = 0;
               }
 

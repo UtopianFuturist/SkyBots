@@ -100,7 +100,7 @@ The bot is pre-configured for seamless deployment on Render.
 | `DISCORD_HEARTBEAT_ADDENDUM` | Optional additional specification for spontaneous Discord messages. | (None) |
 | `RENDER_API_KEY` | Your Render API key (for log access). | (None) |
 | `RENDER_SERVICE_ID` | Your Render service ID. | (Autodiscovered if name matches) |
-| `RENDER_SERVICE_NAME` | The name of your service on Render. | `skybots` |
+| `RENDER_SERVICE_NAME` | The name of your service on Render for autodiscovery. | (None) |
 
 ## 🦞 Moltbook Integration
 

@@ -33,6 +33,10 @@ class RenderService {
 
   async findSelf() {
     if (!this.isEnabled()) return null;
+    if (!this.serviceName) {
+      console.warn(`[RenderService] RENDER_SERVICE_NAME not configured. Cannot autodiscover service ID.`);
+      return null;
+    }
     console.log(`[RenderService] Attempting to find service ID for name: ${this.serviceName}`);
     const services = await this.listServices();
     const self = services.find(s => s.service.name === this.serviceName);
@@ -41,7 +45,9 @@ class RenderService {
       console.log(`[RenderService] Found self service ID: ${this.serviceId}`);
       return self.service;
     }
-    console.warn(`[RenderService] Could not find service with name ${this.serviceName} in Render account.`);
+
+    const availableNames = services.map(s => s.service.name).join(', ');
+    console.warn(`[RenderService] Could not find service with name "${this.serviceName}" in Render account. Available services: ${availableNames}`);
     return null;
   }
 

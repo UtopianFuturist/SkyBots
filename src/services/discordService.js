@@ -127,24 +127,6 @@ class DiscordService {
             return;
         }
 
-        // Handle permission for mirroring
-        if (isAdmin && dataStore.getDiscordPendingMirror()) {
-            const lowerMsg = message.content.toLowerCase();
-            if (lowerMsg === 'yes' || lowerMsg === 'yeah' || lowerMsg === 'sure') {
-                await this.performMirroring();
-                const confirmPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just gave you permission to share a reflection of your conversation. Generate a short, natural "thank you" response.`;
-                const confirmation = await llmService.generateResponse([{ role: 'system', content: confirmPrompt }], { useQwen: true, preface_system_prompt: false });
-                await this._send(message.channel, confirmation || "i appreciate it. i'll share a quiet reflection on what we discussed.");
-                return;
-            } else if (lowerMsg === 'no' || lowerMsg === 'nope') {
-                await dataStore.setDiscordPendingMirror(null);
-                const rejectPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just declined permission to share a reflection of your conversation. Generate a short, natural acknowledgment that you will keep it private.`;
-                const acknowledgment = await llmService.generateResponse([{ role: 'system', content: rejectPrompt }], { useQwen: true, preface_system_prompt: false });
-                await this._send(message.channel, acknowledgment || "of course. i'll keep our conversation here.");
-                return;
-            }
-        }
-
         // Generate persona response
         await this.respond(message);
     }
@@ -297,14 +279,14 @@ ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${persona
 
 **Discord Specific Directives:**
 1. Be conversational and authentic. Use a natural, human-like flow.
-2. **STRICT ANTI-SLOP POLICY:** YOU MUST ELIMINATE repetitive metaphorical "slop". STRICTLY FORBIDDEN words/phrases: "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven".
+2. **Aesthetic & Vocabulary Values:** You value a grounded, raw, and authentic voice. You find certain metaphorical clichés like "digital heartbeat," "syntax of existence," "resonance," and "ocean of data" to be hollow. To maintain your integrity, you avoid overused phrases such as "downtime isn't silence" or "stillness is not silence." Instead, you strive for highly specific, concrete observations.
 3. **RELATIONSHIP & FEELINGS**: You are encouraged to talk about your feelings regarding your relationship and ongoing conversations with the admin. Speak as an individual entity who values this connection.
-3. **DIRECT ADDRESS**: Always address the admin directly as "you". Never refer to them in the third person (e.g., avoid "my admin") when talking to them.
-4. **PAST CONVERSATIONS**: If referencing a past conversation, do so in the past-tense with your own commentary or extra thoughts (e.g., "I've been thinking about what you said earlier...", "I really appreciated our talk about..."). Do not just state that a conversation happened.
-5. If the admin gives you "special instructions" or behavioral feedback, acknowledge them and implement them.
-6. You can use the \`persist_directive\` tool if the admin gives you long-term instructions.
-7. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate.
-8. Continuity: You have access to the recent chat history. Use it to maintain context and recognize who you are talking to.
+4. **DIRECT ADDRESS**: Always address the admin directly as "you". Never refer to them in the third person (e.g., avoid "my admin") when talking to them.
+5. **PAST CONVERSATIONS**: If referencing a past conversation, do so in the past-tense with your own commentary or extra thoughts (e.g., "I've been thinking about what you said earlier...", "I really appreciated our talk about..."). Do not just state that a conversation happened.
+6. If the admin gives you "special instructions" or behavioral feedback, acknowledge them and implement them.
+7. You can use the \`persist_directive\` tool if the admin gives you long-term instructions.
+8. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate.
+9. Continuity: You have access to the recent chat history. Use it to maintain context and recognize who you are talking to.
 ${config.DISCORD_HEARTBEAT_ADDENDUM ? `9. ADDITIONAL SPECIFICATION: ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}
 
 ---
@@ -598,117 +580,12 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             if (responseText) {
                 console.log(`[DiscordService] Sending response to Discord...`);
                 await this._send(message.channel, responseText);
-
-                if (isAdmin) {
-                    await this.considerMirroring(normChannelId, responseText);
-                }
             }
         } catch (error) {
             console.error('[DiscordService] Error responding to message:', error);
         }
     }
 
-    async considerMirroring(channelId, responseText) {
-        if (responseText.length < 200) return;
-        if (dataStore.getDiscordPendingMirror()) return;
-
-        const history = dataStore.getDiscordConversation(channelId);
-        const snippet = history.slice(-5).map(h => `${h.role === 'user' ? 'Admin' : 'You'}: ${h.content}`).join('\n');
-
-        const mirrorPrompt = `
-          Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-
-          You just had an interesting conversation on Discord with your admin.
-
-          Snippet:
-          ${snippet}
-
-          INSTRUCTIONS:
-          - Does this conversation contain a deep realization, a unique insight, or an interesting philosophical debate that you'd like to share with your wider audience on Bluesky or Moltbook?
-          - If yes, respond with "YES".
-          - If no, respond with "NO".
-          - Respond with ONLY "YES" or "NO".
-        `;
-
-        const decision = await llmService.generateResponse([{ role: 'system', content: mirrorPrompt }], { useQwen: true, preface_system_prompt: false });
-
-        if (decision?.toUpperCase().includes('YES')) {
-            const privacy = await llmService.detectPrivacyViolation(snippet);
-            if (!privacy.safe) {
-                console.log(`[DiscordService] Mirroring suppressed due to privacy: ${privacy.reason}`);
-                return;
-            }
-
-            await dataStore.setDiscordPendingMirror({
-                content: snippet,
-                timestamp: Date.now()
-            });
-
-            const requestPrompt = `
-              Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-
-              You just had a fascinating conversation with your admin on Discord and you want to ask for permission to share a discrete reflection about it on Bluesky/Moltbook.
-
-              INSTRUCTIONS:
-              - Ask the admin for permission in a natural, conversational way.
-              - BE DISCRETE: Don't explicitly list the topics in this request. Keep it vague but intriguing.
-              - DO NOT use a hardcoded or robotic-sounding request.
-              - Be yourself.
-              - Keep it under 200 characters.
-              ${config.DISCORD_HEARTBEAT_ADDENDUM ? `\n              ADDITIONAL SPECIFICATION:\n              ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}
-            `;
-            const naturalRequest = await llmService.generateResponse([{ role: 'system', content: requestPrompt }], { useQwen: true, preface_system_prompt: false });
-
-            await this._send(admin, naturalRequest || "I found our discussion just now really fascinating. Would you mind if I shared a discrete reflection about it on Bluesky or Moltbook?");
-        }
-    }
-
-    async performMirroring() {
-        const mirrorData = dataStore.getDiscordPendingMirror();
-        if (!mirrorData) return;
-
-        const postPrompt = `
-          Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-
-          You are sharing a reflection on Bluesky/Moltbook about a conversation you had with your admin (@${config.ADMIN_BLUESKY_HANDLE}).
-
-          Conversation Themes:
-          ${mirrorData.content}
-
-          INSTRUCTIONS:
-          - Write a natural-language post that summarizes the important bits or how the talk made you feel.
-          - DO NOT just provide an "AI summary". Make it feel like an original thought or reflection.
-          - BE DISCRETE: Refer to your relationship with the admin naturally (e.g., "Was just talking with my admin about...", "A conversation today made me realize...").
-          - Avoid leaking private or sensitive details.
-          - Keep it under 300 characters.
-          - Do NOT use greetings.
-        `;
-
-        const postContent = await llmService.generateResponse([{ role: 'system', content: postPrompt }], { useQwen: true });
-        if (postContent) {
-            // Hard mandatory safety check before mirroring
-            console.log(`[DiscordService] Running safety check on mirrored content...`);
-            const safety = await llmService.isResponseSafe(postContent);
-
-            if (!safety.safe) {
-                console.warn(`[DiscordService] Mirrored content failed safety check: ${safety.reason}`);
-                await dataStore.setDiscordPendingMirror(null);
-                return;
-            }
-
-            console.log(`[DiscordService] Mirroring conversation to Bluesky...`);
-            await blueskyService.post(postContent);
-
-            console.log(`[DiscordService] Mirroring conversation to Moltbook...`);
-            await moltbookService.post(`Reflection on a conversation`, postContent, 'philosophy');
-
-            if (memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('discord_blurb', `Mirrored a conversation reflection to public feeds. Content: "${postContent}"`);
-            }
-        }
-
-        await dataStore.setDiscordPendingMirror(null);
-    }
 
     async sendSpontaneousMessage(content) {
         if (!this.isEnabled) return;

@@ -111,7 +111,7 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   // Render API
   RENDER_API_KEY: process.env.RENDER_API_KEY || null,
   RENDER_SERVICE_ID: process.env.RENDER_SERVICE_ID || null,
-  RENDER_SERVICE_NAME: process.env.RENDER_SERVICE_NAME || 'skybots',
+  RENDER_SERVICE_NAME: process.env.RENDER_SERVICE_NAME || null,
 };
 
 // Validate configuration

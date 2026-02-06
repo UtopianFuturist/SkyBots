@@ -113,17 +113,21 @@ class DiscordService {
         try {
             console.log('[DiscordService] Testing connectivity to Discord Gateway API...');
             const gatewayResp = await fetch('https://discord.com/api/v10/gateway').catch(e => ({ ok: false, error: e.message }));
-            console.log(`[DiscordService] Gateway API Reachability: ${gatewayResp.ok ? 'OK' : 'FAILED (' + gatewayResp.error + ')'}`);
+            if (gatewayResp.ok) {
+                console.log('[DiscordService] Gateway API Reachability: OK');
+            } else {
+                console.log(`[DiscordService] Gateway API Reachability: FAILED (Status: ${gatewayResp.status} ${gatewayResp.statusText || ''}, Error: ${gatewayResp.error || 'None'})`);
+            }
         } catch (e) {
             console.error('[DiscordService] Gateway connectivity check threw error:', e.message);
         }
 
         try {
-            // Set a timeout for login - increase to 120s
+            // Set a timeout for login - increase to 10 minutes (600s) as requested by admin
             let timeoutHandle;
             const loginPromise = this.client.login(this.token);
             const timeoutPromise = new Promise((_, reject) =>
-                timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 120s')), 120000)
+                timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 600s')), 600000)
             );
 
             const loginResult = await Promise.race([loginPromise, timeoutPromise]);

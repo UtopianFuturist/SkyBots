@@ -98,6 +98,19 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getExhaustedThemes: jest.fn().mockReturnValue([]),
     addExhaustedTheme: jest.fn(),
     init: jest.fn(),
+    getConfig: jest.fn().mockReturnValue({
+      bluesky_daily_text_limit: 20,
+      bluesky_daily_image_limit: 5,
+      bluesky_daily_wiki_limit: 5,
+      bluesky_post_cooldown: 45,
+      moltbook_post_cooldown: 30,
+      discord_idle_threshold: 10,
+      max_thread_chunks: 3,
+      repetition_similarity_threshold: 0.4,
+      post_topics: [],
+      image_subjects: []
+    }),
+    updateConfig: jest.fn().mockResolvedValue(true),
     db: {
       data: {
         interactions: []

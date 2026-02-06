@@ -908,7 +908,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     return { safe: true };
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = []) {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = conversationHistory.map(h => {
         let role = 'User';
@@ -943,6 +943,11 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
           - Parameters: { "times": ["HH:mm", "HH:mm"] }
       19. **Set Quiet Hours**: Set quiet hours for Discord spontaneous messaging.
           - Parameters: { "start": number (0-23), "end": number (0-23) }
+      20. **Update Config**: Update a specific system configuration value or limit.
+          - Use this if the admin explicitly asks to change a limit, cooldown, or setting.
+          - Valid Keys: "bluesky_daily_text_limit", "bluesky_daily_image_limit", "bluesky_daily_wiki_limit", "bluesky_post_cooldown", "moltbook_post_cooldown", "discord_idle_threshold", "max_thread_chunks", "repetition_similarity_threshold", "post_topics" (array), "image_subjects" (array).
+          - Parameters: { "key": "string", "value": any }
+          - TOPICS/SUBJECTS: For "post_topics" or "image_subjects", you must provide the ENTIRE updated array of strings.
         `;
     }
 
@@ -987,6 +992,8 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
           - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)" }
       ${adminTools}
 
+      ${currentConfig ? `--- CURRENT SYSTEM CONFIGURATION ---\n${JSON.stringify(currentConfig, null, 2)}\n---` : ''}
+
       ---
       **CURRENT PLATFORM:** ${platform.toUpperCase()}
       ${platform === 'discord' ? 'CRITICAL: You are currently talking to the admin on Discord. DO NOT use the "discord_message" tool. Just respond naturally.' : ''}
@@ -1002,7 +1009,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100) },
             "reason": "string (why this tool is needed)"

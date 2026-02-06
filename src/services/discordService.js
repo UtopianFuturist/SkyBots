@@ -377,7 +377,8 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             if (isAdmin) {
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
                  const exhaustedThemes = dataStore.getExhaustedThemes();
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes);
+                 const dConfig = dataStore.getConfig();
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  if (plan.strategy?.theme) {
@@ -421,7 +422,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      if (action.tool === 'bsky_post') {
                          const { text: postText, include_image, prompt_for_image } = action.parameters || {};
                          const lastPostTime = dataStore.getLastAutonomousPostTime();
-                         const cooldown = config.BLUESKY_POST_COOLDOWN * 60 * 1000;
+                         const cooldown = dConfig.bluesky_post_cooldown * 60 * 1000;
                          const now = Date.now();
                          const diff = lastPostTime ? now - new Date(lastPostTime).getTime() : cooldown;
 
@@ -556,7 +557,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      if (action.tool === 'moltbook_post') {
                          const { title, content, submolt } = action.parameters || {};
                          const lastPostAt = moltbookService.db.data.last_post_at;
-                         const cooldown = config.MOLTBOOK_POST_COOLDOWN * 60 * 1000;
+                         const cooldown = dConfig.moltbook_post_cooldown * 60 * 1000;
                          const now = Date.now();
                          const diff = lastPostAt ? now - new Date(lastPostAt).getTime() : cooldown;
 
@@ -642,6 +643,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              actionResults.push(`[Discord quiet hours set to ${start}:00 - ${end}:00]`);
                          }
                      }
+                     if (action.tool === 'update_config' && isAdmin) {
+                         const { key, value } = action.parameters || {};
+                         if (key) {
+                             const success = await dataStore.updateConfig(key, value);
+                             actionResults.push(`[Configuration update for ${key}: ${success ? 'SUCCESS' : 'FAILED'}]`);
+                         }
+                     }
                  }
 
                  if (actionResults.length > 0) {
@@ -671,7 +679,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
                      ];
 
-                     const isJaccardRepetitive = checkSimilarity(responseText, formattedHistory.map(h => h.content), 0.4);
+                     const isJaccardRepetitive = checkSimilarity(responseText, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
                      const containsSlop = isSlop(responseText);
                      const varietyCheck = await llmService.checkVariety(responseText, formattedHistory);
 

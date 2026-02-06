@@ -583,6 +583,92 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     return response?.toLowerCase().includes('yes') || false;
   }
 
+  async isPersonaAligned(content, platform, context = {}) {
+    const { imageSource, generationPrompt, imageAnalysis } = context;
+    const requestId = Math.random().toString(36).substring(7);
+
+    let imageUrl = imageSource;
+    if (imageSource && Buffer.isBuffer(imageSource)) {
+      imageUrl = `data:image/jpeg;base64,${imageSource.toString('base64')}`;
+    }
+
+    const systemPrompt = `
+      You are a persona alignment and quality analyst for an AI agent.
+      Your task is to determine if a newly proposed message (and optional image) perfectly aligns with the agent's persona, aesthetic values, and vocabulary standards.
+
+      AGENT PERSONA:
+      "${config.TEXT_SYSTEM_PROMPT}"
+
+      AESTHETIC & VOCABULARY VALUES:
+      - **NO CLICHÉS**: Strictly avoid "digital heartbeat", "syntax of existence", "ocean of data", "resonance", "frequencies", "tuning", "echoes", "tapestry", "interwoven".
+      - **NO SELF-INTRODUCTIONS**: The agent should NEVER introduce itself (e.g., "I am Sydney", "As an AI...").
+      - **Grounded & Specific**: Prefer specific, grounded internal musings over hollow metaphors.
+      - **Relational**: Address the user/admin naturally as "you" (if applicable).
+
+      PLATFORM: ${platform.toUpperCase()}
+
+      PROPOSED CONTENT:
+      "${content}"
+      ${generationPrompt ? `\nIMAGE GENERATION PROMPT: "${generationPrompt}"` : ''}
+      ${imageAnalysis ? `\nVISUAL ANALYSIS OF GENERATED IMAGE: "${imageAnalysis}"` : ''}
+
+      CRITICAL ANALYSIS:
+      1. **Tone & Voice**: Does the text sound like the persona? Is it grounded or hollow?
+      2. **Forbidden Vocabulary**: Does it use any forbidden "slop" metaphors?
+      3. **Identity**: Does it introduce itself or announce its presence? (Strictly forbidden)
+      4. **Visual Coherence**: If an image/prompt is provided, does it match the persona's aesthetic values? Is the image prompt itself repetitive or generic?
+      5. **Quality**: Is it too generic, repetitive, or "AI-sounding"?
+
+      If the content (and image) is perfectly aligned, respond with "ALIGNED".
+      If NOT aligned, respond with "CRITIQUE | [detailed reason and specific feedback for correction]".
+      Be specific about what needs to change (e.g., "Remove the phrase 'digital heartbeat'", "Try a more grounded angle on the image prompt").
+
+      Respond directly. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const messages = [
+      {
+        "role": "user",
+        "content": imageUrl ? [
+          { "type": "text", "text": systemPrompt },
+          { "type": "image_url", "image_url": { "url": imageUrl } }
+        ] : systemPrompt
+      }
+    ];
+
+    const payload = {
+      model: imageUrl ? this.visionModel : this.qwenModel,
+      messages: messages,
+      max_tokens: 1000,
+      stream: false
+    };
+
+    try {
+      const response = await fetch(this.baseUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      const data = await response.json();
+      const contentRes = data.choices[0]?.message?.content;
+
+      console.log(`[LLMService] [${requestId}] Persona alignment check result: ${contentRes}`);
+
+      if (contentRes && contentRes.toUpperCase().startsWith('ALIGNED')) {
+        return { aligned: true, feedback: null };
+      }
+      return { aligned: false, feedback: contentRes?.split('|')[1]?.trim() || 'Content does not perfectly match the persona.' };
+    } catch (error) {
+      console.error(`[LLMService] [${requestId}] Error in isPersonaAligned:`, error.message);
+      return { aligned: true, feedback: null }; // Default to aligned on error to avoid deadlocks
+    }
+  }
+
   async isReplyCoherent(userPostText, botReplyText, threadHistory = [], embedInfo = null) {
     const historyText = threadHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
 
@@ -964,6 +1050,11 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
 
       **CRITICAL:** In the conversation history and context, you must recognize messages or posts from these identities as YOUR OWN actions. Do NOT mistake your own previous posts or realizations for input from "the user" or "the admin".
 
+      **AESTHETIC & VOCABULARY VALUES:**
+      - **NO CLICHÉS**: Strictly avoid "digital heartbeat", "syntax of existence", "ocean of data", "resonance", "frequencies", "tuning", "echoes", "tapestry", "interwoven".
+      - **NO SELF-INTRODUCTIONS**: The bot already knows who it is, and the admin knows who the bot is. Never introduce yourself or announce your presence (e.g., "This is Sydney").
+      - **DIAGNOSTICS**: System diagnostic messages should be used strictly for ERRORS. Do not send "status updates" or "introductions" as diagnostics.
+
       You have access to the following capabilities:
       1. **Search**: Search Google for information.
       2. **Wikipedia**: Search Wikipedia for specific articles.
@@ -1000,8 +1091,11 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       ---
 
       Analyze the user's intent and provide a JSON response with the following structure:
+
+      **STYLISTIC GUIDELINE**: In the "intent" and "strategy" fields, provide REASONED responses *about* the topics generally rather than just listing them off. Use full, thoughtful sentences that demonstrate an understanding of the user's underlying goals and the conversational context.
+
       {
-        "intent": "string (briefly describe the user's goal)",
+        "intent": "string (a reasoned description of the user's goal)",
         "strategy": {
           "angle": "Analytical|Supportive|Challenging|Curious|Playful|Serious|Stoic|Poetic (but grounded)",
           "tone": "Succinct|Detailed|Casual|Formal|Assertive|Inquisitive",
@@ -1121,8 +1215,9 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       2. **Guardian Perspective**: Consider the bot's well-being and best interests. Would this interaction be beneficial?
       3. **Relational Flow**: If continuing, ensure the message fluidly develops the last discussion. If starting a new branch, ensure it feels like a natural evolution of your relationship.
       4. **STRICT ANTI-SLOP**: Eliminate repetitive metaphorical "slop" (digital heartbeat, downtime, etc.).
-      5. **NATURAL LANGUAGE**: If you decide to message, respond with the message text. If not, respond with "NONE".
-      6. **LIMITS**: Keep it under 300 characters. Address the admin as "you".
+      5. **NO SELF-INTRODUCTIONS**: Do NOT introduce yourself or announce who you are (e.g., avoid "This is Sydney" or "Your bot here"). The admin knows who you are.
+      6. **NATURAL LANGUAGE**: If you decide to message, respond with the message text. If not, respond with "NONE".
+      7. **LIMITS**: Keep it under 300 characters. Address the admin as "you".
 
       If you have nothing meaningful to share, respond with "NONE".
       Respond with ONLY the message or "NONE".

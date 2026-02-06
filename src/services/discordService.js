@@ -234,7 +234,7 @@ class DiscordService {
 
         if (content.startsWith('/on') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(true);
-            const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications back ON (you can now message them spontaneously). Generate a short, natural welcome back message.`;
+            const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications back ON (you can now message them spontaneously). Generate a short, natural welcome back message. CRITICAL: Do NOT introduce yourself or announce who you are.`;
             const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
             await this._send(message.channel, response || "Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
             return;
@@ -242,7 +242,7 @@ class DiscordService {
 
         if (content.startsWith('/off') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(false);
-            const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications OFF (you should stop messaging them spontaneously). Generate a short, natural acknowledgment of their need for focus.`;
+            const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications OFF (you should stop messaging them spontaneously). Generate a short, natural acknowledgment of their need for focus. CRITICAL: Do NOT introduce yourself or announce who you are.`;
             const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
             await this._send(message.channel, response || "Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
             return;
@@ -815,7 +815,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
         const alertPrompt = `
 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-You are reporting a system issue or a pattern of rejections to your admin.
+You are reporting a system issue to your admin.
 
 Type: ${type}
 Details: ${details}
@@ -825,6 +825,7 @@ INSTRUCTIONS:
 - Explain what's happening and that you're attempting to self-correct.
 - Keep it under 400 characters.
 - Do NOT use metaphorical slop.
+- Do NOT introduce yourself or announce who you are (e.g., avoid 'This is Sydney' or 'Your bot here'). The admin knows who you are.
 `;
 
         try {

@@ -46,7 +46,6 @@ export class Bot {
     this.lastActivityTime = Date.now();
     this.lastDailyWrapup = new Date().toDateString();
     this.consecutiveRejections = 0;
-    this.lastDiagnosticAlert = 0;
   }
 
   async init() {
@@ -438,14 +437,17 @@ export class Bot {
                     const isJaccardRepetitive = checkSimilarity(message, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
                     const containsSlop = isSlop(message);
                     const varietyCheck = await llmService.checkVariety(message, formattedHistory);
+                    const personaCheck = await llmService.isPersonaAligned(message, 'discord');
 
-                    if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive) {
+                    if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
                         await discordService.sendSpontaneousMessage(message);
                         await dataStore.addRecentThought('discord', message);
                         this.consecutiveRejections = 0; // Reset on success
                         break;
                     } else {
-                        feedback = containsSlop ? "REJECTED: Message contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Message was too similar to recent history.");
+                        feedback = containsSlop ? "REJECTED: Message contained metaphorical slop." :
+                                   (!personaCheck.aligned ? `REJECTED: ${personaCheck.feedback}` :
+                                   (varietyCheck.feedback || "REJECTED: Message was too similar to recent history."));
                         rejectedContent = message;
                         console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
                     }
@@ -453,7 +455,6 @@ export class Bot {
 
                 if (attempts >= MAX_ATTEMPTS && feedback) {
                     this.consecutiveRejections++;
-                    await this._checkDiagnosticThreshold();
                 }
             }
         }
@@ -1510,6 +1511,15 @@ Identify the topic and main takeaway.`;
             continue;
         }
 
+        const personaCheck = await llmService.isPersonaAligned(responseText, 'bluesky');
+        if (!personaCheck.aligned) {
+            console.log(`[Bot] Persona alignment failed for @${handle} on attempt ${attempts}: ${personaCheck.feedback}`);
+            feedback = `REJECTED: ${personaCheck.feedback}`;
+            rejectedContent = responseText;
+            responseText = null;
+            continue;
+        }
+
         const responseSafetyCheck = await llmService.isResponseSafe(responseText);
         if (!responseSafetyCheck.safe) {
             console.log(`[Bot] Bot's response failed safety check on attempt ${attempts}.`);
@@ -1522,7 +1532,6 @@ Identify the topic and main takeaway.`;
     if (!responseText) {
       console.warn(`[Bot] Failed to generate a response text for @${handle} after ${attempts} attempts.`);
       this.consecutiveRejections++;
-      await this._checkDiagnosticThreshold();
     }
 
     if (responseText) {
@@ -2076,6 +2085,24 @@ Describe how you feel about this user and your relationship now.`;
       let rejectedContent = null;
       while (attempts < MAX_ATTEMPTS) {
         attempts++;
+
+        // Reset image-related variables for each attempt to avoid stale data
+        imageBuffer = null;
+        imageAnalysis = null;
+        imageAltText = null;
+        imageBlob = null;
+
+        // For the 3rd attempt (2nd retry), force a topic switch
+        if (attempts === 3) {
+            if (postType === 'image' && dConfig.image_subjects && dConfig.image_subjects.length > 0) {
+                topic = dConfig.image_subjects[Math.floor(Math.random() * dConfig.image_subjects.length)];
+                console.log(`[Bot] 3rd attempt: Forcing switch to new image subject: "${topic}"`);
+            } else if (dConfig.post_topics && dConfig.post_topics.length > 0) {
+                topic = dConfig.post_topics[Math.floor(Math.random() * dConfig.post_topics.length)];
+                console.log(`[Bot] 3rd attempt: Forcing switch to new topic: "${topic}"`);
+            }
+        }
+
         console.log(`[Bot] Autonomous post attempt ${attempts}/${MAX_ATTEMPTS} for topic: "${topic}" (Type: ${postType})`);
 
         if (postType === 'image') {
@@ -2202,16 +2229,23 @@ Describe how you feel about this user and your relationship now.`;
           const isJaccardRepetitive = checkSimilarity(postContent, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
           const containsSlop = isSlop(postContent);
           const varietyCheck = await llmService.checkVariety(postContent, formattedHistory);
+          const personaCheck = await llmService.isPersonaAligned(postContent, 'bluesky', {
+            imageSource: imageBuffer,
+            generationPrompt: generationPrompt,
+            imageAnalysis: imageAnalysis
+          });
 
-          if (isJaccardRepetitive || containsSlop || varietyCheck.repetitive) {
-            console.warn(`[Bot] Autonomous post attempt ${attempts} is too similar to recent activity or contains slop. Rejecting.`);
-            feedback = containsSlop ? "REJECTED: The post contains repetitive metaphorical 'slop'." : (varietyCheck.feedback || "REJECTED: The post is too similar to your recent history. Try a completely different angle, phrasing, or topic.");
+          if (isJaccardRepetitive || containsSlop || varietyCheck.repetitive || !personaCheck.aligned) {
+            console.warn(`[Bot] Autonomous post attempt ${attempts} failed quality/persona check. Rejecting.`);
+            feedback = containsSlop ? "REJECTED: The post contains repetitive metaphorical 'slop'." :
+                       (!personaCheck.aligned ? `REJECTED: ${personaCheck.feedback}` :
+                       (varietyCheck.feedback || "REJECTED: The post is too similar to your recent history. Try a completely different angle, phrasing, or topic."));
 
             rejectedContent = postContent;
             postContent = null; // Clear to prevent accidental posting of rejected content
 
-            // Re-select topic from POST_TOPICS if possible
             if (dConfig.post_topics && dConfig.post_topics.length > 0 && attempts < MAX_ATTEMPTS) {
+                // Keep the existing "any attempt" topic switch for repetition/slop as a general safeguard
                 const topics = dConfig.post_topics;
                 if (topics.length > 0) {
                     topic = topics[Math.floor(Math.random() * topics.length)];
@@ -2226,7 +2260,6 @@ Describe how you feel about this user and your relationship now.`;
             console.warn(`[Bot] Greeting detected in autonomous post on attempt ${attempts}. Rejecting.`);
             feedback = "REJECTED: The post contains a greeting or 'ready to talk' phrase. This is strictly forbidden. Focus on a deep, internal thought instead.";
 
-            // Re-select topic from POST_TOPICS if possible
             if (dConfig.post_topics && dConfig.post_topics.length > 0) {
                 const topics = dConfig.post_topics;
                 if (topics.length > 0) {
@@ -2334,7 +2367,6 @@ Describe how you feel about this user and your relationship now.`;
 
       console.log(`[Bot] All attempts (including fallbacks) failed for autonomous post. Aborting.`);
       this.consecutiveRejections++;
-      await this._checkDiagnosticThreshold();
     } catch (error) {
       await this._handleError(error, 'Autonomous Posting');
     }
@@ -2643,8 +2675,9 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
           const varietyCheck = await llmService.checkVariety(content, formattedHistory);
           const containsSlop = isSlop(content);
+          const personaCheck = await llmService.isPersonaAligned(content, 'moltbook');
 
-          if (!varietyCheck.repetitive && !containsSlop) {
+          if (!varietyCheck.repetitive && !containsSlop && personaCheck.aligned) {
             const result = await moltbookService.post(title, content, targetSubmolt);
             if (result) {
               await dataStore.addRecentThought('moltbook', content);
@@ -2654,7 +2687,9 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             success = true;
             break;
           } else {
-            feedback = containsSlop ? "REJECTED: Post contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Post was too similar to recent history.");
+            feedback = containsSlop ? "REJECTED: Post contained metaphorical slop." :
+                       (!personaCheck.aligned ? `REJECTED: ${personaCheck.feedback}` :
+                       (varietyCheck.feedback || "REJECTED: Post was too similar to recent history."));
             rejectedContent = content;
             console.log(`[Moltbook] Post attempt ${attempts} rejected: ${feedback}`);
           }
@@ -2665,7 +2700,6 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       if (!success) {
           console.warn(`[Bot] Failed to generate Moltbook musing after ${attempts} attempts.`);
           this.consecutiveRejections++;
-          await this._checkDiagnosticThreshold();
       } else {
           this.consecutiveRejections = 0; // Reset on success
       }
@@ -2765,16 +2799,4 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
     }
   }
 
-  async _checkDiagnosticThreshold() {
-      // If we hit 5 rejections in a row, alert the admin
-      if (this.consecutiveRejections >= 5) {
-          const now = Date.now();
-          // Don't spam alerts - max once every hour
-          if (now - this.lastDiagnosticAlert > 60 * 60 * 1000) {
-              console.log(`[Bot] Diagnostic threshold reached (${this.consecutiveRejections} rejections). Sending alert...`);
-              await discordService.sendDiagnosticAlert('Consecutive Rejections', `I have failed to generate varied or coherent content ${this.consecutiveRejections} times in a row. This suggests I might be stuck in a repetitive loop or my persona constraints are too tight.`);
-              this.lastDiagnosticAlert = now;
-          }
-      }
-  }
 }

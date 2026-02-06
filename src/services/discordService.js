@@ -25,6 +25,7 @@ class DiscordService {
         this.nickname = config.DISCORD_NICKNAME || 'SkyBots';
         this.isEnabled = !!this.token && this.token !== 'undefined' && this.token !== 'null';
         this.adminId = null;
+        this.isInitializing = false;
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
     }
 
@@ -33,11 +34,18 @@ class DiscordService {
     }
 
     async init() {
+        if (this.isInitializing) {
+            console.log('[DiscordService] init() already in progress. Skipping.');
+            return;
+        }
+
         console.log('[DiscordService] init() called.');
         if (!this.isEnabled) {
             console.log('[DiscordService] Discord token not configured or invalid. Service disabled.');
             return;
         }
+
+        this.isInitializing = true;
 
         console.log('[DiscordService] Creating client with intents and partials...');
         this.client = new Client({
@@ -149,6 +157,7 @@ class DiscordService {
                 await Promise.race([loginPromise, timeoutPromise]);
                 clearTimeout(timeoutHandle);
                 console.log('[DiscordService] SUCCESS: login() promise resolved. Logged in as:', this.client.user?.tag);
+                this.isInitializing = false;
                 return; // Successful login, exit init()
             } catch (error) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, error.message);
@@ -173,6 +182,7 @@ class DiscordService {
                 } else {
                     console.error('[DiscordService] FATAL: All Discord login attempts failed.');
                     this.isEnabled = false;
+                    this.isInitializing = false;
                 }
             }
         }
@@ -227,6 +237,11 @@ class DiscordService {
      */
     async _send(target, content, options = {}) {
         if (!content) return null;
+
+        if (!this.client?.isReady()) {
+            console.warn('[DiscordService] _send() called but client is not ready. Aborting.');
+            return null;
+        }
 
         let sanitized = sanitizeThinkingTags(content);
         sanitized = sanitizeCharacterCount(sanitized);
@@ -823,7 +838,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
 
     async sendSpontaneousMessage(content) {
-        if (!this.isEnabled) return;
+        if (!this.isEnabled || !this.client?.isReady()) return;
 
         try {
             const admin = await this.getAdminUser();
@@ -873,7 +888,10 @@ INSTRUCTIONS:
     }
 
     async getAdminUser() {
-        if (!this.client) return null;
+        if (!this.client || !this.client.isReady()) {
+            return null;
+        }
+
         if (this.adminId) {
             try {
                 return await this.client.users.fetch(this.adminId);
@@ -884,10 +902,6 @@ INSTRUCTIONS:
         }
 
         console.log(`[DiscordService] Searching for admin: ${this.adminName}`);
-
-        if (!this.client.isReady()) {
-            console.warn('[DiscordService] Client is NOT ready yet. Guild cache might be empty.');
-        }
 
         // 1. Priority: Search in specifically configured guild
         if (config.DISCORD_GUILD_ID) {

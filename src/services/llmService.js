@@ -994,7 +994,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     return { safe: true };
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null) {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '') {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = conversationHistory.map(h => {
         let role = 'User';
@@ -1089,6 +1089,8 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       **CURRENT PLATFORM:** ${platform.toUpperCase()}
       ${platform === 'discord' ? 'CRITICAL: You are currently talking to the admin on Discord. DO NOT use the "discord_message" tool. Just respond naturally.' : ''}
       ---
+
+      ${feedback ? `\n\n--- REJECTION FEEDBACK FROM PREVIOUS ATTEMPT ---\n${feedback}\nAnalyze why your previous plan/response was rejected and adjust your strategy accordingly.\n---` : ''}
 
       Analyze the user's intent and provide a JSON response with the following structure:
 

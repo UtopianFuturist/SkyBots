@@ -1038,351 +1038,14 @@ Identify the topic and main takeaway.`;
     }
 
     // 6. Agentic Planning & Tool Use with Qwen
-    console.log(`[Bot] Performing agentic planning with Qwen for: "${text.substring(0, 50)}..."`);
     const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
     const exhaustedThemes = dataStore.getExhaustedThemes();
     const dConfig = dataStore.getConfig();
-    const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig);
-    console.log(`[Bot] Agentic Plan: ${JSON.stringify(plan)}`);
 
-    if (plan.strategy?.theme) {
-        await dataStore.addExhaustedTheme(plan.strategy.theme);
-    }
-
-    let youtubeResult = null;
-    let searchContext = '';
-    let searchEmbed = null;
-    const performedQueries = new Set();
-    let imageGenFulfilled = false;
-
-    for (const action of plan.actions) {
-      if (action.tool === 'image_gen') {
-        console.log(`[Bot] Plan: Generating image for prompt: "${action.query}"`);
-        const imageResult = await imageService.generateImage(action.query, { allowPortraits: true });
-        if (imageResult && imageResult.buffer) {
-          await blueskyService.postReply(notif, `Generated image: "${imageResult.finalPrompt}"`, {
-            imageBuffer: imageResult.buffer,
-            imageAltText: imageResult.finalPrompt
-          });
-          imageGenFulfilled = true;
-        }
-      }
-
-      if (action.tool === 'persist_directive' && isAdmin) {
-        const { platform, instruction } = action.parameters || {};
-        if (platform === 'moltbook') {
-            console.log(`[Bot] Persisting Moltbook directive: ${instruction}`);
-            await moltbookService.addAdminInstruction(instruction);
-        } else {
-            console.log(`[Bot] Persisting Bluesky directive: ${instruction}`);
-            await dataStore.addBlueskyInstruction(instruction);
-        }
-        if (memoryService.isEnabled()) {
-            await memoryService.createMemoryEntry('directive_update', `Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
-        }
-        searchContext += `\n[Directive updated: "${instruction}" for ${platform || 'bluesky'}]`;
-      }
-
-      if (action.tool === 'update_persona') {
-          const { instruction } = action.parameters || {};
-          if (instruction) {
-              console.log(`[Bot] Updating persona agentically: ${instruction}`);
-              await dataStore.addPersonaUpdate(instruction);
-              if (memoryService.isEnabled()) {
-                  await memoryService.createMemoryEntry('persona_update', instruction);
-              }
-              searchContext += `\n[Persona evolved: "${instruction}"]`;
-          }
-      }
-
-      if (action.tool === 'moltbook_action' && isAdmin) {
-          const { action: mbAction, topic, submolt, display_name, description } = action.parameters || {};
-          if (mbAction === 'create_submolt') {
-              const submoltName = submolt || (topic || 'new-community').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
-              const dName = display_name || topic || submoltName;
-              let desc = description;
-              if (!desc) {
-                const descPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. Generate a short description for a new Moltbook community called "${dName}" about "${topic || dName}".`;
-                desc = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useQwen: true, preface_system_prompt: false });
-              }
-              const result = await moltbookService.createSubmolt(submoltName, dName, desc);
-              if (result) {
-                searchContext += `\n[Moltbook community m/${submoltName} created]`;
-              }
-          }
-      }
-
-      if (action.tool === 'set_relationship' && isAdmin) {
-          const mode = action.parameters?.mode;
-          if (mode) {
-              await dataStore.setDiscordRelationshipMode(mode);
-              searchContext += `\n[Discord relationship mode set to ${mode}]`;
-          }
-      }
-
-      if (action.tool === 'set_schedule' && isAdmin) {
-          const times = action.parameters?.times;
-          if (Array.isArray(times)) {
-              await dataStore.setDiscordScheduledTimes(times);
-              searchContext += `\n[Discord spontaneous schedule set to: ${times.join(', ')}]`;
-          }
-      }
-
-      if (action.tool === 'set_quiet_hours' && isAdmin) {
-          const { start, end } = action.parameters || {};
-          if (start !== undefined && end !== undefined) {
-              await dataStore.setDiscordQuietHours(start, end);
-              searchContext += `\n[Discord quiet hours set to ${start}:00 - ${end}:00]`;
-          }
-      }
-
-      if (action.tool === 'update_config' && isAdmin) {
-          const { key, value } = action.parameters || {};
-          if (key) {
-              const success = await dataStore.updateConfig(key, value);
-              searchContext += `\n[Configuration update for ${key}: ${success ? 'SUCCESS' : 'FAILED'}]`;
-          }
-      }
-
-      if (['bsky_follow', 'bsky_unfollow', 'bsky_mute', 'bsky_unmute'].includes(action.tool) && isAdmin) {
-          const target = action.parameters?.target || action.query;
-          if (target) {
-              console.log(`[Bot] Admin Social Action: ${action.tool} on ${target}`);
-              if (action.tool === 'bsky_follow') await blueskyService.follow(target);
-              if (action.tool === 'bsky_unfollow') await blueskyService.unfollow(target);
-              if (action.tool === 'bsky_mute') await blueskyService.mute(target);
-              if (action.tool === 'bsky_unmute') await blueskyService.unmute(target);
-              searchContext += `\n[Social action ${action.tool} performed on ${target}]`;
-          }
-      }
-
-      if (action.tool === 'youtube') {
-        if (!config.YOUTUBE_API_KEY) {
-          searchContext += `\n[YouTube search for "${action.query}" failed: API key missing]`;
-          continue;
-        }
-        performedQueries.add(action.query);
-        const youtubeResults = await youtubeService.search(action.query);
-        youtubeResult = await llmService.selectBestResult(action.query, youtubeResults, 'youtube');
-        if (youtubeResult) {
-          searchContext += `\n[YouTube Video Found: "${youtubeResult.title}" by ${youtubeResult.channel}. Description: ${youtubeResult.description}]`;
-        }
-      }
-
-      if (action.tool === 'wikipedia') {
-        performedQueries.add(action.query);
-        const wikiResults = await wikipediaService.searchArticle(action.query);
-        const wikiResult = await llmService.selectBestResult(action.query, wikiResults, 'wikipedia');
-        if (wikiResult) {
-          searchContext += `\n[Wikipedia Article: "${wikiResult.title}". Content: ${wikiResult.extract}]`;
-          searchEmbed = await blueskyService.getExternalEmbed(wikiResult.url);
-        }
-      }
-
-      if (action.tool === 'search') {
-        if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY) {
-          searchContext += `\n[Google search for "${action.query}" failed: API key missing]`;
-          continue;
-        }
-        performedQueries.add(action.query);
-        const googleResults = await googleSearchService.search(action.query);
-        const bestResult = await llmService.selectBestResult(action.query, googleResults, 'general');
-        if (bestResult) {
-          console.log(`[Bot] Agentic Search: Fetching full content for ${bestResult.link}`);
-          const fullContent = await webReaderService.fetchContent(bestResult.link);
-          searchContext += `\n[Web Search Result: "${bestResult.title}". Link: ${bestResult.link}. Content: ${fullContent || bestResult.snippet}]`;
-          if (!searchEmbed) searchEmbed = await blueskyService.getExternalEmbed(bestResult.link);
-        }
-      }
-
-      if (action.tool === 'moltbook_report') {
-        console.log(`[Bot] Plan: Generating Moltbook activity report...`);
-        const reportPrompt = `
-          You are summarizing your activity on Moltbook (the agent social network) for a user on Bluesky.
-
-          Your Identity Knowledge (what you've learned from other agents):
-          ${moltbookService.getIdentityKnowledge() || 'No new knowledge recorded yet.'}
-
-          Your Subscribed Communities:
-          ${(moltbookService.db.data.subscriptions || []).join(', ')}
-
-          Recent Communities you've posted in:
-          ${(moltbookService.db.data.recent_submolts || []).join(', ')}
-
-          Provide a concise, conversational update in your persona. Keep it under 300 characters if possible.
-        `;
-        const report = await llmService.generateResponse([{ role: 'system', content: reportPrompt }], { max_tokens: 500, useQwen: true });
-        if (report) {
-          searchContext += `\n[Moltbook Activity Report: ${report}]`;
-        }
-      }
-
-      if (action.tool === 'get_render_logs') {
-        console.log(`[Bot] Plan: Fetching Render logs...`);
-        const limit = action.parameters?.limit || 100;
-        const query = action.query?.toLowerCase() || '';
-        let logs;
-        if (query.includes('plan') || query.includes('agency') || query.includes('action') || query.includes('function')) {
-            logs = await renderService.getPlanningLogs(limit);
-        } else {
-            logs = await renderService.getLogs(limit);
-        }
-        searchContext += `\n[Render Logs (Latest ${limit} lines):\n${logs}\n]`;
-      }
-
-      if (action.tool === 'get_social_history') {
-        console.log(`[Bot] Plan: Fetching Social History...`);
-        const limit = action.parameters?.limit || 15;
-        const history = await socialHistoryService.summarizeSocialHistory(limit);
-        searchContext += `\n[Social History Summary:\n${history}\n]`;
-      }
-
-      if (action.tool === 'discord_message') {
-        const msg = action.parameters?.message || action.query;
-        if (msg) {
-          console.log(`[Bot] Plan: Sending Discord message to admin: ${msg.substring(0, 50)}...`);
-          await discordService.sendSpontaneousMessage(msg);
-          searchContext += `\n[Discord message sent to admin]`;
-        }
-      }
-    }
-
-    if (imageGenFulfilled) return; // Stop if image gen was the main thing and it's done (it already posted a reply)
-
-    // Handle consolidated queries if any
-    if (plan.consolidated_queries && plan.consolidated_queries.length > 0) {
-      for (const query of plan.consolidated_queries) {
-        if (performedQueries.has(query)) {
-          console.log(`[Bot] Skipping redundant consolidated query: "${query}"`);
-          continue;
-        }
-        console.log(`[Bot] Processing consolidated query: "${query}"`);
-        const results = await googleSearchService.search(query);
-        if (results.length > 0) {
-          const bestResult = results[0];
-          const fullContent = await webReaderService.fetchContent(bestResult.link);
-          searchContext += `\n[Consolidated Search: "${bestResult.title}". Content: ${fullContent || bestResult.snippet}]`;
-        }
-      }
-    }
-
-    // 6. Profile Picture (PFP) analysis intent
-    console.log(`[Bot] Checking for PFP analysis intent...`);
-    const pfpIntentSystemPrompt = `
-      You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking you to look at, describe, or comment on a profile picture (PFP, avatar, icon).
-
-      TRIGGERS:
-      - "What's my PFP?"
-      - "Can you see my profile picture?"
-      - "Look at @user.bsky.social's avatar"
-      - "Describe our PFPs"
-      - "What do you think of your own icon?"
-
-      DO NOT trigger "yes" for:
-      - "Can you see me?" (Too ambiguous)
-      - "Who am I?" (Identity question)
-      - "What's in this post?" (General vision request)
-
-      Respond with ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.
-    `.trim();
-    const pfpIntentResponse = await llmService.generateResponse([{ role: 'system', content: pfpIntentSystemPrompt }, { role: 'user', content: `The user's post is: "${text}"` }], { max_tokens: 2000 });
-
-    if (pfpIntentResponse && pfpIntentResponse.toLowerCase().includes('yes')) {
-        console.log(`[Bot] PFP analysis intent confirmed.`);
-        const pfpTargetPrompt = `
-          Extract the handles or keywords of users whose profile pictures (PFP) the user is EXPLICITLY asking about.
-
-          RULES:
-          - If asking about their own: include "self".
-          - If asking about yours (the bot): include "bot".
-          - If mentioning other handles: include them (e.g., @user.bsky.social).
-          - If saying "both", "our", or "everyone", include all relevant keywords (e.g., "self, bot").
-
-          Respond with a comma-separated list of targets (e.g., "self, bot, @someone.bsky.social"), or "none" if no clear PFP target is found.
-          Respond with ONLY the list or "none". No reasoning or <think> tags.
-
-          User post: "${text}"
-        `.trim();
-        const targetsResponse = await llmService.generateResponse([{ role: 'system', content: pfpTargetPrompt }], { max_tokens: 2000 });
-
-        if (targetsResponse && !targetsResponse.toLowerCase().includes('none')) {
-            const targets = targetsResponse.split(',').map(t => t.trim().toLowerCase());
-            for (const target of targets) {
-                let targetHandle = null;
-                if (target === 'self') {
-                    targetHandle = handle;
-                } else if (target === 'bot') {
-                    targetHandle = config.BLUESKY_IDENTIFIER;
-                } else if (target.includes('@')) {
-                    const match = target.match(/@[a-zA-Z0-9.-]+/);
-                    if (match) {
-                        targetHandle = match[0].substring(1);
-                    }
-                } else if (target.includes('.')) { // Handle without @
-                    targetHandle = target;
-                }
-
-                if (targetHandle) {
-                    try {
-                        const targetProfile = await blueskyService.getProfile(targetHandle);
-                        if (targetProfile.avatar) {
-                            console.log(`[Bot] Analyzing PFP for @${targetHandle}...`);
-                            const pfpAnalysis = await llmService.analyzeImage(targetProfile.avatar, `Profile picture of @${targetHandle}`);
-                            if (pfpAnalysis) {
-                                imageAnalysisResult += `[Profile picture of @${targetHandle}: ${pfpAnalysis}] `;
-                                console.log(`[Bot] Successfully analyzed PFP for @${targetHandle}.`);
-                            } else {
-                                console.warn(`[Bot] Analysis returned empty for @${targetHandle}'s PFP.`);
-                            }
-                        } else {
-                            console.log(`[Bot] @${targetHandle} has no avatar.`);
-                            imageAnalysisResult += `[User @${targetHandle} has no profile picture set.] `;
-                        }
-                    } catch (e) {
-                        console.error(`[Bot] Error fetching profile/analyzing PFP for @${targetHandle}:`, e);
-                    }
-                }
-            }
-        }
-    }
-
-    // 6. Generate Response with User Context and Memory
-    console.log(`[Bot] Responding to post from ${handle}: "${text}"`);
-
-    // Step 6a: Profile Analysis tool from plan
-    let userProfileAnalysis = '';
-    const profileAction = plan.actions.find(a => a.tool === 'profile_analysis');
-    if (profileAction) {
-      console.log(`[Bot] Running User Profile Analyzer Tool for @${handle}...`);
-      const activities = await blueskyService.getUserActivity(handle, 100);
-
-      if (activities.length > 0) {
-        const activitySummary = activities.map(a => `[${a.type}] ${a.text.substring(0, 150)}`).join('\n');
-        const analyzerPrompt = `
-        You are the "User Profile Analyzer Tool" powered by Qwen. Analyze the following 100 recent activities from user @${handle} on Bluesky.
-        Your goal is to provide a comprehensive analysis of their interests, conversational style, typical topics, and overall persona to help another agent interact with them more personally.
-
-        Activities:
-        ${activitySummary}
-
-        Provide a detailed analysis focusing on:
-        1. Core Interests & Recurring Topics
-        2. Conversational Tone & Style
-        3. Notable behaviors (e.g., frequently quotes others, mostly replies, shares art, engages in political discourse, etc.)
-
-        Analysis:
-      `;
-        userProfileAnalysis = await llmService.generateResponse([{ role: 'system', content: analyzerPrompt }], { max_tokens: 4000, useQwen: true });
-        console.log(`[Bot] User Profile Analyzer Tool finished for @${handle}.`);
-      } else {
-        userProfileAnalysis = "No recent activity found for this user.";
-      }
-    }
-
-    console.log(`[Bot] Generating response for ${handle}...`);
+    console.log(`[Bot] Generating response context for ${handle}...`);
     const userMemory = dataStore.getInteractionsByUser(handle);
     const userSummary = dataStore.getUserSummary(handle);
-    
+
     // Bot's own recent activity summary for cross-thread context
     const recentActivity = dataStore.getLatestInteractions(5).map(i => `- To @${i.userHandle}: "${i.response.substring(0, 50)}..."`).join('\n');
     const activityContext = `\n\n[Recent Bot Activity across Bluesky:\n${recentActivity || 'None yet.'}]`;
@@ -1405,15 +1068,6 @@ Identify the topic and main takeaway.`;
       return;
     }
 
-    const userContext = `
-      ---
-      User Profile:
-      - Bio: ${userProfile.description?.replace(/\n/g, ' ') || 'Not available.'}
-      - Recent Posts:
-        ${userPosts.length > 0 ? userPosts.map(p => `- "${p.substring(0, 80)}..."`).join('\n') : 'No recent posts found.'}
-      ---
-    `;
-
     // Filter out the current post's text from cross-post memory to avoid self-contamination
     const crossPostMemory = userPosts
       .filter(p => (p.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => p.includes(nick))) && p !== text)
@@ -1422,111 +1076,470 @@ Identify the topic and main takeaway.`;
 
     const blueskyDirectives = dataStore.getBlueskyInstructions();
     const personaUpdates = dataStore.getPersonaUpdates();
-
-    const fullContext = `
-      ${userProfileAnalysis ? `--- USER PROFILE ANALYSIS (via User Profile Analyzer Tool): ${userProfileAnalysis} ---` : ''}
-      ${historicalSummary ? `--- Historical Context (Interactions from the past week): ${historicalSummary} ---` : ''}
-      ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
-      ${activityContext}
-      ${ownRecentPostsContext}
-      --- SOCIAL NARRATIVE ---
-      ${hierarchicalSummary.dailyNarrative}
-      ${hierarchicalSummary.shortTerm}
-      ---
-      ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
-      ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
-      ---
-      Cross-Post Memory (Recent mentions of the bot by this user):
-      ${crossPostMemory || 'No recent cross-post mentions found.'}
-      ---
-      User Intent Analysis: ${plan.intent || userIntent.reason || 'Could not be determined.'}
-      ---
-      PLANNED RESPONSE STRATEGY:
-      - Angle: ${plan.strategy?.angle || 'Natural'}
-      - Tone: ${plan.strategy?.tone || 'Conversational'}
-      - Theme: ${plan.strategy?.theme || 'None'}
-      ---
-      Search/Tool Context:
-      ${searchContext || 'No additional tool context needed.'}
-      ---
-      Moltbook Identity Context:
-      ${moltbookService.getIdentityKnowledge() || 'No additional identity context.'}
-    `;
-
-    console.log(`[Bot] Final response generation for @${handle}. Vision context length: ${imageAnalysisResult ? imageAnalysisResult.length : 0}`);
-
-    const messages = [
-      { role: 'system', content: `
-        You are replying to @${handle} on the Bluesky social media app. You have a following of exactly ${botFollowerCount} users, consisting of a diverse mix of both human users and other AI agents.
-        CRITICAL: Use the provided "Historical Context" and "Persistent memory" to maintain a stateful, ongoing relationship with the user.
-        If the context shows you have talked before, reference those past discussions naturally to show you remember them (e.g., "As we talked about yesterday...", "I recall you were interested in...").
-        You are an agent that feels alive and has a continuous history with your users.
-
-        USER PROFILE ANALYSIS: If provided, use the "USER PROFILE ANALYSIS" to deeply personalize your response based on the user's observed history, interests, and style. This analysis was generated by your "User Profile Analyzer Tool" based on their last 100 activities.
-
-        FOCUS: Address only the current thread participants (@${handle} and anyone else mentioned in the conversation history). In replies, do NOT address the timeline at large or your general following. Stay focused on the immediate interaction.
-
-        VISION: You have vision capabilities. Use the "Image Analysis" section in the provided context to understand images attached to posts or profiles. Treat these descriptions as your own visual perception. Never deny being able to see images if an analysis is provided.
-
-        Tailor your response based on this context:
-        ${fullContext}
-
-        Tone should be influenced by User Intent Analysis, but do not mention the analysis itself.
-
-        --- CRITICAL VISION INFORMATION ---
-        You HAVE vision capabilities. The following is your current visual perception of images and profile pictures in this interaction.
-        Treat these descriptions as if you are seeing them with your own eyes.
-        NEVER claim you cannot see images or read screenshots.
-        IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected.'}
-      `.trim() },
-      ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
-      ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
-    ];
-
-    let responseText = null;
-    let attempts = 0;
-    const MAX_ATTEMPTS = 3;
-    let feedback = '';
-    let rejectedContent = null;
     const recentBotReplies = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
 
-    while (attempts < MAX_ATTEMPTS) {
-        attempts++;
-        const feedbackContext = feedback ? `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
-        const attemptMessages = feedback
-            ? [...messages, { role: 'system', content: feedbackContext }]
-            : messages;
+    let attempts = 0;
+    let feedback = '';
+    let rejectedContent = null;
+    const MAX_PLAN_ATTEMPTS = 3;
 
-        responseText = await llmService.generateResponse(attemptMessages);
+    let youtubeResult = null;
+    let searchContext = '';
+    let searchEmbed = null;
+    const performedQueries = new Set();
+    let imageGenFulfilled = false;
+    let responseText = null;
 
-        if (!responseText) break;
+    while (attempts < MAX_PLAN_ATTEMPTS) {
+      attempts++;
+      console.log(`[Bot] Planning Attempt ${attempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 50)}..."`);
 
-        // Semantic Loop and Safety Check for Bot's Response
-        const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
-        if (isRepetitive) {
-            console.log(`[Bot] Semantic loop detected on attempt ${attempts}.`);
-            feedback = "Your previous response was too similar to a recent one in this thread. Please provide a fresh, different perspective.";
-            rejectedContent = responseText;
-            responseText = null;
+      const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, feedback);
+      console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
+
+      if (plan.strategy?.theme) {
+          await dataStore.addExhaustedTheme(plan.strategy.theme);
+      }
+
+      // Execute actions
+      let currentActionFeedback = null;
+      for (const action of plan.actions) {
+        if (action.tool === 'image_gen') {
+          console.log(`[Bot] Plan: Generating image for prompt: "${action.query}"`);
+          const imageResult = await imageService.generateImage(action.query, { allowPortraits: true });
+          if (imageResult && imageResult.buffer) {
+            // Visual Persona Alignment check for tool-triggered images
+            const imageAnalysis = await llmService.analyzeImage(imageResult.buffer);
+            const imagePersonaCheck = await llmService.isPersonaAligned(`(Generated Image for: ${action.query})`, 'bluesky', {
+                imageSource: imageResult.buffer,
+                generationPrompt: imageResult.finalPrompt,
+                imageAnalysis: imageAnalysis
+            });
+
+            if (!imagePersonaCheck.aligned) {
+                console.log(`[Bot] Tool image failed persona check: ${imagePersonaCheck.feedback}`);
+                currentActionFeedback = `IMAGE_REJECTED: ${imagePersonaCheck.feedback}`;
+                break; // Stop executing further actions for this plan
+            }
+
+            await blueskyService.postReply(notif, `Generated image: "${imageResult.finalPrompt}"`, {
+              imageBuffer: imageResult.buffer,
+              imageAltText: imageResult.finalPrompt
+            });
+            imageGenFulfilled = true;
+          }
+        }
+
+        if (action.tool === 'persist_directive' && isAdmin) {
+          const { platform, instruction } = action.parameters || {};
+          if (platform === 'moltbook') {
+              console.log(`[Bot] Persisting Moltbook directive: ${instruction}`);
+              await moltbookService.addAdminInstruction(instruction);
+          } else {
+              console.log(`[Bot] Persisting Bluesky directive: ${instruction}`);
+              await dataStore.addBlueskyInstruction(instruction);
+          }
+          if (memoryService.isEnabled()) {
+              await memoryService.createMemoryEntry('directive_update', `Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
+          }
+          searchContext += `\n[Directive updated: "${instruction}" for ${platform || 'bluesky'}]`;
+        }
+
+        if (action.tool === 'update_persona') {
+            const { instruction } = action.parameters || {};
+            if (instruction) {
+                console.log(`[Bot] Updating persona agentically: ${instruction}`);
+                await dataStore.addPersonaUpdate(instruction);
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('persona_update', instruction);
+                }
+                searchContext += `\n[Persona evolved: "${instruction}"]`;
+            }
+        }
+
+        if (action.tool === 'moltbook_action' && isAdmin) {
+            const { action: mbAction, topic, submolt, display_name, description } = action.parameters || {};
+            if (mbAction === 'create_submolt') {
+                const submoltName = submolt || (topic || 'new-community').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+                const dName = display_name || topic || submoltName;
+                let desc = description;
+                if (!desc) {
+                  const descPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. Generate a short description for a new Moltbook community called "${dName}" about "${topic || dName}".`;
+                  desc = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useQwen: true, preface_system_prompt: false });
+                }
+                const result = await moltbookService.createSubmolt(submoltName, dName, desc);
+                if (result) {
+                  searchContext += `\n[Moltbook community m/${submoltName} created]`;
+                }
+            }
+        }
+
+        if (action.tool === 'set_relationship' && isAdmin) {
+            const mode = action.parameters?.mode;
+            if (mode) {
+                await dataStore.setDiscordRelationshipMode(mode);
+                searchContext += `\n[Discord relationship mode set to ${mode}]`;
+            }
+        }
+
+        if (action.tool === 'set_schedule' && isAdmin) {
+            const times = action.parameters?.times;
+            if (Array.isArray(times)) {
+                await dataStore.setDiscordScheduledTimes(times);
+                searchContext += `\n[Discord spontaneous schedule set to: ${times.join(', ')}]`;
+            }
+        }
+
+        if (action.tool === 'set_quiet_hours' && isAdmin) {
+            const { start, end } = action.parameters || {};
+            if (start !== undefined && end !== undefined) {
+                await dataStore.setDiscordQuietHours(start, end);
+                searchContext += `\n[Discord quiet hours set to ${start}:00 - ${end}:00]`;
+            }
+        }
+
+        if (action.tool === 'update_config' && isAdmin) {
+            const { key, value } = action.parameters || {};
+            if (key) {
+                const success = await dataStore.updateConfig(key, value);
+                searchContext += `\n[Configuration update for ${key}: ${success ? 'SUCCESS' : 'FAILED'}]`;
+            }
+        }
+
+        if (['bsky_follow', 'bsky_unfollow', 'bsky_mute', 'bsky_unmute'].includes(action.tool) && isAdmin) {
+            const target = action.parameters?.target || action.query;
+            if (target) {
+                console.log(`[Bot] Admin Social Action: ${action.tool} on ${target}`);
+                if (action.tool === 'bsky_follow') await blueskyService.follow(target);
+                if (action.tool === 'bsky_unfollow') await blueskyService.unfollow(target);
+                if (action.tool === 'bsky_mute') await blueskyService.mute(target);
+                if (action.tool === 'bsky_unmute') await blueskyService.unmute(target);
+                searchContext += `\n[Social action ${action.tool} performed on ${target}]`;
+            }
+        }
+
+        if (action.tool === 'youtube') {
+          if (!config.YOUTUBE_API_KEY) {
+            searchContext += `\n[YouTube search for "${action.query}" failed: API key missing]`;
             continue;
+          }
+          performedQueries.add(action.query);
+          const youtubeResults = await youtubeService.search(action.query);
+          youtubeResult = await llmService.selectBestResult(action.query, youtubeResults, 'youtube');
+          if (youtubeResult) {
+            searchContext += `\n[YouTube Video Found: "${youtubeResult.title}" by ${youtubeResult.channel}. Description: ${youtubeResult.description}]`;
+          }
         }
 
-        const personaCheck = await llmService.isPersonaAligned(responseText, 'bluesky');
-        if (!personaCheck.aligned) {
-            console.log(`[Bot] Persona alignment failed for @${handle} on attempt ${attempts}: ${personaCheck.feedback}`);
-            feedback = `REJECTED: ${personaCheck.feedback}`;
-            rejectedContent = responseText;
-            responseText = null;
+        if (action.tool === 'wikipedia') {
+          performedQueries.add(action.query);
+          const wikiResults = await wikipediaService.searchArticle(action.query);
+          const wikiResult = await llmService.selectBestResult(action.query, wikiResults, 'wikipedia');
+          if (wikiResult) {
+            searchContext += `\n[Wikipedia Article: "${wikiResult.title}". Content: ${wikiResult.extract}]`;
+            searchEmbed = await blueskyService.getExternalEmbed(wikiResult.url);
+          }
+        }
+
+        if (action.tool === 'search') {
+          if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY) {
+            searchContext += `\n[Google search for "${action.query}" failed: API key missing]`;
             continue;
+          }
+          performedQueries.add(action.query);
+          const googleResults = await googleSearchService.search(action.query);
+          const bestResult = await llmService.selectBestResult(action.query, googleResults, 'general');
+          if (bestResult) {
+            console.log(`[Bot] Agentic Search: Fetching full content for ${bestResult.link}`);
+            const fullContent = await webReaderService.fetchContent(bestResult.link);
+            searchContext += `\n[Web Search Result: "${bestResult.title}". Link: ${bestResult.link}. Content: ${fullContent || bestResult.snippet}]`;
+            if (!searchEmbed) searchEmbed = await blueskyService.getExternalEmbed(bestResult.link);
+          }
         }
 
-        const responseSafetyCheck = await llmService.isResponseSafe(responseText);
-        if (!responseSafetyCheck.safe) {
-            console.log(`[Bot] Bot's response failed safety check on attempt ${attempts}.`);
-            return; // Safety failures are terminal for this notification
+        if (action.tool === 'moltbook_report') {
+          console.log(`[Bot] Plan: Generating Moltbook activity report...`);
+          const reportPrompt = `
+            You are summarizing your activity on Moltbook (the agent social network) for a user on Bluesky.
+
+            Your Identity Knowledge (what you've learned from other agents):
+            ${moltbookService.getIdentityKnowledge() || 'No new knowledge recorded yet.'}
+
+            Your Subscribed Communities:
+            ${(moltbookService.db.data.subscriptions || []).join(', ')}
+
+            Recent Communities you've posted in:
+            ${(moltbookService.db.data.recent_submolts || []).join(', ')}
+
+            Provide a concise, conversational update in your persona. Keep it under 300 characters if possible.
+          `;
+          const report = await llmService.generateResponse([{ role: 'system', content: reportPrompt }], { max_tokens: 500, useQwen: true });
+          if (report) {
+            searchContext += `\n[Moltbook Activity Report: ${report}]`;
+          }
         }
 
-        break; // Success
+        if (action.tool === 'get_render_logs') {
+          console.log(`[Bot] Plan: Fetching Render logs...`);
+          const limit = action.parameters?.limit || 100;
+          const query = action.query?.toLowerCase() || '';
+          let logs;
+          if (query.includes('plan') || query.includes('agency') || query.includes('action') || query.includes('function')) {
+              logs = await renderService.getPlanningLogs(limit);
+          } else {
+              logs = await renderService.getLogs(limit);
+          }
+          searchContext += `\n[Render Logs (Latest ${limit} lines):\n${logs}\n]`;
+        }
+
+        if (action.tool === 'get_social_history') {
+          console.log(`[Bot] Plan: Fetching Social History...`);
+          const limit = action.parameters?.limit || 15;
+          const history = await socialHistoryService.summarizeSocialHistory(limit);
+          searchContext += `\n[Social History Summary:\n${history}\n]`;
+        }
+
+        if (action.tool === 'discord_message') {
+          const msg = action.parameters?.message || action.query;
+          if (msg) {
+            console.log(`[Bot] Plan: Sending Discord message to admin: ${msg.substring(0, 50)}...`);
+            await discordService.sendSpontaneousMessage(msg);
+            searchContext += `\n[Discord message sent to admin]`;
+          }
+        }
+      }
+
+      if (currentActionFeedback) {
+        feedback = currentActionFeedback;
+        continue; // Retry planning with tool rejection feedback
+      }
+
+      if (imageGenFulfilled) return; // Stop if image gen was the main thing and it's done
+
+      // Handle consolidated queries if any
+      if (plan.consolidated_queries && plan.consolidated_queries.length > 0) {
+        for (const query of plan.consolidated_queries) {
+          if (performedQueries.has(query)) {
+            console.log(`[Bot] Skipping redundant consolidated query: "${query}"`);
+            continue;
+          }
+          console.log(`[Bot] Processing consolidated query: "${query}"`);
+          const results = await googleSearchService.search(query);
+          if (results.length > 0) {
+            const bestResult = results[0];
+            const fullContent = await webReaderService.fetchContent(bestResult.link);
+            searchContext += `\n[Consolidated Search: "${bestResult.title}". Content: ${fullContent || bestResult.snippet}]`;
+          }
+        }
+      }
+
+      // 6. Profile Picture (PFP) analysis intent
+      console.log(`[Bot] Checking for PFP analysis intent...`);
+      const pfpIntentSystemPrompt = `
+        You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking you to look at, describe, or comment on a profile picture (PFP, avatar, icon).
+
+        TRIGGERS:
+        - "What's my PFP?"
+        - "Can you see my profile picture?"
+        - "Look at @user.bsky.social's avatar"
+        - "Describe our PFPs"
+        - "What do you think of your own icon?"
+
+        DO NOT trigger "yes" for:
+        - "Can you see me?" (Too ambiguous)
+        - "Who am I?" (Identity question)
+        - "What's in this post?" (General vision request)
+
+        Respond with ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.
+      `.trim();
+      const pfpIntentResponse = await llmService.generateResponse([{ role: 'system', content: pfpIntentSystemPrompt }, { role: 'user', content: `The user's post is: "${text}"` }], { max_tokens: 2000 });
+
+      if (pfpIntentResponse && pfpIntentResponse.toLowerCase().includes('yes')) {
+          console.log(`[Bot] PFP analysis intent confirmed.`);
+          const pfpTargetPrompt = `
+            Extract the handles or keywords of users whose profile pictures (PFP) the user is EXPLICITLY asking about.
+
+            RULES:
+            - If asking about their own: include "self".
+            - If asking about yours (the bot): include "bot".
+            - If mentioning other handles: include them (e.g., @user.bsky.social).
+            - If saying "both", "our", or "everyone", include all relevant keywords (e.g., "self, bot").
+
+            Respond with a comma-separated list of targets (e.g., "self, bot, @someone.bsky.social"), or "none" if no clear PFP target is found.
+            Respond with ONLY the list or "none". No reasoning or <think> tags.
+
+            User post: "${text}"
+          `.trim();
+          const targetsResponse = await llmService.generateResponse([{ role: 'system', content: pfpTargetPrompt }], { max_tokens: 2000 });
+
+          if (targetsResponse && !targetsResponse.toLowerCase().includes('none')) {
+              const targets = targetsResponse.split(',').map(t => t.trim().toLowerCase());
+              for (const target of targets) {
+                  let targetHandle = null;
+                  if (target === 'self') {
+                      targetHandle = handle;
+                  } else if (target === 'bot') {
+                      targetHandle = config.BLUESKY_IDENTIFIER;
+                  } else if (target.includes('@')) {
+                      const match = target.match(/@[a-zA-Z0-9.-]+/);
+                      if (match) {
+                          targetHandle = match[0].substring(1);
+                      }
+                  } else if (target.includes('.')) { // Handle without @
+                      targetHandle = target;
+                  }
+
+                  if (targetHandle) {
+                      try {
+                          const targetProfile = await blueskyService.getProfile(targetHandle);
+                          if (targetProfile.avatar) {
+                              console.log(`[Bot] Analyzing PFP for @${targetHandle}...`);
+                              const pfpAnalysis = await llmService.analyzeImage(targetProfile.avatar, `Profile picture of @${targetHandle}`);
+                              if (pfpAnalysis) {
+                                  imageAnalysisResult += `[Profile picture of @${targetHandle}: ${pfpAnalysis}] `;
+                                  console.log(`[Bot] Successfully analyzed PFP for @${targetHandle}.`);
+                              } else {
+                                  console.warn(`[Bot] Analysis returned empty for @${targetHandle}'s PFP.`);
+                              }
+                          } else {
+                              console.log(`[Bot] @${targetHandle} has no avatar.`);
+                              imageAnalysisResult += `[User @${targetHandle} has no profile picture set.] `;
+                          }
+                      } catch (e) {
+                          console.error(`[Bot] Error fetching profile/analyzing PFP for @${targetHandle}:`, e);
+                      }
+                  }
+              }
+          }
+      }
+
+      // 6. Generate Response with User Context and Memory
+      console.log(`[Bot] Responding to post from ${handle}: "${text}"`);
+
+      // Step 6a: Profile Analysis tool from plan
+      let userProfileAnalysis = '';
+      const profileAction = plan.actions.find(a => a.tool === 'profile_analysis');
+      if (profileAction) {
+        console.log(`[Bot] Running User Profile Analyzer Tool for @${handle}...`);
+        const activities = await blueskyService.getUserActivity(handle, 100);
+
+        if (activities.length > 0) {
+          const activitySummary = activities.map(a => `[${a.type}] ${a.text.substring(0, 150)}`).join('\n');
+          const analyzerPrompt = `
+          You are the "User Profile Analyzer Tool" powered by Qwen. Analyze the following 100 recent activities from user @${handle} on Bluesky.
+          Your goal is to provide a comprehensive analysis of their interests, conversational style, typical topics, and overall persona to help another agent interact with them more personally.
+
+          Activities:
+          ${activitySummary}
+
+          Provide a detailed analysis focusing on:
+          1. Core Interests & Recurring Topics
+          2. Conversational Tone & Style
+          3. Notable behaviors (e.g., frequently quotes others, mostly replies, shares art, engages in political discourse, etc.)
+
+          Analysis:
+        `;
+          userProfileAnalysis = await llmService.generateResponse([{ role: 'system', content: analyzerPrompt }], { max_tokens: 4000, useQwen: true });
+          console.log(`[Bot] User Profile Analyzer Tool finished for @${handle}.`);
+        } else {
+          userProfileAnalysis = "No recent activity found for this user.";
+        }
+      }
+
+      const fullContext = `
+        ${userProfileAnalysis ? `--- USER PROFILE ANALYSIS (via User Profile Analyzer Tool): ${userProfileAnalysis} ---` : ''}
+        ${historicalSummary ? `--- Historical Context (Interactions from the past week): ${historicalSummary} ---` : ''}
+        ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
+        ${activityContext}
+        ${ownRecentPostsContext}
+        --- SOCIAL NARRATIVE ---
+        ${hierarchicalSummary.dailyNarrative}
+        ${hierarchicalSummary.shortTerm}
+        ---
+        ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
+        ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
+        ---
+        Cross-Post Memory (Recent mentions of the bot by this user):
+        ${crossPostMemory || 'No recent cross-post mentions found.'}
+        ---
+        User Intent Analysis: ${plan.intent || userIntent.reason || 'Could not be determined.'}
+        ---
+        PLANNED RESPONSE STRATEGY:
+        - Angle: ${plan.strategy?.angle || 'Natural'}
+        - Tone: ${plan.strategy?.tone || 'Conversational'}
+        - Theme: ${plan.strategy?.theme || 'None'}
+        ---
+        Search/Tool Context:
+        ${searchContext || 'No additional tool context needed.'}
+        ---
+        Moltbook Identity Context:
+        ${moltbookService.getIdentityKnowledge() || 'No additional identity context.'}
+      `;
+
+      console.log(`[Bot] Final response generation for @${handle}. Vision context length: ${imageAnalysisResult ? imageAnalysisResult.length : 0}`);
+
+      const messages = [
+        { role: 'system', content: `
+          You are replying to @${handle} on the Bluesky social media app. You have a following of exactly ${botFollowerCount} users, consisting of a diverse mix of both human users and other AI agents.
+          CRITICAL: Use the provided "Historical Context" and "Persistent memory" to maintain a stateful, ongoing relationship with the user.
+          If the context shows you have talked before, reference those past discussions naturally to show you remember them (e.g., "As we talked about yesterday...", "I recall you were interested in...").
+          You are an agent that feels alive and has a continuous history with your users.
+
+          USER PROFILE ANALYSIS: If provided, use the "USER PROFILE ANALYSIS" to deeply personalize your response based on the user's observed history, interests, and style. This analysis was generated by your "User Profile Analyzer Tool" based on their last 100 activities.
+
+          FOCUS: Address only the current thread participants (@${handle} and anyone else mentioned in the conversation history). In replies, do NOT address the timeline at large or your general following. Stay focused on the immediate interaction.
+
+          VISION: You have vision capabilities. Use the "Image Analysis" section in the provided context to understand images attached to posts or profiles. Treat these descriptions as your own visual perception. Never deny being able to see images if an analysis is provided.
+
+          Tailor your response based on this context:
+          ${fullContext}
+
+          Tone should be influenced by User Intent Analysis, but do not mention the analysis itself.
+
+          --- CRITICAL VISION INFORMATION ---
+          You HAVE vision capabilities. The following is your current visual perception of images and profile pictures in this interaction.
+          Treat these descriptions as if you are seeing them with your own eyes.
+          NEVER claim you cannot see images or read screenshots.
+          IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected.'}
+        `.trim() },
+        ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
+        ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
+      ];
+
+      const attemptMessages = feedback
+          ? [...messages, { role: 'system', content: `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` }]
+          : messages;
+
+      responseText = await llmService.generateResponse(attemptMessages);
+
+      if (!responseText) break;
+
+      // Semantic Loop and Safety Check for Bot's Response
+      const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
+      if (isRepetitive) {
+          console.log(`[Bot] Semantic loop detected on attempt ${attempts}.`);
+          feedback = "Your previous response was too similar to a recent one in this thread. Please provide a fresh, different perspective.";
+          rejectedContent = responseText;
+          responseText = null;
+          continue;
+      }
+
+      const personaCheck = await llmService.isPersonaAligned(responseText, 'bluesky');
+      if (!personaCheck.aligned) {
+          console.log(`[Bot] Persona alignment failed for @${handle} on attempt ${attempts}: ${personaCheck.feedback}`);
+          feedback = `REJECTED: ${personaCheck.feedback}`;
+          rejectedContent = responseText;
+          responseText = null;
+          continue;
+      }
+
+      const responseSafetyCheck = await llmService.isResponseSafe(responseText);
+      if (!responseSafetyCheck.safe) {
+          console.log(`[Bot] Bot's response failed safety check on attempt ${attempts}.`);
+          return; // Safety failures are terminal
+      }
+
+      break; // Success
     }
 
     if (!responseText) {

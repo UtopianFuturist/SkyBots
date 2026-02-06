@@ -47,6 +47,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     validateResultRelevance: jest.fn(),
     evaluateConversationVibe: jest.fn(),
     performAgenticPlanning: jest.fn(),
+    isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false }),
   },
 }));

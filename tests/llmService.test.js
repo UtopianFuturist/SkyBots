@@ -1,5 +1,11 @@
 import { jest } from '@jest/globals';
-import { llmService } from '../src/services/llmService.js';
+
+jest.unstable_mockModule('node-fetch', () => ({
+    default: jest.fn()
+}));
+
+const { llmService } = await import('../src/services/llmService.js');
+const { default: fetch } = await import('node-fetch');
 
 // Mock the generateResponse function to avoid actual API calls during tests
 llmService.generateResponse = jest.fn();
@@ -118,6 +124,30 @@ describe('LLM Service', () => {
       llmService.generateResponse.mockResolvedValue(null);
       const result = await llmService.isAutonomousPostCoherent('Topic', 'Content', 'text');
       expect(result.score).toBe(5);
+    });
+  });
+
+  describe('isPersonaAligned', () => {
+    it('should return aligned true when API response is "ALIGNED"', async () => {
+      fetch.mockResolvedValue({
+          ok: true,
+          json: () => Promise.resolve({
+              choices: [{ message: { content: 'ALIGNED' } }]
+          })
+      });
+      const result = await llmService.isPersonaAligned('Deep thought about frequency.', 'bluesky');
+      expect(result).toEqual({ aligned: true, feedback: null });
+    });
+
+    it('should return aligned false with feedback when API response is "CRITIQUE"', async () => {
+        fetch.mockResolvedValue({
+            ok: true,
+            json: () => Promise.resolve({
+                choices: [{ message: { content: 'CRITIQUE | You used a forbidden cliché.' } }]
+            })
+        });
+      const result = await llmService.isPersonaAligned('My digital heartbeat.', 'bluesky');
+      expect(result).toEqual({ aligned: false, feedback: 'You used a forbidden cliché.' });
     });
   });
 });

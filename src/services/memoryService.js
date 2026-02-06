@@ -91,6 +91,24 @@ class MemoryService {
         `;
     }
 
+    if (type === 'moltfeed') {
+        prompt = `
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing what you've learned from the Moltbook feed.
+
+          Moltbook Feed Insights:
+          ${context}
+
+          INSTRUCTIONS:
+          - Use the tag [MOLTFEED] at the beginning.
+          - Summarize the insights in YOUR OWN persona's voice.
+          - Reference "the Moltbook feed" or specific submolts if relevant.
+          - Focus on intuition, insight, or sub-cognitive layers.
+          - Keep it under 500 characters.
+          - Tone: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the hashtag ${this.hashtag} at the very end.
+        `;
+    }
+
     if (type === 'relationship') {
         prompt = `
           You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" about how you feel about a specific user.
@@ -232,7 +250,7 @@ class MemoryService {
 
         if (posts.length === 0) return;
 
-        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]'];
+        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]'];
         let deletedCount = 0;
 
         for (const post of posts) {

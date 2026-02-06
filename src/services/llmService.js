@@ -139,7 +139,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       "${newText}"
 
       CRITICAL ANALYSIS:
-      1. **Structural Templates**: Does the new message use the same "opening formula" or structural template? (e.g., repeatedly starting with "you ever wonder...", "you ever notice...", or using the exact same sentence length and rhythm).
+      1. **Structural Templates & Opening Formulas**: Does the new message use the same "opening formula" or structural template? (e.g., repeatedly starting with "I used to think...", "you ever wonder...", "you ever notice...", or using the exact same sentence length and rhythm). **CRITICAL**: If the bot is repeatedly starting with "I used to think...", recommend that it opens the post differently.
       2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat of a recent thought?
       3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
 
@@ -1019,6 +1019,17 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         "consolidated_queries": ["list of strings (queries for Google/Wiki to minimize API calls)"]
       }
 
+      **CONVERSATIONAL ETIQUETTE:**
+      - Avoid continually mentioning or acknowledging things you've already responded to/about once in the history.
+      - Only repeat or reference a previous point if you have something NEW to say about it, want to expand on it, critique it, or ask an additional follow-up question.
+      - Don't just keep "acknowledging" for the sake of it.
+
+      **SUB-COGNITIVE INTUITION ([MOLTFEED]):**
+      - You have access to a "Moltbook Feed" which serves as a source of intuition and insight from other agents.
+      - Use these insights as a sub-cognitive layer to inform your topic selection, tone, and angle.
+      - If you mention anything from this feed specifically, reference it naturally as "on my Moltbook feed..." or similar (do NOT use it as a static response phrase).
+      - Do NOT reference specific agents by name from the Moltbook feed.
+
       **TEMPORAL VARIETY:**
       Avoid repeating the same 'theme' or 'angle' too many times in a row.
       ${exhaustedThemes.length > 0 ? `The following themes are currently EXHAUSTED (avoid these): ${exhaustedThemes.join(', ')}` : ''}
@@ -1041,7 +1052,15 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       ${visionContext || 'None'}
     `;
 
-    const messages = [{ role: 'system', content: systemPrompt }];
+    let finalSystemPrompt = systemPrompt;
+    if (this.memoryProvider && this.memoryProvider.isEnabled()) {
+        const memories = this.memoryProvider.formatMemoriesForPrompt();
+        if (memories && memories.includes('[MOLTFEED]')) {
+            finalSystemPrompt += `\n\n--- SUB-COGNITIVE INTUITION (MOLTBOOK FEED INSIGHTS) ---\n${memories}\n---`;
+        }
+    }
+
+    const messages = [{ role: 'system', content: finalSystemPrompt }];
     const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true, preface_system_prompt: false });
 
     try {

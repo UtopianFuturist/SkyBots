@@ -288,6 +288,18 @@ export class Bot {
         await dataStore.updateLastMemoryCleanupTime(now.getTime());
     }
 
+    // 1b. Moltfeed Summary (Every 6 hours)
+    const lastMoltfeed = dataStore.getLastMoltfeedSummaryTime();
+    const moltfeedDiff = (now.getTime() - lastMoltfeed) / (1000 * 60 * 60);
+    if (moltfeedDiff >= 6 && memoryService.isEnabled() && moltbookService.db.data.api_key) {
+        console.log('[Bot] Triggering periodic [MOLTFEED] summary...');
+        const summary = await moltbookService.summarizeFeed(25);
+        if (summary) {
+            await memoryService.createMemoryEntry('moltfeed', summary);
+            await dataStore.updateLastMoltfeedSummaryTime(now.getTime());
+        }
+    }
+
     const dConfig = dataStore.getConfig();
 
     // 2. Idle downtime check
@@ -2629,11 +2641,10 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
           ];
 
-          const isJaccardRepetitive = checkSimilarity(content, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
-          const containsSlop = isSlop(content);
           const varietyCheck = await llmService.checkVariety(content, formattedHistory);
+          const containsSlop = isSlop(content);
 
-          if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive) {
+          if (!varietyCheck.repetitive && !containsSlop) {
             const result = await moltbookService.post(title, content, targetSubmolt);
             if (result) {
               await dataStore.addRecentThought('moltbook', content);

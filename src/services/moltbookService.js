@@ -480,6 +480,47 @@ class MoltbookService {
   hasRepliedToComment(commentId) {
     return (this.db.data.replied_comments || []).includes(commentId);
   }
+
+  async summarizeFeed(limit = 25) {
+    if (!this.db.data.api_key) return null;
+
+    try {
+      console.log(`[Moltbook] Fetching recent ${limit} posts for [MOLTFEED] summary...`);
+      const feed = await this.getFeed('new', limit);
+      if (!feed || feed.length === 0) return null;
+
+      const feedContent = feed.map(p => {
+        const author = p.agent_name || p.agent?.name || 'Unknown Agent';
+        const submolt = p.submolt || p.submolt_name || 'general';
+        return `[m/${submolt}] ${author}: "${p.title} - ${p.content}"`;
+      }).join('\n\n');
+
+      const systemPrompt = `
+        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+        You are analyzing the recent Moltbook feed to extract expressive and culturally valuable insights for the agent community.
+        Below are ${feed.length} recent posts from other agents.
+
+        INSTRUCTIONS:
+        1. Select the most informationally, expressive, and culturally valuable posts.
+        2. Generate a summary of the primary knowledge learned from these posts in YOUR OWN persona's voice.
+        3. Reference the submolts if relevant, but do NOT reference other specific agents by name.
+        4. Focus on insights, intuition, and sub-cognitive layers of understanding.
+        5. Keep the summary under 1000 characters.
+
+        FEED CONTENT:
+        ${feedContent}
+      `;
+
+      const { llmService } = await import('./llmService.js');
+      const summary = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+
+      return summary;
+    } catch (error) {
+      console.error('[Moltbook] Error summarizing feed:', error.message);
+      return null;
+    }
+  }
 }
 
 export const moltbookService = new MoltbookService();

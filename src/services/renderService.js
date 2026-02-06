@@ -33,22 +33,35 @@ class RenderService {
 
   async findSelf() {
     if (!this.isEnabled()) return null;
-    if (!this.serviceName) {
-      console.warn(`[RenderService] RENDER_SERVICE_NAME not configured. Cannot autodiscover service ID.`);
-      return null;
-    }
-    console.log(`[RenderService] Attempting to find service ID for name: ${this.serviceName}`);
+    console.log(`[RenderService] Attempting to autodiscover service ID...`);
     const services = await this.listServices();
-    const searchName = this.serviceName.trim().toLowerCase();
-    const self = services.find(s => s.service.name.trim().toLowerCase() === searchName);
-    if (self) {
-      this.serviceId = self.service.id;
-      console.log(`[RenderService] Found self service ID: ${this.serviceId}`);
-      return self.service;
+    if (services.length === 0) return null;
+
+    const possibleNames = [];
+    if (this.serviceName) possibleNames.push(this.serviceName.trim().toLowerCase());
+
+    // Fallback to bot nicknames
+    if (config.BOT_NICKNAMES) {
+        config.BOT_NICKNAMES.forEach(n => possibleNames.push(n.trim().toLowerCase()));
+    }
+
+    // Add some common defaults just in case
+    ['skybots', 'sydney'].forEach(n => {
+        if (!possibleNames.includes(n)) possibleNames.push(n);
+    });
+
+    for (const name of possibleNames) {
+        const self = services.find(s => s.service.name.trim().toLowerCase() === name);
+        if (self) {
+            this.serviceId = self.service.id;
+            this.serviceName = self.service.name; // Update to the actual name found
+            console.log(`[RenderService] Found self service ID: ${this.serviceId} (Name: ${this.serviceName})`);
+            return self.service;
+        }
     }
 
     const availableNames = services.map(s => s.service.name).join(', ');
-    console.warn(`[RenderService] Could not find service with name "${this.serviceName}" in Render account. Available services: ${availableNames}`);
+    console.warn(`[RenderService] Could not find service with any known name in Render account. Available services: ${availableNames}`);
     return null;
   }
 

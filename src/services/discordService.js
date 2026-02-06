@@ -103,47 +103,77 @@ class DiscordService {
             }
         });
 
-        console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
-        console.log('[DiscordService] Available env keys:', Object.keys(process.env).filter(k => k.includes('DISCORD') || k.includes('TOKEN')));
+        let attempts = 0;
+        const maxAttempts = 5;
+        let baseDelay = 30000; // 30 seconds
 
-        if (this.token) {
-            console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
-        }
+        while (attempts < maxAttempts) {
+            attempts++;
+            console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
 
-        try {
-            console.log('[DiscordService] Testing connectivity to Discord Gateway API...');
-            const gatewayResp = await fetch('https://discord.com/api/v10/gateway').catch(e => ({ ok: false, error: e.message }));
-            if (gatewayResp.ok) {
-                console.log('[DiscordService] Gateway API Reachability: OK');
-            } else {
-                console.log(`[DiscordService] Gateway API Reachability: FAILED (Status: ${gatewayResp.status} ${gatewayResp.statusText || ''}, Error: ${gatewayResp.error || 'None'})`);
-            }
-        } catch (e) {
-            console.error('[DiscordService] Gateway connectivity check threw error:', e.message);
-        }
+            try {
+                console.log('[DiscordService] Testing connectivity to Discord Gateway API...');
+                const gatewayResp = await fetch('https://discord.com/api/v10/gateway').catch(e => ({ ok: false, error: e.message }));
+                if (gatewayResp.ok) {
+                    console.log('[DiscordService] Gateway API Reachability: OK');
+                } else {
+                    const retryAfter = gatewayResp.headers?.get('retry-after');
+                    console.log(`[DiscordService] Gateway API Reachability: FAILED (Status: ${gatewayResp.status} ${gatewayResp.statusText || ''}, Retry-After: ${retryAfter || 'None'})`);
 
-        try {
-            // Set a timeout for login - increase to 10 minutes (600s) as requested by admin
-            let timeoutHandle;
-            const loginPromise = this.client.login(this.token);
-            const timeoutPromise = new Promise((_, reject) =>
-                timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 600s')), 600000)
-            );
-
-            const loginResult = await Promise.race([loginPromise, timeoutPromise]);
-            clearTimeout(timeoutHandle);
-            console.log('[DiscordService] SUCCESS: login() promise resolved. Logged in as:', this.client.user?.tag);
-        } catch (error) {
-            console.error('[DiscordService] FATAL: Failed to login to Discord:', error);
-            this.isEnabled = false; // Disable on ANY fatal login failure
-
-            if (error.message.includes('Used disallowed intents')) {
-                console.error('[DiscordService] INTENT ERROR: The bot tried to use privileged intents (GUILD_MEMBERS, MESSAGE_CONTENT).');
-                console.error('[DiscordService] ACTION REQUIRED: Enable "GUILD MEMBERS INTENT" and "MESSAGE CONTENT INTENT" in the Discord Developer Portal (under Bot -> Privileged Gateway Intents).');
+                    if (gatewayResp.status === 429 && retryAfter) {
+                        const waitMs = parseInt(retryAfter) * 1000 + 5000;
+                        console.log(`[DiscordService] Rate limited by Discord Gateway. Waiting ${Math.round(waitMs / 1000)}s as requested...`);
+                        await new Promise(resolve => setTimeout(resolve, waitMs));
+                        // Continue to attempt login anyway, or retry connectivity check?
+                        // Let's retry the loop if we were explicitly rate limited here.
+                        continue;
+                    }
+                }
+            } catch (e) {
+                console.error('[DiscordService] Gateway connectivity check threw error:', e.message);
             }
 
-            if (error.message.includes('TOKEN_INVALID')) {
-                console.error('[DiscordService] TOKEN ERROR: The provided Discord token is invalid.');
+            try {
+                console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
+                if (this.token) {
+                    console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
+                }
+
+                // Set a timeout for login - 10 minutes (600s) as requested by admin
+                let timeoutHandle;
+                const loginPromise = this.client.login(this.token);
+                const timeoutPromise = new Promise((_, reject) =>
+                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 600s')), 600000)
+                );
+
+                await Promise.race([loginPromise, timeoutPromise]);
+                clearTimeout(timeoutHandle);
+                console.log('[DiscordService] SUCCESS: login() promise resolved. Logged in as:', this.client.user?.tag);
+                return; // Successful login, exit init()
+            } catch (error) {
+                console.error(`[DiscordService] Login attempt ${attempts} failed:`, error.message);
+
+                if (error.message.includes('Used disallowed intents')) {
+                    console.error('[DiscordService] INTENT ERROR: The bot tried to use privileged intents (GUILD_MEMBERS, MESSAGE_CONTENT).');
+                    console.error('[DiscordService] ACTION REQUIRED: Enable "GUILD MEMBERS INTENT" and "MESSAGE CONTENT INTENT" in the Discord Developer Portal.');
+                    this.isEnabled = false;
+                    return;
+                }
+
+                if (error.message.includes('TOKEN_INVALID')) {
+                    console.error('[DiscordService] TOKEN ERROR: The provided Discord token is invalid.');
+                    this.isEnabled = false;
+                    return;
+                }
+
+                if (attempts < maxAttempts) {
+                    const backoff = baseDelay * Math.pow(2, attempts - 1);
+                    console.log(`[DiscordService] Retrying in ${Math.round(backoff / 1000)}s...`);
+                    await new Promise(resolve => setTimeout(resolve, backoff));
+                } else {
+                    console.error('[DiscordService] FATAL: All Discord login attempts failed.');
+                    this.isEnabled = false;
+                }
             }
         }
     }

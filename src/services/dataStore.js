@@ -385,6 +385,10 @@ class DataStore {
     await this.db.write();
   }
 
+  getLastMemoryCleanupTime() {
+    return this.db.data.lastMemoryCleanupTime || 0;
+  }
+
   getLastMoltfeedSummaryTime() {
     return this.db.data.lastMoltfeedSummaryTime || 0;
   }

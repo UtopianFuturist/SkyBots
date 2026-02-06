@@ -56,14 +56,14 @@ export class Bot {
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
 
-    console.log('[Bot] Triggering DiscordService initialization (non-blocking)...');
+    console.log('[Bot] Prioritizing DiscordService initialization...');
     discordService.setBotInstance(this);
-    // Initialize Discord in the background to avoid blocking other services (Bluesky/Moltbook)
-    discordService.init().then(() => {
-        console.log('[Bot] DiscordService initialization complete.');
-    }).catch(err => {
-        console.error('[Bot] DiscordService.init() background failure:', err);
-    });
+    try {
+        await discordService.init();
+        console.log('[Bot] DiscordService initialization attempt finished.');
+    } catch (err) {
+        console.error('[Bot] DiscordService.init() critical failure:', err);
+    }
 
     console.log('[Bot] Proceeding to Bluesky authentication...');
     await blueskyService.authenticate();
@@ -240,15 +240,23 @@ export class Bot {
     // Start Firehose immediately for real-time DID mentions
     this.startFirehose();
 
-    // Run catch-up once on startup to process missed notifications
-    await this.catchUpNotifications();
-
-    // Run cleanup on startup
-    await this.cleanupOldPosts();
-
     // Perform initial startup tasks after a delay to avoid API burst
     setTimeout(async () => {
       console.log('[Bot] Running initial startup tasks...');
+
+      // Run catch-up once on startup to process missed notifications (now delayed)
+      try {
+        await this.catchUpNotifications();
+      } catch (e) {
+        console.error('[Bot] Error in initial catch-up:', e);
+      }
+
+      // Run cleanup on startup (now delayed)
+      try {
+        await this.cleanupOldPosts();
+      } catch (e) {
+        console.error('[Bot] Error in initial cleanup:', e);
+      }
 
       // Run autonomous post and Moltbook tasks independently so one failure doesn't block the other
       try {

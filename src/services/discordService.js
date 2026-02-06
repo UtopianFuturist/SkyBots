@@ -52,6 +52,13 @@ class DiscordService {
         console.log('[DiscordService] Initial 10s cooldown before starting initialization...');
         await new Promise(resolve => setTimeout(resolve, 10000));
 
+        if (this.client) {
+            console.log('[DiscordService] Client already exists. Destroying old instance before re-creating...');
+            try {
+                this.client.destroy();
+            } catch (e) {}
+        }
+
         console.log('[DiscordService] Creating client with intents and partials...');
         this.client = new Client({
             intents: [
@@ -64,6 +71,11 @@ class DiscordService {
                 GatewayIntentBits.GuildMessageReactions
             ],
             partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
+            rest: {
+                timeout: 30000,
+                retries: 5,
+                globalRequestsPerSecond: 20
+            }
         });
 
         this.client.on('ready', () => {
@@ -108,6 +120,14 @@ class DiscordService {
             console.error('[DiscordService] Client session invalidated.');
         });
 
+        this.client.on('invalidRequestWarning', (data) => {
+            console.warn('[DiscordService] Invalid Request Warning:', data);
+        });
+
+        this.client.on('rateLimit', (data) => {
+            console.warn('[DiscordService] Global/Local Rate Limit Hit:', data);
+        });
+
         this.client.on('messageCreate', async (message) => {
             try {
                 await this.handleMessage(message);
@@ -118,7 +138,7 @@ class DiscordService {
 
         let attempts = 0;
         const maxAttempts = 5;
-        let baseDelay = 30000; // 30 seconds
+        let baseDelay = 60000; // 60 seconds starting delay
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -130,16 +150,17 @@ class DiscordService {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
                 }
 
-                // Set a timeout for login - 10 minutes (600s) as requested by admin
+                // Set a timeout for login - 120s is safer when waiting for 'ready'
                 let timeoutHandle;
                 const loginPromise = this.client.login(this.token);
+                const readyPromise = new Promise((resolve) => this.client.once('ready', resolve));
                 const timeoutPromise = new Promise((_, reject) =>
-                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 600s')), 600000)
+                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 120s')), 120000)
                 );
 
-                await Promise.race([loginPromise, timeoutPromise]);
+                await Promise.race([Promise.all([loginPromise, readyPromise]), timeoutPromise]);
                 clearTimeout(timeoutHandle);
-                console.log('[DiscordService] SUCCESS: login() promise resolved. Logged in as:', this.client.user?.tag);
+                console.log('[DiscordService] SUCCESS: Client is ready! Logged in as:', this.client.user?.tag);
                 this.isInitializing = false;
                 return; // Successful login, exit init()
             } catch (error) {

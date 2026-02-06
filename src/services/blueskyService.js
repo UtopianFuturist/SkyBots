@@ -61,7 +61,11 @@ class BlueskyService {
       });
       return data.thread;
     } catch (error) {
-      console.error('[BlueskyService] Error fetching detailed thread:', error);
+      if (error.name === 'NotFoundError' || error.message?.includes('Post not found')) {
+        console.warn(`[BlueskyService] Post not found: ${uri}`);
+      } else {
+        console.error('[BlueskyService] Error fetching detailed thread:', error);
+      }
       return null;
     }
   }
@@ -124,7 +128,11 @@ class BlueskyService {
       return false;
     } catch (error) {
       // If post is not found or other error, assume we haven't replied or can't reply
-      console.error(`[BlueskyService] Error checking for existing reply to ${uri}:`, error.message);
+      if (error.name === 'NotFoundError' || error.message?.includes('Post not found')) {
+          // Silence NotFound error as it's common during catch-up or cleanup
+      } else {
+          console.error(`[BlueskyService] Error checking for existing reply to ${uri}:`, error.message);
+      }
       return false;
     }
   }

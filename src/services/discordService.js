@@ -1,5 +1,4 @@
 import { Client, GatewayIntentBits, Partials, ChannelType } from 'discord.js';
-import fetch from 'node-fetch';
 import config from '../../config.js';
 import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
@@ -26,6 +25,8 @@ class DiscordService {
         this.isEnabled = !!this.token && this.token !== 'undefined' && this.token !== 'null';
         this.adminId = null;
         this.isInitializing = false;
+        this._lastHeavyAdminSearch = 0;
+        this._lastMessageFetch = {};
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
     }
 
@@ -46,6 +47,10 @@ class DiscordService {
         }
 
         this.isInitializing = true;
+
+        // Initial delay to avoid burst on restart
+        console.log('[DiscordService] Initial 10s cooldown before starting initialization...');
+        await new Promise(resolve => setTimeout(resolve, 10000));
 
         console.log('[DiscordService] Creating client with intents and partials...');
         this.client = new Client({
@@ -118,28 +123,6 @@ class DiscordService {
         while (attempts < maxAttempts) {
             attempts++;
             console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
-
-            try {
-                console.log('[DiscordService] Testing connectivity to Discord Gateway API...');
-                const gatewayResp = await fetch('https://discord.com/api/v10/gateway').catch(e => ({ ok: false, error: e.message }));
-                if (gatewayResp.ok) {
-                    console.log('[DiscordService] Gateway API Reachability: OK');
-                } else {
-                    const retryAfter = gatewayResp.headers?.get('retry-after');
-                    console.log(`[DiscordService] Gateway API Reachability: FAILED (Status: ${gatewayResp.status} ${gatewayResp.statusText || ''}, Retry-After: ${retryAfter || 'None'})`);
-
-                    if (gatewayResp.status === 429 && retryAfter) {
-                        const waitMs = parseInt(retryAfter) * 1000 + 5000;
-                        console.log(`[DiscordService] Rate limited by Discord Gateway. Waiting ${Math.round(waitMs / 1000)}s as requested...`);
-                        await new Promise(resolve => setTimeout(resolve, waitMs));
-                        // Continue to attempt login anyway, or retry connectivity check?
-                        // Let's retry the loop if we were explicitly rate limited here.
-                        continue;
-                    }
-                }
-            } catch (e) {
-                console.error('[DiscordService] Gateway connectivity check threw error:', e.message);
-            }
 
             try {
                 console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
@@ -346,9 +329,16 @@ class DiscordService {
 
         // If local history is empty, try to fetch from Discord channel
         if (history.length === 0) {
-            try {
-                console.log(`[DiscordService] Local history empty, fetching from Discord...`);
-                const fetchedMessages = await message.channel.messages.fetch({ limit: 20 });
+            // Cooldown for message fetching: 1 minute per channel to reduce API pressure
+            const now = Date.now();
+            const lastFetch = this._lastMessageFetch[normChannelId] || 0;
+            if (now - lastFetch < 60000) {
+                console.log(`[DiscordService] Skipping message fetch from Discord (cooldown active for ${normChannelId}).`);
+            } else {
+                this._lastMessageFetch[normChannelId] = now;
+                try {
+                    console.log(`[DiscordService] Local history empty, fetching from Discord...`);
+                    const fetchedMessages = await message.channel.messages.fetch({ limit: 20 });
                 history = fetchedMessages
                     .reverse()
                     .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
@@ -358,9 +348,10 @@ class DiscordService {
                         timestamp: m.createdTimestamp,
                         attachments: m.attachments
                     }));
-                console.log(`[DiscordService] Fetched ${history.length} messages from Discord.`);
-            } catch (err) {
-                console.warn(`[DiscordService] Failed to fetch history from Discord:`, err);
+                    console.log(`[DiscordService] Fetched ${history.length} messages from Discord.`);
+                } catch (err) {
+                    console.warn(`[DiscordService] Failed to fetch history from Discord:`, err);
+                }
             }
         }
 
@@ -900,6 +891,14 @@ INSTRUCTIONS:
                 this.adminId = null;
             }
         }
+
+        // Heavy search cooldown: 10 minutes to avoid hitting Discord API limits
+        const now = Date.now();
+        if (this._lastHeavyAdminSearch && (now - this._lastHeavyAdminSearch < 600000)) {
+            console.log(`[DiscordService] Skipping heavy admin search (cooldown active).`);
+            return null;
+        }
+        this._lastHeavyAdminSearch = now;
 
         console.log(`[DiscordService] Searching for admin: ${this.adminName}`);
 

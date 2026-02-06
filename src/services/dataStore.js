@@ -34,6 +34,7 @@ const defaultData = {
   recent_thoughts: [], // [ { platform, content, timestamp } ]
   exhausted_themes: [], // [ { theme, timestamp } ]
   lastMemoryCleanupTime: 0,
+  lastMoltfeedSummaryTime: 0,
   // Dynamic Configuration
   bluesky_daily_text_limit: 20,
   bluesky_daily_image_limit: 5,
@@ -384,8 +385,13 @@ class DataStore {
     await this.db.write();
   }
 
-  getLastMemoryCleanupTime() {
-    return this.db.data.lastMemoryCleanupTime || 0;
+  getLastMoltfeedSummaryTime() {
+    return this.db.data.lastMoltfeedSummaryTime || 0;
+  }
+
+  async updateLastMoltfeedSummaryTime(timestamp) {
+    this.db.data.lastMoltfeedSummaryTime = timestamp;
+    await this.db.write();
   }
 
   async addExhaustedTheme(theme) {

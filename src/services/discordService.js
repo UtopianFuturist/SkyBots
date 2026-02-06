@@ -302,15 +302,37 @@ class DiscordService {
                 const fetchedMessages = await message.channel.messages.fetch({ limit: 20 });
                 history = fetchedMessages
                     .reverse()
-                    .filter(m => m.content && !m.content.startsWith('/'))
+                    .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
                     .map(m => ({
                         role: m.author.id === this.client.user.id ? 'assistant' : 'user',
                         content: m.content,
-                        timestamp: m.createdTimestamp
+                        timestamp: m.createdTimestamp,
+                        attachments: m.attachments
                     }));
                 console.log(`[DiscordService] Fetched ${history.length} messages from Discord.`);
             } catch (err) {
                 console.warn(`[DiscordService] Failed to fetch history from Discord:`, err);
+            }
+        }
+
+        // Vision: Analyze images in history (both user and self)
+        for (const h of history.slice(-5)) { // Look at last 5 messages for images
+            if (h.attachments && h.attachments.size > 0) {
+                for (const [id, attachment] of h.attachments) {
+                    if (attachment.contentType?.startsWith('image/') || attachment.url.match(/\.(jpg|jpeg|png|webp)$/i)) {
+                        try {
+                            const analysis = await llmService.analyzeImage(attachment.url);
+                            if (analysis) {
+                                const author = h.role === 'assistant' ? 'you' : 'the user';
+                                if (!imageAnalysisResult.includes(analysis)) {
+                                    imageAnalysisResult += `[Image previously posted by ${author}: ${analysis}] `;
+                                }
+                            }
+                        } catch (err) {
+                            console.error(`[DiscordService] Error analyzing history attachment:`, err);
+                        }
+                    }
+                }
             }
         }
 
@@ -576,14 +598,72 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                                      `The user wants to post about: ${content || title}`
                                  );
                              }
-                             const result = await moltbookService.post(title || "A thought from my admin", content, targetSubmolt);
-                             if (result) {
-                                 actionResults.push(`[Successfully posted to Moltbook m/${targetSubmolt}]`);
-                                 if (this.botInstance) {
-                                     await this.botInstance._shareMoltbookPostToBluesky(result);
+
+                             // Implement 3-attempt retry loop with variety check for Admin-triggered Moltbook post
+                             let attempts = 0;
+                             let success = false;
+                             let currentTitle = title || "A thought from my admin";
+                             let currentContent = content;
+                             let feedback = '';
+                             let rejectedContent = null;
+                             const recentThoughts = dataStore.getRecentThoughts();
+
+                             while (attempts < 3) {
+                                 attempts++;
+                                 if (feedback) {
+                                     const retryPrompt = `
+                                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                                        You are re-generating a Moltbook post because the previous attempt was rejected.
+                                        Feedback: ${feedback}
+                                        Previous Attempt: "${rejectedContent}"
+                                        Target Topic: ${content}
+
+                                        INSTRUCTIONS:
+                                        - Generate a NEW title and content that adheres to the feedback.
+                                        - Stay in persona.
+                                        - Format as:
+                                          Title: [Title]
+                                          Content: [Content]
+                                     `;
+                                     const retryRaw = await llmService.generateResponse([{ role: 'system', content: retryPrompt }], { useQwen: true });
+                                     if (retryRaw) {
+                                         const tMatch = retryRaw.match(/Title:\s*(.*)/i);
+                                         const cMatch = retryRaw.match(/Content:\s*([\s\S]*)/i);
+                                         if (tMatch && cMatch) {
+                                             currentTitle = tMatch[1].trim();
+                                             currentContent = cMatch[1].trim();
+                                         }
+                                     }
                                  }
-                             } else {
-                                 actionResults.push(`[Failed to post to Moltbook. Ensure the submolt exists.]`);
+
+                                 const recentMoltbookPosts = moltbookService.db.data.recent_post_contents || [];
+                                 const formattedHistory = [
+                                     ...recentMoltbookPosts.map(m => ({ platform: 'moltbook', content: m })),
+                                     ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
+                                 ];
+
+                                 const varietyCheck = await llmService.checkVariety(currentContent, formattedHistory);
+                                 const containsSlop = isSlop(currentContent);
+
+                                 if (!varietyCheck.repetitive && !containsSlop) {
+                                     const result = await moltbookService.post(currentTitle, currentContent, targetSubmolt);
+                                     if (result) {
+                                         actionResults.push(`[Successfully posted to Moltbook m/${targetSubmolt}]`);
+                                         if (this.botInstance) {
+                                             await this.botInstance._shareMoltbookPostToBluesky(result);
+                                         }
+                                         success = true;
+                                     }
+                                     break;
+                                 } else {
+                                     feedback = containsSlop ? "REJECTED: Post contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Post was too similar to recent history.");
+                                     rejectedContent = currentContent;
+                                     console.log(`[DiscordService] Moltbook post attempt ${attempts} rejected: ${feedback}`);
+                                 }
+                             }
+
+                             if (!success) {
+                                 actionResults.push(`[Failed to post to Moltbook after 3 attempts due to variety/slop rejections.]`);
                              }
                          }
                      }

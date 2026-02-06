@@ -139,6 +139,21 @@ export const handleCommand = async (bot, post, text) => {
     const imageResult = await imageService.generateImage(prompt, { allowPortraits: true });
     if (imageResult && imageResult.buffer) {
       const { buffer: imageBuffer, finalPrompt } = imageResult;
+
+      // Visual Persona Alignment check
+      console.log(`[CommandHandler] Running visual persona check for !generate-image...`);
+      const imageAnalysis = await llmService.analyzeImage(imageBuffer);
+      const personaCheck = await llmService.isPersonaAligned(`(Generated Image for command: ${prompt})`, 'bluesky', {
+          imageSource: imageBuffer,
+          generationPrompt: finalPrompt,
+          imageAnalysis: imageAnalysis
+      });
+
+      if (!personaCheck.aligned) {
+          console.warn(`[CommandHandler] Generated image failed persona check: ${personaCheck.feedback}`);
+          return `REJECTED: ${personaCheck.feedback}`;
+      }
+
       console.log(`[CommandHandler] Image generation successful with prompt: "${finalPrompt}", uploading to Bluesky...`);
       const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
       const embed = {

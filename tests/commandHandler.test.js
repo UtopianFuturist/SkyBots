@@ -32,6 +32,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     generateResponse: jest.fn(),
     selectBestResult: jest.fn(),
     validateResultRelevance: jest.fn(),
+    analyzeImage: jest.fn().mockResolvedValue('A description of the image'),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
   },
 }));

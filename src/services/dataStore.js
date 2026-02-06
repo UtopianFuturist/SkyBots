@@ -2,6 +2,7 @@ import { JSONFilePreset } from 'lowdb/node';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import fs from 'fs';
+import config from '../../config.js';
 import { memoryService } from './memoryService.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,7 +33,18 @@ const defaultData = {
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
   recent_thoughts: [], // [ { platform, content, timestamp } ]
   exhausted_themes: [], // [ { theme, timestamp } ]
-  lastMemoryCleanupTime: 0
+  lastMemoryCleanupTime: 0,
+  // Dynamic Configuration
+  bluesky_daily_text_limit: 20,
+  bluesky_daily_image_limit: 5,
+  bluesky_daily_wiki_limit: 5,
+  bluesky_post_cooldown: 45,
+  moltbook_post_cooldown: 30,
+  discord_idle_threshold: 10,
+  max_thread_chunks: 3,
+  repetition_similarity_threshold: 0.4,
+  post_topics: [],
+  image_subjects: []
 };
 
 class DataStore {
@@ -50,6 +62,21 @@ class DataStore {
     }
     this.db = await JSONFilePreset(DB_PATH, defaultData);
     await this.db.read();
+
+    // Initialize topics and subjects from config if empty
+    let changed = false;
+    if ((!this.db.data.post_topics || this.db.data.post_topics.length === 0) && config.POST_TOPICS) {
+        this.db.data.post_topics = config.POST_TOPICS.split('\n').map(t => t.trim()).filter(t => t);
+        changed = true;
+    }
+    if ((!this.db.data.image_subjects || this.db.data.image_subjects.length === 0) && config.IMAGE_SUBJECTS) {
+        this.db.data.image_subjects = config.IMAGE_SUBJECTS.split('\n').map(s => s.trim()).filter(s => s);
+        changed = true;
+    }
+    if (changed) {
+        await this.db.write();
+    }
+
     console.log(`[DataStore] Database loaded. Found ${this.db.data.repliedPosts.length} replied posts.`);
   }
 
@@ -392,6 +419,51 @@ class DataStore {
     if (this.db.data.exhausted_themes.length !== initialLength) {
       await this.db.write();
     }
+  }
+
+  getConfig() {
+    return {
+      bluesky_daily_text_limit: this.db.data.bluesky_daily_text_limit ?? 20,
+      bluesky_daily_image_limit: this.db.data.bluesky_daily_image_limit ?? 5,
+      bluesky_daily_wiki_limit: this.db.data.bluesky_daily_wiki_limit ?? 5,
+      bluesky_post_cooldown: this.db.data.bluesky_post_cooldown ?? 45,
+      moltbook_post_cooldown: this.db.data.moltbook_post_cooldown ?? 30,
+      discord_idle_threshold: this.db.data.discord_idle_threshold ?? 10,
+      max_thread_chunks: this.db.data.max_thread_chunks ?? 3,
+      repetition_similarity_threshold: this.db.data.repetition_similarity_threshold ?? 0.4,
+      post_topics: this.db.data.post_topics || [],
+      image_subjects: this.db.data.image_subjects || [],
+      discord_relationship_mode: this.db.data.discord_relationship_mode || 'friend',
+      discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 23, end: 8 },
+      discord_admin_available: this.db.data.discord_admin_available ?? true
+    };
+  }
+
+  async updateConfig(key, value) {
+    const validKeys = [
+      'bluesky_daily_text_limit',
+      'bluesky_daily_image_limit',
+      'bluesky_daily_wiki_limit',
+      'bluesky_post_cooldown',
+      'moltbook_post_cooldown',
+      'discord_idle_threshold',
+      'max_thread_chunks',
+      'repetition_similarity_threshold',
+      'post_topics',
+      'image_subjects',
+      'discord_relationship_mode',
+      'discord_quiet_hours',
+      'discord_admin_available'
+    ];
+
+    if (validKeys.includes(key)) {
+      this.db.data[key] = value;
+      await this.db.write();
+      console.log(`[DataStore] Configuration updated: ${key} = ${JSON.stringify(value)}`);
+      return true;
+    }
+    console.warn(`[DataStore] Attempted to update invalid config key: ${key}`);
+    return false;
   }
 }
 

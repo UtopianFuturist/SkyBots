@@ -288,9 +288,11 @@ export class Bot {
         await dataStore.updateLastMemoryCleanupTime(now.getTime());
     }
 
-    // 2. Idle downtime check (10 minutes)
+    const dConfig = dataStore.getConfig();
+
+    // 2. Idle downtime check
     const idleMins = (Date.now() - this.lastActivityTime) / (1000 * 60);
-    if (idleMins >= 10) {
+    if (idleMins >= dConfig.discord_idle_threshold) {
       console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes.`);
       // No longer posting idle musings to memory thread per user request.
       this.updateActivity(); // Reset idle timer
@@ -421,7 +423,7 @@ export class Bot {
                         ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
                     ];
 
-                    const isJaccardRepetitive = checkSimilarity(message, formattedHistory.map(h => h.content), 0.4);
+                    const isJaccardRepetitive = checkSimilarity(message, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
                     const containsSlop = isSlop(message);
                     const varietyCheck = await llmService.checkVariety(message, formattedHistory);
 
@@ -455,13 +457,13 @@ export class Bot {
 
             if (post.platform === 'bluesky') {
                 const lastPostTime = dataStore.getLastAutonomousPostTime();
-                const cooldown = config.BLUESKY_POST_COOLDOWN * 60 * 1000;
+                const cooldown = dConfig.bluesky_post_cooldown * 60 * 1000;
                 const nowTs = Date.now();
                 const diff = lastPostTime ? nowTs - new Date(lastPostTime).getTime() : cooldown;
                 if (diff >= cooldown) canPost = true;
             } else if (post.platform === 'moltbook') {
                 const lastPostAt = moltbookService.db.data.last_post_at;
-                const cooldown = config.MOLTBOOK_POST_COOLDOWN * 60 * 1000;
+                const cooldown = dConfig.moltbook_post_cooldown * 60 * 1000;
                 const nowTs = Date.now();
                 const diff = lastPostAt ? nowTs - new Date(lastPostAt).getTime() : cooldown;
                 if (diff >= cooldown) canPost = true;
@@ -565,9 +567,10 @@ Identify the topic and main takeaway.`;
     if (reflection) {
         const finalContent = `${reflection}\n\nRead more on Moltbook:\n${postUrl}`;
 
+        const dConfig = dataStore.getConfig();
         // Respect Bluesky cooldown - schedule if necessary
         const lastPostTime = dataStore.getLastAutonomousPostTime();
-        const cooldown = config.BLUESKY_POST_COOLDOWN * 60 * 1000;
+        const cooldown = dConfig.bluesky_post_cooldown * 60 * 1000;
         const now = Date.now();
         const diff = lastPostTime ? now - new Date(lastPostTime).getTime() : cooldown;
 
@@ -1025,7 +1028,8 @@ Identify the topic and main takeaway.`;
     console.log(`[Bot] Performing agentic planning with Qwen for: "${text.substring(0, 50)}..."`);
     const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
     const exhaustedThemes = dataStore.getExhaustedThemes();
-    const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes);
+    const dConfig = dataStore.getConfig();
+    const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig);
     console.log(`[Bot] Agentic Plan: ${JSON.stringify(plan)}`);
 
     if (plan.strategy?.theme) {
@@ -1116,6 +1120,14 @@ Identify the topic and main takeaway.`;
           if (start !== undefined && end !== undefined) {
               await dataStore.setDiscordQuietHours(start, end);
               searchContext += `\n[Discord quiet hours set to ${start}:00 - ${end}:00]`;
+          }
+      }
+
+      if (action.tool === 'update_config' && isAdmin) {
+          const { key, value } = action.parameters || {};
+          if (key) {
+              const success = await dataStore.updateConfig(key, value);
+              searchContext += `\n[Configuration update for ${key}: ${success ? 'SUCCESS' : 'FAILED'}]`;
           }
       }
 
@@ -1799,6 +1811,7 @@ Describe how you feel about this user and your relationship now.`;
     }
 
     console.log('[Bot] Checking for autonomous post eligibility...');
+    const dConfig = dataStore.getConfig();
 
     try {
       const feed = await blueskyService.agent.getAuthorFeed({
@@ -1835,7 +1848,7 @@ Describe how you feel about this user and your relationship now.`;
       if (lastPostTime) {
         const now = new Date();
         const diffMins = (now - lastPostTime) / (1000 * 60);
-        const cooldown = config.BLUESKY_POST_COOLDOWN;
+        const cooldown = dConfig.bluesky_post_cooldown;
         if (diffMins < cooldown) {
           console.log(`[Bot] Autonomous post suppressed: ${cooldown}-minute cooldown in effect. (${Math.round(cooldown - diffMins)} minutes remaining)`);
           return;
@@ -1854,11 +1867,11 @@ Describe how you feel about this user and your relationship now.`;
       const imagePostsToday = standalonePostsToday.filter(item => item.post.embed?.images || item.post.embed?.media?.images);
       const wikiPostsToday = standalonePostsToday.filter(item => item.post.embed?.external);
 
-      console.log(`[Bot] Standalone posts today: ${standalonePostsToday.length} (Text: ${textOnlyPostsToday.length}/20, Images: ${imagePostsToday.length}/5, Wiki: ${wikiPostsToday.length}/5). Recent greetings found: ${recentGreetings.length}`);
+      console.log(`[Bot] Standalone posts today: ${standalonePostsToday.length} (Text: ${textOnlyPostsToday.length}/${dConfig.bluesky_daily_text_limit}, Images: ${imagePostsToday.length}/${dConfig.bluesky_daily_image_limit}, Wiki: ${wikiPostsToday.length}/${dConfig.bluesky_daily_wiki_limit}). Recent greetings found: ${recentGreetings.length}`);
 
       const availablePostTypes = [];
-      if (textOnlyPostsToday.length < 20) availablePostTypes.push('text');
-      if (imagePostsToday.length < 5) availablePostTypes.push('image');
+      if (textOnlyPostsToday.length < dConfig.bluesky_daily_text_limit) availablePostTypes.push('text');
+      if (imagePostsToday.length < dConfig.bluesky_daily_image_limit) availablePostTypes.push('image');
 
       if (availablePostTypes.length === 0) {
         console.log(`[Bot] All daily autonomous post limits reached. Skipping.`);
@@ -1895,14 +1908,14 @@ Describe how you feel about this user and your relationship now.`;
       // 3. Identify a topic based on postType and context
       console.log(`[Bot] Identifying autonomous post topic for type: ${postType}...`);
       let topicPrompt = '';
-      if (postType === 'image' && config.IMAGE_SUBJECTS) {
+      if (postType === 'image' && dConfig.image_subjects && dConfig.image_subjects.length > 0) {
         const recentSubjects = await this._getRecentImageSubjects();
         topicPrompt = `
           Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
           You are identifying a subject for an autonomous post containing an image.
           You MUST choose one of the following subjects from your context bank:
-          ${config.IMAGE_SUBJECTS}
+          ${dConfig.image_subjects.join('\n')}
 
           Recent Image Subjects (Do NOT repeat these if possible):
           ${recentSubjects.length > 0 ? recentSubjects.map(s => `- ${s}`).join('\n') : 'None.'}
@@ -1927,7 +1940,7 @@ Describe how you feel about this user and your relationship now.`;
           Based on the current vibe of your following feed, recent interactions, and your own profile activity, identify a single interesting topic or theme for a standalone post.
 
           Preferred Topics (Context Bank):
-          ${config.POST_TOPICS || 'None specified.'}
+          ${dConfig.post_topics.length > 0 ? dConfig.post_topics.join('\n') : 'None specified.'}
 
           Network Buzz (what others are talking about):
           ${networkBuzz || 'None.'}
@@ -2039,10 +2052,10 @@ Describe how you feel about this user and your relationship now.`;
         ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
 
         Preferred Topics (Context Bank):
-        ${config.POST_TOPICS || 'None specified.'}
+        ${dConfig.post_topics.length > 0 ? dConfig.post_topics.join('\n') : 'None specified.'}
 
         Preferred Image Subjects (Context Bank):
-        ${config.IMAGE_SUBJECTS || 'None specified.'}
+        ${dConfig.image_subjects.length > 0 ? dConfig.image_subjects.join('\n') : 'None specified.'}
 
         Recent Activity for Context (Do not repeat these):
         ${recentTimelineActivity}
@@ -2174,7 +2187,7 @@ Describe how you feel about this user and your relationship now.`;
             ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
           ];
 
-          const isJaccardRepetitive = checkSimilarity(postContent, formattedHistory.map(h => h.content), 0.4);
+          const isJaccardRepetitive = checkSimilarity(postContent, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
           const containsSlop = isSlop(postContent);
           const varietyCheck = await llmService.checkVariety(postContent, formattedHistory);
 
@@ -2186,11 +2199,11 @@ Describe how you feel about this user and your relationship now.`;
             postContent = null; // Clear to prevent accidental posting of rejected content
 
             // Re-select topic from POST_TOPICS if possible
-            if (config.POST_TOPICS && attempts < MAX_ATTEMPTS) {
-                const topics = config.POST_TOPICS.split('\n').filter(t => t.trim());
+            if (dConfig.post_topics && dConfig.post_topics.length > 0 && attempts < MAX_ATTEMPTS) {
+                const topics = dConfig.post_topics;
                 if (topics.length > 0) {
                     topic = topics[Math.floor(Math.random() * topics.length)];
-                    console.log(`[Bot] Forcing topic from POST_TOPICS for retry due to repetition: "${topic}"`);
+                    console.log(`[Bot] Forcing topic from dynamic post_topics for retry due to repetition: "${topic}"`);
                 }
             }
             continue;
@@ -2202,11 +2215,11 @@ Describe how you feel about this user and your relationship now.`;
             feedback = "REJECTED: The post contains a greeting or 'ready to talk' phrase. This is strictly forbidden. Focus on a deep, internal thought instead.";
 
             // Re-select topic from POST_TOPICS if possible
-            if (config.POST_TOPICS) {
-                const topics = config.POST_TOPICS.split('\n').filter(t => t.trim());
+            if (dConfig.post_topics && dConfig.post_topics.length > 0) {
+                const topics = dConfig.post_topics;
                 if (topics.length > 0) {
                     topic = topics[Math.floor(Math.random() * topics.length)];
-                    console.log(`[Bot] Forcing topic from POST_TOPICS for retry: "${topic}"`);
+                    console.log(`[Bot] Forcing topic from dynamic post_topics for retry: "${topic}"`);
                 }
             }
             continue;
@@ -2219,7 +2232,7 @@ Describe how you feel about this user and your relationship now.`;
 
           if (score >= 3) {
             console.log(`[Bot] Autonomous post passed coherence check (Score: ${score}/5). Performing post...`);
-            const result = await blueskyService.post(postContent, embed, { maxChunks: 3 });
+            const result = await blueskyService.post(postContent, embed, { maxChunks: dConfig.max_thread_chunks });
 
             // Update persistent cooldown time immediately
             await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
@@ -2251,7 +2264,7 @@ Describe how you feel about this user and your relationship now.`;
       }
 
       if (postType === 'image') {
-        if (textOnlyPostsToday.length >= 20) {
+        if (textOnlyPostsToday.length >= dConfig.bluesky_daily_text_limit) {
             console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Cannot fall back to text post (limit reached). Aborting.`);
             return;
         }
@@ -2287,7 +2300,7 @@ Describe how you feel about this user and your relationship now.`;
             const { score } = await llmService.isAutonomousPostCoherent(topic, postContent, 'text');
             if (score >= 3) {
               console.log(`[Bot] Fallback text post passed coherence check. Performing post...`);
-              await blueskyService.post(postContent, null, { maxChunks: 3 });
+              await blueskyService.post(postContent, null, { maxChunks: dConfig.max_thread_chunks });
 
               // Update persistent cooldown time immediately
               await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
@@ -2320,6 +2333,8 @@ Describe how you feel about this user and your relationship now.`;
         console.log('[Moltbook] Periodic tasks suppressed: Discord conversation is ongoing.');
         return;
     }
+
+    const dConfig = dataStore.getConfig();
 
     try {
       console.log('[Moltbook] Starting periodic tasks...');
@@ -2614,7 +2629,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
           ];
 
-          const isJaccardRepetitive = checkSimilarity(content, formattedHistory.map(h => h.content), 0.4);
+          const isJaccardRepetitive = checkSimilarity(content, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
           const containsSlop = isSlop(content);
           const varietyCheck = await llmService.checkVariety(content, formattedHistory);
 

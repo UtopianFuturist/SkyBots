@@ -552,6 +552,27 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          }
                      }
 
+                     if (action.tool === 'read_link') {
+                         let urls = action.parameters?.urls || [];
+                         if (typeof urls === 'string') urls = [urls];
+                         const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
+                         for (const url of validUrls) {
+                             console.log(`[DiscordService] Checking safety of URL: ${url}`);
+                             const safety = await llmService.isUrlSafe(url);
+                             if (safety.safe) {
+                                 const content = await webReaderService.fetchContent(url);
+                                 if (content) {
+                                     const summary = await llmService.summarizeWebPage(url, content);
+                                     actionResults.push(`[Web Content Summary for ${url}: ${summary}]`);
+                                 } else {
+                                     actionResults.push(`[Failed to read content from ${url}]`);
+                                 }
+                             } else {
+                                 actionResults.push(`[URL Blocked for safety: ${url}. Reason: ${safety.reason}]`);
+                             }
+                         }
+                     }
+
                      if (action.tool === 'search') {
                          const query = action.query;
                          if (query) {

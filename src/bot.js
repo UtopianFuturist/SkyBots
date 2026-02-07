@@ -1227,6 +1227,28 @@ Identify the topic and main takeaway.`;
             }
         }
 
+        if (action.tool === 'read_link') {
+          let urls = action.parameters?.urls || [];
+          if (typeof urls === 'string') urls = [urls];
+          const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
+          for (const url of validUrls) {
+            console.log(`[Bot] Checking safety of URL: ${url}`);
+            const safety = await llmService.isUrlSafe(url);
+            if (safety.safe) {
+              const content = await webReaderService.fetchContent(url);
+              if (content) {
+                const summary = await llmService.summarizeWebPage(url, content);
+                searchContext += `\n[Web Content Summary for ${url}: ${summary}]`;
+                if (!searchEmbed) searchEmbed = await blueskyService.getExternalEmbed(url);
+              } else {
+                searchContext += `\n[Failed to read content from ${url}]`;
+              }
+            } else {
+              searchContext += `\n[URL Blocked for safety: ${url}. Reason: ${safety.reason}]`;
+            }
+          }
+        }
+
         if (action.tool === 'youtube') {
           if (!config.YOUTUBE_API_KEY) {
             searchContext += `\n[YouTube search for "${action.query}" failed: API key missing]`;

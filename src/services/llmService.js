@@ -1014,22 +1014,22 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     let adminTools = '';
     if (isAdmin) {
         adminTools = `
-      14. **Persist Directive**: Update persistent behavioral instructions for either Bluesky or Moltbook.
+      15. **Persist Directive**: Update persistent behavioral instructions for either Bluesky or Moltbook.
           - Use this if the admin provides behavioral feedback, a request for future activity, or instructions on how you should act.
           - Parameters: { "platform": "bluesky|moltbook", "instruction": "the text of the instruction" }
           - PLATFORM DISTINCTION: If they mention "on Moltbook", platform is "moltbook". If they mention "on Bluesky", "on here", or don't specify, platform is "bluesky".
-      15. **Moltbook Action**: Perform a specific action on Moltbook like creating a submolt.
+      16. **Moltbook Action**: Perform a specific action on Moltbook like creating a submolt.
           - Parameters: { "action": "create_submolt", "topic": "string", "submolt": "string", "display_name": "string", "description": "string" }
-      16. **Admin Social Action**: Perform administrative tasks on Bluesky.
+      17. **Admin Social Action**: Perform administrative tasks on Bluesky.
           - Tools: "bsky_follow", "bsky_unfollow", "bsky_mute", "bsky_unmute".
           - Parameter: { "target": "handle or DID" }
-      17. **Set Relationship**: Set the relationship mode for Discord spontaneous messaging.
+      18. **Set Relationship**: Set the relationship mode for Discord spontaneous messaging.
           - Parameters: { "mode": "partner|friend|coworker" }
-      18. **Set Schedule**: Set specific times for Discord spontaneous messaging.
+      19. **Set Schedule**: Set specific times for Discord spontaneous messaging.
           - Parameters: { "times": ["HH:mm", "HH:mm"] }
-      19. **Set Quiet Hours**: Set quiet hours for Discord spontaneous messaging.
+      20. **Set Quiet Hours**: Set quiet hours for Discord spontaneous messaging.
           - Parameters: { "start": number (0-23), "end": number (0-23) }
-      20. **Update Config**: Update a specific system configuration value or limit.
+      21. **Update Config**: Update a specific system configuration value or limit.
           - Use this if the admin explicitly asks to change a limit, cooldown, or setting.
           - Valid Keys: "bluesky_daily_text_limit", "bluesky_daily_image_limit", "bluesky_daily_wiki_limit", "bluesky_post_cooldown", "moltbook_post_cooldown", "discord_idle_threshold", "max_thread_chunks", "repetition_similarity_threshold", "post_topics" (array), "image_subjects" (array).
           - Parameters: { "key": "string", "value": any }
@@ -1079,8 +1079,12 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       13. **Moltbook Post**: Trigger a new post on Moltbook.
           - Use this if the user (especially admin) explicitly asks you to post something to Moltbook.
           - **BROADCAST TRIGGERS**: Trigger this for phrases like "Post our conversation to Moltbook," "Share that musing on Moltbook," or "Put this on m/general."
-          - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
+          - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT copy the admin's exact words.
           - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)" }
+      14. **Read Link**: Directly read and summarize the content of one or more web pages from provided URLs.
+          - Use this if a user provides a link and asks about its content, or if you believe reading a provided link is necessary to fulfill their request.
+          - **CRITICAL**: Perform this action for up to 4 URLs if multiple links are provided.
+          - Parameters: { "urls": ["url1", "url2", ...] }
       ${adminTools}
 
       ${currentConfig ? `--- CURRENT SYSTEM CONFIGURATION ---\n${JSON.stringify(currentConfig, null, 2)}\n---` : ''}
@@ -1105,9 +1109,9 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config",
             "query": "string (the consolidated search query, or 'latest' for logs)",
-            "parameters": { "limit": number (optional, default 100, max 100) },
+            "parameters": { "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed)"
           }
         ],
@@ -1135,6 +1139,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       - Only use "search", "wikipedia", or "youtube" tools if absolutely necessary for the interaction.
       - If multiple searches are needed, you MUST combine them into one broad query.
       - If no tools are needed, return an empty actions array.
+      - **READ LINK**: If you see a URL in the user's post and they are asking about it, or if you need the content of that URL to respond accurately, you MUST use the "read_link" tool.
       - **CRITICAL**: If an admin provides both a behavioral instruction AND a request for an action (e.g., "Always use more color. Now generate an image of a red cat"), you MUST include BOTH actions in the array. Do NOT skip the action just because you are updating directives.
       - **ACTION CHAINING**: If a user asks to post to a community that doesn't exist yet, you should include BOTH a "moltbook_action" (to create it) and a "moltbook_post" in the same actions array.
       - Do not include reasoning or <think> tags.
@@ -1227,6 +1232,32 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
 
     const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], { useQwen: true, preface_system_prompt: false });
     return response;
+  }
+
+  async isUrlSafe(url) {
+    const systemPrompt = `
+      You are a URL safety analyzer. Analyze the following URL to determine if it is safe to visit.
+      Consider common signs of phishing, malware, or inappropriate content.
+      Ignore internal or known safe domains (e.g., wikipedia.org, google.com, youtube.com).
+      Respond with ONLY "safe" or "unsafe | [reason]".
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}` }];
+    const response = await this.generateResponse(messages, { max_tokens: 100, useQwen: true, preface_system_prompt: false });
+    if (response?.toLowerCase().startsWith('unsafe')) {
+      return { safe: false, reason: response.split('|')[1]?.trim() || 'URL looks suspicious.' };
+    }
+    return { safe: true };
+  }
+
+  async summarizeWebPage(url, text) {
+    const systemPrompt = `
+      You are a web content summarizer. Provide a concise, meaningful summary of the following web page content.
+      Focus on the main points, key information, and any specific details that might be relevant to a user's inquiry.
+      Keep the summary under 1000 characters.
+      Respond directly with the summary.
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}\n\nContent:\n${text}` }];
+    return await this.generateResponse(messages, { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
   }
 }
 

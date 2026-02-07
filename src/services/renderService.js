@@ -86,8 +86,9 @@ class RenderService {
       if (!response.ok) {
         if (response.status === 404) {
             console.warn(`[RenderService] 404 error for service ID ${this.serviceId}. Attempting to re-discover service ID by name: ${this.serviceName}`);
+            const oldId = this.serviceId;
             const self = await this.findSelf();
-            if (self && self.id !== this.serviceId) {
+            if (self && self.id !== oldId) {
                 console.log(`[RenderService] Found different service ID: ${self.id}. Retrying fetch...`);
                 this.serviceId = self.id;
                 response = await fetch(`${this.baseUrl}/services/${this.serviceId}/logs`, {
@@ -96,12 +97,15 @@ class RenderService {
                         'Accept': 'text/event-stream'
                     }
                 });
+            } else {
+                console.warn(`[RenderService] No new service ID found or discovery returned the same ID. Logs might not be available for this service type/tier on Render via API.`);
             }
         }
 
         if (!response.ok) {
             const errBody = await response.text().catch(() => 'No body');
-            throw new Error(`Render API error: ${response.status} - ${errBody}`);
+            const hint = response.status === 404 ? " (Note: Render's API log streaming may require a paid plan)" : "";
+            throw new Error(`Render API error: ${response.status}${hint} - ${errBody}`);
         }
       }
 

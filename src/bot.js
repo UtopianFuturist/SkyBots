@@ -1101,7 +1101,8 @@ Identify the topic and main takeaway.`;
 
     while (attempts < MAX_PLAN_ATTEMPTS) {
       attempts++;
-      console.log(`[Bot] Planning Attempt ${attempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 50)}..."`);
+      console.log(`[Bot] Planning Attempt ${attempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+      console.log(`[Bot] Context: isAdmin=${isAdmin}, Platform=bluesky, ThemesCount=${exhaustedThemes.length}`);
 
       plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, feedback);
       console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
@@ -1231,8 +1232,10 @@ Identify the topic and main takeaway.`;
           console.log(`[Bot] READ_LINK TOOL: Tool triggered. Parameters: ${JSON.stringify(action.parameters)}. Query: ${action.query}`);
           let urls = action.parameters?.urls || action.query || [];
           if (typeof urls === 'string') {
-            console.log(`[Bot] READ_LINK TOOL: Parameter 'urls' is a string, converting to array: ${urls}`);
-            urls = [urls];
+            console.log(`[Bot] READ_LINK TOOL: Extracting URLs from string: ${urls}`);
+            const urlRegex = /(https?:\/\/[^\s]+)/g;
+            const matches = urls.match(urlRegex);
+            urls = matches || [urls]; // Fallback to original if no URL found
           }
           const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
           console.log(`[Bot] READ_LINK TOOL: Processing ${validUrls.length} URLs: ${validUrls.join(', ')}`);
@@ -1240,9 +1243,6 @@ Identify the topic and main takeaway.`;
           for (let url of validUrls) {
             if (typeof url !== 'string') continue;
             url = url.trim();
-            if (!url.startsWith('http://') && !url.startsWith('https://')) {
-              url = 'https://' + url;
-            }
 
             console.log(`[Bot] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url}`);
             const safety = await llmService.isUrlSafe(url);

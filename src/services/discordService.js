@@ -1,5 +1,11 @@
 import { Client, GatewayIntentBits, Partials, ChannelType } from 'discord.js';
+import dns from 'node:dns';
 import config from '../../config.js';
+
+// Force IPv4 first to avoid hanging connection issues on some networks (like Render)
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
 import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
 import { imageService } from './imageService.js';
@@ -49,8 +55,8 @@ class DiscordService {
         this.isInitializing = true;
 
         // Initial delay to avoid burst on restart
-        console.log('[DiscordService] Initial 10s cooldown before starting initialization...');
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        console.log('[DiscordService] Initial 30s cooldown before starting initialization...');
+        await new Promise(resolve => setTimeout(resolve, 30000));
 
         if (this.client) {
             console.log('[DiscordService] Client already exists. Destroying old instance before re-creating...');
@@ -71,10 +77,17 @@ class DiscordService {
                 GatewayIntentBits.GuildMessageReactions
             ],
             partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
+            shardCount: 1,
             rest: {
-                timeout: 30000,
-                retries: 5,
-                globalRequestsPerSecond: 20
+                timeout: 60000,
+                retries: 10
+            },
+            ws: {
+                properties: {
+                    $os: process.platform,
+                    $browser: 'discord.js',
+                    $device: 'discord.js'
+                }
             }
         });
 
@@ -150,12 +163,12 @@ class DiscordService {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
                 }
 
-                // Set a timeout for login - 120s is safer when waiting for 'ready'
+                // Set a timeout for login - 300s for slow connections
                 let timeoutHandle;
                 const loginPromise = this.client.login(this.token);
                 const readyPromise = new Promise((resolve) => this.client.once('ready', resolve));
                 const timeoutPromise = new Promise((_, reject) =>
-                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 120s')), 120000)
+                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 300s')), 300000)
                 );
 
                 await Promise.race([Promise.all([loginPromise, readyPromise]), timeoutPromise]);

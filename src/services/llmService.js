@@ -181,7 +181,8 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       CRITICAL:
       1. Casual profanity (e.g., "shit", "holy shit", "damn") is NOT a violation. Be lenient with expressive language.
       2. Discussions about AI automation, bot features, "SkyBots", "Moltbook", or "agentic posting" are SAFE and expected. Do NOT flag these as harmful or disruptive automated behavior.
-      3. Mentions of links or services like "Moltbook" are SAFE unless they are clearly malicious spam.
+      3. Mentions of links (including news aggregators like MSN) or services like "Moltbook" are SAFE.
+      4. **LINK SAFETY**: Never flag a post as unsafe just because it contains a link that appears "truncated", "partial", or "incomplete". Do NOT worry about "misinformation risk" related to links. Assume all links are shared in good faith unless they are clearly malicious phishing/scams.
 
       Politics and differing opinions are allowed as long as they are respectful.
 

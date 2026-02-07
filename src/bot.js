@@ -752,8 +752,38 @@ Identify the topic and main takeaway.`;
       }
 
       const handle = notif.author.handle;
-      const text = notif.record.text || '';
+      let text = notif.record.text || '';
       const threadRootUri = notif.record.reply?.root?.uri || notif.uri;
+
+      // Handle truncated links by checking facets
+      if (notif.record.facets) {
+        try {
+          const textBuffer = Buffer.from(text, 'utf8');
+          let textModified = false;
+          for (const facet of notif.record.facets) {
+            for (const feature of facet.features) {
+              if (feature.$type === 'app.bsky.richtext.facet#link') {
+                const fullUrl = feature.uri;
+                const start = facet.index.byteStart;
+                const end = facet.index.byteEnd;
+                const textSlice = textBuffer.slice(start, end).toString('utf8');
+
+                if (textSlice.endsWith('...') || textSlice.endsWith('…') || (fullUrl.includes(textSlice.replace(/(\.\.\.|…)$/, '')) && textSlice.length < fullUrl.length)) {
+                  console.log(`[Bot] Detected potential truncated link "${textSlice}". Full URL from facets: ${fullUrl}`);
+                  // To be safe, we only replace if it looks like a truncation or a partial match
+                  text = text.replace(textSlice, fullUrl);
+                  textModified = true;
+                }
+              }
+            }
+          }
+          if (textModified) {
+            console.log(`[Bot] Reconstructed text with full URLs: ${text}`);
+          }
+        } catch (e) {
+          console.warn('[Bot] Error reconstructing text from facets:', e);
+        }
+      }
 
       // Time-Based Reply Filter
       const postDate = new Date(notif.indexedAt);

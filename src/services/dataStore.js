@@ -380,6 +380,10 @@ class DataStore {
     return this.db.data.discord_quiet_hours || { start: 23, end: 8 };
   }
 
+  getLastMemoryCleanupTime() {
+    return this.db.data.lastMemoryCleanupTime || 0;
+  }
+
   async updateLastMemoryCleanupTime(timestamp) {
     this.db.data.lastMemoryCleanupTime = timestamp;
     await this.db.write();

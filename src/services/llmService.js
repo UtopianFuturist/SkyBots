@@ -1249,8 +1249,13 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
   async isUrlSafe(url) {
     const systemPrompt = `
       You are a URL safety analyzer. Analyze the following URL to determine if it is safe to visit.
-      Consider common signs of phishing, malware, or inappropriate content.
-      Ignore internal or known safe domains (e.g., wikipedia.org, google.com, youtube.com).
+
+      CRITICAL INSTRUCTIONS:
+      1. **BE EXTREMELY LENIENT**: Only flag URLs that are OBVIOUSLY malicious (e.g., clear phishing, known malware distribution sites, or illegal content).
+      2. **TRUST CREATIVE CONTENT**: Do NOT flag personal websites, blogs, creative portfolios, or niche domains (like deepskyanchor.com) just because they are unfamiliar.
+      3. **FAVOR ACCESS**: Assume all links shared by users are in good faith unless there is definitive, glaring evidence of a security threat.
+      4. Ignore internal or known safe domains (e.g., wikipedia.org, google.com, youtube.com, msn.com).
+
       Respond with ONLY "safe" or "unsafe | [reason]".
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}` }];

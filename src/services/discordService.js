@@ -70,16 +70,18 @@ class DiscordService {
             }
 
             console.log('[DiscordService] Creating fresh client instance...');
+            const intents = [
+                GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.MessageContent,
+                GatewayIntentBits.DirectMessages,
+                GatewayIntentBits.DirectMessageReactions,
+                GatewayIntentBits.GuildMessageReactions
+            ];
+            console.log(`[DiscordService] Using intents: ${intents.join(', ')}`);
             this.client = new Client({
-                intents: [
-                    GatewayIntentBits.Guilds,
-                    GatewayIntentBits.GuildMessages,
-                    GatewayIntentBits.GuildMembers,
-                    GatewayIntentBits.MessageContent,
-                    GatewayIntentBits.DirectMessages,
-                    GatewayIntentBits.DirectMessageReactions,
-                    GatewayIntentBits.GuildMessageReactions
-                ],
+                intents,
                 partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
                 rest: {
                     timeout: 60000,
@@ -257,6 +259,12 @@ class DiscordService {
             await dataStore.setDiscordLastReplied(true);
         }
 
+        const normChannelId = this.getNormalizedChannelId(message);
+        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content, {
+            authorId: message.author.id,
+            username: message.author.username
+        });
+
         // Handle commands
         if (message.content.startsWith('/')) {
             await this.handleCommand(message);
@@ -301,8 +309,11 @@ class DiscordService {
             const channelId = target.id || (target.channel && target.channel.id);
             if (channelId) {
                 // Determine if target is a User or Channel
-                const normId = target.constructor.name === 'User' ? `dm_${target.id}` : channelId;
-                await dataStore.saveDiscordInteraction(normId, 'assistant', sanitized);
+                const normId = (target.constructor.name === 'User' || target.type === ChannelType.DM) ? `dm_${target.id}` : channelId;
+                await dataStore.saveDiscordInteraction(normId, 'assistant', sanitized, {
+                    authorId: this.client.user.id,
+                    username: this.client.user.username
+                });
             }
 
             return sentMessage;
@@ -398,7 +409,9 @@ class DiscordService {
                         role: m.author.id === this.client.user.id ? 'assistant' : 'user',
                         content: m.content,
                         timestamp: m.createdTimestamp,
-                        attachments: m.attachments
+                        attachments: m.attachments,
+                        authorId: m.author.id,
+                        username: m.author.username
                     }));
                     console.log(`[DiscordService] Fetched ${history.length} messages from Discord.`);
                 } catch (err) {
@@ -428,7 +441,7 @@ class DiscordService {
             }
         }
 
-        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
+        // (Interaction already saved in handleMessage)
 
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         console.log(`[DiscordService] User is admin: ${isAdmin}`);
@@ -605,10 +618,15 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              if (typeof url !== 'string') continue;
                              url = url.trim();
 
-                             console.log(`[DiscordService] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url}`);
-                             const safety = await llmService.isUrlSafe(url);
+                             const isAdminInThread = history.some(h => h.role === 'user' && (h.authorId === this.adminId || h.username === this.adminName));
+
+                             console.log(`[DiscordService] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdmin: ${isAdmin}, isAdminInThread: ${isAdminInThread})`);
+
+                             // ADMIN OVERRIDE: Skip safety check if admin is the user OR if admin has already participated in this conversation
+                             const safety = (isAdmin || isAdminInThread) ? { safe: true } : await llmService.isUrlSafe(url);
+
                              if (safety.safe) {
-                                 console.log(`[DiscordService] READ_LINK TOOL: STEP 2 - URL marked safe: ${url}. Attempting to fetch content...`);
+                                 console.log(`[DiscordService] READ_LINK TOOL: STEP 2 - URL allowed (isAdmin/ThreadOverride: ${isAdmin || isAdminInThread}): ${url}. Attempting to fetch content...`);
                                  const content = await webReaderService.fetchContent(url);
                                  if (content) {
                                      console.log(`[DiscordService] READ_LINK TOOL: STEP 3 - Content fetched successfully for ${url} (${content.length} chars). Summarizing...`);

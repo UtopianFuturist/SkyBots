@@ -30,7 +30,7 @@ export const splitText = (text, maxLength = 300) => {
   const chunks = [];
   let remainingText = text;
 
-  while (remainingText.length > 0 && chunks.length < 3) {
+  while (remainingText.length > 0 && chunks.length < 4) {
     if (remainingText.length <= maxLength) {
       chunks.push(remainingText);
       break;

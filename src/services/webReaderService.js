@@ -10,10 +10,13 @@ class WebReaderService {
         targetUrl = 'https://' + targetUrl;
     }
 
-    console.log(`[WebReaderService] Fetching content from: ${targetUrl}`);
+    console.log(`[WebReaderService] STEP 1: Starting fetch for: ${targetUrl}`);
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
+      const timeout = setTimeout(() => {
+        console.log(`[WebReaderService] STEP 2: Fetch timeout for ${targetUrl} after 15s`);
+        controller.abort();
+      }, 15000); // 15s timeout
 
       const response = await fetch(targetUrl, {
         signal: controller.signal,
@@ -23,13 +26,17 @@ class WebReaderService {
       });
 
       clearTimeout(timeout);
+      console.log(`[WebReaderService] STEP 3: Response received for ${targetUrl}. Status: ${response.status} ${response.statusText}`);
 
       if (!response.ok) {
         throw new Error(`Failed to fetch content: ${response.statusText}`);
       }
 
       const html = await response.text();
-      return this.extractText(html);
+      console.log(`[WebReaderService] STEP 4: HTML retrieved for ${targetUrl}. Length: ${html.length} chars.`);
+      const text = this.extractText(html);
+      console.log(`[WebReaderService] STEP 5: Text extracted for ${targetUrl}. Clean length: ${text.length} chars.`);
+      return text;
     } catch (error) {
       console.error(`[WebReaderService] Error fetching content from ${targetUrl}:`, error.message);
       return null;

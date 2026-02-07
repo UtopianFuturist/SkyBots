@@ -1228,25 +1228,46 @@ Identify the topic and main takeaway.`;
         }
 
         if (action.tool === 'read_link') {
+          console.log(`[Bot] READ_LINK TOOL: Tool triggered. Parameters: ${JSON.stringify(action.parameters)}. Query: ${action.query}`);
           let urls = action.parameters?.urls || action.query || [];
-          if (typeof urls === 'string') urls = [urls];
+          if (typeof urls === 'string') {
+            console.log(`[Bot] READ_LINK TOOL: Parameter 'urls' is a string, converting to array: ${urls}`);
+            urls = [urls];
+          }
           const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
-          for (const url of validUrls) {
-            console.log(`[Bot] Checking safety of URL: ${url}`);
+          console.log(`[Bot] READ_LINK TOOL: Processing ${validUrls.length} URLs: ${validUrls.join(', ')}`);
+
+          for (let url of validUrls) {
+            if (typeof url !== 'string') continue;
+            url = url.trim();
+            if (!url.startsWith('http://') && !url.startsWith('https://')) {
+              url = 'https://' + url;
+            }
+
+            console.log(`[Bot] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url}`);
             const safety = await llmService.isUrlSafe(url);
             if (safety.safe) {
+              console.log(`[Bot] READ_LINK TOOL: STEP 2 - URL marked safe: ${url}. Attempting to fetch content...`);
               const content = await webReaderService.fetchContent(url);
               if (content) {
+                console.log(`[Bot] READ_LINK TOOL: STEP 3 - Content fetched successfully for ${url} (${content.length} chars). Summarizing...`);
                 const summary = await llmService.summarizeWebPage(url, content);
-                searchContext += `\n[Web Content Summary for ${url}: ${summary}]`;
-                if (!searchEmbed) searchEmbed = await blueskyService.getExternalEmbed(url);
+                console.log(`[Bot] READ_LINK TOOL: STEP 4 - Summary generated for ${url}. Adding to context.`);
+                searchContext += `\n--- CONTENT FROM URL: ${url} ---\n${summary}\n---`;
+                if (!searchEmbed) {
+                  console.log(`[Bot] READ_LINK TOOL: STEP 5 - Generating external embed for Bluesky using: ${url}`);
+                  searchEmbed = await blueskyService.getExternalEmbed(url);
+                }
               } else {
+                console.warn(`[Bot] READ_LINK TOOL: STEP 3 (FAILED) - Failed to read content from ${url}`);
                 searchContext += `\n[Failed to read content from ${url}]`;
               }
             } else {
+              console.warn(`[Bot] READ_LINK TOOL: STEP 2 (BLOCKED) - URL safety check failed for ${url}. Reason: ${safety.reason}`);
               searchContext += `\n[URL Blocked for safety: ${url}. Reason: ${safety.reason}]`;
             }
           }
+          console.log(`[Bot] READ_LINK TOOL: Finished processing all URLs.`);
         }
 
         if (action.tool === 'youtube') {

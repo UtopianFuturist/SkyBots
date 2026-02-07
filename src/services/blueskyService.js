@@ -148,7 +148,7 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, options = {}) {
-    const { maxChunks = 2 } = options;
+    const { maxChunks = 4 } = options;
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 3000; // 3 seconds
 
@@ -578,7 +578,7 @@ class BlueskyService {
         explicitEmbed = embedOrOptions;
     }
 
-    const { maxChunks = 3 } = finalOptions;
+    const { maxChunks = 4 } = finalOptions;
     console.log('[BlueskyService] Creating new post (potentially threaded)...');
     try {
       let textChunks = splitText(text);

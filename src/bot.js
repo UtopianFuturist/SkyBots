@@ -1097,12 +1097,13 @@ Identify the topic and main takeaway.`;
     const performedQueries = new Set();
     let imageGenFulfilled = false;
     let responseText = null;
+    let plan = null;
 
     while (attempts < MAX_PLAN_ATTEMPTS) {
       attempts++;
       console.log(`[Bot] Planning Attempt ${attempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 50)}..."`);
 
-      const plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, feedback);
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, feedback);
       console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
 
       if (plan.strategy?.theme) {

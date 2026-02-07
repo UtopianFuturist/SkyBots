@@ -47,6 +47,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     addRecentThought: jest.fn(),
     getExhaustedThemes: jest.fn().mockReturnValue([]),
     addExhaustedTheme: jest.fn(),
+    getAdminDid: jest.fn().mockReturnValue('did:plc:admin'),
+    setAdminDid: jest.fn(),
     getLastAutonomousPostTime: jest.fn().mockReturnValue(null),
     updateLastAutonomousPostTime: jest.fn(),
     getConfig: jest.fn().mockReturnValue({

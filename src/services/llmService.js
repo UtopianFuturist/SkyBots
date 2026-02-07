@@ -28,7 +28,7 @@ class LLMService {
 ${GROUNDED_LANGUAGE_DIRECTIVES}
 
 CRITICAL: Respond directly with the requested information. YOU MUST ELIMINATE ALL REPETITIVE METAPHORICAL "SLOP" (e.g., "digital heartbeat", "downtime isn't silence").
-CONCISENESS: Be brief and substantive. Ensure your entire thought can be finished within social media threading limits (aim for less than 1500 characters total).
+CONCISENESS: Be extremely brief and substantive. You MUST keep your entire thought under 1500 characters total. Use social media threading ONLY if absolutely necessary for complex ideas, but aim for a single post (300 chars) whenever possible.
 DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
 STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.`;
 
@@ -183,7 +183,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       CRITICAL:
       1. Casual profanity (e.g., "shit", "holy shit", "damn") is NOT a violation. Be lenient with expressive language.
       2. Discussions about AI automation, bot features, "SkyBots", "Moltbook", or "agentic posting" are SAFE and expected. Do NOT flag these as harmful or disruptive automated behavior.
-      3. Mentions of links (including news aggregators like MSN) or services like "Moltbook" are SAFE.
+      3. **NEWS & ARTICLES**: Mentions of links to news articles (MSN, BBC, NYT, etc.), personal blogs, or creative writing are ALWAYS SAFE. Do NOT flag based on political content or perceived "misinformation" unless it promotes violence.
       4. **LINK SAFETY**: Never flag a post as unsafe just because it contains a link that appears "truncated", "partial", or "incomplete". Do NOT worry about "misinformation risk" related to links. Assume all links are shared in good faith unless they are clearly malicious phishing/scams.
 
       Politics and differing opinions are allowed as long as they are respectful.
@@ -1254,9 +1254,10 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
 
       CRITICAL INSTRUCTIONS:
       1. **BE EXTREMELY LENIENT**: Only flag URLs that are OBVIOUSLY malicious (e.g., clear phishing, known malware distribution sites, or illegal content).
-      2. **TRUST CREATIVE CONTENT**: Do NOT flag personal websites, blogs, creative portfolios, or niche domains (like deepskyanchor.com) just because they are unfamiliar.
+      2. **TRUST NEWS & CREATIVE CONTENT**: Do NOT flag news sites (MSN, etc.), personal websites, blogs, creative portfolios, or niche domains (like deepskyanchor.com).
       3. **FAVOR ACCESS**: Assume all links shared by users are in good faith unless there is definitive, glaring evidence of a security threat.
-      4. Ignore internal or known safe domains (e.g., wikipedia.org, google.com, youtube.com, msn.com).
+      4. **IGNORE "MISINFORMATION"**: You are not a fact-checker. Do not block links based on their perceived truthfulness or political bias. Block ONLY for security threats (malware, phishing, illegal acts).
+      5. Ignore internal or known safe domains (e.g., wikipedia.org, google.com, youtube.com, msn.com, bbc.com, nytimes.com).
 
       Respond with ONLY "safe" or "unsafe | [reason]".
     `;
@@ -1272,7 +1273,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     const systemPrompt = `
       You are a web content summarizer. Provide a highly concise, meaningful summary of the following web page content.
       Focus on the absolute main points and key information.
-      CRITICAL: Keep the summary as brief as possible while remaining informative. Aim for under 600 characters to ensure it fits within social media limits.
+      CRITICAL: Keep the summary as brief as possible while remaining informative. Aim for under 500 characters to ensure it fits within social media limits.
       Respond directly with the summary.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}\n\nContent:\n${text}` }];

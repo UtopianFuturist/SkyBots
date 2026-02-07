@@ -773,25 +773,42 @@ Identify the topic and main takeaway.`;
       if (notif.record.facets) {
         try {
           const textBuffer = Buffer.from(text, 'utf8');
-          let textModified = false;
-          for (const facet of notif.record.facets) {
-            for (const feature of facet.features) {
-              if (feature.$type === 'app.bsky.richtext.facet#link') {
-                const fullUrl = feature.uri;
-                const start = facet.index.byteStart;
-                const end = facet.index.byteEnd;
-                const textSlice = textBuffer.slice(start, end).toString('utf8');
+          // Sort facets by byteStart descending to replace from end to start
+          const linkFacets = notif.record.facets
+            .filter(f => f.features?.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
+            .sort((a, b) => b.index.byteStart - a.index.byteStart);
 
-                if (textSlice.endsWith('...') || textSlice.endsWith('…') || (fullUrl.includes(textSlice.replace(/(\.\.\.|…)$/, '')) && textSlice.length < fullUrl.length)) {
-                  console.log(`[Bot] Detected potential truncated link "${textSlice}". Full URL from facets: ${fullUrl}`);
-                  // To be safe, we only replace if it looks like a truncation or a partial match
-                  text = text.replace(textSlice, fullUrl);
-                  textModified = true;
-                }
+          let modifiedTextBuffer = textBuffer;
+          let textModified = false;
+
+          for (const facet of linkFacets) {
+            const feature = facet.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link');
+            if (feature) {
+              const fullUrl = feature.uri;
+              const start = facet.index.byteStart;
+              const end = facet.index.byteEnd;
+              const textSlice = textBuffer.slice(start, end).toString('utf8');
+
+              if (textSlice.endsWith('...') || textSlice.endsWith('…') || (fullUrl.includes(textSlice.replace(/(\.\.\.|…)$/, '')) && textSlice.length < fullUrl.length)) {
+                console.log(`[Bot] Detected truncated link "${textSlice}". Replacing with full URL from facets: ${fullUrl}`);
+
+                const prefix = modifiedTextBuffer.slice(0, start);
+                const suffix = modifiedTextBuffer.slice(end);
+                const replacement = Buffer.from(fullUrl, 'utf8');
+
+                // Note: This logic only works if we processed facets from end to start
+                // because start/end are relative to the original buffer, and prefix/suffix
+                // are taken from the current modified buffer which might have shifted.
+                // Actually, if we go end to start, the 'prefix' of modifiedTextBuffer
+                // up to 'start' IS the same as original buffer up to 'start'.
+
+                modifiedTextBuffer = Buffer.concat([prefix, replacement, suffix]);
+                textModified = true;
               }
             }
           }
           if (textModified) {
+            text = modifiedTextBuffer.toString('utf8');
             console.log(`[Bot] Reconstructed text with full URLs: ${text}`);
           }
         } catch (e) {
@@ -811,6 +828,11 @@ Identify the topic and main takeaway.`;
     const threadData = await this._getThreadHistory(notif.uri);
     let threadContext = threadData.map(h => ({ author: h.author, text: h.text }));
     const ancestorUris = threadData.map(h => h.uri).filter(uri => uri);
+
+    // Admin Detection (for safety bypass and tool access)
+    const adminDid = dataStore.getAdminDid();
+    const isAdmin = (handle === config.ADMIN_BLUESKY_HANDLE) || (notif.author.did === adminDid);
+    const isAdminInThread = isAdmin || threadData.some(h => h.did === adminDid);
 
     // Hierarchical Social Context
     const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
@@ -945,8 +967,9 @@ Identify the topic and main takeaway.`;
     }
 
     // 3. Pre-reply safety and relevance checks
-    console.log(`[Bot] Starting safety check for post: "${text.substring(0, 50)}..."`);
-    const postSafetyCheck = await llmService.isPostSafe(text);
+    console.log(`[Bot] Starting safety check for post: "${text.substring(0, 50)}..." (isAdminInThread: ${isAdminInThread})`);
+    // ADMIN OVERRIDE: Skip safety check if admin is in the thread
+    const postSafetyCheck = isAdminInThread ? { safe: true } : await llmService.isPostSafe(text);
     console.log(`[Bot] Safety check complete. Safe: ${postSafetyCheck.safe}`);
     if (!postSafetyCheck.safe) {
       console.log(`[Bot] Post by ${handle} failed safety check. Reason: ${postSafetyCheck.reason}. Skipping.`);
@@ -1089,7 +1112,6 @@ Identify the topic and main takeaway.`;
     }
 
     // 6. Agentic Planning & Tool Use with Qwen
-    const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
     const exhaustedThemes = dataStore.getExhaustedThemes();
     const dConfig = dataStore.getConfig();
 
@@ -1287,13 +1309,10 @@ Identify the topic and main takeaway.`;
             if (typeof url !== 'string') continue;
             url = url.trim();
 
-            const adminDid = dataStore.getAdminDid();
-            const isAdminInThread = threadData.some(h => h.did === adminDid);
+            console.log(`[Bot] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdminInThread: ${isAdminInThread})`);
 
-            console.log(`[Bot] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdmin: ${isAdmin}, isAdminInThread: ${isAdminInThread})`);
-
-            // ADMIN OVERRIDE: Skip safety check if admin is the user OR if admin has already participated in this thread
-            const safety = (isAdmin || isAdminInThread) ? { safe: true } : await llmService.isUrlSafe(url);
+            // ADMIN OVERRIDE: Skip safety check if admin is in the thread
+            const safety = isAdminInThread ? { safe: true } : await llmService.isUrlSafe(url);
 
             if (safety.safe) {
               console.log(`[Bot] READ_LINK TOOL: STEP 2 - URL allowed (isAdmin/ThreadOverride: ${isAdmin || isAdminInThread}): ${url}. Attempting to fetch content...`);
@@ -1646,7 +1665,7 @@ Identify the topic and main takeaway.`;
           continue;
       }
 
-      const responseSafetyCheck = await llmService.isResponseSafe(responseText);
+      const responseSafetyCheck = isAdminInThread ? { safe: true } : await llmService.isResponseSafe(responseText);
       if (!responseSafetyCheck.safe) {
           console.log(`[Bot] Bot's response failed safety check on attempt ${attempts}.`);
           return; // Safety failures are terminal

@@ -54,8 +54,8 @@ class DiscordService {
         await new Promise(resolve => setTimeout(resolve, jitter));
 
         let attempts = 0;
-        const maxAttempts = 5;
-        let baseDelay = 120000; // 120 seconds starting delay
+        const maxAttempts = Infinity;
+        const retryDelay = 1800000; // 30 minutes fixed delay
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -110,7 +110,7 @@ class DiscordService {
                 });
 
                 const timeoutPromise = new Promise((_, reject) =>
-                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 300s')), 300000)
+                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 30m')), 1800000)
                 );
 
                 await Promise.race([Promise.all([loginPromise, readyPromise]), timeoutPromise]);
@@ -142,9 +142,8 @@ class DiscordService {
                 }
 
                 if (attempts < maxAttempts) {
-                    const backoff = baseDelay * Math.pow(2, attempts - 1) + Math.floor(Math.random() * 30000);
-                    console.log(`[DiscordService] Retrying in ${Math.round(backoff / 1000)}s (including jitter)...`);
-                    await new Promise(resolve => setTimeout(resolve, backoff));
+                    console.log(`[DiscordService] Retrying in 30 minutes...`);
+                    await new Promise(resolve => setTimeout(resolve, retryDelay));
                 } else {
                     console.error('[DiscordService] FATAL: All Discord login attempts failed.');
                     this.isEnabled = false;

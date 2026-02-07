@@ -98,6 +98,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getPersonaUpdates: jest.fn().mockReturnValue(''),
     getExhaustedThemes: jest.fn().mockReturnValue([]),
     addExhaustedTheme: jest.fn(),
+    getAdminDid: jest.fn().mockReturnValue('did:plc:admin'),
+    setAdminDid: jest.fn(),
     init: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_daily_text_limit: 20,

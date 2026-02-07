@@ -56,7 +56,7 @@ class DiscordService {
 
         let attempts = 0;
         const maxAttempts = Infinity;
-        const retryDelay = 1800000; // 30 minutes fixed delay
+        let retryDelay = 60000; // Start with 1 minute
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -156,8 +156,11 @@ class DiscordService {
                 }
 
                 if (attempts < maxAttempts) {
-                    console.log(`[DiscordService] Retrying in 30 minutes...`);
+                    // Exponential backoff capped at 1 hour
+                    const nextDelay = Math.min(retryDelay * 2, 3600000);
+                    console.log(`[DiscordService] Retrying in ${retryDelay / 1000}s (Next delay: ${nextDelay / 1000}s)...`);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
+                    retryDelay = nextDelay;
                 } else {
                     console.error('[DiscordService] FATAL: All Discord login attempts failed.');
                     this.isEnabled = false;
@@ -461,7 +464,16 @@ class DiscordService {
         // (Interaction already saved in handleMessage)
 
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
-        console.log(`[DiscordService] User is admin: ${isAdmin}`);
+        const isAdminInThread = isAdmin || history.some(h => h.role === 'user' && (h.authorId === this.adminId || h.username === this.adminName));
+        console.log(`[DiscordService] User is admin: ${isAdmin}, isAdminInThread: ${isAdminInThread}`);
+
+        // 0. Safety Check (with Admin Bypass)
+        const postSafetyCheck = isAdminInThread ? { safe: true } : await llmService.isPostSafe(message.content);
+        if (!postSafetyCheck.safe) {
+            console.log(`[DiscordService] Post by ${message.author.username} failed safety check: ${postSafetyCheck.reason}`);
+            // We don't necessarily want to reply with a refusal to keep it quiet, but we skip responding.
+            return;
+        }
 
         // Hierarchical Social Context
         const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
@@ -635,12 +647,10 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              if (typeof url !== 'string') continue;
                              url = url.trim();
 
-                             const isAdminInThread = history.some(h => h.role === 'user' && (h.authorId === this.adminId || h.username === this.adminName));
+                             console.log(`[DiscordService] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdminInThread: ${isAdminInThread})`);
 
-                             console.log(`[DiscordService] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdmin: ${isAdmin}, isAdminInThread: ${isAdminInThread})`);
-
-                             // ADMIN OVERRIDE: Skip safety check if admin is the user OR if admin has already participated in this conversation
-                             const safety = (isAdmin || isAdminInThread) ? { safe: true } : await llmService.isUrlSafe(url);
+                             // ADMIN OVERRIDE: Skip safety check if admin is in the thread
+                             const safety = isAdminInThread ? { safe: true } : await llmService.isUrlSafe(url);
 
                              if (safety.safe) {
                                  console.log(`[DiscordService] READ_LINK TOOL: STEP 2 - URL allowed (isAdmin/ThreadOverride: ${isAdmin || isAdminInThread}): ${url}. Attempting to fetch content...`);
@@ -1014,7 +1024,8 @@ INSTRUCTIONS:
         try {
             const response = await fetch('https://discord.com/api/v10/gateway/bot', {
                 headers: {
-                    'Authorization': `Bot ${this.token}`
+                    'Authorization': `Bot ${this.token}`,
+                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
                 }
             });
             console.log(`[DiscordService] Connectivity test status: ${response.status} ${response.statusText}`);
@@ -1024,7 +1035,11 @@ INSTRUCTIONS:
                 return true;
             } else {
                 const err = await response.text();
-                console.error(`[DiscordService] Connectivity test failed: ${err}`);
+                if (err.includes('cf-ray') || err.includes('cloudflare') || err.includes('1015')) {
+                    console.error(`[DiscordService] Connectivity test failed: Cloudflare Rate Limit/Block detected (Error 1015 or similar).`);
+                } else {
+                    console.error(`[DiscordService] Connectivity test failed: ${err.substring(0, 500)}`);
+                }
                 return false;
             }
         } catch (error) {

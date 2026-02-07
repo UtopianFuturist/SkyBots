@@ -1,4 +1,5 @@
 import { Client, GatewayIntentBits, Partials, ChannelType } from 'discord.js';
+import fetch from 'node-fetch';
 import config from '../../config.js';
 import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
@@ -83,6 +84,11 @@ class DiscordService {
             this.client = new Client({
                 intents,
                 partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
+                ws: {
+                    properties: {
+                        browser: 'Discord iOS'
+                    }
+                },
                 rest: {
                     timeout: 60000,
                     retries: 5
@@ -93,16 +99,21 @@ class DiscordService {
 
             try {
                 console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
+
+                await this.testConnectivity();
                 if (this.token) {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
                 }
 
                 // Set a timeout for login - 300s is very safe for Render environments
                 let timeoutHandle;
-                console.log(`[DiscordService] Calling client.login(). Token provided: ${!!this.token}`);
+                console.log(`[DiscordService] STARTING client.login(). Token length: ${this.token?.length}`);
                 const loginPromise = this.client.login(this.token).then(token => {
                     console.log('[DiscordService] login() promise resolved successfully.');
                     return token;
+                }).catch(err => {
+                    console.error('[DiscordService] login() promise REJECTED:', err.message);
+                    throw err;
                 });
 
                 const readyPromise = new Promise((resolve) => {
@@ -214,6 +225,12 @@ class DiscordService {
 
         this.client.on('rateLimit', (data) => {
             console.warn('[DiscordService] Global/Local Rate Limit Hit:', data);
+        });
+
+        this.client.on('raw', (packet) => {
+            if (['READY', 'IDENTIFY', 'RESUME', 'RECONNECT', 'INVALID_SESSION'].includes(packet.t) || packet.op !== 0) {
+                console.log(`[DiscordService] RAW GATEWAY: OP:${packet.op} T:${packet.t || 'N/A'}`);
+            }
         });
 
         this.client.on('messageCreate', async (message) => {
@@ -989,6 +1006,30 @@ INSTRUCTIONS:
             }
         } catch (err) {
             console.error('[DiscordService] Error generating/sending diagnostic alert:', err);
+        }
+    }
+
+    async testConnectivity() {
+        console.log('[DiscordService] Testing connectivity to Discord API...');
+        try {
+            const response = await fetch('https://discord.com/api/v10/gateway/bot', {
+                headers: {
+                    'Authorization': `Bot ${this.token}`
+                }
+            });
+            console.log(`[DiscordService] Connectivity test status: ${response.status} ${response.statusText}`);
+            if (response.ok) {
+                const data = await response.json();
+                console.log(`[DiscordService] Gateway URL: ${data.url}, Shards: ${data.shards}`);
+                return true;
+            } else {
+                const err = await response.text();
+                console.error(`[DiscordService] Connectivity test failed: ${err}`);
+                return false;
+            }
+        } catch (error) {
+            console.error('[DiscordService] Connectivity test error:', error.message);
+            return false;
         }
     }
 

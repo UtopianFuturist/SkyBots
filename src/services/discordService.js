@@ -49,12 +49,12 @@ class DiscordService {
         this.isInitializing = true;
 
         // Initial delay to avoid burst on restart
-        console.log('[DiscordService] Initial 10s cooldown before starting initialization...');
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        console.log('[DiscordService] Initial 30s cooldown before starting initialization...');
+        await new Promise(resolve => setTimeout(resolve, 30000));
 
         let attempts = 0;
         const maxAttempts = 5;
-        let baseDelay = 60000; // 60 seconds starting delay
+        let baseDelay = 120000; // 120 seconds starting delay
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -67,6 +67,56 @@ class DiscordService {
                 } catch (e) {}
                 this.client = null;
             }
+
+            // Connectivity Diagnostic before creating client
+            console.log(`[DiscordService] --- CONNECTIVITY DIAGNOSTIC START ---`);
+            try {
+                const controller = new AbortController();
+                const timeoutId = setTimeout(() => controller.abort(), 20000);
+                const restUrl = 'https://discord.com/api/v10/users/@me';
+                console.log(`[DiscordService] Testing REST connectivity to ${restUrl}...`);
+
+                const response = await fetch(restUrl, {
+                    headers: {
+                        Authorization: `Bot ${this.token}`,
+                        'User-Agent': 'DiscordBot (https://github.com/discordjs/discord.js, 14.15.0)'
+                    },
+                    signal: controller.signal
+                });
+                clearTimeout(timeoutId);
+
+                if (response.ok) {
+                    const data = await response.json();
+                    console.log(`[DiscordService] REST SUCCESS: Authenticated as ${data.username} (ID: ${data.id})`);
+
+                    const gatewayUrl = 'https://discord.com/api/v10/gateway/bot';
+                    console.log(`[DiscordService] Testing Gateway fetch from ${gatewayUrl}...`);
+                    const gResponse = await fetch(gatewayUrl, {
+                        headers: {
+                            Authorization: `Bot ${this.token}`,
+                            'User-Agent': 'DiscordBot (https://github.com/discordjs/discord.js, 14.15.0)'
+                        },
+                        signal: controller.signal
+                    });
+                    if (gResponse.ok) {
+                        const gData = await gResponse.json();
+                        console.log(`[DiscordService] GATEWAY SUCCESS: ${gData.url} (Shards: ${gData.shards})`);
+                    } else {
+                        console.error(`[DiscordService] GATEWAY FAILED: Status ${gResponse.status}`);
+                    }
+                } else if (response.status === 429) {
+                    const retryAfter = response.headers.get('Retry-After') || response.headers.get('x-ratelimit-reset-after');
+                    console.error(`[DiscordService] REST FAILED: 429 Too Many Requests. Retry-After: ${retryAfter}s`);
+                    const waitSeconds = retryAfter ? parseInt(retryAfter) + 10 : 60;
+                    console.log(`[DiscordService] Detected 429. Mandatory cooldown of ${waitSeconds}s...`);
+                    await new Promise(r => setTimeout(r, waitSeconds * 1000));
+                } else {
+                    console.error(`[DiscordService] REST FAILED: Status ${response.status} ${response.statusText}`);
+                }
+            } catch (e) {
+                console.error(`[DiscordService] REST DIAGNOSTIC ERROR: ${e.message}`);
+            }
+            console.log(`[DiscordService] --- CONNECTIVITY DIAGNOSTIC END ---`);
 
             console.log('[DiscordService] Creating fresh client instance...');
             this.client = new Client({
@@ -89,45 +139,6 @@ class DiscordService {
             this.setupEventListeners();
 
             try {
-                // Connectivity Diagnostic
-                console.log(`[DiscordService] --- CONNECTIVITY DIAGNOSTIC START ---`);
-                try {
-                    const controller = new AbortController();
-                    const timeoutId = setTimeout(() => controller.abort(), 15000);
-                    const restUrl = 'https://discord.com/api/v10/users/@me';
-                    console.log(`[DiscordService] Testing REST connectivity to ${restUrl}...`);
-
-                    const response = await fetch(restUrl, {
-                        headers: { Authorization: `Bot ${this.token}` },
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeoutId);
-
-                    if (response.ok) {
-                        const data = await response.json();
-                        console.log(`[DiscordService] REST SUCCESS: Authenticated as ${data.username}#${data.discriminator} (ID: ${data.id})`);
-
-                        // Also test gateway fetch
-                        const gatewayUrl = 'https://discord.com/api/v10/gateway/bot';
-                        console.log(`[DiscordService] Testing Gateway fetch from ${gatewayUrl}...`);
-                        const gResponse = await fetch(gatewayUrl, {
-                            headers: { Authorization: `Bot ${this.token}` },
-                            signal: controller.signal
-                        });
-                        if (gResponse.ok) {
-                            const gData = await gResponse.json();
-                            console.log(`[DiscordService] GATEWAY SUCCESS: ${gData.url} (Shards: ${gData.shards})`);
-                        } else {
-                            console.error(`[DiscordService] GATEWAY FAILED: Status ${gResponse.status}`);
-                        }
-                    } else {
-                        console.error(`[DiscordService] REST FAILED: Status ${response.status} ${response.statusText}`);
-                    }
-                } catch (e) {
-                    console.error(`[DiscordService] REST DIAGNOSTIC ERROR: ${e.message}`);
-                }
-                console.log(`[DiscordService] --- CONNECTIVITY DIAGNOSTIC END ---`);
-
                 console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
                 if (this.token) {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);

@@ -555,24 +555,42 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
 
                      if (action.tool === 'read_link') {
+                         console.log(`[DiscordService] READ_LINK TOOL: Tool triggered. Parameters: ${JSON.stringify(action.parameters)}. Query: ${action.query}`);
                          let urls = action.parameters?.urls || action.query || [];
-                         if (typeof urls === 'string') urls = [urls];
+                         if (typeof urls === 'string') {
+                             console.log(`[DiscordService] READ_LINK TOOL: Parameter 'urls' is a string, converting to array: ${urls}`);
+                             urls = [urls];
+                         }
                          const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
-                         for (const url of validUrls) {
-                             console.log(`[DiscordService] Checking safety of URL: ${url}`);
+                         console.log(`[DiscordService] READ_LINK TOOL: Processing ${validUrls.length} URLs: ${validUrls.join(', ')}`);
+
+                         for (let url of validUrls) {
+                             if (typeof url !== 'string') continue;
+                             url = url.trim();
+                             if (!url.startsWith('http://') && !url.startsWith('https://')) {
+                                 url = 'https://' + url;
+                             }
+
+                             console.log(`[DiscordService] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url}`);
                              const safety = await llmService.isUrlSafe(url);
                              if (safety.safe) {
+                                 console.log(`[DiscordService] READ_LINK TOOL: STEP 2 - URL marked safe: ${url}. Attempting to fetch content...`);
                                  const content = await webReaderService.fetchContent(url);
                                  if (content) {
+                                     console.log(`[DiscordService] READ_LINK TOOL: STEP 3 - Content fetched successfully for ${url} (${content.length} chars). Summarizing...`);
                                      const summary = await llmService.summarizeWebPage(url, content);
-                                     actionResults.push(`[Web Content Summary for ${url}: ${summary}]`);
+                                     console.log(`[DiscordService] READ_LINK TOOL: STEP 4 - Summary generated for ${url}. Adding to context.`);
+                                     actionResults.push(`--- CONTENT FROM URL: ${url} ---\n${summary}\n---`);
                                  } else {
+                                     console.warn(`[DiscordService] READ_LINK TOOL: STEP 3 (FAILED) - Failed to read content from ${url}`);
                                      actionResults.push(`[Failed to read content from ${url}]`);
                                  }
                              } else {
+                                 console.warn(`[DiscordService] READ_LINK TOOL: STEP 2 (BLOCKED) - URL safety check failed for ${url}. Reason: ${safety.reason}`);
                                  actionResults.push(`[URL Blocked for safety: ${url}. Reason: ${safety.reason}]`);
                              }
                          }
+                         console.log(`[DiscordService] READ_LINK TOOL: Finished processing all URLs.`);
                      }
 
                      if (action.tool === 'search') {

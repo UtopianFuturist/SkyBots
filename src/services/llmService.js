@@ -17,7 +17,7 @@ class LLMService {
   }
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 2000, preface_system_prompt = true, useQwen = false } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useQwen ? this.qwenModel : this.model;
 
@@ -1163,7 +1163,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     }
 
     const messages = [{ role: 'system', content: finalSystemPrompt }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: true, preface_system_prompt: false });
 
     try {
       if (!response) {

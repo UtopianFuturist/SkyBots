@@ -264,14 +264,15 @@ class DataStore {
     return this.db.data.discord_last_replied;
   }
 
-  async saveDiscordInteraction(channelId, role, content) {
+  async saveDiscordInteraction(channelId, role, content, metadata = {}) {
     if (!this.db.data.discord_conversations[channelId]) {
       this.db.data.discord_conversations[channelId] = [];
     }
     this.db.data.discord_conversations[channelId].push({
       role,
       content,
-      timestamp: Date.now()
+      timestamp: Date.now(),
+      ...metadata
     });
     // Keep last 50 per channel
     if (this.db.data.discord_conversations[channelId].length > 50) {

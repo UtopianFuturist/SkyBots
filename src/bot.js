@@ -1287,13 +1287,16 @@ Identify the topic and main takeaway.`;
             if (typeof url !== 'string') continue;
             url = url.trim();
 
-            console.log(`[Bot] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdmin: ${isAdmin})`);
+            const adminDid = dataStore.getAdminDid();
+            const isAdminInThread = threadData.some(h => h.did === adminDid);
 
-            // ADMIN OVERRIDE: Skip safety check for admin
-            const safety = isAdmin ? { safe: true } : await llmService.isUrlSafe(url);
+            console.log(`[Bot] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdmin: ${isAdmin}, isAdminInThread: ${isAdminInThread})`);
+
+            // ADMIN OVERRIDE: Skip safety check if admin is the user OR if admin has already participated in this thread
+            const safety = (isAdmin || isAdminInThread) ? { safe: true } : await llmService.isUrlSafe(url);
 
             if (safety.safe) {
-              console.log(`[Bot] READ_LINK TOOL: STEP 2 - URL allowed (isAdmin: ${isAdmin}): ${url}. Attempting to fetch content...`);
+              console.log(`[Bot] READ_LINK TOOL: STEP 2 - URL allowed (isAdmin/ThreadOverride: ${isAdmin || isAdminInThread}): ${url}. Attempting to fetch content...`);
 
               const content = await webReaderService.fetchContent(url);
               if (content) {
@@ -1313,12 +1316,14 @@ Identify the topic and main takeaway.`;
               console.warn(`[Bot] READ_LINK TOOL: STEP 2 (BLOCKED) - URL safety check failed for ${url}. Reason: ${safety.reason}`);
               searchContext += `\n[URL Blocked for safety: ${url}. Reason: ${safety.reason}]`;
 
-              // Inform user and ask admin for verification
-              const adminHandle = config.ADMIN_BLUESKY_HANDLE;
-              const adminDid = dataStore.getAdminDid();
-              const mentionText = adminDid ? `@${adminHandle} (${adminDid})` : `@${adminHandle}`;
+              // ONLY ask for verification if the admin isn't already in the thread (to avoid redundant pings)
+              if (!isAdminInThread) {
+                  const adminHandle = config.ADMIN_BLUESKY_HANDLE;
+                  const adminDidRef = dataStore.getAdminDid();
+                  const mentionText = adminDidRef ? `@${adminHandle} (${adminDidRef})` : `@${adminHandle}`;
 
-              await blueskyService.postReply(notif, `I've flagged this link as suspicious: ${url}\n\nReason: ${safety.reason}\n\n${mentionText}, can you verify if this is safe for me to read?`);
+                  await blueskyService.postReply(notif, `I've flagged this link as suspicious: ${url}\n\nReason: ${safety.reason}\n\n${mentionText}, can you verify if this is safe for me to read?`);
+              }
             }
           }
           console.log(`[Bot] READ_LINK TOOL: Finished processing all URLs.`);

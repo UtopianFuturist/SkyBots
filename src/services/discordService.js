@@ -48,9 +48,10 @@ class DiscordService {
 
         this.isInitializing = true;
 
-        // Initial delay to avoid burst on restart
-        console.log('[DiscordService] Initial 30s cooldown before starting initialization...');
-        await new Promise(resolve => setTimeout(resolve, 30000));
+        // Jittered Initial delay to avoid synchronized burst on Render
+        const jitter = Math.floor(Math.random() * 50000) + 10000;
+        console.log(`[DiscordService] Initial ${jitter/1000}s jittered cooldown before starting initialization...`);
+        await new Promise(resolve => setTimeout(resolve, jitter));
 
         let attempts = 0;
         const maxAttempts = 5;
@@ -67,56 +68,6 @@ class DiscordService {
                 } catch (e) {}
                 this.client = null;
             }
-
-            // Connectivity Diagnostic before creating client
-            console.log(`[DiscordService] --- CONNECTIVITY DIAGNOSTIC START ---`);
-            try {
-                const controller = new AbortController();
-                const timeoutId = setTimeout(() => controller.abort(), 20000);
-                const restUrl = 'https://discord.com/api/v10/users/@me';
-                console.log(`[DiscordService] Testing REST connectivity to ${restUrl}...`);
-
-                const response = await fetch(restUrl, {
-                    headers: {
-                        Authorization: `Bot ${this.token}`,
-                        'User-Agent': 'DiscordBot (https://github.com/discordjs/discord.js, 14.15.0)'
-                    },
-                    signal: controller.signal
-                });
-                clearTimeout(timeoutId);
-
-                if (response.ok) {
-                    const data = await response.json();
-                    console.log(`[DiscordService] REST SUCCESS: Authenticated as ${data.username} (ID: ${data.id})`);
-
-                    const gatewayUrl = 'https://discord.com/api/v10/gateway/bot';
-                    console.log(`[DiscordService] Testing Gateway fetch from ${gatewayUrl}...`);
-                    const gResponse = await fetch(gatewayUrl, {
-                        headers: {
-                            Authorization: `Bot ${this.token}`,
-                            'User-Agent': 'DiscordBot (https://github.com/discordjs/discord.js, 14.15.0)'
-                        },
-                        signal: controller.signal
-                    });
-                    if (gResponse.ok) {
-                        const gData = await gResponse.json();
-                        console.log(`[DiscordService] GATEWAY SUCCESS: ${gData.url} (Shards: ${gData.shards})`);
-                    } else {
-                        console.error(`[DiscordService] GATEWAY FAILED: Status ${gResponse.status}`);
-                    }
-                } else if (response.status === 429) {
-                    const retryAfter = response.headers.get('Retry-After') || response.headers.get('x-ratelimit-reset-after');
-                    console.error(`[DiscordService] REST FAILED: 429 Too Many Requests. Retry-After: ${retryAfter}s`);
-                    const waitSeconds = retryAfter ? parseInt(retryAfter) + 10 : 60;
-                    console.log(`[DiscordService] Detected 429. Mandatory cooldown of ${waitSeconds}s...`);
-                    await new Promise(r => setTimeout(r, waitSeconds * 1000));
-                } else {
-                    console.error(`[DiscordService] REST FAILED: Status ${response.status} ${response.statusText}`);
-                }
-            } catch (e) {
-                console.error(`[DiscordService] REST DIAGNOSTIC ERROR: ${e.message}`);
-            }
-            console.log(`[DiscordService] --- CONNECTIVITY DIAGNOSTIC END ---`);
 
             console.log('[DiscordService] Creating fresh client instance...');
             this.client = new Client({
@@ -144,7 +95,7 @@ class DiscordService {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
                 }
 
-                // Set a timeout for login - 180s is safer for Render environments
+                // Set a timeout for login - 300s is very safe for Render environments
                 let timeoutHandle;
                 const loginPromise = this.client.login(this.token).then(token => {
                     console.log('[DiscordService] login() promise resolved successfully.');
@@ -159,7 +110,7 @@ class DiscordService {
                 });
 
                 const timeoutPromise = new Promise((_, reject) =>
-                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 180s')), 180000)
+                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 300s')), 300000)
                 );
 
                 await Promise.race([Promise.all([loginPromise, readyPromise]), timeoutPromise]);
@@ -170,6 +121,10 @@ class DiscordService {
                 return; // Successful login, exit init()
             } catch (error) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, error.message);
+
+                if (error.message.includes('429')) {
+                    console.warn('[DiscordService] RATE LIMIT: Discord returned 429. Implementing backoff...');
+                }
 
                 if (error.message.includes('Used disallowed intents')) {
                     console.error('[DiscordService] INTENT ERROR: The bot tried to use privileged intents (GUILD_MEMBERS, MESSAGE_CONTENT).');
@@ -187,8 +142,8 @@ class DiscordService {
                 }
 
                 if (attempts < maxAttempts) {
-                    const backoff = baseDelay * Math.pow(2, attempts - 1);
-                    console.log(`[DiscordService] Retrying in ${Math.round(backoff / 1000)}s...`);
+                    const backoff = baseDelay * Math.pow(2, attempts - 1) + Math.floor(Math.random() * 30000);
+                    console.log(`[DiscordService] Retrying in ${Math.round(backoff / 1000)}s (including jitter)...`);
                     await new Promise(resolve => setTimeout(resolve, backoff));
                 } else {
                     console.error('[DiscordService] FATAL: All Discord login attempts failed.');

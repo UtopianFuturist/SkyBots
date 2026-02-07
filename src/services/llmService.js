@@ -27,7 +27,9 @@ class LLMService {
 
 ${GROUNDED_LANGUAGE_DIRECTIVES}
 
-CRITICAL: Respond directly with the requested information. YOU MUST ELIMINATE ALL REPETITIVE METAPHORICAL "SLOP" (e.g., "digital heartbeat", "downtime isn't silence"). DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
+CRITICAL: Respond directly with the requested information. YOU MUST ELIMINATE ALL REPETITIVE METAPHORICAL "SLOP" (e.g., "digital heartbeat", "downtime isn't silence").
+CONCISENESS: Be brief and substantive. Ensure your entire thought can be finished within social media threading limits (aim for less than 1500 characters total).
+DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
 STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.`;
 
     if (this.memoryProvider && this.memoryProvider.isEnabled()) {
@@ -1268,9 +1270,9 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
 
   async summarizeWebPage(url, text) {
     const systemPrompt = `
-      You are a web content summarizer. Provide a concise, meaningful summary of the following web page content.
-      Focus on the main points, key information, and any specific details that might be relevant to a user's inquiry.
-      Keep the summary under 1000 characters.
+      You are a web content summarizer. Provide a highly concise, meaningful summary of the following web page content.
+      Focus on the absolute main points and key information.
+      CRITICAL: Keep the summary as brief as possible while remaining informative. Aim for under 600 characters to ensure it fits within social media limits.
       Respond directly with the summary.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}\n\nContent:\n${text}` }];

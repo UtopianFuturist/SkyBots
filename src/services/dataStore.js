@@ -43,7 +43,7 @@ const defaultData = {
   bluesky_post_cooldown: 45,
   moltbook_post_cooldown: 30,
   discord_idle_threshold: 10,
-  max_thread_chunks: 3,
+  max_thread_chunks: 6,
   repetition_similarity_threshold: 0.4,
   post_topics: [],
   image_subjects: []
@@ -450,7 +450,7 @@ class DataStore {
       bluesky_post_cooldown: this.db.data.bluesky_post_cooldown ?? 45,
       moltbook_post_cooldown: this.db.data.moltbook_post_cooldown ?? 30,
       discord_idle_threshold: this.db.data.discord_idle_threshold ?? 10,
-      max_thread_chunks: this.db.data.max_thread_chunks ?? 3,
+      max_thread_chunks: this.db.data.max_thread_chunks ?? 6,
       repetition_similarity_threshold: this.db.data.repetition_similarity_threshold ?? 0.4,
       post_topics: this.db.data.post_topics || [],
       image_subjects: this.db.data.image_subjects || [],

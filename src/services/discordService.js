@@ -52,31 +52,101 @@ class DiscordService {
         console.log('[DiscordService] Initial 10s cooldown before starting initialization...');
         await new Promise(resolve => setTimeout(resolve, 10000));
 
-        if (this.client) {
-            console.log('[DiscordService] Client already exists. Destroying old instance before re-creating...');
-            try {
-                this.client.destroy();
-            } catch (e) {}
-        }
+        let attempts = 0;
+        const maxAttempts = 5;
+        let baseDelay = 60000; // 60 seconds starting delay
 
-        console.log('[DiscordService] Creating client with intents and partials...');
-        this.client = new Client({
-            intents: [
-                GatewayIntentBits.Guilds,
-                GatewayIntentBits.GuildMessages,
-                GatewayIntentBits.GuildMembers,
-                GatewayIntentBits.MessageContent,
-                GatewayIntentBits.DirectMessages,
-                GatewayIntentBits.DirectMessageReactions,
-                GatewayIntentBits.GuildMessageReactions
-            ],
-            partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
-            rest: {
-                timeout: 30000,
-                retries: 5,
-                globalRequestsPerSecond: 20
+        while (attempts < maxAttempts) {
+            attempts++;
+            console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
+
+            if (this.client) {
+                console.log('[DiscordService] Destroying existing client instance before fresh start...');
+                try {
+                    this.client.destroy();
+                } catch (e) {}
+                this.client = null;
             }
-        });
+
+            console.log('[DiscordService] Creating fresh client instance...');
+            this.client = new Client({
+                intents: [
+                    GatewayIntentBits.Guilds,
+                    GatewayIntentBits.GuildMessages,
+                    GatewayIntentBits.GuildMembers,
+                    GatewayIntentBits.MessageContent,
+                    GatewayIntentBits.DirectMessages,
+                    GatewayIntentBits.DirectMessageReactions,
+                    GatewayIntentBits.GuildMessageReactions
+                ],
+                partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction]
+            });
+
+            this.setupEventListeners();
+
+            try {
+                console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
+                if (this.token) {
+                    console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
+                }
+
+                // Set a timeout for login - 180s is safer for Render environments
+                let timeoutHandle;
+                const loginPromise = this.client.login(this.token).then(token => {
+                    console.log('[DiscordService] login() promise resolved successfully.');
+                    return token;
+                });
+
+                const readyPromise = new Promise((resolve) => {
+                    this.client.once('ready', () => {
+                        console.log('[DiscordService] "ready" event received.');
+                        resolve();
+                    });
+                });
+
+                const timeoutPromise = new Promise((_, reject) =>
+                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 180s')), 180000)
+                );
+
+                await Promise.race([Promise.all([loginPromise, readyPromise]), timeoutPromise]);
+                clearTimeout(timeoutHandle);
+
+                console.log('[DiscordService] SUCCESS: Client is ready! Logged in as:', this.client.user?.tag);
+                this.isInitializing = false;
+                return; // Successful login, exit init()
+            } catch (error) {
+                console.error(`[DiscordService] Login attempt ${attempts} failed:`, error.message);
+
+                if (error.message.includes('Used disallowed intents')) {
+                    console.error('[DiscordService] INTENT ERROR: The bot tried to use privileged intents (GUILD_MEMBERS, MESSAGE_CONTENT).');
+                    console.error('[DiscordService] ACTION REQUIRED: Enable "GUILD MEMBERS INTENT" and "MESSAGE CONTENT INTENT" in the Discord Developer Portal.');
+                    this.isEnabled = false;
+                    this.isInitializing = false;
+                    return;
+                }
+
+                if (error.message.includes('TOKEN_INVALID')) {
+                    console.error('[DiscordService] TOKEN ERROR: The provided Discord token is invalid.');
+                    this.isEnabled = false;
+                    this.isInitializing = false;
+                    return;
+                }
+
+                if (attempts < maxAttempts) {
+                    const backoff = baseDelay * Math.pow(2, attempts - 1);
+                    console.log(`[DiscordService] Retrying in ${Math.round(backoff / 1000)}s...`);
+                    await new Promise(resolve => setTimeout(resolve, backoff));
+                } else {
+                    console.error('[DiscordService] FATAL: All Discord login attempts failed.');
+                    this.isEnabled = false;
+                    this.isInitializing = false;
+                }
+            }
+        }
+    }
+
+    setupEventListeners() {
+        if (!this.client) return;
 
         this.client.on('ready', () => {
             console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}!`);
@@ -100,7 +170,6 @@ class DiscordService {
         });
 
         this.client.on('debug', (info) => {
-            // Log everything for now to catch where it hangs
             console.log('[DiscordService] DEBUG:', info);
         });
 
@@ -135,61 +204,6 @@ class DiscordService {
                 console.error('[DiscordService] Error in messageCreate listener:', err);
             }
         });
-
-        let attempts = 0;
-        const maxAttempts = 5;
-        let baseDelay = 60000; // 60 seconds starting delay
-
-        while (attempts < maxAttempts) {
-            attempts++;
-            console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
-
-            try {
-                console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
-                if (this.token) {
-                    console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
-                }
-
-                // Set a timeout for login - 120s is safer when waiting for 'ready'
-                let timeoutHandle;
-                const loginPromise = this.client.login(this.token);
-                const readyPromise = new Promise((resolve) => this.client.once('ready', resolve));
-                const timeoutPromise = new Promise((_, reject) =>
-                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 120s')), 120000)
-                );
-
-                await Promise.race([Promise.all([loginPromise, readyPromise]), timeoutPromise]);
-                clearTimeout(timeoutHandle);
-                console.log('[DiscordService] SUCCESS: Client is ready! Logged in as:', this.client.user?.tag);
-                this.isInitializing = false;
-                return; // Successful login, exit init()
-            } catch (error) {
-                console.error(`[DiscordService] Login attempt ${attempts} failed:`, error.message);
-
-                if (error.message.includes('Used disallowed intents')) {
-                    console.error('[DiscordService] INTENT ERROR: The bot tried to use privileged intents (GUILD_MEMBERS, MESSAGE_CONTENT).');
-                    console.error('[DiscordService] ACTION REQUIRED: Enable "GUILD MEMBERS INTENT" and "MESSAGE CONTENT INTENT" in the Discord Developer Portal.');
-                    this.isEnabled = false;
-                    return;
-                }
-
-                if (error.message.includes('TOKEN_INVALID')) {
-                    console.error('[DiscordService] TOKEN ERROR: The provided Discord token is invalid.');
-                    this.isEnabled = false;
-                    return;
-                }
-
-                if (attempts < maxAttempts) {
-                    const backoff = baseDelay * Math.pow(2, attempts - 1);
-                    console.log(`[DiscordService] Retrying in ${Math.round(backoff / 1000)}s...`);
-                    await new Promise(resolve => setTimeout(resolve, backoff));
-                } else {
-                    console.error('[DiscordService] FATAL: All Discord login attempts failed.');
-                    this.isEnabled = false;
-                    this.isInitializing = false;
-                }
-            }
-        }
     }
 
     getNormalizedChannelId(message) {

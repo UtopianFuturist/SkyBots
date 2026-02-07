@@ -1228,7 +1228,7 @@ Identify the topic and main takeaway.`;
         }
 
         if (action.tool === 'read_link') {
-          let urls = action.parameters?.urls || [];
+          let urls = action.parameters?.urls || action.query || [];
           if (typeof urls === 'string') urls = [urls];
           const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
           for (const url of validUrls) {
@@ -1521,6 +1521,8 @@ Identify the topic and main takeaway.`;
           FOCUS: Address only the current thread participants (@${handle} and anyone else mentioned in the conversation history). In replies, do NOT address the timeline at large or your general following. Stay focused on the immediate interaction.
 
           VISION: You have vision capabilities. Use the "Image Analysis" section in the provided context to understand images attached to posts or profiles. Treat these descriptions as your own visual perception. Never deny being able to see images if an analysis is provided.
+
+          WEB READING: You have the capability to read web pages from links via your "Read Link" tool. If tool results are provided in the context, incorporate them into your response. Even if tool execution failed or was skipped, never claim you lack the capability to read links; instead, simply address the user's post as best as you can with the information you have.
 
           Tailor your response based on this context:
           ${fullContext}

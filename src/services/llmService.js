@@ -1083,6 +1083,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
           - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)" }
       14. **Read Link**: Directly read and summarize the content of one or more web pages from provided URLs.
           - Use this if a user provides a link and asks about its content, or if you believe reading a provided link is necessary to fulfill their request.
+          - **CAPABILITY**: You are fully capable of reading web pages directly via this tool. Never claim that you cannot open links or visit websites.
           - **CRITICAL**: Perform this action for up to 4 URLs if multiple links are provided.
           - Parameters: { "urls": ["url1", "url2", ...] }
       ${adminTools}

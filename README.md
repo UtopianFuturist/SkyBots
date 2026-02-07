@@ -12,6 +12,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Nvidia NIM Image Generation**: Creates high-quality images directly in replies using the **Stable Diffusion 3 Medium** model.
 - **Vetted Google Image Search**: Searches for images and uses an LLM to select the most relevant result from the top 4 candidates.
 - **Wikipedia Integration**: Fetches interesting articles from Wikipedia to share in autonomous posts or respond to queries.
+- **Direct Web Page Reading**: Directly accesses and summarizes the content of web pages from links provided by users, with built-in safety checks.
 - **Web & YouTube Search (Optional)**: Fetches and displays information from Google and YouTube as convenient link cards if API keys are provided.
 - **User Profile Analyzer Tool**: Deeply analyzes a user's last 100 activities (posts, replies, quotes, reposts) to understand their interests, style, and persona for highly personalized interactions.
 - **Persistent Memory**: Remembers past interactions with users and mutes threads on command, even after restarting.
@@ -146,6 +147,7 @@ The bot understands natural language commands in addition to the following expli
 | `/off`| (Discord-only) Marks admin as preoccupied/sleeping. |
 | `/art [prompt]`| (Discord-only) Generates an image on Discord. |
 | `google [query]` | Searches the web. |
+| `read this link: [URL]` | Reads and summarizes a specific web page. |
 | `youtube [query]` | Searches YouTube for videos. |
 | `generate image of [prompt]`| Creates an image using Nvidia NIM. |
 | `find image of [query]` | Performs a vetted Google Image search. |

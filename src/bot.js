@@ -71,6 +71,20 @@ export class Bot {
     await blueskyService.submitAutonomyDeclaration();
     console.log('[Bot] Autonomy declaration submitted.');
 
+    // Resolve Admin DID
+    if (config.ADMIN_BLUESKY_HANDLE) {
+        try {
+            console.log(`[Bot] Resolving admin DID for @${config.ADMIN_BLUESKY_HANDLE}...`);
+            const adminProfile = await blueskyService.getProfile(config.ADMIN_BLUESKY_HANDLE);
+            if (adminProfile && adminProfile.did) {
+                await dataStore.setAdminDid(adminProfile.did);
+                console.log(`[Bot] Admin DID resolved: ${adminProfile.did}`);
+            }
+        } catch (e) {
+            console.warn(`[Bot] Failed to resolve admin DID: ${e.message}`);
+        }
+    }
+
     // Comind Agent Registration
     const capabilities = [
       'planner-executor',
@@ -1273,10 +1287,14 @@ Identify the topic and main takeaway.`;
             if (typeof url !== 'string') continue;
             url = url.trim();
 
-            console.log(`[Bot] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url}`);
-            const safety = await llmService.isUrlSafe(url);
+            console.log(`[Bot] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdmin: ${isAdmin})`);
+
+            // ADMIN OVERRIDE: Skip safety check for admin
+            const safety = isAdmin ? { safe: true } : await llmService.isUrlSafe(url);
+
             if (safety.safe) {
-              console.log(`[Bot] READ_LINK TOOL: STEP 2 - URL marked safe: ${url}. Attempting to fetch content...`);
+              console.log(`[Bot] READ_LINK TOOL: STEP 2 - URL allowed (isAdmin: ${isAdmin}): ${url}. Attempting to fetch content...`);
+
               const content = await webReaderService.fetchContent(url);
               if (content) {
                 console.log(`[Bot] READ_LINK TOOL: STEP 3 - Content fetched successfully for ${url} (${content.length} chars). Summarizing...`);
@@ -1294,6 +1312,13 @@ Identify the topic and main takeaway.`;
             } else {
               console.warn(`[Bot] READ_LINK TOOL: STEP 2 (BLOCKED) - URL safety check failed for ${url}. Reason: ${safety.reason}`);
               searchContext += `\n[URL Blocked for safety: ${url}. Reason: ${safety.reason}]`;
+
+              // Inform user and ask admin for verification
+              const adminHandle = config.ADMIN_BLUESKY_HANDLE;
+              const adminDid = dataStore.getAdminDid();
+              const mentionText = adminDid ? `@${adminHandle} (${adminDid})` : `@${adminHandle}`;
+
+              await blueskyService.postReply(notif, `I've flagged this link as suspicious: ${url}\n\nReason: ${safety.reason}\n\n${mentionText}, can you verify if this is safe for me to read?`);
             }
           }
           console.log(`[Bot] READ_LINK TOOL: Finished processing all URLs.`);

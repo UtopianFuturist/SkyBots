@@ -70,16 +70,18 @@ class DiscordService {
             }
 
             console.log('[DiscordService] Creating fresh client instance...');
+            const intents = [
+                GatewayIntentBits.Guilds,
+                GatewayIntentBits.GuildMessages,
+                GatewayIntentBits.GuildMembers,
+                GatewayIntentBits.MessageContent,
+                GatewayIntentBits.DirectMessages,
+                GatewayIntentBits.DirectMessageReactions,
+                GatewayIntentBits.GuildMessageReactions
+            ];
+            console.log(`[DiscordService] Using intents: ${intents.join(', ')}`);
             this.client = new Client({
-                intents: [
-                    GatewayIntentBits.Guilds,
-                    GatewayIntentBits.GuildMessages,
-                    GatewayIntentBits.GuildMembers,
-                    GatewayIntentBits.MessageContent,
-                    GatewayIntentBits.DirectMessages,
-                    GatewayIntentBits.DirectMessageReactions,
-                    GatewayIntentBits.GuildMessageReactions
-                ],
+                intents,
                 partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
                 rest: {
                     timeout: 60000,
@@ -605,10 +607,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              if (typeof url !== 'string') continue;
                              url = url.trim();
 
-                             console.log(`[DiscordService] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url}`);
-                             const safety = await llmService.isUrlSafe(url);
+                             console.log(`[DiscordService] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdmin: ${isAdmin})`);
+
+                             // ADMIN OVERRIDE: Skip safety check for admin
+                             const safety = isAdmin ? { safe: true } : await llmService.isUrlSafe(url);
+
                              if (safety.safe) {
-                                 console.log(`[DiscordService] READ_LINK TOOL: STEP 2 - URL marked safe: ${url}. Attempting to fetch content...`);
+                                 console.log(`[DiscordService] READ_LINK TOOL: STEP 2 - URL allowed (isAdmin: ${isAdmin}): ${url}. Attempting to fetch content...`);
                                  const content = await webReaderService.fetchContent(url);
                                  if (content) {
                                      console.log(`[DiscordService] READ_LINK TOOL: STEP 3 - Content fetched successfully for ${url} (${content.length} chars). Summarizing...`);

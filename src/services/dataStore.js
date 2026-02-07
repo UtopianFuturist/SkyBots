@@ -23,6 +23,7 @@ const defaultData = {
   persona_updates: [],
   lastAutonomousPostTime: null,
   moltbook_interacted_posts: [], // Track post IDs to avoid duplicate interactions
+  admin_did: null,
   discord_admin_available: true,
   discord_last_replied: true,
   discord_conversations: {}, // { channelId: [ { role, content, timestamp } ] }
@@ -395,6 +396,15 @@ class DataStore {
 
   async updateLastMoltfeedSummaryTime(timestamp) {
     this.db.data.lastMoltfeedSummaryTime = timestamp;
+    await this.db.write();
+  }
+
+  getAdminDid() {
+    return this.db.data.admin_did;
+  }
+
+  async setAdminDid(did) {
+    this.db.data.admin_did = did;
     await this.db.write();
   }
 

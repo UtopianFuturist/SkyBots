@@ -97,6 +97,7 @@ class DiscordService {
 
                 // Set a timeout for login - 300s is very safe for Render environments
                 let timeoutHandle;
+                console.log(`[DiscordService] Calling client.login(). Token provided: ${!!this.token}`);
                 const loginPromise = this.client.login(this.token).then(token => {
                     console.log('[DiscordService] login() promise resolved successfully.');
                     return token;
@@ -167,6 +168,14 @@ class DiscordService {
 
         this.client.on('shardReady', (id) => {
             console.log(`[DiscordService] Shard ${id} is ready.`);
+        });
+
+        this.client.on('shardResume', (id, replayed) => {
+            console.log(`[DiscordService] Shard ${id} resumed. Replayed events: ${replayed}`);
+        });
+
+        this.client.on('shardReconnecting', (id) => {
+            console.log(`[DiscordService] Shard ${id} is reconnecting...`);
         });
 
         this.client.on('error', (error) => {

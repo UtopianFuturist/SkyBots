@@ -19,7 +19,7 @@ export const truncateText = (text, maxLength = 300) => {
   return truncatedText + '…';
 };
 
-export const splitText = (text, maxLength = 300) => {
+export const splitText = (text, maxLength = 300, maxChunks = 10) => {
   const segmenter = new Intl.Segmenter();
   const graphemes = [...segmenter.segment(text)].map(s => s.segment);
 
@@ -30,7 +30,7 @@ export const splitText = (text, maxLength = 300) => {
   const chunks = [];
   let remainingText = text;
 
-  while (remainingText.length > 0 && chunks.length < 4) {
+  while (remainingText.length > 0 && chunks.length < maxChunks) {
     if (remainingText.length <= maxLength) {
       chunks.push(remainingText);
       break;

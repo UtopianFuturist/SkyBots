@@ -516,7 +516,7 @@ export class Bot {
                                 embed = { imageBuffer: Buffer.from(post.embed.imageBuffer, 'base64'), imageAltText: post.embed.imageAltText || 'Scheduled image' };
                             }
                         }
-                        const result = await blueskyService.post(post.content, embed);
+                        const result = await blueskyService.post(post.content, embed, { maxChunks: dConfig.max_thread_chunks });
                         if (result) {
                             success = true;
                             await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
@@ -613,7 +613,7 @@ Identify the topic and main takeaway.`;
             await dataStore.addScheduledPost('bluesky', finalContent);
         } else {
             console.log(`[Bot] Posting Moltbook reflection to Bluesky immediately.`);
-            const result = await blueskyService.post(finalContent);
+            const result = await blueskyService.post(finalContent, null, { maxChunks: dConfig.max_thread_chunks });
             if (result) {
                 await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                 await dataStore.addRecentThought('bluesky', finalContent);
@@ -1681,7 +1681,7 @@ Identify the topic and main takeaway.`;
       if (youtubeResult) {
         replyUri = await postYouTubeReply(notif, youtubeResult, responseText);
       } else {
-        replyUri = await blueskyService.postReply(notif, responseText, { embed: searchEmbed });
+        replyUri = await blueskyService.postReply(notif, responseText, { embed: searchEmbed, maxChunks: dConfig.max_thread_chunks });
       }
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });

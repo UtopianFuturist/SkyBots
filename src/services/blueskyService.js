@@ -148,13 +148,13 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, options = {}) {
-    const { maxChunks = 4 } = options;
+    const { maxChunks = 6 } = options;
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 3000; // 3 seconds
 
     console.log(`[BlueskyService] LLM Response: "${text}"`);
     console.log('[BlueskyService] Posting reply...');
-    let textChunks = splitText(text);
+    let textChunks = splitText(text, 300, maxChunks);
 
     if (textChunks.length > maxChunks) {
         console.warn(`[BlueskyService] Warning: LLM generated a response with ${textChunks.length} chunks. Truncating to ${maxChunks}.`);
@@ -578,10 +578,10 @@ class BlueskyService {
         explicitEmbed = embedOrOptions;
     }
 
-    const { maxChunks = 4 } = finalOptions;
+    const { maxChunks = 6 } = finalOptions;
     console.log('[BlueskyService] Creating new post (potentially threaded)...');
     try {
-      let textChunks = splitText(text);
+      let textChunks = splitText(text, 300, maxChunks);
       if (textChunks.length > maxChunks) {
         console.warn(`[BlueskyService] Post content exceeds ${maxChunks} chunks. Truncating.`);
         textChunks = textChunks.slice(0, maxChunks);

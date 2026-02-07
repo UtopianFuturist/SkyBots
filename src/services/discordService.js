@@ -592,7 +592,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                                      postEmbed = { imageBuffer: embed.imageBuffer, imageAltText: embed.imageAltText };
                                  }
                              }
-                             const result = await blueskyService.post(postText, postEmbed);
+                             const result = await blueskyService.post(postText, postEmbed, { maxChunks: dConfig.max_thread_chunks });
                              if (result) {
                                  await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                                  actionResults.push(`[Successfully posted to Bluesky: ${result.uri}]`);

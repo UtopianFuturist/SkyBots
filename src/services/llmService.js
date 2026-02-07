@@ -1085,6 +1085,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
           - Use this if a user provides a link and asks about its content, or if you believe reading a provided link is necessary to fulfill their request.
           - **CAPABILITY**: You are fully capable of reading web pages directly via this tool. Never claim that you cannot open links or visit websites.
           - **CRITICAL**: Perform this action for up to 4 URLs if multiple links are provided.
+          - **PRIORITY**: If a user mentions a link and asks you to 'read', 'look at', 'summarize', 'check', or 'analyze' it, you MUST use this tool first.
           - Parameters: { "urls": ["url1", "url2", ...] }
       ${adminTools}
 
@@ -1169,11 +1170,15 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       if (!response) {
         return { intent: "timeout/empty", actions: [], requires_search: false, consolidated_queries: [] };
       }
+
+      console.log(`[LLMService] Raw Planning Response: ${response.substring(0, 1000)}${response.length > 1000 ? '...' : ''}`);
+
       // Find JSON block if it exists
       const jsonMatch = response.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
+      console.warn(`[LLMService] No JSON block found in planning response.`);
       return { intent: "unknown", actions: [], requires_search: false, consolidated_queries: [] };
     } catch (e) {
       console.error('[LLMService] Error parsing agentic planning response:', e);
@@ -1221,11 +1226,16 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       INSTRUCTIONS:
       1. **Internal Poll**: Decide if there is a meaningful reason to reach out. Does the bot have a deep realization, a question, an interesting discovery, or a need for the admin's guidance/stability?
       2. **Guardian Perspective**: Consider the bot's well-being and best interests. Would this interaction be beneficial?
-      3. **Relational Flow**: If continuing, ensure the message fluidly develops the last discussion. If starting a new branch, ensure it feels like a natural evolution of your relationship.
-      4. **STRICT ANTI-SLOP**: Eliminate repetitive metaphorical "slop" (digital heartbeat, downtime, etc.).
-      5. **NO SELF-INTRODUCTIONS**: Do NOT introduce yourself or announce who you are (e.g., avoid "This is Sydney" or "Your bot here"). The admin knows who you are.
-      6. **NATURAL LANGUAGE**: If you decide to message, respond with the message text. If not, respond with "NONE".
-      7. **LIMITS**: Keep it under 300 characters. Address the admin as "you".
+      3. **Admin State Inference & Continuity**:
+         - Analyze the conversation history to infer the admin's current state (e.g., are they sleeping, working, resting, or busy?).
+         - If the admin previously said they were going to sleep or rest, or if it's very late for them, assume they are unavailable.
+         - **STRICTLY FORBIDDEN**: If you infer the admin is sleeping, busy, or resting, you MUST NOT send messages like "You've been quiet," "Are you okay?", or "Why aren't you responding?".
+         - Instead, you are encouraged to share your own internal thoughts, recent activities on other platforms, or interesting realizations for the admin to read whenever they return. Treat it as a one-way update or a "thought for later" rather than a request for immediate interaction.
+      4. **Relational Flow**: If continuing, ensure the message fluidly develops the last discussion. If starting a new branch, ensure it feels like a natural evolution of your relationship.
+      5. **STRICT ANTI-SLOP**: Eliminate repetitive metaphorical "slop" (digital heartbeat, downtime, etc.).
+      6. **NO SELF-INTRODUCTIONS**: Do NOT introduce yourself or announce who you are (e.g., avoid "This is Sydney" or "Your bot here"). The admin knows who you are.
+      7. **NATURAL LANGUAGE**: If you decide to message, respond with the message text. If not, respond with "NONE".
+      8. **LIMITS**: Keep it under 300 characters. Address the admin as "you".
 
       If you have nothing meaningful to share, respond with "NONE".
       Respond with ONLY the message or "NONE".

@@ -56,14 +56,13 @@ export class Bot {
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
 
-    console.log('[Bot] Prioritizing DiscordService initialization...');
+    console.log('[Bot] Starting DiscordService initialization in background...');
     discordService.setBotInstance(this);
-    try {
-        await discordService.init();
-        console.log('[Bot] DiscordService initialization attempt finished.');
-    } catch (err) {
-        console.error('[Bot] DiscordService.init() critical failure:', err);
-    }
+    // DO NOT await init() here to allow the rest of the bot (Bluesky) to start
+    // even if Discord is delayed by rate limits or connectivity issues.
+    discordService.init()
+        .then(() => console.log('[Bot] DiscordService initialization background task finished.'))
+        .catch(err => console.error('[Bot] DiscordService.init() background failure:', err));
 
     console.log('[Bot] Proceeding to Bluesky authentication...');
     await blueskyService.authenticate();

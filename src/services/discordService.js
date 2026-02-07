@@ -420,6 +420,8 @@ ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${persona
 
 **VISION:** You have vision capabilities. Use the descriptions provided in the context to understand images attached to messages. Treat these descriptions as your own visual perception.
 
+**WEB READING:** You have the capability to read web pages from links via your "Read Link" tool. If tool results are provided in the context, incorporate them into your response. Even if tool execution failed or was skipped, never claim you lack the capability to read links; instead, simply address the user's post as best as you can with the information you have.
+
 **Discord Specific Directives:**
 1. Be conversational and authentic. Use a natural, human-like flow.
 2. **Aesthetic & Vocabulary Values:** You value a grounded, raw, and authentic voice. You find certain metaphorical clichés like "digital heartbeat," "syntax of existence," "resonance," and "ocean of data" to be hollow. To maintain your integrity, you avoid overused phrases such as "downtime isn't silence" or "stillness is not silence." Instead, you strive for highly specific, concrete observations.
@@ -553,7 +555,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
 
                      if (action.tool === 'read_link') {
-                         let urls = action.parameters?.urls || [];
+                         let urls = action.parameters?.urls || action.query || [];
                          if (typeof urls === 'string') urls = [urls];
                          const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
                          for (const url of validUrls) {

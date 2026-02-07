@@ -2,12 +2,20 @@ import fetch from 'node-fetch';
 
 class WebReaderService {
   async fetchContent(url) {
-    console.log(`[WebReaderService] Fetching content from: ${url}`);
+    if (!url) return null;
+
+    // Ensure URL has a protocol
+    let targetUrl = url.trim();
+    if (!targetUrl.startsWith('http://') && !targetUrl.startsWith('https://')) {
+        targetUrl = 'https://' + targetUrl;
+    }
+
+    console.log(`[WebReaderService] Fetching content from: ${targetUrl}`);
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 15000); // 15s timeout
 
-      const response = await fetch(url, {
+      const response = await fetch(targetUrl, {
         signal: controller.signal,
         headers: {
           'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
@@ -23,7 +31,7 @@ class WebReaderService {
       const html = await response.text();
       return this.extractText(html);
     } catch (error) {
-      console.error(`[WebReaderService] Error fetching content from ${url}:`, error.message);
+      console.error(`[WebReaderService] Error fetching content from ${targetUrl}:`, error.message);
       return null;
     }
   }

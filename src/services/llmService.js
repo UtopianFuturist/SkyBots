@@ -86,6 +86,14 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         if (response.status === 400) {
             console.error(`[LLMService] [${requestId}] Payload that caused 400 error:`, JSON.stringify(payload, null, 2));
         }
+
+        // Check for rate limits or other server errors that warrant a fallback
+        if (!useQwen && (response.status === 429 || response.status >= 500)) {
+            console.warn(`[LLMService] [${requestId}] Primary model error (${response.status}). Falling back to Qwen...`);
+            clearTimeout(timeout);
+            return this.generateResponse(messages, { ...options, useQwen: true });
+        }
+
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
       }
 
@@ -113,8 +121,17 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     } catch (error) {
       if (error.name === 'AbortError') {
         console.error(`[LLMService] [${requestId}] Request timed out after 120s.`);
+        if (!useQwen) {
+            console.warn(`[LLMService] [${requestId}] Stepfun timed out. Retrying with Qwen...`);
+            return this.generateResponse(messages, { ...options, useQwen: true });
+        }
       } else {
         console.error(`[LLMService] [${requestId}] Error generating response:`, error.message);
+        // Fallback for general errors if not already using Qwen
+        if (!useQwen) {
+            console.warn(`[LLMService] [${requestId}] Error with primary model. Retrying with Qwen...`);
+            return this.generateResponse(messages, { ...options, useQwen: true });
+        }
       }
       return null;
     } finally {

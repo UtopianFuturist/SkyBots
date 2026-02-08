@@ -289,11 +289,11 @@ export class Bot {
       }
     }, 30000); // 30 second delay
 
-    // Periodic autonomous post check (every hour)
-    setInterval(() => this.performAutonomousPost(), 3600000);
+    // Periodic autonomous post check (every 2 hours)
+    setInterval(() => this.performAutonomousPost(), 7200000);
 
-    // Periodic Moltbook tasks (every 72 minutes to achieve ~20 posts per day)
-    setInterval(() => this.performMoltbookTasks(), 4320000);
+    // Periodic Moltbook tasks (every 2 hours)
+    setInterval(() => this.performMoltbookTasks(), 7200000);
 
     // Periodic maintenance tasks (every 5 minutes)
     setInterval(() => this.checkMaintenanceTasks(), 300000);
@@ -2615,7 +2615,8 @@ Describe how you feel about this user and your relationship now.`;
                         await moltbookService.addComment(post.id, `@${commenterName} ${replyContent}`);
                         await moltbookService.addRepliedComment(commentId);
                         this.updateActivity();
-                        await new Promise(resolve => setTimeout(resolve, 3000));
+                        // Increased delay to be respectful of rate limits
+                        await new Promise(resolve => setTimeout(resolve, 30000));
                     }
                 }
             }
@@ -2654,7 +2655,8 @@ Describe how you feel about this user and your relationship now.`;
                     dataStore.db.data.moltbook_interacted_posts.push(post.id);
                     await dataStore.db.write();
                     this.updateActivity();
-                    await new Promise(resolve => setTimeout(resolve, 3000));
+                    // Increased delay to be respectful of rate limits
+                    await new Promise(resolve => setTimeout(resolve, 30000));
                     continue; // Skip general evaluation for this post since we already replied
                 }
             }
@@ -2685,8 +2687,8 @@ Describe how you feel about this user and your relationship now.`;
               await dataStore.db.write();
               this.updateActivity();
 
-              // Add a small delay between interactions to be respectful of rate limits
-              await new Promise(resolve => setTimeout(resolve, 5000));
+              // Increased delay between interactions to be respectful of rate limits
+              await new Promise(resolve => setTimeout(resolve, 30000));
             }
           }
         }

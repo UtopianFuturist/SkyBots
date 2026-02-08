@@ -84,11 +84,6 @@ class DiscordService {
             this.client = new Client({
                 intents,
                 partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
-                ws: {
-                    properties: {
-                        browser: 'Discord iOS'
-                    }
-                },
                 rest: {
                     timeout: 60000,
                     retries: 5
@@ -105,21 +100,23 @@ class DiscordService {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
                 }
 
-                // Set a timeout for login - 300s is very safe for Render environments
+                // Set a timeout for login - 30m as requested
                 let timeoutHandle;
                 console.log(`[DiscordService] STARTING client.login(). Token length: ${this.token?.length}`);
+
                 const loginPromise = this.client.login(this.token).then(token => {
                     console.log('[DiscordService] login() promise resolved successfully.');
                     return token;
-                }).catch(err => {
-                    console.error('[DiscordService] login() promise REJECTED:', err.message);
-                    throw err;
                 });
 
-                const readyPromise = new Promise((resolve) => {
+                const readyPromise = new Promise((resolve, reject) => {
                     this.client.once('ready', () => {
                         console.log('[DiscordService] "ready" event received.');
                         resolve();
+                    });
+                    this.client.once('error', (err) => {
+                        console.error('[DiscordService] Client encountered error during login:', err);
+                        reject(err);
                     });
                 });
 
@@ -127,8 +124,11 @@ class DiscordService {
                     timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 30m')), 1800000)
                 );
 
-                await Promise.race([Promise.all([loginPromise, readyPromise]), timeoutPromise]);
-                clearTimeout(timeoutHandle);
+                try {
+                    await Promise.race([Promise.all([loginPromise, readyPromise]), timeoutPromise]);
+                } finally {
+                    clearTimeout(timeoutHandle);
+                }
 
                 console.log('[DiscordService] SUCCESS: Client is ready! Logged in as:', this.client.user?.tag);
                 this.isInitializing = false;
@@ -212,6 +212,10 @@ class DiscordService {
 
         this.client.on('shardDisconnect', (event) => {
             console.warn('[DiscordService] Shard Disconnected:', event);
+        });
+
+        this.client.on('shardReconnecting', (id) => {
+            console.log(`[DiscordService] Shard ${id} is reconnecting...`);
         });
 
         this.client.on('reconnecting', () => {
@@ -1022,10 +1026,11 @@ INSTRUCTIONS:
     async testConnectivity() {
         console.log('[DiscordService] Testing connectivity to Discord API...');
         try {
+            // Use a standard DiscordBot User-Agent. Using a mobile one with a Bot token is often flagged.
             const response = await fetch('https://discord.com/api/v10/gateway/bot', {
                 headers: {
                     'Authorization': `Bot ${this.token}`,
-                    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148'
+                    'User-Agent': `DiscordBot (https://github.com/discordjs/discord.js, 14.25.1)`
                 }
             });
             console.log(`[DiscordService] Connectivity test status: ${response.status} ${response.statusText}`);

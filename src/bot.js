@@ -79,10 +79,14 @@ export class Bot {
             if (adminProfile && adminProfile.did) {
                 await dataStore.setAdminDid(adminProfile.did);
                 console.log(`[Bot] Admin DID resolved: ${adminProfile.did}`);
+            } else {
+                console.warn(`[Bot] Admin profile found but DID is missing for @${config.ADMIN_BLUESKY_HANDLE}.`);
             }
         } catch (e) {
-            console.warn(`[Bot] Failed to resolve admin DID: ${e.message}`);
+            console.warn(`[Bot] Failed to resolve admin DID for @${config.ADMIN_BLUESKY_HANDLE}: ${e.message}`);
         }
+    } else {
+        console.log('[Bot] ADMIN_BLUESKY_HANDLE not configured. Admin-in-thread detection will be limited.');
     }
 
     // Comind Agent Registration

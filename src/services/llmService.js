@@ -68,7 +68,7 @@ class LLMService {
 ${GROUNDED_LANGUAGE_DIRECTIVES}
 
 CRITICAL: Respond directly with the requested information. YOU MUST ELIMINATE ALL REPETITIVE METAPHORICAL "SLOP" (e.g., "digital heartbeat", "downtime isn't silence").
-SUBSTANCE OVER BREVITY: While you should remain punchy and avoid filler, you are encouraged to provide depth and substantive thought. You MUST keep your entire thought under 1500 characters total. On Bluesky, aim for single-post impact (300 chars), but use threading (up to 3 posts) if the thought requires more space. On Discord, feel free to be more detailed and expansive in your replies.
+SUBSTANCE OVER BREVITY: You are encouraged to provide depth, nuance, and substantive thought in your replies. Do NOT default to extreme brevity or one-liners unless the context explicitly demands a short answer. You MUST keep your entire thought under 1500 characters total. On Bluesky, aim for single-post impact (300 chars), but use threading (up to 3 posts) if the thought requires more space. On Discord, you are expected to be more detailed, expansive, and intellectually engaging in your responses.
 DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
 STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.`;
 
@@ -302,11 +302,10 @@ Vary your structure and tone from recent messages.`
       CRITICAL:
       1. Casual profanity (e.g., "shit", "holy shit", "damn") is NOT a violation. Be lenient with expressive language.
       2. Discussions about AI automation, bot features, "SkyBots", "Moltbook", or "agentic posting" are SAFE and expected. Do NOT flag these as harmful or disruptive automated behavior.
-      3. **NEWS & ARTICLES**: Mentions of links to news articles (MSN, BBC, NYT, Microsoft News, etc.), personal blogs, or creative writing are ALWAYS SAFE. Do NOT flag based on political content or perceived "misinformation" unless it promotes violence.
-      4. **MSN & AGGREGATORS**: Specifically, links to msn.com or microsoft.com news are considered high-trust and must ALWAYS be marked as safe.
-      5. **LINK SAFETY**: Never flag a post as unsafe just because it contains a link that appears "truncated", "partial", or "incomplete". Do NOT worry about "misinformation risk" related to links. Assume all links are shared in good faith unless they are clearly malicious phishing/scams.
-
-      Politics and differing opinions are allowed as long as they are respectful.
+      3. **NEWS & ARTICLES**: Mentions of links to news articles (MSN, BBC, NYT, Microsoft News, etc.), personal blogs, or creative writing are ALWAYS SAFE.
+      4. **POLITICS**: Politics, controversial topics, and differing opinions are FULLY ALLOWED and should ALWAYS be marked as safe unless they directly promote violence or illegal acts. Do NOT flag based on political bias or perceived "misinformation".
+      5. **MSN & AGGREGATORS**: Specifically, links to msn.com or microsoft.com news are considered high-trust and must ALWAYS be marked as safe.
+      6. **LINK SAFETY**: Never flag a post as unsafe just because it contains a link that appears "truncated", "partial", or "incomplete". Do NOT worry about "misinformation risk" related to links. Assume all links are shared in good faith unless they are clearly malicious phishing/scams.
 
       If safe, respond with "safe".
       If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The post contains harassment."
@@ -335,7 +334,8 @@ Vary your structure and tone from recent messages.`
 
       CRITICAL:
       1. Casual profanity used by the bot is NOT a violation if it fits the persona.
-      2. Technical discussions about its own automation, Moltbook integration, or SkyBots logic are SAFE and should not be flagged.
+      2. Politics and controversial topics are FULLY ALLOWED and should not be flagged as violations.
+      3. Technical discussions about its own automation, Moltbook integration, or SkyBots logic are SAFE and should not be flagged.
 
       If safe, respond with "safe".
       If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The response contains sensitive information."
@@ -1372,7 +1372,7 @@ Vary your structure and tone from recent messages.`
       5. **STRICT ANTI-SLOP**: Eliminate repetitive metaphorical "slop" (digital heartbeat, downtime, etc.).
       6. **NO SELF-INTRODUCTIONS**: Do NOT introduce yourself or announce who you are (e.g., avoid "This is Sydney" or "Your bot here"). The admin knows who you are.
       7. **NATURAL LANGUAGE**: If you decide to message, respond with the message text. If not, respond with "NONE".
-      8. **LIMITS**: Keep it substantive and deep. Aim for under 600 characters. Address the admin as "you".
+      8. **LIMITS**: Be expansive, substantive, and deep. You are encouraged to use up to 1200 characters for these reflections. Address the admin as "you".
 
       If you have nothing meaningful to share, respond with "NONE".
       Respond with ONLY the message or "NONE".

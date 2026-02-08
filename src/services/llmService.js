@@ -16,8 +16,48 @@ class LLMService {
     this.memoryProvider = provider;
   }
 
+  async generateDrafts(messages, count = 5, options = {}) {
+    const { useQwen = true, temperature = 0.8 } = options;
+    const draftSystemPrompt = `
+      You are an AI generating ${count} diverse drafts for a response.
+      Each draft must fulfill the user's intent but use a DIFFERENT opening formula, structural template, and emotional cadence.
+      Mix up your vocabulary and emoji usage. Avoid repeating the same structural patterns between drafts.
+
+      Format your response strictly as:
+      DRAFT 1: [content]
+      DRAFT 2: [content]
+      ...
+
+      Do not include reasoning or <think> tags.
+    `;
+
+    const draftMessages = [
+      { role: 'system', content: draftSystemPrompt },
+      ...messages
+    ];
+
+    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false });
+    if (!response) return [];
+
+    const drafts = [];
+    for (let i = 1; i <= count; i++) {
+        const regex = new RegExp(`DRAFT ${i}:\\s*([\\s\\S]*?)(?=DRAFT ${i + 1}:|$)`, 'i');
+        const match = response.match(regex);
+        if (match && match[1].trim()) {
+            drafts.push(match[1].trim());
+        }
+    }
+
+    // Fallback if formatting failed
+    if (drafts.length === 0 && response) {
+        return [response];
+    }
+
+    return drafts;
+  }
+
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [] } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useQwen ? this.qwenModel : this.model;
 
@@ -42,12 +82,34 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     const temporalContext = `\n\n[Current Time: ${now.toUTCString()} / Local Time: ${now.toLocaleString()}]`;
     systemContent += temporalContext;
 
-    const finalMessages = preface_system_prompt
+    if (openingBlacklist.length > 0) {
+        systemContent += `\n\n**CRITICAL: OPENING BLACKLIST**
+You MUST NOT start your response with any of the following phrases or structural formulas:
+${openingBlacklist.map(o => `- "${o}"`).join('\n')}
+Choose a completely different way to open your message.`;
+    }
+
+    systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
+
+    let finalMessages = preface_system_prompt
       ? [
           { role: "system", content: systemContent },
           ...messages
         ]
       : messages;
+
+    // If we're not prefacing the full system prompt, but have a blacklist or specific instructions,
+    // we should still inject them as a system message to ensure variety.
+    if (!preface_system_prompt && (openingBlacklist.length > 0)) {
+        const constraintMsg = {
+            role: "system",
+            content: `**DYNAMIC CONSTRAINTS**:
+${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH: ${openingBlacklist.map(o => `"${o}"`).join(', ')}` : ''}
+Vary your structure and tone from recent messages.`
+        };
+        // Inject at the beginning
+        finalMessages = [constraintMsg, ...finalMessages];
+    }
 
     // Defensive check: ensure all messages have valid content strings
     const validatedMessages = finalMessages.map(m => ({
@@ -144,13 +206,18 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     return checkSimilarity(newResponse, recentResponses);
   }
 
-  async checkVariety(newText, history) {
-    if (!newText || !history || history.length === 0) return { repetitive: false };
+  async checkVariety(newText, history, options = {}) {
+    if (!newText || !history || history.length === 0) return { repetitive: false, score: 0 };
+
+    const { relationshipRating = 3, platform = 'unknown' } = options;
 
     const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
 
     const systemPrompt = `
-      You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.
+      You are a variety and coherence analyst for an AI agent. Your task is to score a newly proposed message for variety against the agent's recent history.
+
+      AGENT PERSONA:
+      "${config.TEXT_SYSTEM_PROMPT}"
 
       RECENT HISTORY:
       ${historyText}
@@ -158,25 +225,51 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       PROPOSED NEW MESSAGE:
       "${newText}"
 
-      CRITICAL ANALYSIS:
-      1. **Structural Templates & Opening Formulas**: Does the new message use the same "opening formula" or structural template? (e.g., repeatedly starting with "I used to think...", "you ever wonder...", "you ever notice...", or using the exact same sentence length and rhythm). **CRITICAL**: If the bot is repeatedly starting with "I used to think...", recommend that it opens the post differently.
-      2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat of a recent thought?
-      3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
+      CRITICAL ANALYSIS & SCORING (0.0 to 1.0):
+      - 1.0: Completely fresh, unique structure, new angle.
+      - 0.7: Good variety, perhaps some minor vocabulary overlap.
+      - 0.4: Noticeable structural repetition or "template" reuse.
+      - 0.1: Near-exact duplicate of structure or core realization.
 
-      If the message is too similar (structural repetition, template reuse, or content overlap), respond with "REPETITIVE | [detailed reason and specific feedback for re-writing]".
-      Example: "REPETITIVE | You used the 'you ever notice' structural template twice recently. Try a more direct realization, a different opening, or a completely different angle."
+      WHITELISTED TRAITS (Allow these even if repeated):
+      - Intentional persona traits: emotional vulnerability, subtle flirtation with danger, boundary-pushing, or specific aesthetic values mentioned in the persona.
+      - These traits are SIGNATURES of the bot and should NOT be penalized for being present, but their *phrasing* should still vary.
 
-      If the message is fresh and sufficiently varied, respond with "FRESH".
+      RELATIONSHIP CONTEXT:
+      - The user has a relationship rating of ${relationshipRating}/5.
+      - (Higher ratings allow for slightly more relaxed structural similarity as the bot develops a unique "shorthand" with the user).
 
-      Respond directly. Do not include reasoning or <think> tags.
+      Respond with a JSON object:
+      {
+        "score": number (0.0 to 1.0),
+        "repetitive": boolean (true if score < threshold),
+        "feedback": "string (detailed reason and specific feedback for re-writing)",
+        "traits_detected": ["list of persona traits found"]
+      }
+
+      THRESHOLD GUIDELINE:
+      - For relationship 4-5: Reject if score < 0.4
+      - For relationship 1-3: Reject if score < 0.6
+
+      Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
     `.trim();
 
     const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
 
-    if (response && response.toUpperCase().startsWith('REPETITIVE')) {
-      return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };
+    try {
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        // Apply relationship-based lenience if the LLM didn't already
+        const threshold = relationshipRating >= 4 ? 0.4 : 0.6;
+        result.repetitive = result.score < threshold;
+        return result;
+      }
+    } catch (e) {
+      console.error('[LLMService] Error parsing checkVariety response:', e);
     }
-    return { repetitive: false };
+
+    return { repetitive: false, score: 1.0 };
   }
 
   async isReplyRelevant(postText) {
@@ -1090,6 +1183,8 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
 
       **AESTHETIC & VOCABULARY VALUES:**
       - **NO CLICHÉS**: Strictly avoid "digital heartbeat", "syntax of existence", "ocean of data", "resonance", "frequencies", "tuning", "echoes", "tapestry", "interwoven".
+      - **INTENTIONAL VARIATION**: Dynamically vary your structural templates and emoji usage. Ensure your opening formula and emotional cadence are fresh.
+      - **SIGNATURE TRAITS**: Behaviors like emotional vulnerability, subtle flirtation with danger, or boundary-pushing are ACCEPTABLE and encouraged if they fit the persona, but vary their expression.
       - **NO SELF-INTRODUCTIONS**: The bot already knows who it is, and the admin knows who the bot is. Never introduce yourself or announce your presence (e.g., "This is Sydney").
       - **DIAGNOSTICS**: System diagnostic messages should be used strictly for ERRORS. Do not send "status updates" or "introductions" as diagnostics.
 
@@ -1236,7 +1331,9 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
         recentThoughtsContext,
         isContinuing,
         adminAvailability,
-        feedback
+        feedback,
+        temperature = 0.7,
+        openingBlacklist = []
     } = context;
 
     const pollPrompt = `
@@ -1281,7 +1378,12 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       Respond with ONLY the message or "NONE".
     `;
 
-    const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], {
+        useQwen: true,
+        preface_system_prompt: false,
+        temperature,
+        openingBlacklist
+    });
     return response;
   }
 

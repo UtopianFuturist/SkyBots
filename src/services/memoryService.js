@@ -146,7 +146,7 @@ class MemoryService {
           Type: ${type}
 
           CRITERIA:
-          1. **Allowed Tags**: Does the entry contain one of the following tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION]?
+          1. **Allowed Tags**: Does the entry contain one of the following tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED]?
           2. **Meaningful Substance**: Does this entry contain concise meaningful substance regarding the bot's functioning, memory, or persona?
           3. **Coherence**: Is the entry logically sound and in-persona?
           4. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence")?

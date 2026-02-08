@@ -2258,6 +2258,11 @@ Describe how you feel about this user and your relationship now.`;
 
         console.log(`[Bot] Autonomous post attempt ${attempts}/${MAX_ATTEMPTS} for topic: "${topic}" (Type: ${postType})`);
 
+        if (attempts > 1) {
+            console.log(`[Bot] Waiting 60s before retry attempt ${attempts}...`);
+            await new Promise(resolve => setTimeout(resolve, 60000));
+        }
+
         if (postType === 'image') {
           if (feedback) console.log(`[Bot] Applying correction feedback for retry: "${feedback}"`);
           console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${attempts})...`);
@@ -2809,6 +2814,12 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       let success = false;
       while (attempts < MAX_ATTEMPTS) {
         attempts++;
+
+        if (attempts > 1) {
+            console.log(`[Moltbook] Waiting 60s before musing retry attempt ${attempts}...`);
+            await new Promise(resolve => setTimeout(resolve, 60000));
+        }
+
         const feedbackContext = feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
         const musingPromptWithFeedback = feedback ? `${musingPrompt}${feedbackContext}` : musingPrompt;
         const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPromptWithFeedback }], { useQwen: true });

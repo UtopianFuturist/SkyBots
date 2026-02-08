@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
 
 class LLMService {
   constructor() {
@@ -103,6 +103,7 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
       if (!content) return null;
 
       let sanitized = sanitizeThinkingTags(content);
+      sanitized = sanitizeCjkCharacters(sanitized);
       sanitized = sanitizeCharacterCount(sanitized);
       sanitized = stripWrappingQuotes(sanitized);
 

@@ -1,4 +1,31 @@
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop } from '../src/utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters } from '../src/utils/textUtils.js';
+
+describe('textUtils - sanitizeCjkCharacters', () => {
+  it('should remove Chinese characters', () => {
+    const input = 'Hello 你好 world';
+    expect(sanitizeCjkCharacters(input)).toBe('Hello  world');
+  });
+
+  it('should remove Japanese characters', () => {
+    const input = 'Hello こんにちは world';
+    expect(sanitizeCjkCharacters(input)).toBe('Hello  world');
+  });
+
+  it('should remove Korean characters', () => {
+    const input = 'Hello 안녕하세요 world';
+    expect(sanitizeCjkCharacters(input)).toBe('Hello  world');
+  });
+
+  it('should handle mixed CJK', () => {
+    const input = 'Hello 你好 こんにちは 안녕하세요 world';
+    expect(sanitizeCjkCharacters(input)).toBe('Hello    world');
+  });
+
+  it('should not affect English/Latin text', () => {
+    const input = 'Hello world! 123 @#$';
+    expect(sanitizeCjkCharacters(input)).toBe(input);
+  });
+});
 
 describe('textUtils - sanitizeCharacterCount', () => {
   it('should remove character count tags at the end', () => {

@@ -1266,6 +1266,14 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
   }
 
   async isUrlSafe(url) {
+    // Hardcoded whitelist for news and known safe domains
+    const safeDomains = ['msn.com', 'microsoft.com', 'bbc.co.uk', 'bbc.com', 'nytimes.com', 'theguardian.com', 'reuters.com', 'apnews.com', 'wikipedia.org', 'google.com', 'youtube.com', 'deepskyanchor.com'];
+    const lowerUrl = url.toLowerCase();
+    if (safeDomains.some(domain => lowerUrl.includes(domain))) {
+        console.log(`[LLMService] URL contains a whitelisted safe domain: ${url}. Bypassing safety check.`);
+        return { safe: true, reason: null };
+    }
+
     const systemPrompt = `
       You are a URL safety analyzer. Analyze the following URL to determine if it is safe to visit.
 

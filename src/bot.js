@@ -838,6 +838,10 @@ Identify the topic and main takeaway.`;
     const isAdmin = (handle === config.ADMIN_BLUESKY_HANDLE) || (notif.author.did === adminDid);
     const isAdminInThread = isAdmin || threadData.some(h => h.did === adminDid);
 
+    if (isAdmin || isAdminInThread) {
+        console.log(`[Bot] Admin detected in thread: isAdmin=${isAdmin}, isAdminInThread=${isAdminInThread}, adminDid=${adminDid}`);
+    }
+
     // Hierarchical Social Context
     const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
 

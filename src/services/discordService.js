@@ -95,7 +95,13 @@ class DiscordService {
             try {
                 console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
 
-                await this.testConnectivity();
+                const connectionResult = await this.testConnectivity();
+                if (connectionResult.status === 429 || connectionResult.errorType === 'CLOUDFLARE_1015') {
+                    console.error(`[DiscordService] HARD BLOCK DETECTED: ${connectionResult.status}. Waiting 1 hour to let rate limit reset.`);
+                    await new Promise(resolve => setTimeout(resolve, 3600000));
+                    continue;
+                }
+
                 if (this.token) {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
                 }
@@ -115,7 +121,7 @@ class DiscordService {
                         resolve();
                     });
                     this.client.once('error', (err) => {
-                        console.error('[DiscordService] Client encountered error during login:', err);
+                        console.error('[DiscordService] Client encountered error during login phase:', err);
                         reject(err);
                     });
                 });
@@ -203,7 +209,13 @@ class DiscordService {
         });
 
         this.client.on('debug', (info) => {
-            console.log('[DiscordService] DEBUG:', info);
+            // Enhanced WebSocket/Gateway debugging
+            if (info.includes('WebSocket') || info.includes('Gateway') || info.includes('Heartbeat')) {
+                console.log('[DiscordService] DEBUG (Connection):', info);
+            } else {
+                // Still log other debug info but maybe less prominently
+                // console.log('[DiscordService] DEBUG:', info);
+            }
         });
 
         this.client.on('shardError', (error) => {
@@ -1034,22 +1046,25 @@ INSTRUCTIONS:
                 }
             });
             console.log(`[DiscordService] Connectivity test status: ${response.status} ${response.statusText}`);
+
             if (response.ok) {
                 const data = await response.json();
                 console.log(`[DiscordService] Gateway URL: ${data.url}, Shards: ${data.shards}`);
-                return true;
+                return { ok: true, status: response.status };
             } else {
                 const err = await response.text();
+                let errorType = 'UNKNOWN';
                 if (err.includes('cf-ray') || err.includes('cloudflare') || err.includes('1015')) {
                     console.error(`[DiscordService] Connectivity test failed: Cloudflare Rate Limit/Block detected (Error 1015 or similar).`);
+                    errorType = 'CLOUDFLARE_1015';
                 } else {
                     console.error(`[DiscordService] Connectivity test failed: ${err.substring(0, 500)}`);
                 }
-                return false;
+                return { ok: false, status: response.status, errorType };
             }
         } catch (error) {
             console.error('[DiscordService] Connectivity test error:', error.message);
-            return false;
+            return { ok: false, status: 0, errorType: 'FETCH_ERROR' };
         }
     }
 

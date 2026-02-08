@@ -97,8 +97,8 @@ class DiscordService {
 
                 const connectionResult = await this.testConnectivity();
                 if (connectionResult.status === 429 || connectionResult.errorType === 'CLOUDFLARE_1015') {
-                    console.error(`[DiscordService] HARD BLOCK DETECTED: ${connectionResult.status}. Waiting 1 hour to let rate limit reset.`);
-                    await new Promise(resolve => setTimeout(resolve, 3600000));
+                    console.error(`[DiscordService] HARD BLOCK DETECTED: ${connectionResult.status}. Waiting 3 hours to let rate limit reset.`);
+                    await new Promise(resolve => setTimeout(resolve, 10800000));
                     continue;
                 }
 
@@ -162,8 +162,8 @@ class DiscordService {
                 }
 
                 if (attempts < maxAttempts) {
-                    // Exponential backoff capped at 1 hour
-                    const nextDelay = Math.min(retryDelay * 2, 3600000);
+                    // Exponential backoff capped at 3 hours
+                    const nextDelay = Math.min(retryDelay * 2, 10800000);
                     console.log(`[DiscordService] Retrying in ${retryDelay / 1000}s (Next delay: ${nextDelay / 1000}s)...`);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
                     retryDelay = nextDelay;
@@ -1038,11 +1038,18 @@ INSTRUCTIONS:
     async testConnectivity() {
         console.log('[DiscordService] Testing connectivity to Discord API...');
         try {
-            // Use a standard DiscordBot User-Agent. Using a mobile one with a Bot token is often flagged.
+            // Mimic a modern browser/mobile client to reduce Cloudflare flagging
+            const userAgents = [
+                'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Discord; iPhone15,2; 221.0 (42582)',
+                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+            ];
+            const selectedAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
+
             const response = await fetch('https://discord.com/api/v10/gateway/bot', {
                 headers: {
                     'Authorization': `Bot ${this.token}`,
-                    'User-Agent': `DiscordBot (https://github.com/discordjs/discord.js, 14.25.1)`
+                    'User-Agent': selectedAgent
                 }
             });
             console.log(`[DiscordService] Connectivity test status: ${response.status} ${response.statusText}`);

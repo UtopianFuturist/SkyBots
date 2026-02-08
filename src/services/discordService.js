@@ -652,7 +652,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 - Theme: ${plan.strategy?.theme || 'None'}
 ---
 `;
-                 messages.push({ role: 'system', content: strategyContext });
+                 // Inject strategy into the system prompt (first message) instead of appending at end
+                 // This ensures the last message remains the user's latest interaction.
+                 if (messages.length > 0 && messages[0].role === 'system') {
+                     messages[0].content += strategyContext;
+                 } else {
+                     messages.unshift({ role: 'system', content: strategyContext });
+                 }
 
                  const actionResults = [];
 
@@ -1060,8 +1066,11 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          const varietyCheck = await llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord' });
                          const personaCheck = await llmService.isPersonaAligned(cand, 'discord');
 
-                         const score = varietyCheck.score;
-                         console.log(`[DiscordService] Candidate evaluation: Score=${score}, Slop=${containsSlop}, Aligned=${personaCheck.aligned}`);
+                         // Length-based depth bonus (favor longer, more substantive responses)
+                         const lengthBonus = Math.min(cand.length / 500, 0.2); // Up to 0.2 bonus for 500+ chars
+                         const score = varietyCheck.score + lengthBonus;
+
+                         console.log(`[DiscordService] Candidate evaluation: Score=${score.toFixed(2)} (Variety: ${varietyCheck.score}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}`);
 
                          if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
                              if (score > bestScore) {

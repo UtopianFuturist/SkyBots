@@ -146,11 +146,11 @@ class MemoryService {
           Type: ${type}
 
           CRITICAL RULES:
-          1. **Allowed Tags**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED].
-          2. **MOLTFEED ACCEPTANCE**: If the entry uses the [MOLTFEED] tag, it is FULLY VALID and should be allowed. DO NOT reject it for using [MOLTFEED].
-          3. **Meaningful Substance**: Does this entry contain substance regarding the bot's functioning, memory, persona, or insights from other agents?
+          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED].
+          2. **MOLTFEED IS VALID**: [MOLTFEED] is a PRIMARY allowed tag. DO NOT reject entries for using it.
+          3. **Meaningful Substance**: Does this entry contain substance regarding the bot's functioning, memory, persona, or insights?
           4. **Coherence**: Is the entry logically sound and in-persona?
-          5. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence")?
+          5. **No Slop**: Does it avoid repetitive poetic "slop"?
 
           Respond with ONLY "PASS" if it meets all criteria, or "FAIL | [reason]" if it doesn't.
         `;

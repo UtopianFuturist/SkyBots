@@ -117,9 +117,24 @@ Vary your structure and tone from recent messages.`
       content: m.content || ''
     }));
 
+    // Robust Message Merging: Combine consecutive messages with the same role
+    // This fixes 400 errors for APIs that are strict about consecutive roles.
+    const mergedMessages = [];
+    for (const msg of validatedMessages) {
+        if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === msg.role) {
+            mergedMessages[mergedMessages.length - 1].content += `\n\n${msg.content}`;
+        } else {
+            mergedMessages.push({ ...msg });
+        }
+    }
+
+    // Ensure the last message is a user message if possible and requested
+    // (Some models require this, but for agents it might be complex if they are thinking)
+    // We'll leave it as is for now as merging roles usually solves the primary 400 issue.
+
     const payload = {
       model: useQwen ? this.qwenModel : this.model,
-      messages: validatedMessages,
+      messages: mergedMessages,
       temperature,
       max_tokens,
       stream: false

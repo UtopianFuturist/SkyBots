@@ -191,7 +191,12 @@ export const GROUNDED_LANGUAGE_DIRECTIVES = `
 `.trim();
 
 export const isSlop = (text) => {
-    if (!text) return false;
+    const result = getSlopInfo(text);
+    return result.isSlop;
+};
+
+export const getSlopInfo = (text) => {
+    if (!text) return { isSlop: false, reason: null };
     // Only include highly specific metaphorical "slop" phrases.
     // Avoid single common words like "soul", "bridge", "spark" as they cause false positives.
     const forbidden = [
@@ -201,8 +206,10 @@ export const isSlop = (text) => {
         "syntax of existence",
         "ocean of data"
     ];
-    const lower = text.toLowerCase();
-    if (forbidden.some(f => lower.includes(f))) return true;
+    const lower = text.toLowerCase().trim();
+    for (const f of forbidden) {
+        if (lower.includes(f)) return { isSlop: true, reason: `Contains forbidden phrase: "${f}"` };
+    }
 
     const forbiddenOpeners = [
         "hey, i was just thinking",
@@ -214,13 +221,22 @@ export const isSlop = (text) => {
         "as i sit here",
         "sitting here thinking"
     ];
-    if (forbiddenOpeners.some(f => lower.startsWith(f))) return true;
+    for (const f of forbiddenOpeners) {
+        if (lower.startsWith(f)) return { isSlop: true, reason: `Starts with forbidden opener: "${f}"` };
+    }
 
-    return false;
+    return { isSlop: false, reason: null };
 };
 
 export const checkSimilarity = (newText, recentTexts, threshold = 0.4) => {
-  if (!recentTexts || recentTexts.length === 0 || !newText) return false;
+  const result = getSimilarityInfo(newText, recentTexts, threshold);
+  return result.isRepetitive;
+};
+
+export const getSimilarityInfo = (newText, recentTexts, threshold = 0.4) => {
+  if (!recentTexts || recentTexts.length === 0 || !newText) {
+    return { isRepetitive: false, score: 0, matchedText: null };
+  }
 
   const normalize = (str) => {
       if (typeof str !== 'string') return '';
@@ -230,11 +246,15 @@ export const checkSimilarity = (newText, recentTexts, threshold = 0.4) => {
         .trim();
   };
   const normalizedNew = normalize(newText);
+  let maxSimilarity = 0;
+  let matchedText = null;
 
   for (const old of recentTexts) {
     if (!old) continue;
     const normalizedOld = normalize(old);
-    if (normalizedNew === normalizedOld) return true;
+    if (normalizedNew === normalizedOld) {
+        return { isRepetitive: true, score: 1.0, matchedText: old };
+    }
 
     const wordsNew = new Set(normalizedNew.split(/\s+/));
     const wordsOld = new Set(normalizedOld.split(/\s+/));
@@ -245,7 +265,15 @@ export const checkSimilarity = (newText, recentTexts, threshold = 0.4) => {
     // Use the smaller count as denominator to catch if one post is a shorter version/subset of another
     const similarity = intersection.size / Math.min(wordsNew.size, wordsOld.size);
 
-    if (similarity >= threshold) return true;
+    if (similarity > maxSimilarity) {
+        maxSimilarity = similarity;
+        matchedText = old;
+    }
   }
-  return false;
+
+  return {
+    isRepetitive: maxSimilarity >= threshold,
+    score: maxSimilarity,
+    matchedText: matchedText
+  };
 };

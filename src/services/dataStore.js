@@ -31,6 +31,7 @@ const defaultData = {
   discord_relationship_mode: 'friend', // partner, friend, coworker
   discord_scheduled_times: [], // [ "HH:mm" ]
   discord_quiet_hours: { start: 23, end: 8 }, // 24h format
+  discord_pending_directives: [], // [ { type: 'directive|persona', platform, instruction, timestamp } ]
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
   recent_thoughts: [], // [ { platform, content, timestamp } ]
   exhausted_themes: [], // [ { theme, timestamp } ]
@@ -473,6 +474,38 @@ class DataStore {
       discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 23, end: 8 },
       discord_admin_available: this.db.data.discord_admin_available ?? true
     };
+  }
+
+  async addPendingDirective(type, platform, instruction) {
+    if (!this.db.data.discord_pending_directives) {
+      this.db.data.discord_pending_directives = [];
+    }
+    this.db.data.discord_pending_directives.push({
+      type,
+      platform,
+      instruction,
+      timestamp: Date.now()
+    });
+    await this.db.write();
+    return this.db.data.discord_pending_directives.length - 1;
+  }
+
+  getPendingDirectives() {
+    return this.db.data.discord_pending_directives || [];
+  }
+
+  async removePendingDirective(index) {
+    if (this.db.data.discord_pending_directives && this.db.data.discord_pending_directives[index]) {
+      this.db.data.discord_pending_directives.splice(index, 1);
+      await this.db.write();
+      return true;
+    }
+    return false;
+  }
+
+  async clearPendingDirectives() {
+    this.db.data.discord_pending_directives = [];
+    await this.db.write();
   }
 
   async updateConfig(key, value) {

@@ -432,12 +432,18 @@ export class Bot {
                 let message = null;
                 let attempts = 0;
                 let feedback = '';
-                let rejectedContent = null;
-                const MAX_ATTEMPTS = 3;
+                let rejectedAttempts = [];
+                const MAX_ATTEMPTS = 5;
+
+                // Opening Phrase Blacklist
+                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-5);
+                const openingBlacklist = recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 10).join(' '));
 
                 while (attempts < MAX_ATTEMPTS) {
                     attempts++;
-                    const feedbackContext = feedback ? `${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
+                    const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
+                    const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+
                     message = await llmService.performInternalPoll({
                         relationshipMode,
                         history: historyContext,
@@ -447,34 +453,43 @@ export class Bot {
                         recentThoughtsContext,
                         isContinuing,
                         adminAvailability: availability,
-                        feedback: feedbackContext
+                        feedback: retryContext,
+                        temperature: currentTemp,
+                        openingBlacklist
                     });
 
                     if (!message || message.toUpperCase() === 'NONE') break;
 
                     // Variety & Repetition Check
-                    const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5).map(h => h.content);
                     const formattedHistory = [
-                        ...recentBotMsgs.map(m => ({ platform: 'discord', content: m })),
+                        ...recentBotMsgsInHistory.map(m => ({ platform: 'discord', content: m.content })),
                         ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
                     ];
 
-                    const isJaccardRepetitive = checkSimilarity(message, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
                     const containsSlop = isSlop(message);
-                    const varietyCheck = await llmService.checkVariety(message, formattedHistory);
+                    const varietyCheck = await llmService.checkVariety(message, formattedHistory, { relationshipRating: 5, platform: 'discord' }); // Admin is always 5
                     const personaCheck = await llmService.isPersonaAligned(message, 'discord');
 
-                    if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
+                    if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
                         await discordService.sendSpontaneousMessage(message);
                         await dataStore.addRecentThought('discord', message);
                         this.consecutiveRejections = 0; // Reset on success
                         break;
                     } else {
-                        feedback = containsSlop ? "REJECTED: Message contained metaphorical slop." :
-                                   (!personaCheck.aligned ? `REJECTED: ${personaCheck.feedback}` :
-                                   (varietyCheck.feedback || "REJECTED: Message was too similar to recent history."));
-                        rejectedContent = message;
+                        feedback = containsSlop ? "Contains metaphorical slop." :
+                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                                   (varietyCheck.feedback || "Too similar to recent history."));
+                        rejectedAttempts.push(message);
                         console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
+
+                        if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
+                            console.log(`[Bot] Final heartbeat attempt failed. Choosing least-bad response.`);
+                            const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
+                            const chosen = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
+                            await discordService.sendSpontaneousMessage(`[Varied] ${chosen}`);
+                            await dataStore.addRecentThought('discord', chosen);
+                            break;
+                        }
                     }
                 }
 
@@ -1164,8 +1179,8 @@ Identify the topic and main takeaway.`;
 
     let attempts = 0;
     let feedback = '';
-    let rejectedContent = null;
-    const MAX_PLAN_ATTEMPTS = 3;
+    let rejectedAttempts = [];
+    const MAX_PLAN_ATTEMPTS = 5;
 
     let youtubeResult = null;
     let searchContext = '';
@@ -1175,12 +1190,17 @@ Identify the topic and main takeaway.`;
     let responseText = null;
     let plan = null;
 
+    const relRating = dataStore.getUserRating(handle);
+    const recentBotMsgsInThread = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER);
+    const openingBlacklist = recentBotMsgsInThread.slice(-5).map(m => m.text.split(/\s+/).slice(0, 10).join(' '));
+
     while (attempts < MAX_PLAN_ATTEMPTS) {
       attempts++;
       console.log(`[Bot] Planning Attempt ${attempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
-      console.log(`[Bot] Context: isAdmin=${isAdmin}, Platform=bluesky, ThemesCount=${exhaustedThemes.length}`);
 
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, feedback, discordService.status);
+      const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nAdjust your planning and strategy to be as DIFFERENT as possible from these previous failures.` : '';
+
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status);
       console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
 
       if (plan.strategy?.theme) {
@@ -1649,40 +1669,77 @@ Identify the topic and main takeaway.`;
         ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
       ];
 
+      const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
+      const retryResponseContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+
       const attemptMessages = feedback
-          ? [...messages, { role: 'system', content: `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` }]
+          ? [...messages, { role: 'system', content: retryResponseContext }]
           : messages;
 
-      responseText = await llmService.generateResponse(attemptMessages);
+      let candidates = [];
+      if (attempts === 1) {
+          console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
+          candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist });
+      } else {
+          const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist });
+          if (singleResponse) candidates = [singleResponse];
+      }
 
-      if (!responseText) break;
-
-      // Semantic Loop and Safety Check for Bot's Response
-      const isRepetitive = await llmService.checkSemanticLoop(responseText, recentBotReplies);
-      if (isRepetitive) {
-          console.log(`[Bot] Semantic loop detected on attempt ${attempts}.`);
-          feedback = "Your previous response was too similar to a recent one in this thread. Please provide a fresh, different perspective.";
-          rejectedContent = responseText;
-          responseText = null;
+      if (candidates.length === 0) {
+          console.warn(`[Bot] No candidates generated on attempt ${attempts}.`);
           continue;
       }
 
-      const personaCheck = await llmService.isPersonaAligned(responseText, 'bluesky');
-      if (!personaCheck.aligned) {
-          console.log(`[Bot] Persona alignment failed for @${handle} on attempt ${attempts}: ${personaCheck.feedback}`);
-          feedback = `REJECTED: ${personaCheck.feedback}`;
-          rejectedContent = responseText;
-          responseText = null;
-          continue;
+      const recentThoughts = dataStore.getRecentThoughts();
+      const formattedHistory = [
+          ...recentBotReplies.map(m => ({ platform: 'bluesky', content: m })),
+          ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
+      ];
+
+      let bestCandidate = null;
+      let bestScore = -1;
+      let rejectionReason = '';
+
+      for (const cand of candidates) {
+          const containsSlop = isSlop(cand);
+          const varietyCheck = await llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'bluesky' });
+          const personaCheck = await llmService.isPersonaAligned(cand, 'bluesky');
+          const responseSafetyCheck = isAdminInThread ? { safe: true } : await llmService.isResponseSafe(cand);
+
+          const score = varietyCheck.score;
+          console.log(`[Bot] Candidate evaluation: Score=${score}, Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}`);
+
+          if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned && responseSafetyCheck.safe) {
+              if (score > bestScore) {
+                  bestScore = score;
+                  bestCandidate = cand;
+              }
+          } else {
+              if (!bestCandidate) {
+                  rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                                    (!responseSafetyCheck.safe ? "Failed safety check." :
+                                    (varietyCheck.feedback || "Too similar to recent history.")));
+              }
+              rejectedAttempts.push(cand);
+          }
       }
 
-      const responseSafetyCheck = isAdminInThread ? { safe: true } : await llmService.isResponseSafe(responseText);
-      if (!responseSafetyCheck.safe) {
-          console.log(`[Bot] Bot's response failed safety check on attempt ${attempts}.`);
-          return; // Safety failures are terminal
-      }
+      if (bestCandidate) {
+          responseText = bestCandidate;
+          break;
+      } else {
+          feedback = rejectionReason;
+          console.log(`[Bot] Attempt ${attempts} failed. Feedback: ${feedback}`);
 
-      break; // Success
+          if (attempts === MAX_PLAN_ATTEMPTS && rejectedAttempts.length > 0) {
+              console.log(`[Bot] Final attempt failed. Choosing least-bad response.`);
+              const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
+              responseText = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
+              // Optional: Mark it?
+              break;
+          }
+      }
     }
 
     if (!responseText) {
@@ -2198,8 +2255,12 @@ Describe how you feel about this user and your relationship now.`;
       let embed = null;
       let generationPrompt = '';
       let attempts = 0;
-      const MAX_ATTEMPTS = 3;
+      const MAX_ATTEMPTS = 5;
       let feedback = '';
+      let rejectedAttempts = [];
+
+      // Opening Phrase Blacklist
+      const openingBlacklist = allOwnPosts.slice(0, 10).map(m => m.post.record.text.split(/\s+/).slice(0, 10).join(' '));
 
       // Pre-fetch data for specific post types to avoid redundant API calls in the retry loop
       let imageBuffer = null;
@@ -2238,7 +2299,6 @@ Describe how you feel about this user and your relationship now.`;
         ${recentTimelineActivity}
       `.trim();
 
-      let rejectedContent = null;
       while (attempts < MAX_ATTEMPTS) {
         attempts++;
 
@@ -2248,14 +2308,14 @@ Describe how you feel about this user and your relationship now.`;
         imageAltText = null;
         imageBlob = null;
 
-        // For the 3rd attempt (2nd retry), force a topic switch
-        if (attempts === 3) {
+        // Force a topic switch if we're struggling
+        if (attempts >= 3) {
             if (postType === 'image' && dConfig.image_subjects && dConfig.image_subjects.length > 0) {
                 topic = dConfig.image_subjects[Math.floor(Math.random() * dConfig.image_subjects.length)];
-                console.log(`[Bot] 3rd attempt: Forcing switch to new image subject: "${topic}"`);
+                console.log(`[Bot] Attempt ${attempts}: Forcing switch to new image subject: "${topic}"`);
             } else if (dConfig.post_topics && dConfig.post_topics.length > 0) {
                 topic = dConfig.post_topics[Math.floor(Math.random() * dConfig.post_topics.length)];
-                console.log(`[Bot] 3rd attempt: Forcing switch to new topic: "${topic}"`);
+                console.log(`[Bot] Attempt ${attempts}: Forcing switch to new topic: "${topic}"`);
             }
         }
 
@@ -2312,7 +2372,8 @@ Describe how you feel about this user and your relationship now.`;
           }
         }
 
-        const feedbackContext = feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}\n\nPlease improve the post accordingly.` : '';
+        const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
+        const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
 
         if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
@@ -2337,9 +2398,9 @@ Describe how you feel about this user and your relationship now.`;
               ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
               Actual Visuals in Image: ${imageAnalysis}
               Contextual Topic: ${topic}
-              Keep it under 300 characters.${feedbackContext}
+              Keep it under 300 characters.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000 });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
 
           embed = {
             $type: 'app.bsky.embed.images',
@@ -2365,9 +2426,9 @@ Describe how you feel about this user and your relationship now.`;
               Generate a standalone post about the topic: "${topic}".
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
-              Keep it under 300 characters or max 3 threaded posts if deeper.${feedbackContext}
+              Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000 });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
         }
 
         if (postContent) {
@@ -2398,21 +2459,22 @@ Describe how you feel about this user and your relationship now.`;
 
           if (isJaccardRepetitive || containsSlop || varietyCheck.repetitive || !personaCheck.aligned) {
             console.warn(`[Bot] Autonomous post attempt ${attempts} failed quality/persona check. Rejecting.`);
-            feedback = containsSlop ? "REJECTED: The post contains repetitive metaphorical 'slop'." :
-                       (!personaCheck.aligned ? `REJECTED: ${personaCheck.feedback}` :
-                       (varietyCheck.feedback || "REJECTED: The post is too similar to your recent history. Try a completely different angle, phrasing, or topic."));
+            feedback = containsSlop ? "Contains repetitive metaphorical 'slop'." :
+                       (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                       (varietyCheck.feedback || "Too similar to your recent history."));
 
-            rejectedContent = postContent;
+            rejectedAttempts.push(postContent);
             postContent = null; // Clear to prevent accidental posting of rejected content
 
-            if (dConfig.post_topics && dConfig.post_topics.length > 0 && attempts < MAX_ATTEMPTS) {
-                // Keep the existing "any attempt" topic switch for repetition/slop as a general safeguard
-                const topics = dConfig.post_topics;
-                if (topics.length > 0) {
-                    topic = topics[Math.floor(Math.random() * topics.length)];
-                    console.log(`[Bot] Forcing topic from dynamic post_topics for retry due to repetition: "${topic}"`);
-                }
+            if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
+                console.log(`[Bot] Final autonomous attempt failed. Choosing least-bad response.`);
+                const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
+                postContent = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
+                // Check coherence one last time for the chosen one
+                const { score } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
+                if (score >= 3) break;
             }
+
             continue;
           }
 
@@ -2811,9 +2873,9 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
       let attempts = 0;
       let feedback = '';
-      const MAX_ATTEMPTS = 3;
+      const MAX_ATTEMPTS = 5;
 
-      let rejectedContent = null;
+      let rejectedAttempts = [];
       let success = false;
       while (attempts < MAX_ATTEMPTS) {
         attempts++;
@@ -2823,9 +2885,10 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             await new Promise(resolve => setTimeout(resolve, 60000));
         }
 
-        const feedbackContext = feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
-        const musingPromptWithFeedback = feedback ? `${musingPrompt}${feedbackContext}` : musingPrompt;
-        const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPromptWithFeedback }], { useQwen: true });
+        const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
+        const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+
+        const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt + retryContext }], { useQwen: true, temperature: currentTemp });
 
         if (!musingRaw) break;
 
@@ -2842,7 +2905,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
           ];
 
-          const varietyCheck = await llmService.checkVariety(content, formattedHistory);
+          const varietyCheck = await llmService.checkVariety(content, formattedHistory, { relationshipRating: 5, platform: 'moltbook' });
           const containsSlop = isSlop(content);
           const personaCheck = await llmService.isPersonaAligned(content, 'moltbook');
 
@@ -2856,11 +2919,24 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             success = true;
             break;
           } else {
-            feedback = containsSlop ? "REJECTED: Post contained metaphorical slop." :
-                       (!personaCheck.aligned ? `REJECTED: ${personaCheck.feedback}` :
-                       (varietyCheck.feedback || "REJECTED: Post was too similar to recent history."));
-            rejectedContent = content;
+            feedback = containsSlop ? "Contains metaphorical slop." :
+                       (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                       (varietyCheck.feedback || "Too similar to recent history."));
+            rejectedAttempts.push(content);
             console.log(`[Moltbook] Post attempt ${attempts} rejected: ${feedback}`);
+
+            if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
+                console.log(`[Moltbook] Final musing attempt failed. Choosing least-bad response.`);
+                const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
+                const chosen = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
+                const result = await moltbookService.post(title, chosen, targetSubmolt);
+                if (result) {
+                    await dataStore.addRecentThought('moltbook', chosen);
+                    await this._shareMoltbookPostToBluesky(result);
+                }
+                success = true;
+                break;
+            }
           }
         }
       }

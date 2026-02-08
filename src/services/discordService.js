@@ -404,6 +404,64 @@ class DiscordService {
             return;
         }
 
+        if (content.startsWith('/approve')) {
+            if (!isAdmin) return;
+            const pending = dataStore.getPendingDirectives();
+            if (pending.length === 0) {
+                await this._send(message.channel, "There are no pending directives to approve.");
+                return;
+            }
+            const directive = pending[0];
+            if (directive.type === 'persona') {
+                await dataStore.addPersonaUpdate(directive.instruction);
+                if (memoryService.isEnabled()) await memoryService.createMemoryEntry('persona_update', directive.instruction);
+                await this._send(message.channel, `✅ Approved and saved persona update: "${directive.instruction}"`);
+            } else {
+                if (directive.platform === 'moltbook') {
+                    await moltbookService.addAdminInstruction(directive.instruction);
+                } else {
+                    await dataStore.addBlueskyInstruction(directive.instruction);
+                }
+                if (memoryService.isEnabled()) await memoryService.createMemoryEntry('directive_update', `Platform: ${directive.platform}. Instruction: ${directive.instruction}`);
+                await this._send(message.channel, `✅ Approved and saved ${directive.platform} directive: "${directive.instruction}"`);
+            }
+            await dataStore.removePendingDirective(0);
+            return;
+        }
+
+        if (content.startsWith('/reject')) {
+            if (!isAdmin) return;
+            const pending = dataStore.getPendingDirectives();
+            if (pending.length === 0) {
+                await this._send(message.channel, "There are no pending directives to reject.");
+                return;
+            }
+            const directive = pending[0];
+            await dataStore.removePendingDirective(0);
+            await this._send(message.channel, `❌ Rejected and cleared pending ${directive.type}: "${directive.instruction}"`);
+            return;
+        }
+
+        if (content.startsWith('/edit')) {
+            if (!isAdmin) return;
+            const pending = dataStore.getPendingDirectives();
+            if (pending.length === 0) {
+                await this._send(message.channel, "There are no pending directives to edit.");
+                return;
+            }
+            const newInstruction = message.content.slice(5).trim();
+            if (!newInstruction) {
+                await this._send(message.channel, "Please provide the new instruction text. Example: `/edit Always be more poetic.`");
+                return;
+            }
+            const directive = pending[0];
+            directive.instruction = newInstruction;
+            // Update in place (lowdb reference)
+            await dataStore.db.write();
+            await this._send(message.channel, `📝 Edited pending ${directive.type}. New instruction: "${newInstruction}". Use \`/approve\` to save it.`);
+            return;
+        }
+
         if (content.startsWith('/art')) {
             const prompt = message.content.slice(5).trim();
             if (!prompt) {
@@ -602,24 +660,14 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  for (const action of plan.actions) {
                      if (action.tool === 'persist_directive') {
                          const { platform, instruction } = action.parameters || {};
-                         if (platform === 'moltbook') {
-                             await moltbookService.addAdminInstruction(instruction);
-                         } else {
-                             await dataStore.addBlueskyInstruction(instruction);
-                         }
-                         if (memoryService.isEnabled()) {
-                             await memoryService.createMemoryEntry('directive_update', `Platform: ${platform || 'bluesky'}. Instruction: ${instruction}`);
-                         }
-                         actionResults.push(`[Directive persisted for ${platform || 'bluesky'}]`);
+                         await dataStore.addPendingDirective('directive', platform || 'bluesky', instruction);
+                         actionResults.push(`[Directive for ${platform || 'bluesky'} added to pending list for your approval. Use /approve, /reject, or /edit]`);
                      }
                      if (action.tool === 'update_persona') {
                          const { instruction } = action.parameters || {};
                          if (instruction) {
-                             await dataStore.addPersonaUpdate(instruction);
-                             if (memoryService.isEnabled()) {
-                                 await memoryService.createMemoryEntry('persona_update', instruction);
-                             }
-                             actionResults.push(`[Persona updated with new instruction]`);
+                             await dataStore.addPendingDirective('persona', null, instruction);
+                             actionResults.push(`[Persona update added to pending list for your approval. Use /approve, /reject, or /edit]`);
                          }
                      }
                      if (action.tool === 'bsky_post') {
@@ -960,38 +1008,92 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
                  let attempts = 0;
                  let feedback = '';
-                 let rejectedContent = null;
-                 const MAX_ATTEMPTS = 3;
+                 let rejectedAttempts = [];
+                 const MAX_ATTEMPTS = 5;
                  const recentThoughts = dataStore.getRecentThoughts();
+                 const relRating = dataStore.getUserRating(message.author.username);
+
+                 // Opening Phrase Blacklist: Track first 10 words of last 5 messages
+                 const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5);
+                 const openingBlacklist = recentBotMsgs.map(m => {
+                     const words = m.content.split(/\s+/).slice(0, 10).join(' ');
+                     return words;
+                 });
 
                  while (attempts < MAX_ATTEMPTS) {
                      attempts++;
-                     const feedbackContext = feedback ? `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
+                     let candidates = [];
+                     const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05); // max 0.85
+
+                     console.log(`[DiscordService] Response Attempt ${attempts}/${MAX_ATTEMPTS} (Temp: ${currentTemp.toFixed(2)})`);
+
+                     const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+
                      const finalMessages = feedback
-                        ? [...messages, { role: 'system', content: feedbackContext }]
+                        ? [...messages, { role: 'system', content: retryContext }]
                         : messages;
 
-                     responseText = await llmService.generateResponse(finalMessages, { useQwen: true });
-                     if (!responseText) break;
+                     if (attempts === 1) {
+                         console.log(`[DiscordService] Generating 5 diverse drafts for initial attempt...`);
+                         candidates = await llmService.generateDrafts(finalMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist });
+                     } else {
+                         const singleResponse = await llmService.generateResponse(finalMessages, { useQwen: true, temperature: currentTemp, openingBlacklist });
+                         if (singleResponse) candidates = [singleResponse];
+                     }
 
-                     // Variety & Repetition Check
-                     const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5).map(h => h.content);
+                     if (candidates.length === 0) {
+                         console.warn(`[DiscordService] No candidates generated on attempt ${attempts}.`);
+                         continue;
+                     }
+
+                     // Variety & Repetition Check for candidates
                      const formattedHistory = [
-                         ...recentBotMsgs.map(m => ({ platform: 'discord', content: m })),
+                         ...recentBotMsgs.map(m => ({ platform: 'discord', content: m.content })),
                          ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
                      ];
 
-                     const isJaccardRepetitive = checkSimilarity(responseText, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
-                     const containsSlop = isSlop(responseText);
-                     const varietyCheck = await llmService.checkVariety(responseText, formattedHistory);
+                     let bestCandidate = null;
+                     let bestScore = -1;
+                     let rejectionReason = '';
 
-                     if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive) {
+                     for (const cand of candidates) {
+                         const containsSlop = isSlop(cand);
+                         const varietyCheck = await llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord' });
+                         const personaCheck = await llmService.isPersonaAligned(cand, 'discord');
+
+                         const score = varietyCheck.score;
+                         console.log(`[DiscordService] Candidate evaluation: Score=${score}, Slop=${containsSlop}, Aligned=${personaCheck.aligned}`);
+
+                         if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
+                             if (score > bestScore) {
+                                 bestScore = score;
+                                 bestCandidate = cand;
+                             }
+                         } else {
+                             if (!bestCandidate) {
+                                 rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                                                   (varietyCheck.feedback || "Too similar to recent history."));
+                             }
+                             rejectedAttempts.push(cand);
+                         }
+                     }
+
+                     if (bestCandidate) {
+                         responseText = bestCandidate;
                          break;
                      } else {
-                         feedback = containsSlop ? "REJECTED: Response contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Response was too similar to recent history.");
-                         console.log(`[DiscordService] Response attempt ${attempts} rejected: ${feedback}`);
-                         rejectedContent = responseText;
-                         responseText = null; // Prevent sending the rejected response
+                         feedback = `REJECTED: ${rejectionReason}`;
+                         console.log(`[DiscordService] Attempt ${attempts} failed. Feedback: ${feedback}`);
+
+                         // If it's the last attempt, pick the least-bad one (highest score)
+                         if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
+                             console.log(`[DiscordService] Final attempt failed. Choosing least-bad response from ${rejectedAttempts.length} attempts.`);
+                             // Just pick one that isn't slop if possible
+                             const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
+                             responseText = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
+                             responseText = `[Varied] ${responseText}`; // Mark as forced variation
+                         }
                      }
                  }
             } else {

@@ -295,8 +295,8 @@ export class Bot {
     // Periodic Moltbook tasks (every 2 hours)
     setInterval(() => this.performMoltbookTasks(), 7200000);
 
-    // Periodic maintenance tasks (every 5 minutes)
-    setInterval(() => this.checkMaintenanceTasks(), 300000);
+    // Periodic maintenance tasks (every 15 minutes)
+    setInterval(() => this.checkMaintenanceTasks(), 900000);
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
@@ -334,8 +334,8 @@ export class Bot {
       this.updateActivity(); // Reset idle timer
     }
 
-    // 3. Discord Heartbeat (Every 5 minutes - Spontaneous DM check)
-    if (discordService.isEnabled && dataStore.getDiscordAdminAvailability()) {
+    // 3. Discord Heartbeat (Every 15 minutes - Spontaneous DM check)
+    if (discordService.status === 'online' && dataStore.getDiscordAdminAvailability()) {
         const admin = await discordService.getAdminUser();
         if (admin) {
             const normChannelId = `dm_${admin.id}`;
@@ -555,7 +555,10 @@ export class Bot {
     const lastDiscordMemory = this[discordActivityKey] || 0;
     const nowTs = Date.now();
 
-    if (discordService.isEnabled && memoryService.isEnabled() && (nowTs - lastDiscordMemory > 4 * 60 * 60 * 1000)) { // Every 4 hours
+    const postLoginDelay = 30 * 60 * 1000; // 30 minutes
+    const isPostLoginReady = (nowTs - discordService.lastLoginTime) > postLoginDelay;
+
+    if (discordService.status === 'online' && isPostLoginReady && memoryService.isEnabled() && (nowTs - lastDiscordMemory > 4 * 60 * 60 * 1000)) { // Every 4 hours
         console.log('[Bot] Checking for recent Discord activity to record in memory thread...');
         const admin = await discordService.getAdminUser();
         if (admin) {
@@ -627,7 +630,7 @@ Identify the topic and main takeaway.`;
   }
 
   async _isDiscordConversationOngoing() {
-    if (!discordService.isEnabled) return false;
+    if (discordService.status !== 'online') return false;
 
     try {
         const admin = await discordService.getAdminUser();
@@ -676,7 +679,7 @@ Identify the topic and main takeaway.`;
           // Filter out rate limit errors for Discord DMs if desired, but user specifically asked for Render API logs except LLM rate limiting.
           const isRateLimit = error.message.toLowerCase().includes('rate limit') || error.message.includes('429');
 
-          if (discordService.isEnabled && !isRateLimit) {
+          if (discordService.status === 'online' && !isRateLimit) {
             console.log(`[Bot] Sending error alert to admin via Discord...`);
             await discordService.sendSpontaneousMessage(`${alertMsg}`);
           }
@@ -1177,7 +1180,7 @@ Identify the topic and main takeaway.`;
       console.log(`[Bot] Planning Attempt ${attempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
       console.log(`[Bot] Context: isAdmin=${isAdmin}, Platform=bluesky, ThemesCount=${exhaustedThemes.length}`);
 
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, feedback);
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, feedback, discordService.status);
       console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
 
       if (plan.strategy?.theme) {

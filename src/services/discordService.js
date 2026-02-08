@@ -26,6 +26,8 @@ class DiscordService {
         this.isEnabled = !!this.token && this.token !== 'undefined' && this.token !== 'null';
         this.adminId = null;
         this.isInitializing = false;
+        this.status = 'offline'; // 'offline', 'connecting', 'online', 'blocked'
+        this.lastLoginTime = 0;
         this._lastHeavyAdminSearch = 0;
         this._lastMessageFetch = {};
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
@@ -44,14 +46,16 @@ class DiscordService {
         console.log('[DiscordService] init() called.');
         if (!this.isEnabled) {
             console.log('[DiscordService] Discord token not configured or invalid. Service disabled.');
+            this.status = 'offline';
             return;
         }
 
         this.isInitializing = true;
+        this.status = 'connecting';
 
         // Jittered Initial delay to avoid synchronized burst on Render
         const jitter = Math.floor(Math.random() * 50000) + 10000;
-        console.log(`[DiscordService] Initial ${jitter/1000}s jittered cooldown before starting initialization...`);
+        console.log(`[DiscordService] Initial ${jitter / 1000}s jittered cooldown before starting initialization...`);
         await new Promise(resolve => setTimeout(resolve, jitter));
 
         let attempts = 0;
@@ -61,12 +65,13 @@ class DiscordService {
         while (attempts < maxAttempts) {
             attempts++;
             console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
+            this.status = 'connecting';
 
             if (this.client) {
                 console.log('[DiscordService] Destroying existing client instance before fresh start...');
                 try {
                     this.client.destroy();
-                } catch (e) {}
+                } catch (e) { }
                 this.client = null;
             }
 
@@ -95,12 +100,17 @@ class DiscordService {
             try {
                 console.log(`[DiscordService] Attempting to login to Discord... (Token length: ${this.token?.length}, Node: ${process.version})`);
 
+                // SKIP testConnectivity if it keeps triggering Cloudflare 1015.
+                // discord.js login will fail anyway if there's a block.
+                /*
                 const connectionResult = await this.testConnectivity();
                 if (connectionResult.status === 429 || connectionResult.errorType === 'CLOUDFLARE_1015') {
+                    this.status = 'blocked';
                     console.error(`[DiscordService] HARD BLOCK DETECTED: ${connectionResult.status}. Waiting 3 hours to let rate limit reset.`);
                     await new Promise(resolve => setTimeout(resolve, 10800000));
                     continue;
                 }
+                */
 
                 if (this.token) {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
@@ -137,19 +147,25 @@ class DiscordService {
                 }
 
                 console.log('[DiscordService] SUCCESS: Client is ready! Logged in as:', this.client.user?.tag);
+                this.status = 'online';
+                this.lastLoginTime = Date.now();
                 this.isInitializing = false;
                 return; // Successful login, exit init()
             } catch (error) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, error.message);
 
-                if (error.message.includes('429')) {
-                    console.warn('[DiscordService] RATE LIMIT: Discord returned 429. Implementing backoff...');
+                if (error.message.includes('429') || error.message.includes('1015')) {
+                    console.error(`[DiscordService] HARD BLOCK or RATE LIMIT DETECTED. Status: ${error.message}. Waiting 3 hours to let rate limit reset.`);
+                    this.status = 'blocked';
+                    await new Promise(resolve => setTimeout(resolve, 10800000));
+                    continue;
                 }
 
                 if (error.message.includes('Used disallowed intents')) {
                     console.error('[DiscordService] INTENT ERROR: The bot tried to use privileged intents (GUILD_MEMBERS, MESSAGE_CONTENT).');
                     console.error('[DiscordService] ACTION REQUIRED: Enable "GUILD MEMBERS INTENT" and "MESSAGE CONTENT INTENT" in the Discord Developer Portal.');
                     this.isEnabled = false;
+                    this.status = 'offline';
                     this.isInitializing = false;
                     return;
                 }
@@ -157,6 +173,7 @@ class DiscordService {
                 if (error.message.includes('TOKEN_INVALID')) {
                     console.error('[DiscordService] TOKEN ERROR: The provided Discord token is invalid.');
                     this.isEnabled = false;
+                    this.status = 'offline';
                     this.isInitializing = false;
                     return;
                 }
@@ -170,6 +187,7 @@ class DiscordService {
                 } else {
                     console.error('[DiscordService] FATAL: All Discord login attempts failed.');
                     this.isEnabled = false;
+                    this.status = 'offline';
                     this.isInitializing = false;
                 }
             }
@@ -180,6 +198,7 @@ class DiscordService {
         if (!this.client) return;
 
         this.client.on('ready', () => {
+            this.status = 'online';
             console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}!`);
             console.log(`[DiscordService] Currently in ${this.client.guilds.cache.size} guilds.`);
             this.client.guilds.cache.forEach(guild => {
@@ -202,6 +221,11 @@ class DiscordService {
 
         this.client.on('error', (error) => {
             console.error('[DiscordService] CRITICAL Discord Client error:', error);
+            if (error.message.includes('429') || error.message.includes('1015')) {
+                this.status = 'blocked';
+            } else {
+                this.status = 'offline';
+            }
         });
 
         this.client.on('warn', (warning) => {
@@ -224,6 +248,7 @@ class DiscordService {
 
         this.client.on('shardDisconnect', (event) => {
             console.warn('[DiscordService] Shard Disconnected:', event);
+            this.status = 'offline';
         });
 
         this.client.on('shardReconnecting', (id) => {
@@ -556,7 +581,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
                  const exhaustedThemes = dataStore.getExhaustedThemes();
                  const dConfig = dataStore.getConfig();
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig);
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, '', this.status);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  if (plan.strategy?.theme) {

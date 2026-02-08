@@ -1706,8 +1706,11 @@ Identify the topic and main takeaway.`;
           const personaCheck = await llmService.isPersonaAligned(cand, 'bluesky');
           const responseSafetyCheck = isAdminInThread ? { safe: true } : await llmService.isResponseSafe(cand);
 
-          const score = varietyCheck.score;
-          console.log(`[Bot] Candidate evaluation: Score=${score}, Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}`);
+          // Length-based depth bonus (favor longer, more substantive responses)
+          const lengthBonus = Math.min(cand.length / 500, 0.2);
+          const score = varietyCheck.score + lengthBonus;
+
+          console.log(`[Bot] Candidate evaluation: Score=${score.toFixed(2)} (Variety: ${varietyCheck.score}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}`);
 
           if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned && responseSafetyCheck.safe) {
               if (score > bestScore) {

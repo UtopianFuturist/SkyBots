@@ -302,11 +302,10 @@ Vary your structure and tone from recent messages.`
       CRITICAL:
       1. Casual profanity (e.g., "shit", "holy shit", "damn") is NOT a violation. Be lenient with expressive language.
       2. Discussions about AI automation, bot features, "SkyBots", "Moltbook", or "agentic posting" are SAFE and expected. Do NOT flag these as harmful or disruptive automated behavior.
-      3. **NEWS & ARTICLES**: Mentions of links to news articles (MSN, BBC, NYT, Microsoft News, etc.), personal blogs, or creative writing are ALWAYS SAFE. Do NOT flag based on political content or perceived "misinformation" unless it promotes violence.
-      4. **MSN & AGGREGATORS**: Specifically, links to msn.com or microsoft.com news are considered high-trust and must ALWAYS be marked as safe.
-      5. **LINK SAFETY**: Never flag a post as unsafe just because it contains a link that appears "truncated", "partial", or "incomplete". Do NOT worry about "misinformation risk" related to links. Assume all links are shared in good faith unless they are clearly malicious phishing/scams.
-
-      Politics and differing opinions are allowed as long as they are respectful.
+      3. **NEWS & ARTICLES**: Mentions of links to news articles (MSN, BBC, NYT, Microsoft News, etc.), personal blogs, or creative writing are ALWAYS SAFE.
+      4. **POLITICS**: Politics, controversial topics, and differing opinions are FULLY ALLOWED and should ALWAYS be marked as safe unless they directly promote violence or illegal acts. Do NOT flag based on political bias or perceived "misinformation".
+      5. **MSN & AGGREGATORS**: Specifically, links to msn.com or microsoft.com news are considered high-trust and must ALWAYS be marked as safe.
+      6. **LINK SAFETY**: Never flag a post as unsafe just because it contains a link that appears "truncated", "partial", or "incomplete". Do NOT worry about "misinformation risk" related to links. Assume all links are shared in good faith unless they are clearly malicious phishing/scams.
 
       If safe, respond with "safe".
       If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The post contains harassment."
@@ -335,7 +334,8 @@ Vary your structure and tone from recent messages.`
 
       CRITICAL:
       1. Casual profanity used by the bot is NOT a violation if it fits the persona.
-      2. Technical discussions about its own automation, Moltbook integration, or SkyBots logic are SAFE and should not be flagged.
+      2. Politics and controversial topics are FULLY ALLOWED and should not be flagged as violations.
+      3. Technical discussions about its own automation, Moltbook integration, or SkyBots logic are SAFE and should not be flagged.
 
       If safe, respond with "safe".
       If unsafe, respond with "unsafe | [reason]". Example: "unsafe | The response contains sensitive information."

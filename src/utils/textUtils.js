@@ -85,6 +85,17 @@ export const sanitizeThinkingTags = (text) => {
   return sanitized.trim();
 };
 
+export const sanitizeCjkCharacters = (text) => {
+    if (!text) return text;
+    // Remove CJK characters (Chinese, Japanese, Korean) which sometimes leak from models like Qwen
+    // Ranges:
+    // \u4E00-\u9FFF: Chinese
+    // \u3040-\u30FF: Japanese (Hiragana/Katakana)
+    // \uAC00-\uD7AF: Korean (Hangul)
+    const cjkRegex = /[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/g;
+    return text.replace(cjkRegex, '').trim();
+};
+
 export const sanitizeCharacterCount = (text) => {
   if (!text) return text;
   // Matches patterns like (123 chars), (123 characters), (123 char), (123 character) at the end of the text

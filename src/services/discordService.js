@@ -1038,11 +1038,12 @@ INSTRUCTIONS:
     async testConnectivity() {
         console.log('[DiscordService] Testing connectivity to Discord API...');
         try {
-            // Mimic a modern browser/mobile client to reduce Cloudflare flagging
+            // Use a realistic library User-Agent.
+            // Avoid pure browser UAs when using a Bot token as it triggers 40333.
             const userAgents = [
-                'Mozilla/5.0 (iPhone; CPU iPhone OS 17_4_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Discord; iPhone15,2; 221.0 (42582)',
-                'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-                'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'
+                'DiscordBot (https://github.com/discordjs/discord.js, 14.16.3)',
+                'DiscordBot (https://github.com/discordjs/discord.js, 14.17.2)',
+                'DiscordBot (https://github.com/discordjs/discord.js, 14.15.0)'
             ];
             const selectedAgent = userAgents[Math.floor(Math.random() * userAgents.length)];
 

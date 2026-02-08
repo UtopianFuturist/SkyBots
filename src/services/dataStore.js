@@ -40,8 +40,8 @@ const defaultData = {
   bluesky_daily_text_limit: 20,
   bluesky_daily_image_limit: 5,
   bluesky_daily_wiki_limit: 5,
-  bluesky_post_cooldown: 45,
-  moltbook_post_cooldown: 30,
+  bluesky_post_cooldown: 90,
+  moltbook_post_cooldown: 60,
   discord_idle_threshold: 10,
   max_thread_chunks: 6,
   repetition_similarity_threshold: 0.4,
@@ -76,6 +76,21 @@ class DataStore {
         changed = true;
     }
     if (changed) {
+        await this.db.write();
+    }
+
+    // Migration: Update default cooldowns if they are still at old values
+    let migrationChanged = false;
+    if (this.db.data.bluesky_post_cooldown === 45) {
+        this.db.data.bluesky_post_cooldown = 90;
+        migrationChanged = true;
+    }
+    if (this.db.data.moltbook_post_cooldown === 30) {
+        this.db.data.moltbook_post_cooldown = 60;
+        migrationChanged = true;
+    }
+    if (migrationChanged) {
+        console.log(`[DataStore] Migrated cooldown defaults to new values (90m/60m).`);
         await this.db.write();
     }
 

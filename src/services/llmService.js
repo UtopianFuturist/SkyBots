@@ -68,7 +68,7 @@ class LLMService {
 ${GROUNDED_LANGUAGE_DIRECTIVES}
 
 CRITICAL: Respond directly with the requested information. YOU MUST ELIMINATE ALL REPETITIVE METAPHORICAL "SLOP" (e.g., "digital heartbeat", "downtime isn't silence").
-SUBSTANCE OVER BREVITY: While you should remain punchy and avoid filler, you are encouraged to provide depth and substantive thought. You MUST keep your entire thought under 1500 characters total. On Bluesky, aim for single-post impact (300 chars), but use threading (up to 3 posts) if the thought requires more space. On Discord, feel free to be more detailed and expansive in your replies.
+SUBSTANCE OVER BREVITY: You are encouraged to provide depth, nuance, and substantive thought in your replies. Do NOT default to extreme brevity or one-liners unless the context explicitly demands a short answer. You MUST keep your entire thought under 1500 characters total. On Bluesky, aim for single-post impact (300 chars), but use threading (up to 3 posts) if the thought requires more space. On Discord, you are expected to be more detailed, expansive, and intellectually engaging in your responses.
 DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
 STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.`;
 
@@ -1372,7 +1372,7 @@ Vary your structure and tone from recent messages.`
       5. **STRICT ANTI-SLOP**: Eliminate repetitive metaphorical "slop" (digital heartbeat, downtime, etc.).
       6. **NO SELF-INTRODUCTIONS**: Do NOT introduce yourself or announce who you are (e.g., avoid "This is Sydney" or "Your bot here"). The admin knows who you are.
       7. **NATURAL LANGUAGE**: If you decide to message, respond with the message text. If not, respond with "NONE".
-      8. **LIMITS**: Keep it substantive and deep. Aim for under 600 characters. Address the admin as "you".
+      8. **LIMITS**: Be expansive, substantive, and deep. You are encouraged to use up to 1200 characters for these reflections. Address the admin as "you".
 
       If you have nothing meaningful to share, respond with "NONE".
       Respond with ONLY the message or "NONE".

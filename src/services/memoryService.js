@@ -145,11 +145,12 @@ class MemoryService {
           Entry: "${entry}"
           Type: ${type}
 
-          CRITERIA:
-          1. **Allowed Tags**: Does the entry contain one of the following tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED]?
-          2. **Meaningful Substance**: Does this entry contain concise meaningful substance regarding the bot's functioning, memory, or persona?
-          3. **Coherence**: Is the entry logically sound and in-persona?
-          4. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence")?
+          CRITICAL RULES:
+          1. **Allowed Tags**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED].
+          2. **MOLTFEED ACCEPTANCE**: If the entry uses the [MOLTFEED] tag, it is FULLY VALID and should be allowed. DO NOT reject it for using [MOLTFEED].
+          3. **Meaningful Substance**: Does this entry contain substance regarding the bot's functioning, memory, persona, or insights from other agents?
+          4. **Coherence**: Is the entry logically sound and in-persona?
+          5. **No Slop**: Does it avoid repetitive poetic "slop" (e.g., "downtime isn't silence")?
 
           Respond with ONLY "PASS" if it meets all criteria, or "FAIL | [reason]" if it doesn't.
         `;

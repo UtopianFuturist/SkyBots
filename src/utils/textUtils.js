@@ -310,3 +310,43 @@ export const getSimilarityInfo = (newText, recentTexts, threshold = 0.4) => {
     matchedText: matchedText
   };
 };
+
+export const reconstructTextWithFullUrls = (text, facets) => {
+  if (!text || !facets) return text;
+
+  try {
+    const textBuffer = Buffer.from(text, 'utf8');
+    // Sort facets by byteStart descending to replace from end to start
+    const linkFacets = facets
+      .filter(f => f.features?.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
+      .sort((a, b) => b.index.byteStart - a.index.byteStart);
+
+    let modifiedTextBuffer = textBuffer;
+    let textModified = false;
+
+    for (const facet of linkFacets) {
+      const feature = facet.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link');
+      if (feature) {
+        const fullUrl = feature.uri;
+        const start = facet.index.byteStart;
+        const end = facet.index.byteEnd;
+
+        // Use original textBuffer for slice to avoid index shifting issues during comparison
+        const textSlice = textBuffer.slice(start, end).toString('utf8');
+
+        if (textSlice.endsWith('...') || textSlice.endsWith('…') || (fullUrl.includes(textSlice.replace(/(\.\.\.|…)$/, '')) && textSlice.length < fullUrl.length)) {
+          const prefix = modifiedTextBuffer.slice(0, start);
+          const suffix = modifiedTextBuffer.slice(end);
+          const replacement = Buffer.from(fullUrl, 'utf8');
+
+          modifiedTextBuffer = Buffer.concat([prefix, replacement, suffix]);
+          textModified = true;
+        }
+      }
+    }
+    return textModified ? modifiedTextBuffer.toString('utf8') : text;
+  } catch (e) {
+    console.warn('[TextUtils] Error reconstructing text from facets:', e);
+    return text;
+  }
+};

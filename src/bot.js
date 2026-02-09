@@ -13,7 +13,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, reconstructTextWithFullUrls } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -839,48 +839,10 @@ Identify the topic and main takeaway.`;
 
       // Handle truncated links by checking facets
       if (notif.record.facets) {
-        try {
-          const textBuffer = Buffer.from(text, 'utf8');
-          // Sort facets by byteStart descending to replace from end to start
-          const linkFacets = notif.record.facets
-            .filter(f => f.features?.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
-            .sort((a, b) => b.index.byteStart - a.index.byteStart);
-
-          let modifiedTextBuffer = textBuffer;
-          let textModified = false;
-
-          for (const facet of linkFacets) {
-            const feature = facet.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link');
-            if (feature) {
-              const fullUrl = feature.uri;
-              const start = facet.index.byteStart;
-              const end = facet.index.byteEnd;
-              const textSlice = textBuffer.slice(start, end).toString('utf8');
-
-              if (textSlice.endsWith('...') || textSlice.endsWith('…') || (fullUrl.includes(textSlice.replace(/(\.\.\.|…)$/, '')) && textSlice.length < fullUrl.length)) {
-                console.log(`[Bot] Detected truncated link "${textSlice}". Replacing with full URL from facets: ${fullUrl}`);
-
-                const prefix = modifiedTextBuffer.slice(0, start);
-                const suffix = modifiedTextBuffer.slice(end);
-                const replacement = Buffer.from(fullUrl, 'utf8');
-
-                // Note: This logic only works if we processed facets from end to start
-                // because start/end are relative to the original buffer, and prefix/suffix
-                // are taken from the current modified buffer which might have shifted.
-                // Actually, if we go end to start, the 'prefix' of modifiedTextBuffer
-                // up to 'start' IS the same as original buffer up to 'start'.
-
-                modifiedTextBuffer = Buffer.concat([prefix, replacement, suffix]);
-                textModified = true;
-              }
-            }
-          }
-          if (textModified) {
-            text = modifiedTextBuffer.toString('utf8');
-            console.log(`[Bot] Reconstructed text with full URLs: ${text}`);
-          }
-        } catch (e) {
-          console.warn('[Bot] Error reconstructing text from facets:', e);
+        const reconstructed = reconstructTextWithFullUrls(text, notif.record.facets);
+        if (reconstructed !== text) {
+            text = reconstructed;
+            console.log(`[Bot] Reconstructed notification text with full URLs: ${text}`);
         }
       }
 
@@ -2075,6 +2037,12 @@ Describe how you feel about this user and your relationship now.`;
 
       while (current && current.post) {
         let postText = current.post.record.text || '';
+
+        // Handle truncated links in history posts
+        if (current.post.record.facets) {
+            postText = reconstructTextWithFullUrls(postText, current.post.record.facets);
+        }
+
         const postImages = this._extractImages(current.post);
 
         // Add image info to post text for context

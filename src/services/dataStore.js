@@ -35,6 +35,7 @@ const defaultData = {
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
   recent_thoughts: [], // [ { platform, content, timestamp } ]
   exhausted_themes: [], // [ { theme, timestamp } ]
+  discord_exhausted_themes: [], // [ { theme, timestamp } ]
   lastMemoryCleanupTime: 0,
   lastMoltfeedSummaryTime: 0,
   moltbook_comments_today: 0,
@@ -132,6 +133,39 @@ class DataStore {
   async blockUser(handle) {
     if (!this.db.data.userBlocklist.includes(handle)) {
       this.db.data.userBlocklist.push(handle);
+      await this.db.write();
+    }
+  }
+
+  async addDiscordExhaustedTheme(theme) {
+    if (!this.db.data.discord_exhausted_themes) {
+      this.db.data.discord_exhausted_themes = [];
+    }
+    // Remove if already exists to update timestamp
+    this.db.data.discord_exhausted_themes = this.db.data.discord_exhausted_themes.filter(t => t.theme.toLowerCase() !== theme.toLowerCase());
+
+    this.db.data.discord_exhausted_themes.push({
+      theme,
+      timestamp: Date.now()
+    });
+
+    await this.db.write();
+  }
+
+  getDiscordExhaustedThemes() {
+    this.clearExpiredDiscordExhaustedThemes();
+    return (this.db.data.discord_exhausted_themes || []).map(t => t.theme);
+  }
+
+  async clearExpiredDiscordExhaustedThemes() {
+    if (!this.db.data.discord_exhausted_themes) return;
+
+    const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+    const initialLength = this.db.data.discord_exhausted_themes.length;
+
+    this.db.data.discord_exhausted_themes = this.db.data.discord_exhausted_themes.filter(t => t.timestamp > fourHoursAgo);
+
+    if (this.db.data.discord_exhausted_themes.length !== initialLength) {
       await this.db.write();
     }
   }

@@ -637,7 +637,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             let responseText;
             if (isAdmin) {
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
-                 const exhaustedThemes = dataStore.getExhaustedThemes();
+                 const exhaustedThemes = [...dataStore.getExhaustedThemes(), ...dataStore.getDiscordExhaustedThemes()];
                  const dConfig = dataStore.getConfig();
                  const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, '', this.status);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
@@ -1020,8 +1020,8 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  const recentThoughts = dataStore.getRecentThoughts();
                  const relRating = dataStore.getUserRating(message.author.username);
 
-                 // Opening Phrase Blacklist: Track first 10 words of last 5 messages
-                 const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5);
+                 // Opening Phrase Blacklist: Track first 10 words of last 12 messages
+                 const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-12);
                  const openingBlacklist = recentBotMsgs.map(m => {
                      const words = m.content.split(/\s+/).slice(0, 10).join(' ');
                      return words;
@@ -1115,6 +1115,20 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             if (responseText) {
                 console.log(`[DiscordService] Sending response to Discord...`);
                 await this._send(message.channel, responseText);
+
+                if (isAdmin && responseText && !responseText.startsWith('[Varied]')) {
+                    // Extract theme and add to exhausted themes for admin interactions
+                    try {
+                        const themePrompt = `Extract a 1-2 word theme for the following response: "${responseText}". Respond with ONLY the theme.`;
+                        const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
+                        if (theme) {
+                            await dataStore.addDiscordExhaustedTheme(theme);
+                            await dataStore.addExhaustedTheme(theme);
+                        }
+                    } catch (e) {
+                        console.error('[DiscordService] Error extracting theme for exhausted list:', e);
+                    }
+                }
             }
         } catch (error) {
             console.error('[DiscordService] Error responding to message:', error);

@@ -2131,6 +2131,7 @@ Describe how you feel about this user and your relationship now.`;
       const timeline = await blueskyService.getTimeline(20);
       const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
       const recentInteractions = dataStore.getLatestInteractions(20);
+      const exhaustedThemes = dataStore.getExhaustedThemes();
       const allOwnPosts = feed.data.feed
         .filter(item => item.post.author.did === blueskyService.did);
 
@@ -2167,7 +2168,10 @@ Describe how you feel about this user and your relationship now.`;
           Recent Image Subjects (Do NOT repeat these if possible):
           ${recentSubjects.length > 0 ? recentSubjects.map(s => `- ${s}`).join('\n') : 'None.'}
 
-          INSTRUCTION: Review the "Recent Image Subjects" list. You should prioritize selecting a different subject from the list above to ensure variety in your profile. However, if the "Recent Image Subjects" list has fewer than 10 items, or if you have already used most of the subjects in the bank, some repetition is acceptable.
+          EXHAUSTED THEMES (STRICTLY FORBIDDEN - DO NOT CHOOSE THESE OR ANYTHING SIMILAR):
+          ${exhaustedThemes.length > 0 ? exhaustedThemes.join(', ') : 'None.'}
+
+          INSTRUCTION: Review the "Recent Image Subjects" and "EXHAUSTED THEMES" lists. You MUST prioritize selecting a different subject to ensure variety in your profile. You are strictly forbidden from choosing any topic that overlaps with the exhausted themes.
 
           Consider the current network vibe and your recent interactions to pick the most relevant subject, or simply pick one that inspires you.
 
@@ -2198,12 +2202,15 @@ Describe how you feel about this user and your relationship now.`;
           Your Recent Activity (Last 10 posts):
           ${recentTimelineActivity || 'None.'}
 
+          EXHAUSTED THEMES (STRICTLY FORBIDDEN - DO NOT CHOOSE THESE OR ANYTHING SIMILAR):
+          ${exhaustedThemes.length > 0 ? exhaustedThemes.join(', ') : 'None.'}
+
           CHALLENGE: What would you, in your persona, GENUINELY like to share with the world today?
           Aim for a varied thought, musing, idea, dream, or analysis.
           PRIORITIZE: Internal musings, original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires.
           NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
 
-          INSTRUCTION: Choose a topic that resonates with your TEXT_SYSTEM_PROMPT or POST_TOPICS.
+          INSTRUCTION: Choose a topic that resonates with your TEXT_SYSTEM_PROMPT or POST_TOPICS. You MUST explicitly avoid the topics of your last 10 posts and any exhausted themes mentioned above. Analyze the themes of your recent activity and pivot to something fresh.
           Respond with ONLY the topic/theme.
           EXAMPLE TOPICS (for inspiration, DO NOT choose these literally every time): "the beauty of fleeting moments" or "the future of decentralized networks". These are non-literal default placeholders; prioritize original thoughts or approved topics.
 
@@ -2272,8 +2279,11 @@ Describe how you feel about this user and your relationship now.`;
       let feedback = '';
       let rejectedAttempts = [];
 
-      // Opening Phrase Blacklist
-      const openingBlacklist = allOwnPosts.slice(0, 10).map(m => m.post.record.text.split(/\s+/).slice(0, 10).join(' '));
+      // Opening Phrase Blacklist - Capture both 5 and 10 word prefixes for stronger variation
+      const openingBlacklist = [
+        ...allOwnPosts.slice(0, 10).map(m => m.post.record.text.split(/\s+/).slice(0, 5).join(' ')),
+        ...allOwnPosts.slice(0, 10).map(m => m.post.record.text.split(/\s+/).slice(0, 10).join(' '))
+      ];
 
       // Pre-fetch data for specific post types to avoid redundant API calls in the retry loop
       let imageBuffer = null;
@@ -2335,8 +2345,11 @@ Describe how you feel about this user and your relationship now.`;
         console.log(`[Bot] Autonomous post attempt ${attempts}/${MAX_ATTEMPTS} for topic: "${topic}" (Type: ${postType})`);
 
         if (attempts > 1) {
-            console.log(`[Bot] Waiting 60s before retry attempt ${attempts}...`);
-            await new Promise(resolve => setTimeout(resolve, 60000));
+            const delay = process.env.NODE_ENV === 'test' ? 0 : (config.BACKOFF_DELAY || 60000);
+            if (delay > 0) {
+              console.log(`[Bot] Waiting ${delay / 1000}s before retry attempt ${attempts}...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+            }
         }
 
         if (postType === 'image') {
@@ -2411,6 +2424,7 @@ Describe how you feel about this user and your relationship now.`;
               ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
               Actual Visuals in Image: ${imageAnalysis}
               Contextual Topic: ${topic}
+              EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
               Keep it under 300 characters.${retryContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
@@ -2439,6 +2453,7 @@ Describe how you feel about this user and your relationship now.`;
               Generate a standalone post about the topic: "${topic}".
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
+              EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
               Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
@@ -2518,6 +2533,7 @@ Describe how you feel about this user and your relationship now.`;
             // Update persistent cooldown time immediately
             await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
             await dataStore.addRecentThought('bluesky', postContent);
+            await dataStore.addExhaustedTheme(topic);
 
             // If it was an image post, add the nested prompt comment
             if (postType === 'image' && result && generationPrompt) {
@@ -2570,9 +2586,10 @@ Describe how you feel about this user and your relationship now.`;
             CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
             ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
             Keep it under 300 characters or max 3 threaded posts if deeper.
+            EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
-        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000 });
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: 0.8, openingBlacklist });
         if (postContent) {
           postContent = sanitizeThinkingTags(postContent);
           postContent = sanitizeCharacterCount(postContent);
@@ -2586,6 +2603,7 @@ Describe how you feel about this user and your relationship now.`;
               // Update persistent cooldown time immediately
               await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
               await dataStore.addRecentThought('bluesky', postContent);
+              await dataStore.addExhaustedTheme(topic);
 
               this.updateActivity();
               this.autonomousPostCount++;

@@ -235,9 +235,9 @@ Decentralized Social Media`);
 
     await bot.performAutonomousPost();
 
-    // Should have tried image generation 3 times
-    expect(imageService.generateImage).toHaveBeenCalledTimes(3);
-    expect(llmService.isImageCompliant).toHaveBeenCalledTimes(3);
+    // Should have tried image generation 5 times (as configured in Bot.performAutonomousPost)
+    expect(imageService.generateImage).toHaveBeenCalledTimes(5);
+    expect(llmService.isImageCompliant).toHaveBeenCalledTimes(5);
 
     // Should have fallen back to text
     expect(llmService.generateResponse).toHaveBeenCalledWith(

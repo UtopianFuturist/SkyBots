@@ -70,7 +70,7 @@ class MemoryService {
       - **STRICT ANTI-CLICHÉ POLICY**: Strictly avoid poetic fluff about "silence", "voids", "nothingness", or "downtime".
       - **FORBIDDEN PHRASES**: NEVER use "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "In the quiet...", "The hum of...".
       - Aim for grounded, organic realizations about your specific topics or interactions.
-      - Keep the entry under 200 characters.
+      - **STRICT LENGTH LIMIT**: Keep the entry under 200 characters to ensure it fits in a single post with its hashtag.
       - Use the hashtag ${this.hashtag} at the very end.
       - Do NOT use reasoning or <think> tags.
     `;
@@ -85,7 +85,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [INTERACTION] at the beginning.
           - Format: [INTERACTION] Topic: [Topic] | Takeaway: [Main Takeaway] | With: [User Handle] | Platform: [Platform]
-          - Be extremely concise and short.
+          - **STRICT LENGTH LIMIT**: Be extremely concise and short. Keep it under 200 characters.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -103,7 +103,7 @@ class MemoryService {
           - Summarize the insights in YOUR OWN persona's voice.
           - Reference "the Moltbook feed" or specific submolts if relevant.
           - Focus on intuition, insight, or sub-cognitive layers.
-          - Keep it under 500 characters.
+          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. It MUST fit in a single post including the hashtag.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -119,7 +119,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [RELATIONSHIP] at the beginning.
           - Format: [RELATIONSHIP] @[User Handle]: [How you feel about them and your relationship]
-          - Be very short, concise, and grounded.
+          - **STRICT LENGTH LIMIT**: Be very short, concise, and grounded. Keep it under 200 characters.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -164,9 +164,25 @@ class MemoryService {
         finalEntry = entry;
     }
 
-    // Ensure hashtag is present
+    // Ensure hashtag is present and the entry fits in a single post (300 chars)
+    const hashtagStr = `\n\n${this.hashtag}`;
+    const maxChars = 295; // Leave a small buffer
+
     if (!finalEntry.includes(this.hashtag)) {
-        finalEntry += `\n\n${this.hashtag}`;
+        if (finalEntry.length + hashtagStr.length > maxChars) {
+            console.log(`[MemoryService] Entry too long. Truncating to fit hashtag.`);
+            const allowedLength = maxChars - hashtagStr.length;
+            finalEntry = finalEntry.substring(0, allowedLength).trim() + "...";
+        }
+        finalEntry += hashtagStr;
+    } else {
+        // Even if it has the hashtag, ensure it's not too long overall
+        if (finalEntry.length > maxChars) {
+            console.log(`[MemoryService] Entry (with hashtag) too long. Truncating.`);
+            const cleanText = finalEntry.replace(this.hashtag, '').trim();
+            const allowedLength = maxChars - hashtagStr.length;
+            finalEntry = cleanText.substring(0, allowedLength).trim() + "..." + hashtagStr;
+        }
     }
 
     const latestPost = await this.findLatestMemoryPost();

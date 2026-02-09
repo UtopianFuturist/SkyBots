@@ -1178,9 +1178,10 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "start": number (0-23), "end": number (0-23) }
       21. **Update Config**: Update a specific system configuration value or limit.
           - Use this if the admin explicitly asks to change a limit, cooldown, or setting.
-          - Valid Keys: "bluesky_daily_text_limit", "bluesky_daily_image_limit", "bluesky_daily_wiki_limit", "bluesky_post_cooldown", "moltbook_post_cooldown", "discord_idle_threshold", "max_thread_chunks", "repetition_similarity_threshold", "post_topics" (array), "image_subjects" (array).
+          - Valid Keys: "bluesky_daily_text_limit", "bluesky_daily_image_limit", "bluesky_daily_wiki_limit", "bluesky_post_cooldown", "moltbook_post_cooldown", "moltbook_daily_comment_limit", "moltbook_daily_post_limit", "moltbook_features" (object), "discord_idle_threshold", "max_thread_chunks", "repetition_similarity_threshold", "post_topics" (array), "image_subjects" (array).
           - Parameters: { "key": "string", "value": any }
           - TOPICS/SUBJECTS: For "post_topics" or "image_subjects", you must provide the ENTIRE updated array of strings.
+          - MOLTBOOK FEATURES: The "moltbook_features" value is an object like { "post": true, "comment": false, "feed": true }.
         `;
     }
 

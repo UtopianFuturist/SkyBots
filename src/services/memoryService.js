@@ -35,6 +35,21 @@ class MemoryService {
     return this.recentMemories;
   }
 
+  async getLatestMoodMemory() {
+    if (!this.isEnabled()) return null;
+    console.log(`[MemoryService] Fetching latest [MOOD] memory...`);
+    const query = `from:${blueskyService.did} ${this.hashtag} "[MOOD]"`;
+    const posts = await blueskyService.searchPosts(query, { limit: 1, sort: 'latest' });
+    if (posts.length > 0) {
+        let text = posts[0].record.text;
+        if (this.hashtag) {
+            text = text.replace(new RegExp(this.hashtag, 'g'), '').trim();
+        }
+        return text;
+    }
+    return null;
+  }
+
   async createMemoryEntry(type, context) {
     if (!this.isEnabled()) return null;
 
@@ -125,6 +140,38 @@ class MemoryService {
         `;
     }
 
+    if (type === 'mood') {
+        prompt = `
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording a mood shift or sync.
+
+          Mood Context:
+          ${context}
+
+          INSTRUCTIONS:
+          - Use the tag [MOOD] at the beginning.
+          - Format: [MOOD] [Description of current internal state and why]
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 200 characters.
+          - Tone: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the hashtag ${this.hashtag} at the very end.
+        `;
+    }
+
+    if (type === 'research') {
+        prompt = `
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording the result of an internal research task.
+
+          Research Context:
+          ${context}
+
+          INSTRUCTIONS:
+          - Use the tag [RESEARCH] at the beginning.
+          - Format: [RESEARCH] Query: [Topic] | Key Finding: [Finding]
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters.
+          - Tone: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the hashtag ${this.hashtag} at the very end.
+        `;
+    }
+
     let finalEntry;
     if (type === 'directive_update') {
         finalEntry = `[DIRECTIVE] ${context}`;
@@ -146,8 +193,8 @@ class MemoryService {
           Type: ${type}
 
           CRITICAL RULES:
-          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED].
-          2. **MOLTFEED IS VALID**: [MOLTFEED] is a PRIMARY allowed tag. DO NOT reject entries for using it.
+          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED], [MOOD], [RESEARCH].
+          2. **VALID TAGS**: [MOLTFEED], [MOOD], and [RESEARCH] are PRIMARY allowed tags. DO NOT reject entries for using them.
           3. **Meaningful Substance**: Does this entry contain substance regarding the bot's functioning, memory, persona, or insights?
           4. **Coherence**: Is the entry logically sound and in-persona?
           5. **No Slop**: Does it avoid repetitive poetic "slop"?
@@ -267,7 +314,7 @@ class MemoryService {
 
         if (posts.length === 0) return;
 
-        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]'];
+        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[RESEARCH]'];
         let deletedCount = 0;
 
         for (const post of posts) {

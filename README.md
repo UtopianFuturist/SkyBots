@@ -21,13 +21,21 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Enhanced Safety**: Includes pre-reply checks for both user posts and the bot's own responses to ensure all interactions are appropriate.
 - **Detailed Logging**: Provides step-by-step logging for easy debugging on platforms like Render, including reasons for safety check failures.
  - **Code Self-Awareness**: Can answer questions about its own capabilities and architecture by searching its GitHub repository in real-time.
+- **Autonomous Refusal Mechanism**: The bot's planning module is gated by a "Persona Poll" that allows the identity to refuse any action (posts, replies, tool use) if it doesn't align with its current mood or desires, enabling intentional silence.
 - **Intent-Based Escalation**: Uses an LLM to analyze user intent. If high-risk intentions are detected, the bot will pause operations.
 - **Prompt Injection Defense**: Includes a security check to detect and ignore prompt injection attempts.
 - **Fact-Checking**: Can detect when a user is making a verifiable claim and perform a Google search to validate it before responding.
 - **User Rating System**: Rates users on a 1-5 scale based on their interaction history and will "like" posts from users with a high rating.
 - **Autonomous Posting**: Automatically creates and publishes up to 20 text posts and 5 image posts per day featuring original musings or preferred topics from your context banks.
 - **AI Transparency**: Standardized transparency record on the PDS (studio.voyager.account.autonomy) declaring automation level, persona, and source code.
+- **Conversational Continuity & Intensity Matching**: Spontaneous heartbeat messages are designed to bridge naturally from previous discussions, reflecting on unresolved questions and matching the emotional intensity of the interaction.
 - **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
+- **Dynamic Mood & Sentiment Sync**: Updates internal mood every 2 hours by analyzing the sentiment of the following feed. Mood states influence tone, vocabulary, and visual generation.
+- **Agency & Intentional Silence**: Implements a refusal tracking system where the agent can choose to remain silent if a plan misaligns with its current vibe. Sequentially tracks refusals to inform long-term autonomy.
+- **Internal Research Tool**: Agentic capability to trigger an objective, unconfigured LLM loop to research topics or seek advice, with findings recorded in long-term memory.
+- **Temporal Messaging**: Supports intentional post delays for "haunting" timelines or precise timing, managed via scheduled post queues.
+- **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
+- **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (newlines/spaces) to stay within Discord's 2000-character limit without breaking words.
 
 ## 📁 Project Structure
 

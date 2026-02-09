@@ -28,6 +28,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     performAgenticPlanning: jest.fn().mockResolvedValue({ strategy: { angle: 'natural', tone: 'conversational', theme: 'test' }, actions: [] }),
+    evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'engage', reason: 'Engaging for test' }),
     shouldIncludeSensory: jest.fn().mockResolvedValue(false),
     performInternalResearch: jest.fn(),
     generateDrafts: jest.fn(),
@@ -37,6 +38,14 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
 jest.unstable_mockModule('../src/services/socialHistoryService.js', () => ({
   socialHistoryService: {
     getHierarchicalSummary: jest.fn().mockResolvedValue({ shortTerm: 'recent', dailyNarrative: 'today' }),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/memoryService.js', () => ({
+  memoryService: {
+    getLatestMoodMemory: jest.fn().mockResolvedValue(null),
+    formatMemoriesForPrompt: jest.fn().mockReturnValue('No recent memories.'),
+    isEnabled: jest.fn().mockReturnValue(true),
   },
 }));
 
@@ -54,6 +63,9 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     setAdminDid: jest.fn(),
     getMood: jest.fn().mockReturnValue({ label: 'neutral', valence: 0, arousal: 0, stability: 0 }),
     updateMood: jest.fn(),
+    getRefusalCounts: jest.fn().mockReturnValue({ bluesky: 0, discord: 0, moltbook: 0, global: 0 }),
+    incrementRefusalCount: jest.fn(),
+    resetRefusalCount: jest.fn(),
     getLastAutonomousPostTime: jest.fn().mockReturnValue(null),
     updateLastAutonomousPostTime: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
@@ -94,6 +106,7 @@ const { blueskyService } = await import('../src/services/blueskyService.js');
 const { llmService } = await import('../src/services/llmService.js');
 const { socialHistoryService } = await import('../src/services/socialHistoryService.js');
 const { imageService } = await import('../src/services/imageService.js');
+const { memoryService } = await import('../src/services/memoryService.js');
 
 describe('Bot Autonomous Posting', () => {
   let bot;

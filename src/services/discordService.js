@@ -663,8 +663,28 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
                  const exhaustedThemes = [...dataStore.getExhaustedThemes(), ...dataStore.getDiscordExhaustedThemes()];
                  const dConfig = dataStore.getConfig();
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, '', this.status);
+                 const refusalCounts = dataStore.getRefusalCounts();
+                 const latestMoodMemory = await memoryService.getLatestMoodMemory();
+
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, '', this.status, refusalCounts, latestMoodMemory);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
+
+                 // Autonomous Refusal Poll
+                 const intentionality = await llmService.evaluateIntentionality(plan, {
+                     history: history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })),
+                     platform: 'discord',
+                     currentMood,
+                     refusalCounts,
+                     latestMoodMemory
+                 });
+
+                 if (intentionality.decision === 'refuse') {
+                     console.log(`[DiscordService] AGENT REFUSED TO ACT: ${intentionality.reason}`);
+                     await dataStore.incrementRefusalCount('discord');
+                     return;
+                 }
+
+                 await dataStore.resetRefusalCount('discord');
 
                  if (plan.strategy?.theme) {
                      await dataStore.addExhaustedTheme(plan.strategy.theme);

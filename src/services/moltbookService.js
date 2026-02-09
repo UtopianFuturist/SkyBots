@@ -17,6 +17,7 @@ const defaultMoltbookData = {
   last_post_at: null,
   identity_knowledge: [], // Knowledge gained from reading Moltbook
   subscriptions: [], // Persisted submolt subscriptions
+  suspended: false, // Account suspension status
   recent_submolts: [], // History of submolts posted to
   recent_post_contents: [], // Content of recent posts to check for repetition
   admin_instructions: [], // Instructions from bot admin
@@ -63,6 +64,9 @@ class MoltbookService {
 
     // Sync last post time from network on startup
     await this.syncLastPostTime();
+
+    // Check suspension on startup
+    await this.checkStatus();
   }
 
   async syncLastPostTime() {
@@ -172,6 +176,25 @@ class MoltbookService {
       // Handle both direct and wrapped response formats
       let status = data.status || data.data?.status;
 
+      // Check for suspension in status or error fields
+      const isSuspended = status === 'suspended' ||
+                          data.error?.toLowerCase().includes('suspended') ||
+                          data.message?.toLowerCase().includes('suspended');
+
+      if (isSuspended) {
+          console.error(`[Moltbook] ACCOUNT SUSPENDED (Detected via status check).`);
+          this.db.data.suspended = true;
+          await this.db.write();
+          return 'suspended';
+      }
+
+      // If we reached here and status is not suspended, it might have been unsuspended
+      if (this.db.data.suspended && status === 'claimed') {
+          console.log(`[Moltbook] Account appears to be unsuspended.`);
+          this.db.data.suspended = false;
+          await this.db.write();
+      }
+
       if (status === 'claimed') {
         this.db.data.claimed = true;
         await this.db.write();
@@ -184,7 +207,10 @@ class MoltbookService {
   }
 
   async post(title, content, submolt = 'general') {
-    if (!this.db.data.api_key) return null;
+    if (!this.db.data.api_key || this.db.data.suspended) {
+        if (this.db.data.suspended) console.log(`[Moltbook] Post suppressed: Account is suspended.`);
+        return null;
+    }
 
     // 30-minute cooldown check
     if (this.db.data.last_post_at) {
@@ -213,6 +239,14 @@ class MoltbookService {
       const data = await this._parseResponse(response);
       if (!response.ok) {
         console.error(`[Moltbook] Post creation error (${response.status}): ${JSON.stringify(data)}`);
+
+        // Check for suspension
+        if (JSON.stringify(data).toLowerCase().includes('suspended')) {
+            console.error(`[Moltbook] ACCOUNT SUSPENDED detected in post response.`);
+            this.db.data.suspended = true;
+            await this.db.write();
+            return null;
+        }
 
         // Handle rate limiting specifically
         if (response.status === 429) {
@@ -258,7 +292,7 @@ class MoltbookService {
   }
 
   async getFeed(sort = 'hot', limit = 25) {
-    if (!this.db.data.api_key) return [];
+    if (!this.db.data.api_key || this.db.data.suspended) return [];
 
     try {
       const response = await fetch(`${this.apiBase}/posts?sort=${sort}&limit=${limit}`, {
@@ -315,7 +349,7 @@ class MoltbookService {
   }
 
   async createSubmolt(name, displayName, description) {
-    if (!this.db.data.api_key) return null;
+    if (!this.db.data.api_key || this.db.data.suspended) return null;
 
     console.log(`[Moltbook] Creating submolt: m/${name} ("${displayName}")`);
     try {
@@ -342,7 +376,7 @@ class MoltbookService {
   }
 
   async listSubmolts() {
-    if (!this.db.data.api_key) return [];
+    if (!this.db.data.api_key || this.db.data.suspended) return [];
 
     try {
       const response = await fetch(`${this.apiBase}/submolts`, {
@@ -362,7 +396,7 @@ class MoltbookService {
   }
 
   async subscribeToSubmolt(name) {
-    if (!this.db.data.api_key) return null;
+    if (!this.db.data.api_key || this.db.data.suspended) return null;
 
     // Strip leading 'm/' if present to avoid double prefixing
     const cleanName = name.replace(/^m\//, '');
@@ -401,7 +435,7 @@ class MoltbookService {
   }
 
   async upvotePost(postId) {
-    if (!this.db.data.api_key) return null;
+    if (!this.db.data.api_key || this.db.data.suspended) return null;
     console.log(`[Moltbook] Upvoting post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/upvote`, {
@@ -416,7 +450,7 @@ class MoltbookService {
   }
 
   async downvotePost(postId) {
-    if (!this.db.data.api_key) return null;
+    if (!this.db.data.api_key || this.db.data.suspended) return null;
     console.log(`[Moltbook] Downvoting post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/downvote`, {
@@ -431,7 +465,7 @@ class MoltbookService {
   }
 
   async addComment(postId, content) {
-    if (!this.db.data.api_key) return null;
+    if (!this.db.data.api_key || this.db.data.suspended) return null;
     console.log(`[Moltbook] Adding comment to post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
@@ -450,7 +484,7 @@ class MoltbookService {
   }
 
   async getPostComments(postId) {
-    if (!this.db.data.api_key) return [];
+    if (!this.db.data.api_key || this.db.data.suspended) return [];
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }

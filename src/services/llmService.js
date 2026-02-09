@@ -18,7 +18,7 @@ class LLMService {
   }
 
   async generateDrafts(messages, count = 5, options = {}) {
-    const { useQwen = true, temperature = 0.8 } = options;
+    const { useQwen = true, temperature = 0.8, openingBlacklist = [] } = options;
     const draftSystemPrompt = `
       You are an AI generating ${count} diverse drafts for a response.
       Each draft must fulfill the user's intent but use a DIFFERENT opening formula, structural template, and emotional cadence.
@@ -37,7 +37,7 @@ class LLMService {
       ...messages
     ];
 
-    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false });
+    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist });
     if (!response) return [];
 
     const drafts = [];
@@ -56,6 +56,7 @@ class LLMService {
 
     return drafts;
   }
+
 
   async generateResponse(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [] } = options;
@@ -1284,6 +1285,7 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)", "delay_minutes": number (optional delay) }
       14. **Read Link**: Directly read and summarize the content of one or more web pages from provided URLs.
           - Use this if a user provides a link and asks about its content, or if you believe reading a provided link is necessary to fulfill their request.
+          - **HISTORY AWARENESS**: If a user asks you to "read the link" or "check that article" but doesn't include the URL in their latest message, look for the URL in the previous messages of the conversation history. You are responsible for identifying URLs from the entire context.
           - **CAPABILITY**: You are fully capable of reading web pages directly via this tool. Never claim that you cannot open links or visit websites.
           - **CRITICAL**: Perform this action for up to 4 URLs if multiple links are provided.
           - **PRIORITY**: If a user mentions a link and asks you to 'read', 'look at', 'summarize', 'check', or 'analyze' it, you MUST use this tool first.
@@ -1351,7 +1353,7 @@ Vary your structure and tone from recent messages.`
       - Only use "search", "wikipedia", or "youtube" tools if absolutely necessary for the interaction.
       - If multiple searches are needed, you MUST combine them into one broad query.
       - If no tools are needed, return an empty actions array.
-      - **READ LINK**: If you see a URL in the user's post and they are asking about it, or if you need the content of that URL to respond accurately, you MUST use the "read_link" tool.
+      - **READ LINK**: If you see a URL in the user's post OR the conversation history and they are asking about it, or if you need the content of that URL to respond accurately, you MUST use the "read_link" tool.
       - **CRITICAL**: If an admin provides both a behavioral instruction AND a request for an action (e.g., "Always use more color. Now generate an image of a red cat"), you MUST include BOTH actions in the array. Do NOT skip the action just because you are updating directives.
       - **ACTION CHAINING**: If a user asks to post to a community that doesn't exist yet, you should include BOTH a "moltbook_action" (to create it) and a "moltbook_post" in the same actions array.
       - Do not include reasoning or <think> tags.

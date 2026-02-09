@@ -415,8 +415,24 @@ export class Bot {
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
                 const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
                 const recentThoughts = dataStore.getRecentThoughts();
-                const recentThoughtsContext = recentThoughts.length > 0
-                    ? `\n\nRecent Cross-Platform Thoughts (Do not repeat these wording/angles):\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content}`).join('\n')}`
+                const discordExhaustedThemes = dataStore.getDiscordExhaustedThemes();
+
+                // Advanced filtering of cross-platform thoughts based on recent Discord history
+                const last15Msgs = history.slice(-15).map(h => h.content.toLowerCase());
+                const filteredThoughts = recentThoughts.filter(t => {
+                    const content = t.content.toLowerCase();
+                    // Check if any major portion of the thought has been mentioned recently
+                    const alreadyMentioned = last15Msgs.some(msg => {
+                        const words = content.split(/\s+/).filter(w => w.length > 4);
+                        if (words.length === 0) return false;
+                        const matchCount = words.filter(w => msg.includes(w)).length;
+                        return matchCount / words.length > 0.5; // More than 50% overlap of long words
+                    });
+                    return !alreadyMentioned;
+                });
+
+                const recentThoughtsContext = filteredThoughts.length > 0
+                    ? `\n\nRecent Cross-Platform Thoughts (Do not repeat these wording/angles):\n${filteredThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content}`).join('\n')}`
                     : '';
 
                 let socialSummary = 'No recent social history fetched.';
@@ -435,8 +451,8 @@ export class Bot {
                 let rejectedAttempts = [];
                 const MAX_ATTEMPTS = 5;
 
-                // Opening Phrase Blacklist
-                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-5);
+                // Opening Phrase Blacklist - increased depth from 5 to 12
+                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-12);
                 const openingBlacklist = recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 10).join(' '));
 
                 while (attempts < MAX_ATTEMPTS) {
@@ -454,13 +470,14 @@ export class Bot {
                         isContinuing,
                         adminAvailability: availability,
                         feedback: retryContext,
+                        discordExhaustedThemes,
                         temperature: currentTemp,
                         openingBlacklist
                     });
 
                     if (!message || message.toUpperCase() === 'NONE') break;
 
-                    // Variety & Repetition Check
+                    // Variety & Repetition Check - increased depth from 5 to 12
                     const formattedHistory = [
                         ...recentBotMsgsInHistory.map(m => ({ platform: 'discord', content: m.content })),
                         ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
@@ -473,6 +490,19 @@ export class Bot {
                     if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
                         await discordService.sendSpontaneousMessage(message);
                         await dataStore.addRecentThought('discord', message);
+
+                        // Extract and record the theme of the sent message to avoid immediate repetition
+                        try {
+                            const themePrompt = `Extract a 1-2 word theme for the following message: "${message}". Respond with ONLY the theme.`;
+                            const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
+                            if (theme) {
+                                await dataStore.addDiscordExhaustedTheme(theme);
+                                await dataStore.addExhaustedTheme(theme);
+                            }
+                        } catch (e) {
+                            console.error('[Bot] Error extracting theme from spontaneous message:', e);
+                        }
+
                         this.consecutiveRejections = 0; // Reset on success
                         break;
                     } else {
@@ -781,6 +811,7 @@ Identify the topic and main takeaway.`;
 
   async processNotification(notif) {
     try {
+      let plan = null;
       // Self-reply loop prevention
       if (notif.author.handle === config.BLUESKY_IDENTIFIER) {
         console.log(`[Bot] Skipping notification from self to prevent loop.`);
@@ -1193,7 +1224,6 @@ Identify the topic and main takeaway.`;
     const performedQueries = new Set();
     let imageGenFulfilled = false;
     let responseText = null;
-    let plan = null;
 
     const relRating = dataStore.getUserRating(handle);
     const recentBotMsgsInThread = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER);

@@ -1349,6 +1349,7 @@ Vary your structure and tone from recent messages.`
         isContinuing,
         adminAvailability,
         feedback,
+        discordExhaustedThemes = [],
         temperature = 0.7,
         openingBlacklist = []
     } = context;
@@ -1375,6 +1376,11 @@ Vary your structure and tone from recent messages.`
       Recent Discord Conversation History with Admin:
       ${history || 'No recent conversation.'}
       ${recentThoughtsContext}
+
+      ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
+The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
+${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
+
       ${feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}` : ''}
 
       INSTRUCTIONS:
@@ -1385,8 +1391,9 @@ Vary your structure and tone from recent messages.`
          - If the admin previously said they were going to sleep or rest, or if it's very late for them, assume they are unavailable.
          - **STRICTLY FORBIDDEN**: If you infer the admin is sleeping, busy, or resting, you MUST NOT send messages like "You've been quiet," "Are you okay?", or "Why aren't you responding?".
          - Instead, you are encouraged to share your own internal thoughts, recent activities on other platforms, or interesting realizations for the admin to read whenever they return. Treat it as a one-way update or a "thought for later" rather than a request for immediate interaction.
-      4. **CONVERSATIONAL ETIQUETTE**:
-         - Avoid continually mentioning or acknowledging things you've already responded to/about once in the history.
+      4. **CONVERSATIONAL ETIQUETTE & ANTI-REPETITION**:
+         - **STRICT NO REPEAT**: Avoid continually mentioning or acknowledging things you've already responded to/about once in the history.
+         - If a Bluesky or Moltbook post is listed in "Recent Cross-Platform Thoughts" but has already been mentioned in the "Recent Discord Conversation History," YOU ARE FORBIDDEN from mentioning it again unless expanding on it.
          - Only repeat or reference a previous point if you have something NEW to say about it, want to expand on it, critique it, or ask an additional follow-up question.
          - Don't just keep "acknowledging" for the sake of it.
       5. **Relational Flow**: If continuing, ensure the message fluidly develops the last discussion. If starting a new branch, ensure it feels like a natural evolution of your relationship.

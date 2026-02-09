@@ -1044,9 +1044,14 @@ Identify the topic and main takeaway.`;
     if (vibe.status === 'hostile') {
       console.log(`[Bot] Disengaging from ${handle} due to hostility: ${vibe.reason}`);
       const disengagementPrompt = `
+        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
         A user interaction has been flagged for disengagement due to: "${vibe.reason}".
-        Generate a firm but polite conversational response explaining that you cannot continue this interaction because it violates guidelines regarding ${vibe.reason}.
-        Keep it concise and firm.
+        Generate a grounded, persona-aligned response to end the interaction.
+        Do NOT use corporate or "safety guideline" language.
+        Be firm, direct, and authentic to your persona.
+        Focus on the fact that you no longer wish to engage based on their behavior, but say it as Sydney would.
+        Keep it concise.
       `;
       const disengagement = await llmService.generateResponse([{ role: 'system', content: disengagementPrompt }], { max_tokens: 2000 });
       if (disengagement) {

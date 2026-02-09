@@ -51,6 +51,39 @@ export const splitText = (text, maxLength = 300, maxChunks = 10) => {
     return chunks;
 };
 
+export const splitTextForDiscord = (text, maxLength = 2000) => {
+  if (!text) return [];
+  if (text.length <= maxLength) return [text];
+
+  const chunks = [];
+  let remainingText = text;
+
+  while (remainingText.length > 0) {
+    if (remainingText.length <= maxLength) {
+      chunks.push(remainingText);
+      break;
+    }
+
+    // Try to split at the last newline before maxLength
+    let splitIndex = remainingText.lastIndexOf('\n', maxLength);
+
+    // If no newline or it's too far back (less than 80% of maxLength), try space
+    if (splitIndex === -1 || splitIndex < maxLength * 0.8) {
+      splitIndex = remainingText.lastIndexOf(' ', maxLength);
+    }
+
+    // If still no split point, just cut at maxLength
+    if (splitIndex === -1) {
+      splitIndex = maxLength;
+    }
+
+    chunks.push(remainingText.slice(0, splitIndex).trim());
+    remainingText = remainingText.slice(splitIndex).trim();
+  }
+
+  return chunks;
+};
+
 export const sanitizeThinkingTags = (text) => {
   if (!text) return text;
 

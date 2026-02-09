@@ -48,7 +48,10 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     evaluateConversationVibe: jest.fn(),
     performAgenticPlanning: jest.fn(),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
-    checkVariety: jest.fn().mockResolvedValue({ repetitive: false }),
+    checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
+    shouldIncludeSensory: jest.fn().mockResolvedValue(false),
+    performInternalResearch: jest.fn(),
+    generateDrafts: jest.fn(),
   },
 }));
 
@@ -92,6 +95,7 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getRecentThoughts: jest.fn().mockReturnValue([]),
     addRecentThought: jest.fn(),
     updateUserRating: jest.fn(),
+    getUserRating: jest.fn().mockReturnValue(3),
     updateUserSummary: jest.fn(),
     getUserSummary: jest.fn(),
     getBlueskyInstructions: jest.fn().mockReturnValue(''),
@@ -100,6 +104,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     addExhaustedTheme: jest.fn(),
     getAdminDid: jest.fn().mockReturnValue('did:plc:admin'),
     setAdminDid: jest.fn(),
+    getMood: jest.fn().mockReturnValue({ label: 'neutral', valence: 0, arousal: 0, stability: 0 }),
+    updateMood: jest.fn(),
     init: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_daily_text_limit: 20,
@@ -184,6 +190,10 @@ describe('Bot', () => {
     llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
     llmService.rateUserInteraction.mockResolvedValue(3);
     llmService.performAgenticPlanning.mockResolvedValue({ actions: [], intent: 'Friendly' });
+    llmService.generateDrafts.mockImplementation(async (messages) => {
+        const res = await llmService.generateResponse(messages);
+        return [res];
+    });
 
     blueskyService.getProfile.mockResolvedValue({ handle: 'user.bsky.social', description: 'Test bio' });
     blueskyService.getUserPosts.mockResolvedValue([]);
@@ -245,7 +255,7 @@ describe('Bot', () => {
     await bot.processNotification(mockNotif);
 
     expect(bot._getThreadHistory).toHaveBeenCalledWith(mockNotif.uri);
-    expect(llmService.generateResponse).toHaveBeenCalled();
+    expect(llmService.generateDrafts).toHaveBeenCalled();
     expect(blueskyService.postReply).toHaveBeenCalled();
   });
 
@@ -416,6 +426,7 @@ describe('Bot', () => {
 
     expect(googleSearchService.search).toHaveBeenCalledWith('sky is blue');
     expect(llmService.selectBestResult).toHaveBeenCalledWith('sky is blue', mockGoogleResults, 'general');
+    expect(llmService.generateDrafts).toHaveBeenCalled();
     expect(blueskyService.postReply).toHaveBeenCalledWith(
       expect.anything(),
       'Yes, the sky is blue due to a phenomenon called Rayleigh scattering.',
@@ -445,6 +456,7 @@ describe('Bot', () => {
 
     const postReplySpy = jest.spyOn(blueskyService, 'postReply');
 
+    llmService.generateDrafts.mockResolvedValue(['?']);
     await bot.processNotification(mockNotif);
 
     expect(postReplySpy).toHaveBeenCalledWith(expect.anything(), '?', expect.anything());
@@ -470,7 +482,7 @@ describe('Bot', () => {
     bot._getThreadHistory = jest.fn().mockResolvedValue([]);
     llmService.isPostSafe.mockResolvedValue({ safe: true });
     llmService.isFactCheckNeeded.mockResolvedValue(false);
-    llmService.generateResponse.mockResolvedValue('The sky is blue.'); // Incoherent reply
+    llmService.generateDrafts.mockResolvedValue(['The sky is blue.']); // Incoherent reply
     blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/app.bsky.feed.post/1000' });
     llmService.isReplyCoherent.mockResolvedValue(false);
     llmService.checkSemanticLoop.mockResolvedValue(false);
@@ -523,9 +535,9 @@ describe('Bot', () => {
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.getPostDetails).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/original_post');
-    const generateResponseCalls = llmService.generateResponse.mock.calls;
+    const generateDraftsCalls = llmService.generateDrafts.mock.calls;
     // Find the call that generates the response (it has the most messages and contains the persona prompt)
-    const responseCall = generateResponseCalls.find(call =>
+    const responseCall = generateDraftsCalls.find(call =>
       call[0].length >= 3 && call[0][0].content.includes('You are replying to')
     );
 

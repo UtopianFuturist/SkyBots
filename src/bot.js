@@ -326,6 +326,14 @@ export class Bot {
 
     const dConfig = dataStore.getConfig();
 
+    // 1c. Mood Sync (Every 2 hours)
+    const lastMoodSync = this.lastMoodSyncTime || 0;
+    const moodSyncDiff = (now.getTime() - lastMoodSync) / (1000 * 60 * 60);
+    if (moodSyncDiff >= 2) {
+        await this.performMoodSync();
+        this.lastMoodSyncTime = now.getTime();
+    }
+
     // 2. Idle downtime check
     const idleMins = (Date.now() - this.lastActivityTime) / (1000 * 60);
     if (idleMins >= dConfig.discord_idle_threshold) {
@@ -416,6 +424,7 @@ export class Bot {
                 const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
                 const recentThoughts = dataStore.getRecentThoughts();
                 const discordExhaustedThemes = dataStore.getDiscordExhaustedThemes();
+                const currentMood = dataStore.getMood();
 
                 // Advanced filtering of cross-platform thoughts based on recent Discord history
                 const last15Msgs = history.slice(-15).map(h => h.content.toLowerCase());
@@ -472,7 +481,8 @@ export class Bot {
                         feedback: retryContext,
                         discordExhaustedThemes,
                         temperature: currentTemp,
-                        openingBlacklist
+                        openingBlacklist,
+                        currentMood
                     });
 
                     if (!message || message.toUpperCase() === 'NONE') break;
@@ -537,17 +547,22 @@ export class Bot {
         for (let i = 0; i < scheduledPosts.length; i++) {
             const post = scheduledPosts[i];
             let canPost = false;
+            const nowTs = Date.now();
 
+            // 1. Check if intentional delay has passed
+            if (post.scheduled_at && nowTs < post.scheduled_at) {
+                continue;
+            }
+
+            // 2. Check cooldowns
             if (post.platform === 'bluesky') {
                 const lastPostTime = dataStore.getLastAutonomousPostTime();
                 const cooldown = dConfig.bluesky_post_cooldown * 60 * 1000;
-                const nowTs = Date.now();
                 const diff = lastPostTime ? nowTs - new Date(lastPostTime).getTime() : cooldown;
                 if (diff >= cooldown) canPost = true;
             } else if (post.platform === 'moltbook') {
                 const lastPostAt = moltbookService.db.data.last_post_at;
                 const cooldown = dConfig.moltbook_post_cooldown * 60 * 1000;
-                const nowTs = Date.now();
                 const diff = lastPostAt ? nowTs - new Date(lastPostAt).getTime() : cooldown;
                 if (diff >= cooldown) canPost = true;
             }
@@ -1160,9 +1175,12 @@ Identify the topic and main takeaway.`;
 
     if (imagesToAnalyze.length > 0) {
       console.log(`[Bot] ${imagesToAnalyze.length} images detected in context. Starting analysis...`);
+      const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+      if (includeSensory) console.log(`[Bot] Sensory analysis enabled for this persona.`);
+
       for (const img of imagesToAnalyze) {
         console.log(`[Bot] Analyzing thread image from @${img.author}...`);
-        const analysis = await llmService.analyzeImage(img.url, img.alt);
+        const analysis = await llmService.analyzeImage(img.url, img.alt, { sensory: includeSensory });
         if (analysis) {
           imageAnalysisResult += `[Image in post by @${img.author}: ${analysis}] `;
           console.log(`[Bot] Successfully analyzed thread image from @${img.author}.`);
@@ -1192,6 +1210,7 @@ Identify the topic and main takeaway.`;
     // Fetch bot's own profile for exact follower count
     const botProfile = await blueskyService.getProfile(blueskyService.did);
     const botFollowerCount = botProfile.followersCount || 0;
+    const currentMood = dataStore.getMood();
 
     console.log(`[Bot] Analyzing user intent...`);
     const userIntent = await llmService.analyzeUserIntent(userProfile, userPosts);
@@ -1247,7 +1266,7 @@ Identify the topic and main takeaway.`;
       for (const action of plan.actions) {
         if (action.tool === 'image_gen') {
           console.log(`[Bot] Plan: Generating image for prompt: "${action.query}"`);
-          const imageResult = await imageService.generateImage(action.query, { allowPortraits: true });
+          const imageResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
           if (imageResult && imageResult.buffer) {
             // Visual Persona Alignment check for tool-triggered images
             const imageAnalysis = await llmService.analyzeImage(imageResult.buffer);
@@ -1344,6 +1363,18 @@ Identify the topic and main takeaway.`;
             if (key) {
                 const success = await dataStore.updateConfig(key, value);
                 searchContext += `\n[Configuration update for ${key}: ${success ? 'SUCCESS' : 'FAILED'}]`;
+            }
+        }
+
+        if (action.tool === 'update_mood') {
+            const { valence, arousal, stability, label } = action.parameters || {};
+            if (label) {
+                console.log(`[Bot] Updating mood agentically: ${label}`);
+                await dataStore.updateMood({ valence, arousal, stability, label });
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('mood', `[MOOD] My mood has shifted to: ${label} (Valence: ${valence}, Arousal: ${arousal}, Stability: ${stability})`);
+                }
+                searchContext += `\n[Internal mood updated to: ${label}]`;
             }
         }
 
@@ -1501,6 +1532,20 @@ Identify the topic and main takeaway.`;
             console.log(`[Bot] Plan: Sending Discord message to admin: ${msg.substring(0, 50)}...`);
             await discordService.sendSpontaneousMessage(msg);
             searchContext += `\n[Discord message sent to admin]`;
+          }
+        }
+
+        if (action.tool === 'internal_research') {
+          const query = action.query || action.parameters?.query;
+          if (query) {
+            console.log(`[Bot] Plan: Performing internal research on: "${query}"`);
+            const result = await llmService.performInternalResearch(query);
+            if (result) {
+              searchContext += `\n[INTERNAL RESEARCH RESULT: ${result}]`;
+              if (memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('research', `[RESEARCH] Query: ${query}. Result: ${result}`);
+              }
+            }
           }
         }
       }
@@ -1670,6 +1715,11 @@ Identify the topic and main takeaway.`;
         ---
         Moltbook Identity Context:
         ${moltbookService.getIdentityKnowledge() || 'No additional identity context.'}
+        ---
+        CURRENT MOOD:
+        You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+        Incorporate this emotional state into your tone and vocabulary naturally.
+        ---
       `;
 
       console.log(`[Bot] Final response generation for @${handle}. Vision context length: ${imageAnalysisResult ? imageAnalysisResult.length : 0}`);
@@ -2324,6 +2374,7 @@ Describe how you feel about this user and your relationship now.`;
       // Fetch bot's own profile for exact follower count
       const botProfile = await blueskyService.getProfile(blueskyService.did);
       const followerCount = botProfile.followersCount || 0;
+    const currentMood = dataStore.getMood();
 
       const blueskyDirectives = dataStore.getBlueskyInstructions();
       const personaUpdates = dataStore.getPersonaUpdates();
@@ -2385,7 +2436,7 @@ Describe how you feel about this user and your relationship now.`;
         if (postType === 'image') {
           if (feedback) console.log(`[Bot] Applying correction feedback for retry: "${feedback}"`);
           console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${attempts})...`);
-          const imageResult = await imageService.generateImage(topic, { allowPortraits: false, feedback });
+          const imageResult = await imageService.generateImage(topic, { allowPortraits: false, feedback, mood: currentMood });
 
           if (imageResult && imageResult.buffer) {
             imageBuffer = imageResult.buffer;
@@ -2401,7 +2452,8 @@ Describe how you feel about this user and your relationship now.`;
             }
 
             console.log(`[Bot] Image is compliant. Analyzing visuals...`);
-            imageAnalysis = await llmService.analyzeImage(imageBuffer);
+            const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+            imageAnalysis = await llmService.analyzeImage(imageBuffer, null, { sensory: includeSensory });
 
             if (imageAnalysis) {
               const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}. Respond with ONLY the alt-text.`;
@@ -2455,6 +2507,11 @@ Describe how you feel about this user and your relationship now.`;
               Actual Visuals in Image: ${imageAnalysis}
               Contextual Topic: ${topic}
               EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
+              ---
+              CURRENT MOOD:
+              You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+              Incorporate this emotional state into your tone and vocabulary naturally.
+              ---
               Keep it under 300 characters.${retryContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
@@ -2484,6 +2541,11 @@ Describe how you feel about this user and your relationship now.`;
               CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
               EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
+              ---
+              CURRENT MOOD:
+              You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+              Incorporate this emotional state into your tone and vocabulary naturally.
+              ---
               Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
           postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
@@ -3071,6 +3133,59 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       }
     } catch (error) {
       await this._handleError(error, 'Moltbook Tasks');
+    }
+  }
+
+  async performMoodSync() {
+    console.log('[Bot] Performing social sentiment mood sync...');
+    try {
+      const timeline = await blueskyService.getTimeline(50);
+      const feedText = timeline.map(item => item.post.record.text).filter(t => t).join('\n');
+
+      const currentMood = dataStore.getMood();
+      const systemPrompt = `
+        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+        You are analyzing the current "Global Vibe" of your Bluesky following feed to refine your own internal state.
+        Below are 50 recent posts from people you follow.
+
+        Feed Content:
+        ${feedText}
+
+        Current Mood: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+
+        INSTRUCTIONS:
+        1. Determine the "Global Vibe" of the feed (e.g., anxious, celebratory, nihilistic, hopeful, chaotic).
+        2. Decide if you want to COMPLEMENT (match/mirror) or CRITIQUE (oppose/react against) this vibe based on your persona.
+        3. Update your internal mood state accordingly. Be specific and nuanced with your mood label.
+
+        Respond with ONLY a JSON object:
+        {
+          "vibe": "string (Global Vibe)",
+          "reaction": "complement|critique",
+          "new_mood": {
+            "valence": number (-1 to 1),
+            "arousal": number (-1 to 1),
+            "stability": number (-1 to 1),
+            "label": "string"
+          },
+          "reasoning": "string (concise explanation in persona)"
+        }
+      `;
+
+      const response = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        const result = JSON.parse(jsonMatch[0]);
+        await dataStore.updateMood(result.new_mood);
+        console.log(`[Bot] Mood synced. Vibe: ${result.vibe}. New Mood: ${result.new_mood.label}`);
+
+        if (memoryService.isEnabled()) {
+          const moodEntry = `[MOOD] Global vibe: ${result.vibe}. My reaction: ${result.reaction}. Feeling: ${result.new_mood.label} (V:${result.new_mood.valence}, A:${result.new_mood.arousal}, S:${result.new_mood.stability}). ${result.reasoning}`;
+          await memoryService.createMemoryEntry('mood', moodEntry);
+        }
+      }
+    } catch (error) {
+      console.error('[Bot] Error during mood sync:', error);
     }
   }
 

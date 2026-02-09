@@ -25,9 +25,12 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     isAutonomousPostCoherent: jest.fn(),
     analyzeImage: jest.fn(),
     isImageCompliant: jest.fn(),
-    checkVariety: jest.fn().mockResolvedValue({ repetitive: false }),
+    checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     performAgenticPlanning: jest.fn().mockResolvedValue({ strategy: { angle: 'natural', tone: 'conversational', theme: 'test' }, actions: [] }),
+    shouldIncludeSensory: jest.fn().mockResolvedValue(false),
+    performInternalResearch: jest.fn(),
+    generateDrafts: jest.fn(),
   },
 }));
 
@@ -49,6 +52,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     addExhaustedTheme: jest.fn(),
     getAdminDid: jest.fn().mockReturnValue('did:plc:admin'),
     setAdminDid: jest.fn(),
+    getMood: jest.fn().mockReturnValue({ label: 'neutral', valence: 0, arousal: 0, stability: 0 }),
+    updateMood: jest.fn(),
     getLastAutonomousPostTime: jest.fn().mockReturnValue(null),
     updateLastAutonomousPostTime: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
@@ -187,7 +192,7 @@ Decentralized Social Media`);
 
     await bot.performAutonomousPost();
 
-    expect(imageService.generateImage).toHaveBeenCalledWith(topic, { allowPortraits: false, feedback: '' });
+    expect(imageService.generateImage).toHaveBeenCalledWith(topic, expect.objectContaining({ allowPortraits: false, feedback: '' }));
     expect(llmService.isImageCompliant).toHaveBeenCalled();
     expect(blueskyService.post).toHaveBeenCalledWith(
       'Here is a thought about technology.',

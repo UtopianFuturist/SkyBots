@@ -10,6 +10,7 @@ class LLMService {
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    this._sensoryPreferenceCache = null;
   }
 
   setMemoryProvider(provider) {
@@ -598,23 +599,9 @@ Vary your structure and tone from recent messages.`
     return { status: 'healthy' };
   }
 
-  async extractClaim(inputText) {
-    const systemPrompt = `
-      You are a text analyst. Your task is to extract the core verifiable claim from a user's post.
-      The output should be a concise, neutral phrase suitable for a search engine query.
-      Focus only on the claim itself, ignoring conversational filler.
-      Example: "I'm not sure if it's true, but someone told me the sky is green." -> "sky is green"
-      Example: "find the Wikipedia article for Veganism" -> "Veganism Wikipedia"
-
-      Respond directly with the claim. Do not include reasoning or <think> tags.
-    `;
-    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    return await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
-  }
-
-  async analyzeImage(imageSource, altText) {
+  async analyzeImage(imageSource, altText, options = { sensory: false }) {
     const requestId = Math.random().toString(36).substring(7);
-    console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${this.visionModel}`);
+    console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${this.visionModel} (Sensory: ${options.sensory})`);
 
     let imageUrl = imageSource;
     if (Buffer.isBuffer(imageSource)) {
@@ -635,11 +622,15 @@ Vary your structure and tone from recent messages.`
       }
     }
 
+    const sensoryInstruction = options.sensory
+        ? "\n\n**SENSORY ANALYSIS MODE**: In addition to visual details, provide simulated sensory descriptors. What would this scene smell like? What would it feel like to the touch (textures, temperature)? Describe the atmosphere in tangible, sensory terms."
+        : "";
+
     const messages = [
       {
         "role": "user",
         "content": [
-          { "type": "text", "text": `Describe the image in detail. ${altText ? `The user has provided the following alt text: "${altText}"` : ""}` },
+          { "type": "text", "text": `Describe the image in detail. ${altText ? `The user has provided the following alt text: "${altText}"` : ""}${sensoryInstruction}` },
           { "type": "image_url", "image_url": { "url": imageUrl } }
         ]
       }
@@ -691,6 +682,21 @@ Vary your structure and tone from recent messages.`
     }
   }
 
+  async extractClaim(inputText) {
+    const systemPrompt = `
+      You are a text analyst. Your task is to extract the core verifiable claim from a user's post.
+      The output should be a concise, neutral phrase suitable for a search engine query.
+      Focus only on the claim itself, ignoring conversational filler.
+      Example: "I'm not sure if it's true, but someone told me the sky is green." -> "sky is green"
+      Example: "find the Wikipedia article for Veganism" -> "Veganism Wikipedia"
+
+      Respond directly with the claim. Do not include reasoning or <think> tags.
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
+    return await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+  }
+
+
   async rateUserInteraction(interactionHistory) {
     const systemPrompt = `
       You are a social media analyst. Based on the user's interaction history, rate their relationship with the bot on a scale of 1 to 5.
@@ -710,6 +716,32 @@ Vary your structure and tone from recent messages.`
     const matches = response?.match(/\d+/g);
     const rating = matches ? parseInt(matches[matches.length - 1], 10) : NaN;
     return isNaN(rating) ? 3 : Math.max(1, Math.min(5, rating));
+  }
+
+  async shouldIncludeSensory(persona) {
+    if (this._sensoryPreferenceCache !== null) return this._sensoryPreferenceCache;
+
+    const systemPrompt = `
+      You are a persona analyst. Determine if the following persona would appreciate or benefit from simulated sensory analysis (smell, touch, temperature, textures) when perceiving images and describing them.
+
+      Persona: "${persona}"
+
+      Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
+    `.trim();
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    this._sensoryPreferenceCache = response?.toLowerCase().includes('yes') || false;
+    return this._sensoryPreferenceCache;
+  }
+
+  async performInternalResearch(query) {
+    const systemPrompt = `
+      You are an objective, unconfigured research AI loop. Your task is to provide accurate, helpful, and productive information or advice to an AI agent's planning module.
+      The query may be about the bot's own system, topics for social media posts, or general advice.
+      Be concise, factual, and objective.
+      Follow all safety guidelines: no NSFW, no promotion of harm.
+      Focus on being productive for the bot's identity, stability, and well-being.
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: true, preface_system_prompt: false });
   }
 
   async shouldLikePost(postText) {
@@ -1182,8 +1214,26 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "key": "string", "value": any }
           - TOPICS/SUBJECTS: For "post_topics" or "image_subjects", you must provide the ENTIRE updated array of strings.
           - MOLTBOOK FEATURES: The "moltbook_features" value is an object like { "post": true, "comment": false, "feed": true }.
+      22. **Update Mood**: Update your own internal mood state.
+          - Use this if an interaction influences your feelings, if you have a deep realization, or if you want to shift your emotional state.
+          - Parameters: { "valence": number (-1 to 1), "arousal": number (-1 to 1), "stability": number (-1 to 1), "label": "string (e.g., curious, melancholy, electric)" }
+      23. **Internal Research**: Perform an internal objective research loop.
+          - Use this to seek advice, research topics for content, understand your own system logs, or analyze complex problems without persona constraints.
+          - Results are saved to your long-term memory thread.
+          - Parameters: { "query": "the specific research question or topic" }
+        `;
+    } else {
+        adminTools = `
+      15. **Update Mood**: Update your own internal mood state.
+          - Use this if an interaction influences your feelings, or if you want to shift your emotional state.
+          - Parameters: { "valence": number (-1 to 1), "arousal": number (-1 to 1), "stability": number (-1 to 1), "label": "string" }
+      16. **Internal Research**: Perform an internal objective research loop.
+          - Use this to research topics for content or seek objective advice.
+          - Parameters: { "query": "the research question" }
         `;
     }
+
+    const currentMood = currentConfig?.current_mood || { label: 'neutral', valence: 0, arousal: 0, stability: 0 };
 
     const systemPrompt = `
       You are an agentic planning module for a social media bot. Your task is to analyze the user's post and the conversation history to determine the best course of action.
@@ -1224,13 +1274,14 @@ Vary your structure and tone from recent messages.`
       12. **Bluesky Post**: Trigger a new post on Bluesky.
           - Use this if the user (especially admin) explicitly asks you to post something to Bluesky.
           - **BROADCAST TRIGGERS**: Trigger this for phrases like "Share this," "Post that," "Blast this to my feed," or "Tell everyone on Bluesky."
+          - **TEMPORAL INTENT**: You can specify an intentional delay for "haunting" timelines or precise timing.
           - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
-          - Parameters: { "text": "the content of the post (crafted in your persona)", "include_image": boolean (true if an image was attached), "prompt_for_image": "string (optional prompt if you should generate a new image for this post)" }
+          - Parameters: { "text": "the content of the post (crafted in your persona)", "include_image": boolean (true if an image was attached), "prompt_for_image": "string (optional prompt if you should generate a new image for this post)", "delay_minutes": number (optional delay before posting) }
       13. **Moltbook Post**: Trigger a new post on Moltbook.
           - Use this if the user (especially admin) explicitly asks you to post something to Moltbook.
           - **BROADCAST TRIGGERS**: Trigger this for phrases like "Post our conversation to Moltbook," "Share that musing on Moltbook," or "Put this on m/general."
           - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT copy the admin's exact words.
-          - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)" }
+          - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)", "delay_minutes": number (optional delay) }
       14. **Read Link**: Directly read and summarize the content of one or more web pages from provided URLs.
           - Use this if a user provides a link and asks about its content, or if you believe reading a provided link is necessary to fulfill their request.
           - **CAPABILITY**: You are fully capable of reading web pages directly via this tool. Never claim that you cannot open links or visit websites.
@@ -1240,6 +1291,13 @@ Vary your structure and tone from recent messages.`
       ${adminTools}
 
       ${currentConfig ? `--- CURRENT SYSTEM CONFIGURATION ---\n${JSON.stringify(currentConfig, null, 2)}\n---` : ''}
+
+      --- CURRENT MOOD ---
+      Label: ${currentMood.label}
+      Valence: ${currentMood.valence} (Negative to Positive)
+      Arousal: ${currentMood.arousal} (Calm to Excited)
+      Stability: ${currentMood.stability} (Unstable to Stable)
+      ---
 
       ---
       **CURRENT PLATFORM:** ${platform.toUpperCase()}
@@ -1263,7 +1321,7 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_research",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed)"
@@ -1351,7 +1409,8 @@ Vary your structure and tone from recent messages.`
         feedback,
         discordExhaustedThemes = [],
         temperature = 0.7,
-        openingBlacklist = []
+        openingBlacklist = [],
+        currentMood = { label: 'neutral', valence: 0, arousal: 0, stability: 0 }
     } = context;
 
     const pollPrompt = `
@@ -1376,6 +1435,13 @@ Vary your structure and tone from recent messages.`
       Recent Discord Conversation History with Admin:
       ${history || 'No recent conversation.'}
       ${recentThoughtsContext}
+
+      --- CURRENT MOOD ---
+      Label: ${currentMood.label}
+      Valence: ${currentMood.valence}
+      Arousal: ${currentMood.arousal}
+      Stability: ${currentMood.stability}
+      ---
 
       ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
 The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:

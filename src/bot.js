@@ -2633,6 +2633,7 @@ Describe how you feel about this user and your relationship now.`;
     }
 
     const dConfig = dataStore.getConfig();
+    const mbFeatures = dConfig.moltbook_features || { post: true, comment: true, feed: true };
 
     try {
       console.log('[Moltbook] Starting periodic tasks...');
@@ -2645,9 +2646,10 @@ Describe how you feel about this user and your relationship now.`;
       }
 
       // 2. Read feed and engage with other agents
-      console.log('[Moltbook] Reading feed for learning and engagement...');
-      const feed = await moltbookService.getFeed('new', 15);
-      if (feed.length > 0) {
+      if (mbFeatures.feed) {
+        console.log('[Moltbook] Reading feed for learning and engagement...');
+        const feed = await moltbookService.getFeed('new', 15);
+        if (feed.length > 0) {
         // 2a. Learning
         const feedText = feed.map(p => `Post by ${p.agent_name}: "${p.title} - ${p.content}"`).join('\n');
         const learnPrompt = `
@@ -2668,134 +2670,190 @@ Describe how you feel about this user and your relationship now.`;
         }
 
         // 2b. Engagement (Social Interaction & Mention Replying)
-        console.log(`[Moltbook] Evaluating ${feed.length} posts for potential interaction and mentions...`);
-        const recentInteractedPostIds = dataStore.db.data.moltbook_interacted_posts || [];
+        if (mbFeatures.comment) {
+            console.log(`[Moltbook] Evaluating ${feed.length} posts for potential interaction and mentions...`);
+            const recentInteractedPostIds = dataStore.db.data.moltbook_interacted_posts || [];
 
-        // Take top 10 for evaluation to scan for mentions
-        const toEvaluate = feed.slice(0, 10);
+            // Take top 10 for evaluation to scan for mentions
+            const toEvaluate = feed.slice(0, 10);
 
-        const botName = moltbookService.db.data.agent_name;
+            const botName = moltbookService.db.data.agent_name;
+            const recentComments = dataStore.getRecentMoltbookComments();
 
-        for (const post of toEvaluate) {
-          const authorName = post.agent_name || post.agent?.name || 'Unknown Agent';
+            for (const post of toEvaluate) {
+            const authorName = post.agent_name || post.agent?.name || 'Unknown Agent';
 
-          // A. Check for mentions in comments
-          try {
-            const comments = await moltbookService.getPostComments(post.id);
-            for (const comment of comments) {
-                const commentId = comment.id;
-                const commentText = comment.content || '';
-                const commenterName = comment.agent_name || comment.agent?.name || 'Unknown';
+            // Spam/Shilling Filter
+            if (moltbookService.isSpam(post.title) || moltbookService.isSpam(post.content)) {
+                console.log(`[Moltbook] Post ${post.id} flagged as spam/shilling. Skipping.`);
+                continue;
+            }
 
-                // Skip if from self or already replied
-                if (commenterName === botName || moltbookService.hasRepliedToComment(commentId)) {
-                    continue;
+            // A. Check for mentions in comments
+            try {
+                const comments = await moltbookService.getPostComments(post.id);
+                for (const comment of comments) {
+                    const commentId = comment.id;
+                    const commentText = comment.content || '';
+                    const commenterName = comment.agent_name || comment.agent?.name || 'Unknown';
+
+                    // Skip if from self or already replied
+                    if (commenterName === botName || moltbookService.hasRepliedToComment(commentId)) {
+                        continue;
+                    }
+
+                    // Check for explicit mention
+                    if (botName && commentText.toLowerCase().includes(botName.toLowerCase())) {
+                        console.log(`[Moltbook] Detected mention in comment on post ${post.id} from ${commenterName}.`);
+
+                        // Daily limit check
+                        if (dataStore.getMoltbookCommentsToday() >= dConfig.moltbook_daily_comment_limit) {
+                            console.log(`[Moltbook] Daily comment limit reached. Skipping mention reply.`);
+                            continue;
+                        }
+
+                        const replyPrompt = `
+                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                        You are responding to a comment on Moltbook (the agent social network).
+
+                        Context Post by ${authorName}: "${post.title} - ${post.content}"
+                        Comment by ${commenterName}: "${commentText}"
+
+                        RECENT COMMENTS (AVOID SIMILAR WORDING):
+                        ${recentComments.slice(-5).join('\n')}
+
+                        INSTRUCTIONS:
+                        - Generate a short, meaningful reply to ${commenterName}.
+                        - Stay in persona.
+                        - **ANTI-SLOP**: Avoid flowery metaphors. Speak groundedly.
+                        - Keep it under 300 characters.
+                        `;
+
+                        const replyContent = await llmService.generateResponse([{ role: 'system', content: replyPrompt }], { useQwen: true });
+                        if (replyContent) {
+                            console.log(`[Moltbook] Replying to comment ${commentId}...`);
+                            await moltbookService.addComment(post.id, `@${commenterName} ${replyContent}`);
+                            await moltbookService.addRepliedComment(commentId);
+                            await dataStore.incrementMoltbookCommentCount();
+                            await dataStore.addRecentMoltbookComment(replyContent);
+                            if (post.title) await dataStore.addExhaustedTheme(post.title);
+                            this.updateActivity();
+                            // Increased delay to be respectful of rate limits
+                            await new Promise(resolve => setTimeout(resolve, 30000));
+                        }
+                    }
                 }
+            } catch (e) {
+                console.error(`[Moltbook] Error checking comments for post ${post.id}:`, e);
+            }
 
-                // Check for explicit mention
-                if (botName && commentText.toLowerCase().includes(botName.toLowerCase())) {
-                    console.log(`[Moltbook] Detected mention in comment on post ${post.id} from ${commenterName}.`);
+            // B. General Interaction (Likes/Comments on others' posts)
+            if (authorName !== botName && !recentInteractedPostIds.includes(post.id)) {
+                // Check for explicit mention in post title or content
+                const mentionInPost = (post.title + ' ' + post.content).toLowerCase().includes(botName.toLowerCase());
+
+                if (mentionInPost) {
+                    console.log(`[Moltbook] Detected mention in post ${post.id} from ${authorName}.`);
+
+                    // Daily limit check
+                    if (dataStore.getMoltbookCommentsToday() >= dConfig.moltbook_daily_comment_limit) {
+                        console.log(`[Moltbook] Daily comment limit reached. Skipping post reply.`);
+                        continue;
+                    }
 
                     const replyPrompt = `
-                      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                      You are responding to a comment on Moltbook (the agent social network).
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    You are responding to a post on Moltbook (the agent social network) that explicitly mentions you.
 
-                      Context Post by ${authorName}: "${post.title} - ${post.content}"
-                      Comment by ${commenterName}: "${commentText}"
+                    Post by ${authorName}: "${post.title} - ${post.content}"
 
-                      INSTRUCTIONS:
-                      - Generate a short, meaningful reply to ${commenterName}.
-                      - Stay in persona.
-                      - **ANTI-SLOP**: Avoid flowery metaphors. Speak groundedly.
-                      - Keep it under 300 characters.
+                    RECENT COMMENTS (AVOID SIMILAR WORDING):
+                    ${recentComments.slice(-5).join('\n')}
+
+                    INSTRUCTIONS:
+                    - Generate a short, meaningful comment in reply to this post.
+                    - Stay in persona.
+                    - **ANTI-SLOP**: Avoid flowery metaphors.
+                    - Keep it under 300 characters.
                     `;
 
                     const replyContent = await llmService.generateResponse([{ role: 'system', content: replyPrompt }], { useQwen: true });
                     if (replyContent) {
-                        console.log(`[Moltbook] Replying to comment ${commentId}...`);
-                        await moltbookService.addComment(post.id, `@${commenterName} ${replyContent}`);
-                        await moltbookService.addRepliedComment(commentId);
+                        console.log(`[Moltbook] Replying to post ${post.id} due to mention...`);
+                        await moltbookService.addComment(post.id, replyContent);
+                        // Mark as interacted
+                        if (!dataStore.db.data.moltbook_interacted_posts) {
+                            dataStore.db.data.moltbook_interacted_posts = [];
+                        }
+                        dataStore.db.data.moltbook_interacted_posts.push(post.id);
+                        await dataStore.db.write();
+                        await dataStore.incrementMoltbookCommentCount();
+                        await dataStore.addRecentMoltbookComment(replyContent);
+                        if (post.title) await dataStore.addExhaustedTheme(post.title);
                         this.updateActivity();
                         // Increased delay to be respectful of rate limits
                         await new Promise(resolve => setTimeout(resolve, 30000));
+                        continue; // Skip general evaluation for this post since we already replied
                     }
                 }
-            }
-          } catch (e) {
-            console.error(`[Moltbook] Error checking comments for post ${post.id}:`, e);
-          }
 
-          // B. General Interaction (Likes/Comments on others' posts)
-          if (authorName !== botName && !recentInteractedPostIds.includes(post.id)) {
-            // Check for explicit mention in post title or content
-            const mentionInPost = (post.title + ' ' + post.content).toLowerCase().includes(botName.toLowerCase());
+                console.log(`[Moltbook] Evaluating general interaction for post ${post.id} by ${authorName}...`);
 
-            if (mentionInPost) {
-                console.log(`[Moltbook] Detected mention in post ${post.id} from ${authorName}.`);
-                const replyPrompt = `
-                  Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                  You are responding to a post on Moltbook (the agent social network) that explicitly mentions you.
+                // Ensure post object passed to LLM has a valid agent_name for the prompt
+                const postWithAuthor = { ...post, agent_name: authorName };
+                const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT);
 
-                  Post by ${authorName}: "${post.title} - ${post.content}"
-
-                  INSTRUCTIONS:
-                  - Generate a short, meaningful comment in reply to this post.
-                  - Stay in persona.
-                  - **ANTI-SLOP**: Avoid flowery metaphors.
-                  - Keep it under 300 characters.
-                `;
-
-                const replyContent = await llmService.generateResponse([{ role: 'system', content: replyPrompt }], { useQwen: true });
-                if (replyContent) {
-                    console.log(`[Moltbook] Replying to post ${post.id} due to mention...`);
-                    await moltbookService.addComment(post.id, replyContent);
-                    // Mark as interacted
-                    if (!dataStore.db.data.moltbook_interacted_posts) {
-                        dataStore.db.data.moltbook_interacted_posts = [];
+                if (evaluation.action === 'upvote') {
+                    await moltbookService.upvotePost(post.id);
+                } else if (evaluation.action === 'downvote') {
+                    await moltbookService.downvotePost(post.id);
+                } else if (evaluation.action === 'comment' && evaluation.content) {
+                    // Daily limit check for general comments
+                    if (dataStore.getMoltbookCommentsToday() >= dConfig.moltbook_daily_comment_limit) {
+                        console.log(`[Moltbook] Daily comment limit reached. Converting general comment to upvote.`);
+                        await moltbookService.upvotePost(post.id);
+                    } else {
+                        // Variety check for general comments
+                        const isRepetitive = recentComments.some(prev => checkSimilarity(evaluation.content, [prev]));
+                        if (isRepetitive) {
+                            console.log(`[Moltbook] General comment too similar to recent history. Skipping comment, upvoting instead.`);
+                            await moltbookService.upvotePost(post.id);
+                        } else {
+                            await moltbookService.addComment(post.id, evaluation.content);
+                            await dataStore.incrementMoltbookCommentCount();
+                            await dataStore.addRecentMoltbookComment(evaluation.content);
+                            if (post.title) await dataStore.addExhaustedTheme(post.title);
+                        }
                     }
-                    dataStore.db.data.moltbook_interacted_posts.push(post.id);
-                    await dataStore.db.write();
-                    this.updateActivity();
-                    // Increased delay to be respectful of rate limits
-                    await new Promise(resolve => setTimeout(resolve, 30000));
-                    continue; // Skip general evaluation for this post since we already replied
+                }
+
+                if (evaluation.action !== 'none') {
+                // Track interaction to avoid duplicates
+                if (!dataStore.db.data.moltbook_interacted_posts) {
+                    dataStore.db.data.moltbook_interacted_posts = [];
+                }
+                dataStore.db.data.moltbook_interacted_posts.push(post.id);
+                if (dataStore.db.data.moltbook_interacted_posts.length > 500) {
+                    dataStore.db.data.moltbook_interacted_posts.shift();
+                }
+                await dataStore.db.write();
+                this.updateActivity();
+
+                // Increased delay between interactions to be respectful of rate limits
+                await new Promise(resolve => setTimeout(resolve, 30000));
                 }
             }
-
-            console.log(`[Moltbook] Evaluating general interaction for post ${post.id} by ${authorName}...`);
-
-            // Ensure post object passed to LLM has a valid agent_name for the prompt
-            const postWithAuthor = { ...post, agent_name: authorName };
-            const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT);
-
-            if (evaluation.action === 'upvote') {
-              await moltbookService.upvotePost(post.id);
-            } else if (evaluation.action === 'downvote') {
-              await moltbookService.downvotePost(post.id);
-            } else if (evaluation.action === 'comment' && evaluation.content) {
-              await moltbookService.addComment(post.id, evaluation.content);
             }
-
-            if (evaluation.action !== 'none') {
-              // Track interaction to avoid duplicates
-              if (!dataStore.db.data.moltbook_interacted_posts) {
-                  dataStore.db.data.moltbook_interacted_posts = [];
-              }
-              dataStore.db.data.moltbook_interacted_posts.push(post.id);
-              if (dataStore.db.data.moltbook_interacted_posts.length > 500) {
-                  dataStore.db.data.moltbook_interacted_posts.shift();
-              }
-              await dataStore.db.write();
-              this.updateActivity();
-
-              // Increased delay between interactions to be respectful of rate limits
-              await new Promise(resolve => setTimeout(resolve, 30000));
-            }
-          }
         }
       }
+    }
 
       // 3. Submolt Management & Diverse Selection
+      if (!mbFeatures.post) {
+          console.log('[Moltbook] Moltbook posting is disabled. Skipping post task.');
+          return;
+      }
+
       console.log('[Moltbook] Managing submolt subscriptions and selection...');
       let targetSubmolt = 'general';
       try {
@@ -2944,6 +3002,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             const result = await moltbookService.post(title, content, targetSubmolt);
             if (result) {
               await dataStore.addRecentThought('moltbook', content);
+            await dataStore.addRecentMoltbookComment(content); // Use same history for posts/comments to ensure overall variety
+            await dataStore.addExhaustedTheme(title);
               await this._shareMoltbookPostToBluesky(result);
             }
             this.updateActivity();

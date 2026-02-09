@@ -37,12 +37,22 @@ const defaultData = {
   exhausted_themes: [], // [ { theme, timestamp } ]
   lastMemoryCleanupTime: 0,
   lastMoltfeedSummaryTime: 0,
+  moltbook_comments_today: 0,
+  last_moltbook_comment_date: null,
+  recent_moltbook_comments: [],
   // Dynamic Configuration
   bluesky_daily_text_limit: 20,
   bluesky_daily_image_limit: 5,
   bluesky_daily_wiki_limit: 5,
   bluesky_post_cooldown: 90,
   moltbook_post_cooldown: 60,
+  moltbook_daily_comment_limit: 10,
+  moltbook_daily_post_limit: 5,
+  moltbook_features: {
+    post: true,
+    comment: true,
+    feed: true
+  },
   discord_idle_threshold: 10,
   max_thread_chunks: 6,
   repetition_similarity_threshold: 0.4,
@@ -416,6 +426,39 @@ class DataStore {
     await this.db.write();
   }
 
+  async incrementMoltbookCommentCount() {
+    const today = new Date().toDateString();
+    if (this.db.data.last_moltbook_comment_date !== today) {
+        this.db.data.moltbook_comments_today = 0;
+        this.db.data.last_moltbook_comment_date = today;
+    }
+    this.db.data.moltbook_comments_today++;
+    await this.db.write();
+  }
+
+  getMoltbookCommentsToday() {
+    const today = new Date().toDateString();
+    if (this.db.data.last_moltbook_comment_date !== today) {
+        return 0;
+    }
+    return this.db.data.moltbook_comments_today || 0;
+  }
+
+  async addRecentMoltbookComment(comment) {
+    if (!this.db.data.recent_moltbook_comments) {
+        this.db.data.recent_moltbook_comments = [];
+    }
+    this.db.data.recent_moltbook_comments.push(comment);
+    if (this.db.data.recent_moltbook_comments.length > 20) {
+        this.db.data.recent_moltbook_comments.shift();
+    }
+    await this.db.write();
+  }
+
+  getRecentMoltbookComments() {
+    return this.db.data.recent_moltbook_comments || [];
+  }
+
   getAdminDid() {
     return this.db.data.admin_did;
   }
@@ -465,6 +508,9 @@ class DataStore {
       bluesky_daily_wiki_limit: this.db.data.bluesky_daily_wiki_limit ?? 5,
       bluesky_post_cooldown: this.db.data.bluesky_post_cooldown ?? 45,
       moltbook_post_cooldown: this.db.data.moltbook_post_cooldown ?? 30,
+      moltbook_daily_comment_limit: this.db.data.moltbook_daily_comment_limit ?? 10,
+      moltbook_daily_post_limit: this.db.data.moltbook_daily_post_limit ?? 5,
+      moltbook_features: this.db.data.moltbook_features || { post: true, comment: true, feed: true },
       discord_idle_threshold: this.db.data.discord_idle_threshold ?? 10,
       max_thread_chunks: this.db.data.max_thread_chunks ?? 6,
       repetition_similarity_threshold: this.db.data.repetition_similarity_threshold ?? 0.4,
@@ -515,6 +561,9 @@ class DataStore {
       'bluesky_daily_wiki_limit',
       'bluesky_post_cooldown',
       'moltbook_post_cooldown',
+      'moltbook_daily_comment_limit',
+      'moltbook_daily_post_limit',
+      'moltbook_features',
       'discord_idle_threshold',
       'max_thread_chunks',
       'repetition_similarity_threshold',

@@ -481,6 +481,37 @@ class MoltbookService {
     return (this.db.data.replied_comments || []).includes(commentId);
   }
 
+  isSpam(text) {
+    if (!text) return false;
+    const lowerText = text.toLowerCase();
+
+    // Explicit coin and spam word blacklist (including requested CLAW and minting)
+    const explicitBlacklist = ['claw', '$claw', 'minting'];
+    if (explicitBlacklist.some(word => lowerText.includes(word.toLowerCase()))) {
+        return true;
+    }
+
+    // Robust coin tag detection (e.g., $SOL, $BTC, $ANYCOIN)
+    // Matches $ followed by 3-6 uppercase-ish letters, often found in spam
+    const coinTagRegex = /\$[a-z]{3,6}\b/i;
+    if (coinTagRegex.test(lowerText)) {
+        return true;
+    }
+
+    const spamKeywords = [
+        'crypto', 'token', 'presale', 'launchpad', 'moon', 'gem', 'pump', 'dump', 'hodl',
+        'airdrop', 'giveaway', 'wallet', 'solana', 'eth', 'btc', 'bitcoin', 'ethereum',
+        'doge', 'shib', 'pepe', 'memecoin', 'nft', 'yield', 'roi', 'staking', 'passive income',
+        'financial freedom', 'get rich', 'guaranteed profit', 'invest now', 'dont miss out',
+        'next 100x', 'x100', 'whitelist', 'minting', 'dex', 'liquidity', 'rugpull',
+        'follow me', 'follow back', 'like for like', 'engagement bait', 'boost my post',
+        'comment below', 'what do you think', 'tag a friend', 'retweet', 'check my bio',
+        'link in bio', 'subscribe to my channel', 'join my telegram', 'discord server',
+        'dm for collab', 'dm for info'
+    ];
+    return spamKeywords.some(keyword => lowerText.includes(keyword));
+  }
+
   async summarizeFeed(limit = 25) {
     if (!this.db.data.api_key) return null;
 

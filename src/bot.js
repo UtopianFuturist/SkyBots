@@ -3267,6 +3267,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
   async performMoodSync() {
     console.log('[Bot] Performing social sentiment mood sync...');
     try {
+      const currentMood = dataStore.getMood();
       const timeline = await blueskyService.getTimeline(50);
       const feedText = timeline.map(item => item.post.record.text).filter(t => t).join('\n');
 

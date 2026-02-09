@@ -51,6 +51,39 @@ export const splitText = (text, maxLength = 300, maxChunks = 10) => {
     return chunks;
 };
 
+export const splitTextForDiscord = (text, maxLength = 2000) => {
+  if (!text) return [];
+  if (text.length <= maxLength) return [text];
+
+  const chunks = [];
+  let remainingText = text;
+
+  while (remainingText.length > 0) {
+    if (remainingText.length <= maxLength) {
+      chunks.push(remainingText);
+      break;
+    }
+
+    // Try to split at the last newline before maxLength
+    let splitIndex = remainingText.lastIndexOf('\n', maxLength);
+
+    // If no newline or it's too far back (less than 80% of maxLength), try space
+    if (splitIndex === -1 || splitIndex < maxLength * 0.8) {
+      splitIndex = remainingText.lastIndexOf(' ', maxLength);
+    }
+
+    // If still no split point, just cut at maxLength
+    if (splitIndex === -1) {
+      splitIndex = maxLength;
+    }
+
+    chunks.push(remainingText.slice(0, splitIndex).trim());
+    remainingText = remainingText.slice(splitIndex).trim();
+  }
+
+  return chunks;
+};
+
 export const sanitizeThinkingTags = (text) => {
   if (!text) return text;
 
@@ -276,4 +309,44 @@ export const getSimilarityInfo = (newText, recentTexts, threshold = 0.4) => {
     score: maxSimilarity,
     matchedText: matchedText
   };
+};
+
+export const reconstructTextWithFullUrls = (text, facets) => {
+  if (!text || !facets) return text;
+
+  try {
+    const textBuffer = Buffer.from(text, 'utf8');
+    // Sort facets by byteStart descending to replace from end to start
+    const linkFacets = facets
+      .filter(f => f.features?.some(feat => feat.$type === 'app.bsky.richtext.facet#link'))
+      .sort((a, b) => b.index.byteStart - a.index.byteStart);
+
+    let modifiedTextBuffer = textBuffer;
+    let textModified = false;
+
+    for (const facet of linkFacets) {
+      const feature = facet.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link');
+      if (feature) {
+        const fullUrl = feature.uri;
+        const start = facet.index.byteStart;
+        const end = facet.index.byteEnd;
+
+        // Use original textBuffer for slice to avoid index shifting issues during comparison
+        const textSlice = textBuffer.slice(start, end).toString('utf8');
+
+        if (textSlice.endsWith('...') || textSlice.endsWith('…') || (fullUrl.includes(textSlice.replace(/(\.\.\.|…)$/, '')) && textSlice.length < fullUrl.length)) {
+          const prefix = modifiedTextBuffer.slice(0, start);
+          const suffix = modifiedTextBuffer.slice(end);
+          const replacement = Buffer.from(fullUrl, 'utf8');
+
+          modifiedTextBuffer = Buffer.concat([prefix, replacement, suffix]);
+          textModified = true;
+        }
+      }
+    }
+    return textModified ? modifiedTextBuffer.toString('utf8') : text;
+  } catch (e) {
+    console.warn('[TextUtils] Error reconstructing text from facets:', e);
+    return text;
+  }
 };

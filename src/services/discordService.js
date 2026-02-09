@@ -13,7 +13,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity, splitTextForDiscord } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -361,10 +361,26 @@ class DiscordService {
         }
 
         try {
-            const sentMessage = await target.send({
-                content: sanitized,
-                ...options
-            });
+            const chunks = splitTextForDiscord(sanitized);
+            let firstSentMessage = null;
+
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                const msgOptions = { content: chunk };
+
+                // Only include extra options (files, embeds, etc.) on the first chunk
+                if (i === 0) {
+                    Object.assign(msgOptions, options);
+                }
+
+                const sentMessage = await target.send(msgOptions);
+                if (!firstSentMessage) firstSentMessage = sentMessage;
+
+                // Small delay to ensure order if there are multiple chunks
+                if (chunks.length > 1 && i < chunks.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                }
+            }
 
             // Log interaction if it's a DM or we have a channel ID
             const channelId = target.id || (target.channel && target.channel.id);
@@ -377,7 +393,7 @@ class DiscordService {
                 });
             }
 
-            return sentMessage;
+            return firstSentMessage;
         } catch (error) {
             console.error('[DiscordService] Error sending message:', error);
             return null;
@@ -496,7 +512,8 @@ class DiscordService {
             for (const [id, attachment] of message.attachments) {
                 if (attachment.contentType?.startsWith('image/')) {
                     try {
-                        const analysis = await llmService.analyzeImage(attachment.url);
+                        const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+                        const analysis = await llmService.analyzeImage(attachment.url, null, { sensory: includeSensory });
                         if (analysis) {
                             imageAnalysisResult += `[Image attached by user: ${analysis}] `;
                         }
@@ -545,7 +562,8 @@ class DiscordService {
                 for (const [id, attachment] of h.attachments) {
                     if (attachment.contentType?.startsWith('image/') || attachment.url.match(/\.(jpg|jpeg|png|webp)$/i)) {
                         try {
-                            const analysis = await llmService.analyzeImage(attachment.url);
+                            const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+                            const analysis = await llmService.analyzeImage(attachment.url, null, { sensory: includeSensory });
                             if (analysis) {
                                 const author = h.role === 'assistant' ? 'you' : 'the user';
                                 if (!imageAnalysisResult.includes(analysis)) {
@@ -576,6 +594,7 @@ class DiscordService {
 
         // Hierarchical Social Context
         const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
+        const currentMood = dataStore.getMood();
 
         const blueskyDirectives = dataStore.getBlueskyInstructions();
         const personaUpdates = dataStore.getPersonaUpdates();
@@ -614,6 +633,11 @@ ${config.DISCORD_HEARTBEAT_ADDENDUM ? `10. ADDITIONAL SPECIFICATION: ${config.DI
 --- SOCIAL NARRATIVE ---
 ${hierarchicalSummary.dailyNarrative}
 ${hierarchicalSummary.shortTerm}
+---
+
+--- CURRENT MOOD ---
+You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+Incorporate this emotional state into your tone and vocabulary naturally.
 ---
 
 [Admin Availability: ${dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied'}]
@@ -678,7 +702,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          }
                      }
                      if (action.tool === 'bsky_post') {
-                         const { text: postText, include_image, prompt_for_image } = action.parameters || {};
+                         const { text: postText, include_image, prompt_for_image, delay_minutes } = action.parameters || {};
                          const lastPostTime = dataStore.getLastAutonomousPostTime();
                          const cooldown = dConfig.bluesky_post_cooldown * 60 * 1000;
                          const now = Date.now();
@@ -694,20 +718,21 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          } else if (include_image && message.attachments.size > 0) {
                              const img = Array.from(message.attachments.values()).find(a => a.contentType?.startsWith('image/'));
                              if (img) {
-                                 const altText = await llmService.analyzeImage(img.url);
+                                 const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+                                 const altText = await llmService.analyzeImage(img.url, null, { sensory: includeSensory });
                                  embed = { imageUrl: img.url, imageAltText: altText || 'Admin shared image' };
                              }
                          }
 
-                         if (diff < cooldown) {
-                             const remainingMins = Math.ceil((cooldown - diff) / (60 * 1000));
+                         if (diff < cooldown || delay_minutes > 0) {
+                             const remainingMins = Math.max(delay_minutes || 0, Math.ceil((cooldown - diff) / (60 * 1000)));
                              if (embed && embed.imageBuffer) {
                                  // Convert buffer to base64 for scheduling
                                  embed.imageBuffer = embed.imageBuffer.toString('base64');
                                  embed.isBase64 = true;
                              }
-                             await dataStore.addScheduledPost('bluesky', postText, embed);
-                             actionResults.push(`[Bluesky post scheduled because cooldown is active. ${remainingMins} minutes remaining]`);
+                             await dataStore.addScheduledPost('bluesky', postText, embed, delay_minutes || 0);
+                             actionResults.push(`[Bluesky post scheduled. Intentional delay/cooldown: ${remainingMins} minutes]`);
                          } else {
                              let postEmbed = null;
                              if (embed) {
@@ -854,16 +879,16 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          }
                      }
                      if (action.tool === 'moltbook_post') {
-                         const { title, content, submolt } = action.parameters || {};
+                         const { title, content, submolt, delay_minutes } = action.parameters || {};
                          const lastPostAt = moltbookService.db.data.last_post_at;
                          const cooldown = dConfig.moltbook_post_cooldown * 60 * 1000;
                          const now = Date.now();
                          const diff = lastPostAt ? now - new Date(lastPostAt).getTime() : cooldown;
 
-                         if (diff < cooldown) {
-                             const remainingMins = Math.ceil((cooldown - diff) / (60 * 1000));
-                             await dataStore.addScheduledPost('moltbook', { title, content, submolt });
-                             actionResults.push(`[Moltbook post scheduled because cooldown is active. ${remainingMins} minutes remaining]`);
+                         if (diff < cooldown || delay_minutes > 0) {
+                             const remainingMins = Math.max(delay_minutes || 0, Math.ceil((cooldown - diff) / (60 * 1000)));
+                             await dataStore.addScheduledPost('moltbook', { title, content, submolt }, null, delay_minutes || 0);
+                             actionResults.push(`[Moltbook post scheduled. Intentional delay/cooldown: ${remainingMins} minutes]`);
                          } else {
                              let targetSubmolt = submolt?.replace(/^m\//, '');
                              if (!targetSubmolt) {
@@ -1005,6 +1030,28 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          if (key) {
                              const success = await dataStore.updateConfig(key, value);
                              actionResults.push(`[Configuration update for ${key}: ${success ? 'SUCCESS' : 'FAILED'}]`);
+                         }
+                     }
+                     if (action.tool === 'update_mood') {
+                         const { valence, arousal, stability, label } = action.parameters || {};
+                         if (label) {
+                             await dataStore.updateMood({ valence, arousal, stability, label });
+                             actionResults.push(`[Internal mood updated to: ${label}]`);
+                             if (memoryService.isEnabled()) {
+                                 await memoryService.createMemoryEntry('mood', `[MOOD] My mood has shifted to: ${label} (Valence: ${valence}, Arousal: ${arousal}, Stability: ${stability})`);
+                             }
+                         }
+                     }
+                     if (action.tool === 'internal_research') {
+                         const query = action.query || action.parameters?.query;
+                         if (query) {
+                             const result = await llmService.performInternalResearch(query);
+                             if (result) {
+                                 actionResults.push(`[Internal Research Result for "${query}": ${result}]`);
+                                 if (memoryService.isEnabled()) {
+                                     await memoryService.createMemoryEntry('research', `[RESEARCH] Query: ${query}. Result: ${result}`);
+                                 }
+                             }
                          }
                      }
                  }

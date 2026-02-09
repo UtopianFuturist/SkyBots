@@ -41,6 +41,14 @@ const defaultData = {
   moltbook_comments_today: 0,
   last_moltbook_comment_date: null,
   recent_moltbook_comments: [],
+  current_mood: {
+    valence: 0, // -1 (negative) to 1 (positive)
+    arousal: 0, // -1 (calm) to 1 (excited)
+    stability: 0, // -1 (unstable) to 1 (stable)
+    label: 'neutral',
+    last_update: null
+  },
+  mood_history: [], // [ { valence, arousal, stability, label, timestamp } ]
   // Dynamic Configuration
   bluesky_daily_text_limit: 20,
   bluesky_daily_image_limit: 5,
@@ -354,15 +362,17 @@ class DataStore {
     return this.db.data.discord_pending_mirror;
   }
 
-  async addScheduledPost(platform, content, embed = null) {
+  async addScheduledPost(platform, content, embed = null, delayMinutes = 0) {
     if (!this.db.data.scheduled_posts) {
       this.db.data.scheduled_posts = [];
     }
+    const now = Date.now();
     this.db.data.scheduled_posts.push({
       platform,
       content,
       embed,
-      timestamp: Date.now()
+      timestamp: now,
+      scheduled_at: now + (delayMinutes * 60 * 1000)
     });
     await this.db.write();
   }
@@ -586,6 +596,31 @@ class DataStore {
   async clearPendingDirectives() {
     this.db.data.discord_pending_directives = [];
     await this.db.write();
+  }
+
+  async updateMood(mood) {
+    const now = Date.now();
+    this.db.data.current_mood = {
+      ...mood,
+      last_update: now
+    };
+    if (!this.db.data.mood_history) {
+      this.db.data.mood_history = [];
+    }
+    this.db.data.mood_history.push({
+      ...mood,
+      timestamp: now
+    });
+    // Keep last 100 mood changes
+    if (this.db.data.mood_history.length > 100) {
+      this.db.data.mood_history.shift();
+    }
+    await this.db.write();
+    console.log(`[DataStore] Mood updated: ${mood.label} (V:${mood.valence}, A:${mood.arousal}, S:${mood.stability})`);
+  }
+
+  getMood() {
+    return this.db.data.current_mood || defaultData.current_mood;
   }
 
   async updateConfig(key, value) {

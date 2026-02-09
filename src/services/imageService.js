@@ -9,7 +9,7 @@ class ImageService {
     this.baseUrl = `https://ai.api.nvidia.com/v1/genai/${this.model}`;
   }
 
-  async generateImage(prompt, options = { allowPortraits: true, feedback: null }) {
+  async generateImage(prompt, options = { allowPortraits: true, feedback: null, mood: null }) {
     console.log(`[ImageService] Generating image with initial prompt: "${prompt}" (allowPortraits: ${options.allowPortraits})`);
     try {
       const portraitConstraint = options.allowPortraits
@@ -20,11 +20,16 @@ class ImageService {
         ? `\n\n**IMPORTANT FEEDBACK FOR ADJUSTMENT:** Your previous prompt for this topic was rejected for the following reason: "${options.feedback}". You MUST adjust your description to address this feedback while maintaining the same core theme. Do NOT mention this feedback in your output.`
         : "";
 
+      const moodInstruction = options.mood
+        ? `\n\n**CURRENT MOOD:** Your current emotional state is: ${options.mood.label}. Incorporate the visual aesthetic and atmosphere of this mood into your scene description naturally.`
+        : "";
+
       const systemContent = `
         ${config.IMAGE_PROMPT_SYSTEM_PROMPT}
 
         ${portraitConstraint}
         ${feedbackInstruction}
+        ${moodInstruction}
 
         If the input is an abstract concept (e.g., "vulnerability", "technology", "emotion"), you MUST convert it into a literal, tangible scene.
         Think in terms of objects, landscapes, digital spaces, or environments.

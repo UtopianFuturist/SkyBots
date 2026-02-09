@@ -34,6 +34,18 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     validateResultRelevance: jest.fn(),
     analyzeImage: jest.fn().mockResolvedValue('A description of the image'),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
+    shouldIncludeSensory: jest.fn().mockResolvedValue(false),
+    performInternalResearch: jest.fn(),
+    generateDrafts: jest.fn(),
+  },
+}));
+jest.unstable_mockModule('../src/services/dataStore.js', () => ({
+  dataStore: {
+    blockUser: jest.fn(),
+    unblockUser: jest.fn(),
+    muteThread: jest.fn(),
+    getMood: jest.fn().mockReturnValue({ label: 'neutral', valence: 0, arousal: 0, stability: 0 }),
+    updateMood: jest.fn(),
   },
 }));
 

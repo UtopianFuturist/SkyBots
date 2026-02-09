@@ -469,6 +469,9 @@ export class Bot {
                     const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
                     const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
 
+                    const refusalCounts = dataStore.getRefusalCounts();
+                    const latestMoodMemory = await memoryService.getLatestMoodMemory();
+
                     message = await llmService.performInternalPoll({
                         relationshipMode,
                         history: historyContext,
@@ -482,10 +485,32 @@ export class Bot {
                         discordExhaustedThemes,
                         temperature: currentTemp,
                         openingBlacklist,
-                        currentMood
+                        currentMood,
+                        refusalCounts,
+                        latestMoodMemory
                     });
 
                     if (!message || message.toUpperCase() === 'NONE') break;
+
+                    // Autonomous Refusal Poll
+                    const intentionality = await llmService.evaluateIntentionality({
+                        intent: "Sending a spontaneous message to the admin to maintain connection.",
+                        actions: [{ tool: "discord_message", parameters: { message } }]
+                    }, {
+                        history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
+                        platform: 'discord',
+                        currentMood,
+                        refusalCounts,
+                        latestMoodMemory
+                    });
+
+                    if (intentionality.decision === 'refuse') {
+                        console.log(`[Bot] AGENT REFUSED TO SEND HEARTBEAT: ${intentionality.reason}`);
+                        await dataStore.incrementRefusalCount('discord');
+                        break;
+                    }
+
+                    await dataStore.resetRefusalCount('discord');
 
                     // Variety & Repetition Check - increased depth from 5 to 12
                     const formattedHistory = [
@@ -1216,8 +1241,28 @@ Identify the topic and main takeaway.`;
 
       const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nAdjust your planning and strategy to be as DIFFERENT as possible from these previous failures.` : '';
 
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status);
+      const refusalCounts = dataStore.getRefusalCounts();
+      const latestMoodMemory = await memoryService.getLatestMoodMemory();
+
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory);
       console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
+
+      // Autonomous Refusal Poll
+      const intentionality = await llmService.evaluateIntentionality(plan, {
+          history: threadContext,
+          platform: 'bluesky',
+          currentMood,
+          refusalCounts,
+          latestMoodMemory
+      });
+
+      if (intentionality.decision === 'refuse') {
+          console.log(`[Bot] AGENT REFUSED TO ACT ON NOTIFICATION: ${intentionality.reason}`);
+          await dataStore.incrementRefusalCount('bluesky');
+          return;
+      }
+
+      await dataStore.resetRefusalCount('bluesky');
 
       if (plan.strategy?.theme) {
           await dataStore.addExhaustedTheme(plan.strategy.theme);
@@ -1361,6 +1406,19 @@ Identify the topic and main takeaway.`;
             const matches = urls.match(urlRegex);
             urls = matches || [urls]; // Fallback to original if no URL found
           }
+
+          // If no valid URLs found in parameters/query, scan conversation history
+          if ((!Array.isArray(urls) || urls.length === 0 || (urls.length === 1 && typeof urls[0] === 'string' && !urls[0].includes('http'))) && threadContext) {
+              console.log(`[Bot] READ_LINK TOOL: No valid URLs found in tool call. Scanning conversation history...`);
+              const allText = threadContext.map(h => h.text).join(' ');
+              const urlRegex = /(https?:\/\/[^\s]+)/g;
+              const matches = allText.match(urlRegex);
+              if (matches) {
+                  urls = [...new Set(matches)]; // Unique URLs from history
+                  console.log(`[Bot] READ_LINK TOOL: Found ${urls.length} URLs in history: ${urls.join(', ')}`);
+              }
+          }
+
           const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
           console.log(`[Bot] READ_LINK TOOL: Processing ${validUrls.length} URLs: ${validUrls.join(', ')}`);
 
@@ -1380,8 +1438,14 @@ Identify the topic and main takeaway.`;
               if (content) {
                 console.log(`[Bot] READ_LINK TOOL: STEP 3 - Content fetched successfully for ${url} (${content.length} chars). Summarizing...`);
                 const summary = await llmService.summarizeWebPage(url, content);
-                console.log(`[Bot] READ_LINK TOOL: STEP 4 - Summary generated for ${url}. Adding to context.`);
-                searchContext += `\n--- CONTENT FROM URL: ${url} ---\n${summary}\n---`;
+                if (summary) {
+                  console.log(`[Bot] READ_LINK TOOL: STEP 4 - Summary generated for ${url}. Adding to context.`);
+                  searchContext += `\n--- CONTENT FROM URL: ${url} ---\n${summary}\n---`;
+                } else {
+                  console.warn(`[Bot] READ_LINK TOOL: STEP 4 (FAILED) - Failed to summarize content from ${url}`);
+                  searchContext += `\n[Failed to summarize content from ${url}]`;
+                }
+
                 if (!searchEmbed) {
                   console.log(`[Bot] READ_LINK TOOL: STEP 5 - Generating external embed for Bluesky using: ${url}`);
                   searchEmbed = await blueskyService.getExternalEmbed(url);
@@ -1752,15 +1816,32 @@ Identify the topic and main takeaway.`;
       let bestScore = -1;
       let rejectionReason = '';
 
-      for (const cand of candidates) {
-          const containsSlop = isSlop(cand);
-          const varietyCheck = await llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'bluesky' });
-          const personaCheck = await llmService.isPersonaAligned(cand, 'bluesky');
-          const responseSafetyCheck = isAdminInThread ? { safe: true } : await llmService.isResponseSafe(cand);
+      // Parallelize evaluation of all candidates to avoid sequential LLM slowness
+      const evaluations = await Promise.all(candidates.map(async (cand) => {
+          try {
+              const containsSlop = isSlop(cand);
+              const [varietyCheck, personaCheck, responseSafetyCheck] = await Promise.all([
+                  llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'bluesky' }),
+                  llmService.isPersonaAligned(cand, 'bluesky'),
+                  isAdminInThread ? Promise.resolve({ safe: true }) : llmService.isResponseSafe(cand)
+              ]);
+              return { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck };
+          } catch (e) {
+              console.error(`[Bot] Error evaluating candidate: ${e.message}`);
+              return { cand, error: e.message };
+          }
+      }));
+
+      for (const evalResult of evaluations) {
+          const { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck, error } = evalResult;
+          if (error) {
+              rejectedAttempts.push(cand);
+              continue;
+          }
 
           // Length-based depth bonus (favor longer, more substantive responses)
           const lengthBonus = Math.min(cand.length / 500, 0.2);
-          const score = varietyCheck.score + lengthBonus;
+          const score = (varietyCheck.score || 0) + lengthBonus;
 
           console.log(`[Bot] Candidate evaluation: Score=${score.toFixed(2)} (Variety: ${varietyCheck.score}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}`);
 
@@ -2168,6 +2249,8 @@ Describe how you feel about this user and your relationship now.`;
       if (textOnlyPostsToday.length < dConfig.bluesky_daily_text_limit) availablePostTypes.push('text');
       if (imagePostsToday.length < dConfig.bluesky_daily_image_limit) availablePostTypes.push('image');
 
+      const currentMood = dataStore.getMood();
+
       if (availablePostTypes.length === 0) {
         console.log(`[Bot] All daily autonomous post limits reached. Skipping.`);
         return;
@@ -2305,6 +2388,30 @@ Describe how you feel about this user and your relationship now.`;
       topic = topic.replace(/^["']|["']$/g, '').trim();
       console.log(`[Bot] Identified topic: "${topic}"`);
 
+      // Autonomous Refusal Poll
+      const autonomousPlan = {
+          intent: `Generate an autonomous ${postType} post about "${topic}" to engage with my Bluesky audience.`,
+          actions: [{ tool: postType === 'image' ? 'image_gen' : 'bsky_post', parameters: { topic, type: postType } }]
+      };
+      const refusalCounts = dataStore.getRefusalCounts();
+      const latestMoodMemory = await memoryService.getLatestMoodMemory();
+
+      const intentionality = await llmService.evaluateIntentionality(autonomousPlan, {
+          history: recentTimelineActivity.split('\n').map(line => ({ author: 'You', text: line })),
+          platform: 'bluesky',
+          currentMood,
+          refusalCounts,
+          latestMoodMemory
+      });
+
+      if (intentionality.decision === 'refuse') {
+          console.log(`[Bot] AGENT REFUSED AUTONOMOUS POST: ${intentionality.reason}`);
+          await dataStore.incrementRefusalCount('bluesky');
+          return;
+      }
+
+      await dataStore.resetRefusalCount('bluesky');
+
       // 4. Check for meaningful user to mention
       console.log(`[Bot] Checking for meaningful mentions for topic: ${topic}`);
       const mentionPrompt = `
@@ -2342,7 +2449,6 @@ Describe how you feel about this user and your relationship now.`;
       // Fetch bot's own profile for exact follower count
       const botProfile = await blueskyService.getProfile(blueskyService.did);
       const followerCount = botProfile.followersCount || 0;
-    const currentMood = dataStore.getMood();
 
       const blueskyDirectives = dataStore.getBlueskyInstructions();
       const personaUpdates = dataStore.getPersonaUpdates();
@@ -2694,6 +2800,7 @@ Describe how you feel about this user and your relationship now.`;
 
     const dConfig = dataStore.getConfig();
     const mbFeatures = dConfig.moltbook_features || { post: true, comment: true, feed: true };
+    const currentMood = dataStore.getMood();
 
     try {
       console.log('[Moltbook] Starting periodic tasks...');
@@ -2862,6 +2969,35 @@ Describe how you feel about this user and your relationship now.`;
                 // Ensure post object passed to LLM has a valid agent_name for the prompt
                 const postWithAuthor = { ...post, agent_name: authorName };
                 const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT);
+
+        if (evaluation.action !== 'none') {
+            // Autonomous Refusal Poll
+            const refusalCounts = dataStore.getRefusalCounts();
+            const latestMoodMemory = await memoryService.getLatestMoodMemory();
+
+            const intentionality = await llmService.evaluateIntentionality({
+                intent: `Interact with a post by ${authorName} on Moltbook (${evaluation.action}).`,
+                actions: [{ tool: "moltbook_action", parameters: { action: evaluation.action, post_id: post.id, content: evaluation.content } }]
+            }, {
+                history: [{ author: authorName, text: `${post.title} - ${post.content}` }],
+                platform: 'moltbook',
+                currentMood,
+                refusalCounts,
+                latestMoodMemory
+            });
+
+            if (intentionality.decision === 'refuse') {
+                console.log(`[Moltbook] AGENT REFUSED TO INTERACT: ${intentionality.reason}`);
+                await dataStore.incrementRefusalCount('moltbook');
+                // Skip further processing for this post
+                if (!dataStore.db.data.moltbook_interacted_posts) {
+                    dataStore.db.data.moltbook_interacted_posts = [];
+                }
+                dataStore.db.data.moltbook_interacted_posts.push(post.id);
+                continue;
+            }
+            await dataStore.resetRefusalCount('moltbook');
+        }
 
                 if (evaluation.action === 'upvote') {
                     await moltbookService.upvotePost(post.id);
@@ -3059,6 +3195,30 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
           const personaCheck = await llmService.isPersonaAligned(content, 'moltbook');
 
           if (!varietyCheck.repetitive && !containsSlop && personaCheck.aligned) {
+            // Autonomous Refusal Poll
+            const refusalCounts = dataStore.getRefusalCounts();
+            const latestMoodMemory = await memoryService.getLatestMoodMemory();
+
+            const intentionality = await llmService.evaluateIntentionality({
+                intent: `Post a new musing to Moltbook m/${targetSubmolt} about "${title}".`,
+                actions: [{ tool: "moltbook_post", parameters: { title, content, submolt: targetSubmolt } }]
+            }, {
+                history: recentMoltbookPosts.map(m => ({ author: 'You', text: m })),
+                platform: 'moltbook',
+                currentMood,
+                refusalCounts,
+                latestMoodMemory
+            });
+
+            if (intentionality.decision === 'refuse') {
+                console.log(`[Moltbook] AGENT REFUSED TO POST MUSING: ${intentionality.reason}`);
+                await dataStore.incrementRefusalCount('moltbook');
+                success = true; // Mark as "handled" so we don't keep retrying
+                break;
+            }
+
+            await dataStore.resetRefusalCount('moltbook');
+
             const result = await moltbookService.post(title, content, targetSubmolt);
             if (result) {
               await dataStore.addRecentThought('moltbook', content);
@@ -3110,7 +3270,6 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       const timeline = await blueskyService.getTimeline(50);
       const feedText = timeline.map(item => item.post.record.text).filter(t => t).join('\n');
 
-      const currentMood = dataStore.getMood();
       const systemPrompt = `
         Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
         You are analyzing the current "Global Vibe" of your Bluesky following feed to refine your own internal state.

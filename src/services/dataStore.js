@@ -49,6 +49,12 @@ const defaultData = {
     last_update: null
   },
   mood_history: [], // [ { valence, arousal, stability, label, timestamp } ]
+  intentional_refusals: {
+    bluesky: 0,
+    discord: 0,
+    moltbook: 0,
+    global: 0
+  },
   // Dynamic Configuration
   bluesky_daily_text_limit: 20,
   bluesky_daily_image_limit: 5,
@@ -621,6 +627,34 @@ class DataStore {
 
   getMood() {
     return this.db.data.current_mood || defaultData.current_mood;
+  }
+
+  async incrementRefusalCount(platform) {
+    if (!this.db.data.intentional_refusals) {
+      this.db.data.intentional_refusals = { ...defaultData.intentional_refusals };
+    }
+    if (this.db.data.intentional_refusals[platform] !== undefined) {
+      this.db.data.intentional_refusals[platform]++;
+    }
+    this.db.data.intentional_refusals.global++;
+    await this.db.write();
+    console.log(`[DataStore] Refusal count incremented for ${platform}. Counts: ${JSON.stringify(this.db.data.intentional_refusals)}`);
+  }
+
+  async resetRefusalCount(platform) {
+    if (!this.db.data.intentional_refusals) return;
+    if (this.db.data.intentional_refusals[platform] !== undefined) {
+      this.db.data.intentional_refusals[platform] = 0;
+    }
+    // Global reset is optional, but maybe let's keep it cumulative for a while or reset it too?
+    // User said "how many refusals they've potentially done in a row", which implies reset on action.
+    this.db.data.intentional_refusals.global = 0;
+    await this.db.write();
+    console.log(`[DataStore] Refusal count reset for ${platform}.`);
+  }
+
+  getRefusalCounts() {
+    return this.db.data.intentional_refusals || defaultData.intentional_refusals;
   }
 
   async updateConfig(key, value) {

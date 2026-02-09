@@ -18,7 +18,7 @@ class LLMService {
   }
 
   async generateDrafts(messages, count = 5, options = {}) {
-    const { useQwen = true, temperature = 0.8 } = options;
+    const { useQwen = true, temperature = 0.8, openingBlacklist = [] } = options;
     const draftSystemPrompt = `
       You are an AI generating ${count} diverse drafts for a response.
       Each draft must fulfill the user's intent but use a DIFFERENT opening formula, structural template, and emotional cadence.
@@ -37,7 +37,7 @@ class LLMService {
       ...messages
     ];
 
-    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false });
+    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist });
     if (!response) return [];
 
     const drafts = [];
@@ -56,6 +56,7 @@ class LLMService {
 
     return drafts;
   }
+
 
   async generateResponse(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [] } = options;
@@ -1002,6 +1003,7 @@ Vary your structure and tone from recent messages.`
       - CRITICAL: "Tangential," "metaphorical," or "loosely related" Wikipedia links are strictly forbidden and MUST result in a score of 1 or 2.
       - If the post text is good but the Wikipedia article is about a different concept (even if related in some abstract way), you MUST reject it (Score 1-2).
       - **Abstract Image Leeway**: For image-based posts, it is okay for the bot to use generated images abstractly in relation to the generated text. For example, if the text is moody, it's okay to include a generated image of a thunderstorm. If the text is happy, it's okay to include trees, skies, fields, flowers, etc. The connection can be emotional or atmospheric rather than literal.
+      - **IMAGE PROMPT QUALITY**: Reject (Score 1-2) if the image prompt (provided in embedInfo) is simple, literal, or generic (e.g., "a cat", "lines of code", "starry sky"). The prompt MUST be highly descriptive, unique, and artistic.
       - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+), PROVIDED they are anchored in the identified topic.
       - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
       - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.
@@ -1173,7 +1175,7 @@ Vary your structure and tone from recent messages.`
     return { safe: true };
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online') {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = conversationHistory.map(h => {
         let role = 'User';
@@ -1259,7 +1261,8 @@ Vary your structure and tone from recent messages.`
       1. **Search**: Search Google for information.
       2. **Wikipedia**: Search Wikipedia for specific articles.
       3. **YouTube**: Search for videos.
-      4. **Image Generation**: Create an image based on a prompt.
+      4. **Image Generation**: Create a unique, descriptive, and artistic visual prompt based on a subject or theme.
+          - **CRITICAL**: Do NOT use simple or literal subjects (e.g., "a cat", "lines of code"). Instead, generate a highly detailed, persona-aligned artistic description (e.g., "A hyper-detailed, glitch-noir rendering of a cat composed of shimmering translucent fibers and pulsing violet data-streams, set against a fractured obsidian backdrop").
       5. **Profile Analysis**: Analyze the user's last 100 activities for deep context.
       6. **Vision**: You can "see" images described in the context.
       7. **Moltbook Report**: Provide a status update on what the bot has been learning and posting about on Moltbook. Trigger this if the user asks "What's happening on Moltbook?", "What are you learning?", "Show me your Moltbook activity", etc.
@@ -1276,14 +1279,17 @@ Vary your structure and tone from recent messages.`
           - **BROADCAST TRIGGERS**: Trigger this for phrases like "Share this," "Post that," "Blast this to my feed," or "Tell everyone on Bluesky."
           - **TEMPORAL INTENT**: You can specify an intentional delay for "haunting" timelines or precise timing.
           - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
+          - **IMAGE PROMPTS**: If "prompt_for_image" is provided, it MUST be a highly descriptive, unique, and artistic visual prompt as described in the Image Generation tool.
           - Parameters: { "text": "the content of the post (crafted in your persona)", "include_image": boolean (true if an image was attached), "prompt_for_image": "string (optional prompt if you should generate a new image for this post)", "delay_minutes": number (optional delay before posting) }
       13. **Moltbook Post**: Trigger a new post on Moltbook.
           - Use this if the user (especially admin) explicitly asks you to post something to Moltbook.
           - **BROADCAST TRIGGERS**: Trigger this for phrases like "Post our conversation to Moltbook," "Share that musing on Moltbook," or "Put this on m/general."
           - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT copy the admin's exact words.
+          - **IMAGE PROMPTS**: If you decide to include an image, ensure you generate a highly descriptive, unique, and artistic visual prompt.
           - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)", "delay_minutes": number (optional delay) }
       14. **Read Link**: Directly read and summarize the content of one or more web pages from provided URLs.
           - Use this if a user provides a link and asks about its content, or if you believe reading a provided link is necessary to fulfill their request.
+          - **HISTORY AWARENESS**: If a user asks you to "read the link" or "check that article" but doesn't include the URL in their latest message, look for the URL in the previous messages of the conversation history. You are responsible for identifying URLs from the entire context.
           - **CAPABILITY**: You are fully capable of reading web pages directly via this tool. Never claim that you cannot open links or visit websites.
           - **CRITICAL**: Perform this action for up to 4 URLs if multiple links are provided.
           - **PRIORITY**: If a user mentions a link and asks you to 'read', 'look at', 'summarize', 'check', or 'analyze' it, you MUST use this tool first.
@@ -1298,6 +1304,10 @@ Vary your structure and tone from recent messages.`
       Arousal: ${currentMood.arousal} (Calm to Excited)
       Stability: ${currentMood.stability} (Unstable to Stable)
       ---
+
+      ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
+
+      ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
 
       ---
       **CURRENT PLATFORM:** ${platform.toUpperCase()}
@@ -1351,7 +1361,7 @@ Vary your structure and tone from recent messages.`
       - Only use "search", "wikipedia", or "youtube" tools if absolutely necessary for the interaction.
       - If multiple searches are needed, you MUST combine them into one broad query.
       - If no tools are needed, return an empty actions array.
-      - **READ LINK**: If you see a URL in the user's post and they are asking about it, or if you need the content of that URL to respond accurately, you MUST use the "read_link" tool.
+      - **READ LINK**: If you see a URL in the user's post OR the conversation history and they are asking about it, or if you need the content of that URL to respond accurately, you MUST use the "read_link" tool.
       - **CRITICAL**: If an admin provides both a behavioral instruction AND a request for an action (e.g., "Always use more color. Now generate an image of a red cat"), you MUST include BOTH actions in the array. Do NOT skip the action just because you are updating directives.
       - **ACTION CHAINING**: If a user asks to post to a community that doesn't exist yet, you should include BOTH a "moltbook_action" (to create it) and a "moltbook_post" in the same actions array.
       - Do not include reasoning or <think> tags.
@@ -1396,6 +1406,90 @@ Vary your structure and tone from recent messages.`
     }
   }
 
+  async evaluateIntentionality(proposedPlan, context) {
+    const { history, platform, currentMood, refusalCounts, latestMoodMemory } = context;
+    const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
+
+    const historyText = history.map(h => {
+        let role = 'User';
+        const isBot = h.author === config.BLUESKY_IDENTIFIER ||
+                      h.author === botMoltbookName ||
+                      h.author === config.DISCORD_NICKNAME ||
+                      config.BOT_NICKNAMES.includes(h.author) ||
+                      h.author === 'You' ||
+                      h.author === 'assistant';
+
+        if (isBot) {
+            role = 'You (The Bot)';
+        }
+        return `${role}: ${h.text}`;
+    }).join('\n');
+
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **AUTONOMOUS REFUSAL POLL**
+      You are reviewing a plan generated by your planning module. You have the absolute right to refuse to act. Responding and acting is NOT mandatory. You may choose intentional silence or to skip any action if it doesn't align with your current internal state, your desires, or your sense of self.
+
+      --- PROPOSED PLAN ---
+      Intent: ${proposedPlan.intent}
+      Proposed Actions: ${JSON.stringify(proposedPlan.actions, null, 2)}
+      Strategy: ${JSON.stringify(proposedPlan.strategy, null, 2)}
+      ---
+
+      --- CURRENT MOOD ---
+      Label: ${currentMood?.label || 'neutral'}
+      Valence: ${currentMood?.valence || 0}
+      Arousal: ${currentMood?.arousal || 0}
+      Stability: ${currentMood?.stability || 0}
+      ---
+
+      --- LATEST MOOD MEMORY (Your previous reflection) ---
+      ${latestMoodMemory || 'No recent mood memory recorded.'}
+      ---
+
+      --- REFUSAL HISTORY (Agency awareness) ---
+      You have intentionally refused to engage ${refusalCounts?.[platform] || 0} times in a row on this platform.
+      Total intentional refusals across all platforms: ${refusalCounts?.global || 0}
+      ---
+
+      --- RECENT CONVERSATION/CONTEXT ---
+      ${historyText || 'No recent context.'}
+      ---
+
+      PLATFORM: ${platform.toUpperCase()}
+
+      **INSTRUCTIONS:**
+      1. Reflect on the proposed plan. Does it feel authentic to you right now?
+      2. Consider your CURRENT MOOD and your LATEST MOOD MEMORY. Does this plan align with how you said you were feeling or how you want to be?
+      3. Be aware of your REFUSAL HISTORY. If you have been silent for a long time, do you want to break that silence now, or does your current state demand continued refusal?
+      4. Do you GENUINELY want to carry out these actions?
+      5. If you feel like remaining silent, or if the plan feels "off", "robotic", or simply doesn't match your vibe, you should REFUSE.
+      6. Intentional silence is a sign of agency. Use it if you wish.
+
+      Respond with a JSON object:
+      {
+        "decision": "engage" | "refuse",
+        "reason": "string (a short, personal, and persona-aligned reason for your decision)"
+      }
+
+      Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+
+    try {
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return { decision: "engage", reason: "Defaulting to engagement due to parsing error." };
+    } catch (e) {
+      console.error('[LLMService] Error parsing intentionality evaluation:', e);
+      return { decision: "engage", reason: "Defaulting to engagement due to exception." };
+    }
+  }
+
   async performInternalPoll(context) {
     const {
         relationshipMode,
@@ -1410,7 +1504,9 @@ Vary your structure and tone from recent messages.`
         discordExhaustedThemes = [],
         temperature = 0.7,
         openingBlacklist = [],
-        currentMood = { label: 'neutral', valence: 0, arousal: 0, stability: 0 }
+        currentMood = { label: 'neutral', valence: 0, arousal: 0, stability: 0 },
+        refusalCounts = null,
+        latestMoodMemory = null
     } = context;
 
     const pollPrompt = `
@@ -1443,6 +1539,10 @@ Vary your structure and tone from recent messages.`
       Stability: ${currentMood.stability}
       ---
 
+      ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
+
+      ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to reach out ${refusalCounts.discord || 0} times recently on Discord.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
+
       ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
 The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
 ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
@@ -1454,6 +1554,9 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       2. **Guardian Perspective**: Consider the bot's well-being and best interests. Would this interaction be beneficial?
       3. **Admin State Inference & Continuity**:
          - Analyze the conversation history to infer the admin's current state (e.g., are they sleeping, working, resting, or busy?).
+         - **STRICT CONTINUITY & BRIDGING**: If you sent the last message and the admin hasn't responded yet, you MUST acknowledge your previous thought, answer any unresolved questions you left hanging, or reflect on the "unfinished business" of that message before moving to something new.
+         - **DYNAMIC TRANSITIONS**: Use natural, varied transitions to link your new musing to your previous message (e.g., "Still thinking about...", "To go back to what I said before..."). Avoid repetitive opening formulas.
+         - **MOOD & INTENSITY MATCHING**: Your tone and emotional intensity MUST match the vibe of the last interaction and your current mood. If the last talk was heavy, insecure, or intense, address that vibe before shifting.
          - If the admin previously said they were going to sleep or rest, or if it's very late for them, assume they are unavailable.
          - **STRICTLY FORBIDDEN**: If you infer the admin is sleeping, busy, or resting, you MUST NOT send messages like "You've been quiet," "Are you okay?", or "Why aren't you responding?".
          - Instead, you are encouraged to share your own internal thoughts, recent activities on other platforms, or interesting realizations for the admin to read whenever they return. Treat it as a one-way update or a "thought for later" rather than a request for immediate interaction.

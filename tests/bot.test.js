@@ -47,6 +47,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     validateResultRelevance: jest.fn(),
     evaluateConversationVibe: jest.fn(),
     performAgenticPlanning: jest.fn(),
+    evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'engage', reason: 'Engaging for test' }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
     shouldIncludeSensory: jest.fn().mockResolvedValue(false),
@@ -64,6 +65,7 @@ jest.unstable_mockModule('../src/services/moltbookService.js', () => ({
     getFeed: jest.fn(),
     addIdentityKnowledge: jest.fn(),
     getIdentityKnowledge: jest.fn(),
+    getLatestMoodMemory: jest.fn().mockResolvedValue(null),
     db: {
       data: {
         api_key: 'moltbook'
@@ -106,6 +108,9 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     setAdminDid: jest.fn(),
     getMood: jest.fn().mockReturnValue({ label: 'neutral', valence: 0, arousal: 0, stability: 0 }),
     updateMood: jest.fn(),
+    getRefusalCounts: jest.fn().mockReturnValue({ bluesky: 0, discord: 0, moltbook: 0, global: 0 }),
+    incrementRefusalCount: jest.fn(),
+    resetRefusalCount: jest.fn(),
     init: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_daily_text_limit: 20,

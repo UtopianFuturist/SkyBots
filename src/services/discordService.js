@@ -663,8 +663,28 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
                  const exhaustedThemes = [...dataStore.getExhaustedThemes(), ...dataStore.getDiscordExhaustedThemes()];
                  const dConfig = dataStore.getConfig();
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, '', this.status);
+                 const refusalCounts = dataStore.getRefusalCounts();
+                 const latestMoodMemory = await memoryService.getLatestMoodMemory();
+
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, '', this.status, refusalCounts, latestMoodMemory);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
+
+                 // Autonomous Refusal Poll
+                 const intentionality = await llmService.evaluateIntentionality(plan, {
+                     history: history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })),
+                     platform: 'discord',
+                     currentMood,
+                     refusalCounts,
+                     latestMoodMemory
+                 });
+
+                 if (intentionality.decision === 'refuse') {
+                     console.log(`[DiscordService] AGENT REFUSED TO ACT: ${intentionality.reason}`);
+                     await dataStore.incrementRefusalCount('discord');
+                     return;
+                 }
+
+                 await dataStore.resetRefusalCount('discord');
 
                  if (plan.strategy?.theme) {
                      await dataStore.addExhaustedTheme(plan.strategy.theme);
@@ -761,6 +781,19 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              const matches = urls.match(urlRegex);
                              urls = matches || [urls]; // Fallback to original if no URL found
                          }
+
+                         // If no valid URLs found in parameters/query, scan conversation history
+                         if ((!Array.isArray(urls) || urls.length === 0 || (urls.length === 1 && typeof urls[0] === 'string' && !urls[0].includes('http'))) && history) {
+                             console.log(`[DiscordService] READ_LINK TOOL: No valid URLs found in tool call. Scanning conversation history...`);
+                             const allText = history.map(h => h.content).join(' ');
+                             const urlRegex = /(https?:\/\/[^\s]+)/g;
+                             const matches = allText.match(urlRegex);
+                             if (matches) {
+                                 urls = [...new Set(matches)]; // Unique URLs from history
+                                 console.log(`[DiscordService] READ_LINK TOOL: Found ${urls.length} URLs in history: ${urls.join(', ')}`);
+                             }
+                         }
+
                          const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
                          console.log(`[DiscordService] READ_LINK TOOL: Processing ${validUrls.length} URLs: ${validUrls.join(', ')}`);
 
@@ -779,8 +812,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                                  if (content) {
                                      console.log(`[DiscordService] READ_LINK TOOL: STEP 3 - Content fetched successfully for ${url} (${content.length} chars). Summarizing...`);
                                      const summary = await llmService.summarizeWebPage(url, content);
-                                     console.log(`[DiscordService] READ_LINK TOOL: STEP 4 - Summary generated for ${url}. Adding to context.`);
-                                     actionResults.push(`--- CONTENT FROM URL: ${url} ---\n${summary}\n---`);
+                                     if (summary) {
+                                         console.log(`[DiscordService] READ_LINK TOOL: STEP 4 - Summary generated for ${url}. Adding to context.`);
+                                         actionResults.push(`--- CONTENT FROM URL: ${url} ---\n${summary}\n---`);
+                                     } else {
+                                         console.warn(`[DiscordService] READ_LINK TOOL: STEP 4 (FAILED) - Failed to summarize content from ${url}`);
+                                         actionResults.push(`[Failed to summarize content from ${url}]`);
+                                     }
                                  } else {
                                      console.warn(`[DiscordService] READ_LINK TOOL: STEP 3 (FAILED) - Failed to read content from ${url}`);
                                      actionResults.push(`[Failed to read content from ${url}]`);
@@ -1110,14 +1148,31 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      let bestScore = -1;
                      let rejectionReason = '';
 
-                     for (const cand of candidates) {
-                         const containsSlop = isSlop(cand);
-                         const varietyCheck = await llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord' });
-                         const personaCheck = await llmService.isPersonaAligned(cand, 'discord');
+                     // Parallelize evaluation to avoid sequential slowness
+                     const evaluations = await Promise.all(candidates.map(async (cand) => {
+                         try {
+                             const containsSlop = isSlop(cand);
+                             const [varietyCheck, personaCheck] = await Promise.all([
+                                 llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord' }),
+                                 llmService.isPersonaAligned(cand, 'discord')
+                             ]);
+                             return { cand, containsSlop, varietyCheck, personaCheck };
+                         } catch (e) {
+                             console.error(`[DiscordService] Error evaluating candidate: ${e.message}`);
+                             return { cand, error: e.message };
+                         }
+                     }));
+
+                     for (const evalResult of evaluations) {
+                         const { cand, containsSlop, varietyCheck, personaCheck, error } = evalResult;
+                         if (error) {
+                             rejectedAttempts.push(cand);
+                             continue;
+                         }
 
                          // Length-based depth bonus (favor longer, more substantive responses)
                          const lengthBonus = Math.min(cand.length / 500, 0.2); // Up to 0.2 bonus for 500+ chars
-                         const score = varietyCheck.score + lengthBonus;
+                         const score = (varietyCheck.score || 0) + lengthBonus;
 
                          console.log(`[DiscordService] Candidate evaluation: Score=${score.toFixed(2)} (Variety: ${varietyCheck.score}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}`);
 

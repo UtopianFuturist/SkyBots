@@ -315,7 +315,7 @@ export class Bot {
     // 1b. Moltfeed Summary (Every 6 hours)
     const lastMoltfeed = dataStore.getLastMoltfeedSummaryTime();
     const moltfeedDiff = (now.getTime() - lastMoltfeed) / (1000 * 60 * 60);
-    if (moltfeedDiff >= 6 && memoryService.isEnabled() && moltbookService.db.data.api_key) {
+    if (moltfeedDiff >= 6 && memoryService.isEnabled() && moltbookService.db.data.api_key && !moltbookService.isSuspended()) {
         console.log('[Bot] Triggering periodic [MOLTFEED] summary...');
         const summary = await moltbookService.summarizeFeed(25);
         if (summary) {
@@ -586,6 +586,10 @@ export class Bot {
                 const diff = lastPostTime ? nowTs - new Date(lastPostTime).getTime() : cooldown;
                 if (diff >= cooldown) canPost = true;
             } else if (post.platform === 'moltbook') {
+                if (moltbookService.isSuspended()) {
+                    console.log(`[Bot] Scheduled Moltbook post skipped: Account is suspended.`);
+                    continue;
+                }
                 const lastPostAt = moltbookService.db.data.last_post_at;
                 const cooldown = dConfig.moltbook_post_cooldown * 60 * 1000;
                 const diff = lastPostAt ? nowTs - new Date(lastPostAt).getTime() : cooldown;
@@ -2806,6 +2810,13 @@ Describe how you feel about this user and your relationship now.`;
       console.log('[Moltbook] Starting periodic tasks...');
 
       // 1. Check status
+      if (moltbookService.isSuspended()) {
+        const expires = moltbookService.db.data.suspension_expires_at;
+        const timeRemaining = expires ? `until ${new Date(expires).toLocaleString()}` : 'indefinitely';
+        console.log(`[Moltbook] DORMANT MODE: Account is currently suspended ${timeRemaining}. Skipping periodic tasks.`);
+        return;
+      }
+
       const status = await moltbookService.checkStatus();
       if (status !== 'claimed') {
         console.log(`[Moltbook] Agent not yet claimed. Current status: ${status}. Skipping further tasks.`);

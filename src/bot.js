@@ -454,7 +454,7 @@ export class Bot {
                     console.error('[Bot] Error gathering context for heartbeat:', err);
                 }
 
-                let message = null;
+                let pollResult = null;
                 let attempts = 0;
                 let feedback = '';
                 let rejectedAttempts = [];
@@ -472,7 +472,7 @@ export class Bot {
                     const refusalCounts = dataStore.getRefusalCounts();
                     const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-                    message = await llmService.performInternalPoll({
+                    pollResult = await llmService.performInternalPoll({
                         relationshipMode,
                         history: historyContext,
                         recentMemories,
@@ -490,12 +490,15 @@ export class Bot {
                         latestMoodMemory
                     });
 
-                    if (!message || message.toUpperCase() === 'NONE') break;
+                    if (!pollResult || pollResult.decision === 'none') break;
+
+                    const { message, actions } = pollResult;
+                    if (!message) break;
 
                     // Autonomous Refusal Poll
                     const intentionality = await llmService.evaluateIntentionality({
                         intent: "Sending a spontaneous message to the admin to maintain connection.",
-                        actions: [{ tool: "discord_message", parameters: { message } }]
+                        actions: actions && actions.length > 0 ? actions : [{ tool: "discord_message", parameters: { message } }]
                     }, {
                         history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
                         platform: 'discord',
@@ -523,7 +526,31 @@ export class Bot {
                     const personaCheck = await llmService.isPersonaAligned(message, 'discord');
 
                     if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
-                        await discordService.sendSpontaneousMessage(message);
+                        // Execute Heartbeat Tools
+                        const discordOptions = {};
+                        if (actions && actions.length > 0) {
+                            for (const action of actions) {
+                                if (action.tool === 'image_gen') {
+                                    console.log(`[Bot] Heartbeat Action: Generating image for: "${action.query}"`);
+                                    const imgResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
+                                    if (imgResult && imgResult.buffer) {
+                                        discordOptions.files = [{ attachment: imgResult.buffer, name: 'heartbeat_art.jpg' }];
+                                        console.log(`[Bot] Heartbeat image generated successfully.`);
+                                    }
+                                } else if (action.tool === 'get_render_logs') {
+                                    console.log(`[Bot] Heartbeat Action: Internal log check requested.`);
+                                    await renderService.getLogs(action.parameters?.limit || 50);
+                                } else if (action.tool === 'internal_research') {
+                                    console.log(`[Bot] Heartbeat Action: Internal research on: "${action.query}"`);
+                                    const researchResult = await llmService.performInternalResearch(action.query);
+                                    if (researchResult && memoryService.isEnabled()) {
+                                        await memoryService.createMemoryEntry('research', `[RESEARCH] Heartbeat query: ${action.query}. Result: ${researchResult}`);
+                                    }
+                                }
+                            }
+                        }
+
+                        await discordService.sendSpontaneousMessage(message, discordOptions);
                         await dataStore.addRecentThought('discord', message);
 
                         // Extract and record the theme of the sent message to avoid immediate repetition

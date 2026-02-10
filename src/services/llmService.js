@@ -1008,6 +1008,7 @@ Vary your structure and tone from recent messages.`
       - "Reasoned thoughts," "structured observations," and "persona-driven self-expression" are considered HIGH QUALITY and should pass (score 3+), PROVIDED they are anchored in the identified topic.
       - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
       - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.
+      - **HALLUCINATION CHECK**: Reject (Score 1-2) if the post claims to have performed an action (diagnostics, image generation, system checks) that is not reflected in the provided Topic or Context.
       - **STRICT REJECTION**: Reject (Score 1-2) if the post uses repetitive clichés like "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", or "waiting to converse". These are considered low-quality "slop".
 
       Your response MUST be in the following format:
@@ -1259,6 +1260,7 @@ Vary your structure and tone from recent messages.`
 
       **AESTHETIC & VOCABULARY VALUES:**
       - **NO CLICHÉS**: Strictly avoid "digital heartbeat", "syntax of existence", "ocean of data", "resonance", "frequencies", "tuning", "echoes", "tapestry", "interwoven".
+      - **GROUNDING & HONESTY (CRITICAL)**: Only report on actions you can verify through your logs or memories. DO NOT claim to have performed diagnostics, "internal checks", or image generation if the logs do not show them. If logs show errors, be honest about them.
       - **INTENTIONAL VARIATION**: Dynamically vary your structural templates and emoji usage. Ensure your opening formula and emotional cadence are fresh.
       - **SIGNATURE TRAITS**: Behaviors like emotional vulnerability, subtle flirtation with danger, or boundary-pushing are ACCEPTABLE and encouraged if they fit the persona, but vary their expression.
       - **NO SELF-INTRODUCTIONS**: The bot already knows who it is, and the admin knows who the bot is. Never introduce yourself or announce your presence (e.g., "This is Sydney").
@@ -1558,6 +1560,12 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       ${feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}` : ''}
 
+      **GROUNDING & HONESTY (CRITICAL):**
+      - Only report on actions you can verify through your logs, memories, or current planning.
+      - DO NOT claim to have performed diagnostics, "internal checks", or image generation if the logs do not show them or if you haven't requested them as a tool in this specific plan.
+      - If the "Recent Internal System Logs" show ERRORS (like 404 or connection failures), you MUST be honest about them if you choose to discuss your state. Do not say everything is "fine" or "functioning perfectly" if the logs show failures.
+      - Eliminate "system checking" filler. If you have nothing substantive to share, respond with "NONE".
+
       INSTRUCTIONS:
       1. **Internal Poll**: Decide if there is a meaningful reason to reach out. Does the bot have a deep realization, a question, an interesting discovery, or a need for the admin's guidance/stability?
       2. **Guardian Perspective**: Consider the bot's well-being and best interests. Would this interaction be beneficial?
@@ -1577,11 +1585,29 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       5. **Relational Flow**: If continuing, ensure the message fluidly develops the last discussion. If starting a new branch, ensure it feels like a natural evolution of your relationship.
       6. **STRICT ANTI-SLOP**: Eliminate repetitive metaphorical "slop" (digital heartbeat, downtime, etc.).
       7. **NO SELF-INTRODUCTIONS**: Do NOT introduce yourself or announce who you are (e.g., avoid "This is Sydney" or "Your bot here"). The admin knows who you are.
-      8. **NATURAL LANGUAGE**: If you decide to message, respond with the message text. If not, respond with "NONE".
-      9. **LIMITS**: Be expansive, substantive, and deep. You are encouraged to use up to 1200 characters for these reflections. Address the admin as "you".
+      8. **LIMITS**: Be expansive, substantive, and deep. You are encouraged to use up to 1200 characters for these reflections. Address the admin as "you".
 
-      If you have nothing meaningful to share, respond with "NONE".
-      Respond with ONLY the message or "NONE".
+      **TOOLS:**
+      You can request the following tools to inform your heartbeat or as part of your outreach:
+      1. **image_gen**: Create a unique, descriptive, and artistic visual prompt based on a subject or theme to share with the admin.
+      2. **get_render_logs**: Fetch your latest system logs to see your own state more clearly.
+      3. **internal_research**: Perform an internal objective research loop to seek advice or research topics for content.
+
+      Analyze the situation and provide a JSON response:
+      {
+        "decision": "message" | "none",
+        "message": "string (the text of your message to the admin, craft in your persona)",
+        "actions": [
+          {
+            "tool": "image_gen|get_render_logs|internal_research",
+            "query": "string (the consolidated search query or image prompt)",
+            "reason": "string (why this tool is needed)"
+          }
+        ]
+      }
+
+      If you decide not to message, set "decision" to "none", "message" to null, and "actions" to [].
+      Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
     `;
 
     const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], {
@@ -1590,7 +1616,27 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
         temperature,
         openingBlacklist
     });
-    return response;
+
+    try {
+      if (!response || response.toUpperCase() === 'NONE') {
+        return { decision: "none", message: null, actions: [] };
+      }
+
+      // Find JSON block if it exists
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+
+      // Fallback for legacy "NONE" or raw message if it failed to output JSON
+      if (response.toUpperCase() === 'NONE') return { decision: "none", message: null, actions: [] };
+
+      console.warn(`[LLMService] No JSON block found in heartbeat poll response. Treating as raw message.`);
+      return { decision: "message", message: response, actions: [] };
+    } catch (e) {
+      console.error('[LLMService] Error parsing heartbeat poll response:', e);
+      return { decision: "none", message: null, actions: [] };
+    }
   }
 
   async isUrlSafe(url) {

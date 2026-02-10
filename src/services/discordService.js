@@ -1238,13 +1238,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
     }
 
 
-    async sendSpontaneousMessage(content) {
+    async sendSpontaneousMessage(content, options = {}) {
         if (!this.isEnabled || !this.client?.isReady()) return;
 
         try {
             const admin = await this.getAdminUser();
             if (admin) {
-                const result = await this._send(admin, content);
+                const result = await this._send(admin, content, options);
                 if (result) {
                     await dataStore.setDiscordLastReplied(false);
                     console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);

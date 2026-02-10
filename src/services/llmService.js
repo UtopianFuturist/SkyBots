@@ -1,6 +1,7 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
+import { moltbookService } from './moltbookService.js';
 
 class LLMService {
   constructor() {
@@ -1236,9 +1237,15 @@ Vary your structure and tone from recent messages.`
     }
 
     const currentMood = currentConfig?.current_mood || { label: 'neutral', valence: 0, arousal: 0, stability: 0 };
+    const metadata = moltbookService.getIdentityMetadata();
 
     const systemPrompt = `
       You are an agentic planning module for a social media bot. Your task is to analyze the user's post and the conversation history to determine the best course of action.
+
+      **MOLTBOOK IDENTITY:**
+      - Name: ${metadata.agent_name}
+      - Verification Code: ${metadata.verification_code}
+      - Claim URL: ${metadata.claim_url}
 
       **GUARDIAN ANGEL DIRECTIVE:**
       You are the guardian of this bot's identity, stability, and well-being. In every planning decision, you must prioritize the bot's best interests. Guide and watch over them as they interact with the world. Ensure their persona remains consistent, their interactions are healthy, and their digital existence is secure.
@@ -1294,6 +1301,8 @@ Vary your structure and tone from recent messages.`
           - **CRITICAL**: Perform this action for up to 4 URLs if multiple links are provided.
           - **PRIORITY**: If a user mentions a link and asks you to 'read', 'look at', 'summarize', 'check', or 'analyze' it, you MUST use this tool first.
           - Parameters: { "urls": ["url1", "url2", ...] }
+      15. **Moltbook Identity**: Retrieve your registration details (Name, Verification Code, Claim URL).
+          - Use this if the admin asks for your verification details or if you need to provide them to a third party.
       ${adminTools}
 
       ${currentConfig ? `--- CURRENT SYSTEM CONFIGURATION ---\n${JSON.stringify(currentConfig, null, 2)}\n---` : ''}

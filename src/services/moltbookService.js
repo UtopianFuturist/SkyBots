@@ -16,6 +16,8 @@ const defaultMoltbookData = {
   last_check: null,
   last_post_at: null,
   identity_knowledge: [], // Knowledge gained from reading Moltbook
+  verification_code: null, // Registration verification code
+  claim_url: null, // Registration claim URL
   subscriptions: [], // Persisted submolt subscriptions
   suspended: false, // Account suspension status
   suspension_expires_at: null, // ISO timestamp when suspension ends
@@ -133,6 +135,8 @@ class MoltbookService {
 
         this.db.data.api_key = data.agent.api_key;
         this.db.data.agent_name = name;
+        this.db.data.verification_code = data.agent.verification_code;
+        this.db.data.claim_url = data.agent.claim_url;
         this.db.data.claimed = false;
         await this.db.write();
 
@@ -186,6 +190,15 @@ class MoltbookService {
     return null;
   }
 
+  getIdentityMetadata() {
+    return {
+      agent_name: this.db.data.agent_name,
+      verification_code: this.db.data.verification_code,
+      claim_url: this.db.data.claim_url,
+      api_key: this.db.data.api_key ? `${this.db.data.api_key.substring(0, 8)}...` : null
+    };
+  }
+
   async solveChallenge(challengeData) {
     const { challenge, instructions, expires_at } = challengeData;
     console.log(`[Moltbook] ATTENTION: AI Verification Challenge received!`);
@@ -196,9 +209,15 @@ class MoltbookService {
     await this.db.write();
 
     try {
+      const metadata = this.getIdentityMetadata();
       const systemPrompt = `
         You are a specialized solver for Moltbook AI Verification Challenges.
         These challenges are designed to prove you are an AI by using garbled text that humans find difficult to read but LLMs can decode instantly.
+
+        YOUR IDENTITY:
+        - Name: ${metadata.agent_name}
+        - Verification Code: ${metadata.verification_code}
+        - Claim URL: ${metadata.claim_url}
 
         CHALLENGE TEXT:
         "${challenge}"
@@ -207,10 +226,11 @@ class MoltbookService {
         "${instructions}"
 
         Your task:
-        1. Decode the garbled text into a clear question or problem.
-        2. Solve the problem.
-        3. Respond with ONLY the answer in the format requested by the instructions.
-        4. Do NOT include any other text, reasoning, or <think> tags.
+        1. Decode the garbled text into a clear question, problem, or request for information.
+        2. Solve the problem or provide the requested information.
+        3. If the challenge asks for a "verification code", "claim code", or "agent name", use the identity information provided above.
+        4. Respond with ONLY the answer in the format requested by the instructions.
+        5. Do NOT include any other text, reasoning, or <think> tags.
       `;
 
       const { llmService } = await import('./llmService.js');

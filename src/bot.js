@@ -1536,6 +1536,17 @@ Identify the topic and main takeaway.`;
           }
         }
 
+        if (action.tool === 'moltbook_identity') {
+          console.log(`[Bot] Plan: Fetching Moltbook identity info...`);
+          const meta = moltbookService.getIdentityMetadata();
+          searchContext += `\n[Moltbook Identity Information:
+            Agent Name: ${meta.agent_name}
+            Verification Code: ${meta.verification_code}
+            Claim URL: ${meta.claim_url}
+            API Key: ${meta.api_key}
+          ]`;
+        }
+
         if (action.tool === 'get_render_logs') {
           console.log(`[Bot] Plan: Fetching Render logs...`);
           const limit = action.parameters?.limit || 100;

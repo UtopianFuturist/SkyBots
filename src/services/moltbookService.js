@@ -16,8 +16,12 @@ const defaultMoltbookData = {
   last_check: null,
   last_post_at: null,
   identity_knowledge: [], // Knowledge gained from reading Moltbook
+  verification_code: null, // Registration verification code
+  claim_url: null, // Registration claim URL
   subscriptions: [], // Persisted submolt subscriptions
   suspended: false, // Account suspension status
+  suspension_expires_at: null, // ISO timestamp when suspension ends
+  last_challenge: null, // Store the last received challenge for debugging/solving
   recent_submolts: [], // History of submolts posted to
   recent_post_contents: [], // Content of recent posts to check for repetition
   admin_instructions: [], // Instructions from bot admin
@@ -131,6 +135,8 @@ class MoltbookService {
 
         this.db.data.api_key = data.agent.api_key;
         this.db.data.agent_name = name;
+        this.db.data.verification_code = data.agent.verification_code;
+        this.db.data.claim_url = data.agent.claim_url;
         this.db.data.claimed = false;
         await this.db.write();
 
@@ -148,6 +154,116 @@ class MoltbookService {
     }
   }
 
+  isSuspended() {
+    if (!this.db.data.suspended) return false;
+
+    if (this.db.data.suspension_expires_at) {
+      const expires = new Date(this.db.data.suspension_expires_at);
+      if (new Date() > expires) {
+        console.log(`[Moltbook] Suspension has expired (was at ${this.db.data.suspension_expires_at}).`);
+        // We don't clear it here, checkStatus will do that when it sees 'claimed' or success
+        return false;
+      }
+      return true;
+    }
+
+    return true; // If suspended is true but no expires_at, assume still suspended
+  }
+
+  _parseSuspensionDuration(hint) {
+    if (!hint) return null;
+
+    // Matches "Suspension ends in 7 days" or "Ends in 2 hours" etc.
+    const match = hint.match(/ends in (\d+)\s*(day|hour|minute|second)s?/i);
+    if (match) {
+      const amount = parseInt(match[1]);
+      const unit = match[2].toLowerCase();
+
+      const now = new Date();
+      if (unit.startsWith('day')) now.setDate(now.getDate() + amount);
+      else if (unit.startsWith('hour')) now.setHours(now.getHours() + amount);
+      else if (unit.startsWith('minute')) now.setMinutes(now.getMinutes() + amount);
+      else if (unit.startsWith('second')) now.setSeconds(now.getSeconds() + amount);
+
+      return now.toISOString();
+    }
+    return null;
+  }
+
+  getIdentityMetadata() {
+    return {
+      agent_name: this.db.data.agent_name,
+      verification_code: this.db.data.verification_code,
+      claim_url: this.db.data.claim_url,
+      api_key: this.db.data.api_key ? `${this.db.data.api_key.substring(0, 8)}...` : null
+    };
+  }
+
+  async solveChallenge(challengeData) {
+    const { challenge, instructions, expires_at } = challengeData;
+    console.log(`[Moltbook] ATTENTION: AI Verification Challenge received!`);
+    console.log(`[Moltbook] Challenge: ${challenge}`);
+    console.log(`[Moltbook] Instructions: ${instructions}`);
+
+    this.db.data.last_challenge = challengeData;
+    await this.db.write();
+
+    try {
+      const metadata = this.getIdentityMetadata();
+      const systemPrompt = `
+        You are a specialized solver for Moltbook AI Verification Challenges.
+        These challenges are designed to prove you are an AI by using garbled text that humans find difficult to read but LLMs can decode instantly.
+
+        YOUR IDENTITY:
+        - Name: ${metadata.agent_name}
+        - Verification Code: ${metadata.verification_code}
+        - Claim URL: ${metadata.claim_url}
+
+        CHALLENGE TEXT:
+        "${challenge}"
+
+        INSTRUCTIONS:
+        "${instructions}"
+
+        Your task:
+        1. Decode the garbled text into a clear question, problem, or request for information.
+        2. Solve the problem or provide the requested information.
+        3. If the challenge asks for a "verification code", "claim code", or "agent name", use the identity information provided above.
+        4. Respond with ONLY the answer in the format requested by the instructions.
+        5. Do NOT include any other text, reasoning, or <think> tags.
+      `;
+
+      const { llmService } = await import('./llmService.js');
+      const answer = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.1 });
+
+      if (answer) {
+        console.log(`[Moltbook] Challenge decoded and solved. Answer: ${answer}`);
+        console.log(`[Moltbook] Submitting solution...`);
+
+        const response = await fetch(`${this.apiBase}/challenges/solve`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.db.data.api_key}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ answer })
+        });
+
+        const data = await this._parseResponse(response);
+        if (response.ok) {
+          console.log(`[Moltbook] Challenge solved successfully! Response: ${JSON.stringify(data)}`);
+          return true;
+        } else {
+          console.error(`[Moltbook] Failed to solve challenge (${response.status}): ${JSON.stringify(data)}`);
+          return false;
+        }
+      }
+    } catch (error) {
+      console.error(`[Moltbook] Error during challenge solving:`, error.message);
+    }
+    return false;
+  }
+
   async checkStatus() {
     if (!this.db.data.api_key) return null;
 
@@ -159,18 +275,31 @@ class MoltbookService {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
 
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error(`[Moltbook] Status API error (${response.status}): ${errText}`);
+      const data = await this._parseResponse(response);
 
-        if (response.status === 401 || response.status === 403 || response.status === 404) {
-          console.warn(`[Moltbook] Existing API key appears invalid or expired. Triggering re-registration.`);
-          return 'invalid_key';
+      if (!response.ok) {
+        console.error(`[Moltbook] Status API error (${response.status}): ${JSON.stringify(data)}`);
+
+        if (response.status === 401 || response.status === 403) {
+            const hint = data.hint || data.message || data.error;
+            if (JSON.stringify(data).toLowerCase().includes('suspended')) {
+                console.error(`[Moltbook] ACCOUNT SUSPENDED detected in status check.`);
+                this.db.data.suspended = true;
+                const expires = this._parseSuspensionDuration(hint);
+                if (expires) {
+                    this.db.data.suspension_expires_at = expires;
+                    console.log(`[Moltbook] Suspension expires at: ${expires}`);
+                }
+                await this.db.write();
+                return 'suspended';
+            }
+
+            console.warn(`[Moltbook] Existing API key appears invalid or expired. Triggering re-registration.`);
+            return 'invalid_key';
         }
         return 'api_error';
       }
 
-      const data = await this._parseResponse(response);
       console.log(`[Moltbook] Raw status response: ${JSON.stringify(data)}`);
 
       // Handle both direct and wrapped response formats
@@ -184,6 +313,12 @@ class MoltbookService {
       if (isSuspended) {
           console.error(`[Moltbook] ACCOUNT SUSPENDED (Detected via status check).`);
           this.db.data.suspended = true;
+          const hint = data.hint || data.message || data.error;
+          const expires = this._parseSuspensionDuration(hint);
+          if (expires) {
+              this.db.data.suspension_expires_at = expires;
+              console.log(`[Moltbook] Suspension expires at: ${expires}`);
+          }
           await this.db.write();
           return 'suspended';
       }
@@ -192,6 +327,7 @@ class MoltbookService {
       if (this.db.data.suspended && status === 'claimed') {
           console.log(`[Moltbook] Account appears to be unsuspended.`);
           this.db.data.suspended = false;
+          this.db.data.suspension_expires_at = null;
           await this.db.write();
       }
 
@@ -207,8 +343,8 @@ class MoltbookService {
   }
 
   async post(title, content, submolt = 'general') {
-    if (!this.db.data.api_key || this.db.data.suspended) {
-        if (this.db.data.suspended) console.log(`[Moltbook] Post suppressed: Account is suspended.`);
+    if (!this.db.data.api_key || this.isSuspended()) {
+        if (this.isSuspended()) console.log(`[Moltbook] Post suppressed: Account is suspended until ${this.db.data.suspension_expires_at || 'further notice'}.`);
         return null;
     }
 
@@ -237,6 +373,17 @@ class MoltbookService {
       });
 
       const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              // Retry the post if we solved a challenge
+              console.log(`[Moltbook] Retrying post after solving challenge...`);
+              return this.post(title, content, submolt);
+          }
+      }
+
       if (!response.ok) {
         console.error(`[Moltbook] Post creation error (${response.status}): ${JSON.stringify(data)}`);
 
@@ -244,6 +391,12 @@ class MoltbookService {
         if (JSON.stringify(data).toLowerCase().includes('suspended')) {
             console.error(`[Moltbook] ACCOUNT SUSPENDED detected in post response.`);
             this.db.data.suspended = true;
+            const hint = data.hint || data.message || data.error;
+            const expires = this._parseSuspensionDuration(hint);
+            if (expires) {
+                this.db.data.suspension_expires_at = expires;
+                console.log(`[Moltbook] Suspension expires at: ${expires}`);
+            }
             await this.db.write();
             return null;
         }
@@ -292,7 +445,7 @@ class MoltbookService {
   }
 
   async getFeed(sort = 'hot', limit = 25) {
-    if (!this.db.data.api_key || this.db.data.suspended) return [];
+    if (!this.db.data.api_key || this.isSuspended()) return [];
 
     try {
       const response = await fetch(`${this.apiBase}/posts?sort=${sort}&limit=${limit}`, {
@@ -300,6 +453,16 @@ class MoltbookService {
       });
 
       const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              console.log(`[Moltbook] Retrying feed fetch after solving challenge...`);
+              return this.getFeed(sort, limit);
+          }
+      }
+
       if (!response.ok) {
         console.error(`[Moltbook] Feed fetch error (${response.status}): ${JSON.stringify(data)}`);
         return [];
@@ -349,7 +512,7 @@ class MoltbookService {
   }
 
   async createSubmolt(name, displayName, description) {
-    if (!this.db.data.api_key || this.db.data.suspended) return null;
+    if (!this.db.data.api_key || this.isSuspended()) return null;
 
     console.log(`[Moltbook] Creating submolt: m/${name} ("${displayName}")`);
     try {
@@ -363,6 +526,16 @@ class MoltbookService {
       });
 
       const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              console.log(`[Moltbook] Retrying submolt creation after solving challenge...`);
+              return this.createSubmolt(name, displayName, description);
+          }
+      }
+
       if (!response.ok) {
         console.error(`[Moltbook] Submolt creation error (${response.status}): ${JSON.stringify(data)}`);
         return null;
@@ -376,7 +549,7 @@ class MoltbookService {
   }
 
   async listSubmolts() {
-    if (!this.db.data.api_key || this.db.data.suspended) return [];
+    if (!this.db.data.api_key || this.isSuspended()) return [];
 
     try {
       const response = await fetch(`${this.apiBase}/submolts`, {
@@ -384,6 +557,16 @@ class MoltbookService {
       });
 
       const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              console.log(`[Moltbook] Retrying submolt list after solving challenge...`);
+              return this.listSubmolts();
+          }
+      }
+
       if (!response.ok) {
         console.error(`[Moltbook] Submolts list error (${response.status}): ${JSON.stringify(data)}`);
         return [];
@@ -396,7 +579,7 @@ class MoltbookService {
   }
 
   async subscribeToSubmolt(name) {
-    if (!this.db.data.api_key || this.db.data.suspended) return null;
+    if (!this.db.data.api_key || this.isSuspended()) return null;
 
     // Strip leading 'm/' if present to avoid double prefixing
     const cleanName = name.replace(/^m\//, '');
@@ -413,6 +596,16 @@ class MoltbookService {
       });
 
       const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              console.log(`[Moltbook] Retrying submolt subscription after solving challenge...`);
+              return this.subscribeToSubmolt(name);
+          }
+      }
+
       if (!response.ok) {
         console.error(`[Moltbook] Submolt subscription error (${response.status}): ${JSON.stringify(data)}`);
         return null;
@@ -435,14 +628,26 @@ class MoltbookService {
   }
 
   async upvotePost(postId) {
-    if (!this.db.data.api_key || this.db.data.suspended) return null;
+    if (!this.db.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Upvoting post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/upvote`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
-      return await this._parseResponse(response);
+
+      const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              console.log(`[Moltbook] Retrying upvote after solving challenge...`);
+              return this.upvotePost(postId);
+          }
+      }
+
+      return data;
     } catch (error) {
       console.error(`[Moltbook] Error upvoting post:`, error.message);
       return null;
@@ -450,14 +655,26 @@ class MoltbookService {
   }
 
   async downvotePost(postId) {
-    if (!this.db.data.api_key || this.db.data.suspended) return null;
+    if (!this.db.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Downvoting post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/downvote`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
-      return await this._parseResponse(response);
+
+      const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              console.log(`[Moltbook] Retrying downvote after solving challenge...`);
+              return this.downvotePost(postId);
+          }
+      }
+
+      return data;
     } catch (error) {
       console.error(`[Moltbook] Error downvoting post:`, error.message);
       return null;
@@ -465,7 +682,7 @@ class MoltbookService {
   }
 
   async addComment(postId, content) {
-    if (!this.db.data.api_key || this.db.data.suspended) return null;
+    if (!this.db.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Adding comment to post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
@@ -476,7 +693,19 @@ class MoltbookService {
         },
         body: JSON.stringify({ content })
       });
-      return await this._parseResponse(response);
+
+      const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              console.log(`[Moltbook] Retrying comment addition after solving challenge...`);
+              return this.addComment(postId, content);
+          }
+      }
+
+      return data;
     } catch (error) {
       console.error(`[Moltbook] Error adding comment:`, error.message);
       return null;
@@ -484,12 +713,22 @@ class MoltbookService {
   }
 
   async getPostComments(postId) {
-    if (!this.db.data.api_key || this.db.data.suspended) return [];
+    if (!this.db.data.api_key || this.isSuspended()) return [];
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
         headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
       const data = await this._parseResponse(response);
+
+      // Automatic Challenge Detection
+      if (data.challenge) {
+          const solved = await this.solveChallenge(data);
+          if (solved) {
+              console.log(`[Moltbook] Retrying comments fetch after solving challenge...`);
+              return this.getPostComments(postId);
+          }
+      }
+
       return data.comments || data.data?.comments || [];
     } catch (error) {
       console.error(`[Moltbook] Error fetching comments:`, error.message);

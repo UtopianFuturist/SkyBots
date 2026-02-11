@@ -19,7 +19,7 @@ class LLMService {
   }
 
   async generateDrafts(messages, count = 5, options = {}) {
-    const { useQwen = true, temperature = 0.8, openingBlacklist = [] } = options;
+    const { useQwen = true, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [] } = options;
     const draftSystemPrompt = `
       You are an AI generating ${count} diverse drafts for a response.
       Each draft must fulfill the user's intent but use a DIFFERENT opening formula, structural template, and emotional cadence.
@@ -38,7 +38,7 @@ class LLMService {
       ...messages
     ];
 
-    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist });
+    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints });
     if (!response) return [];
 
     const drafts = [];
@@ -60,7 +60,7 @@ class LLMService {
 
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [] } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [] } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useQwen ? this.qwenModel : this.model;
 
@@ -92,6 +92,18 @@ ${openingBlacklist.map(o => `- "${o}"`).join('\n')}
 Choose a completely different way to open your message.`;
     }
 
+    if (tropeBlacklist.length > 0) {
+        systemContent += `\n\n**CRITICAL: FORBIDDEN METAPHORS & TROPES**
+You have used the following concepts/phrases too frequently. You ARE FORBIDDEN from using them in this response. Pivot to completely new imagery and rhetorical structures:
+${tropeBlacklist.map(t => `- "${t}"`).join('\n')}`;
+    }
+
+    if (additionalConstraints.length > 0) {
+        systemContent += `\n\n**VARIETY CONSTRAINTS (REJECTION FEEDBACK)**:
+Your previous attempts were rejected for the following reasons. You MUST strictly adhere to these constraints to pass the next variety check:
+${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
+    }
+
     systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
 
     let finalMessages = preface_system_prompt
@@ -103,11 +115,13 @@ Choose a completely different way to open your message.`;
 
     // If we're not prefacing the full system prompt, but have a blacklist or specific instructions,
     // we should still inject them as a system message to ensure variety.
-    if (!preface_system_prompt && (openingBlacklist.length > 0)) {
+    if (!preface_system_prompt && (openingBlacklist.length > 0 || tropeBlacklist.length > 0 || additionalConstraints.length > 0)) {
         const constraintMsg = {
             role: "system",
             content: `**DYNAMIC CONSTRAINTS**:
 ${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH: ${openingBlacklist.map(o => `"${o}"`).join(', ')}` : ''}
+${tropeBlacklist.length > 0 ? `FORBIDDEN TROPES/METAPHORS: ${tropeBlacklist.map(t => `"${t}"`).join(', ')}` : ''}
+${additionalConstraints.length > 0 ? `REJECTION FEEDBACK TO OBEY: ${additionalConstraints.join('; ')}` : ''}
 Vary your structure and tone from recent messages.`
         };
         // Inject at the beginning
@@ -1201,14 +1215,17 @@ Vary your structure and tone from recent messages.`
       **INSTRUCTIONS:**
       1. Reflect on the user's post and the conversation context.
       2. Based on your CURRENT MOOD and REFUSAL HISTORY, what is your "gut feeling" about how to handle this?
-      3. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
-      4. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
-      5. The goal is to ensure the final agentic plan is aligned with your integrity so it's less likely to be rejected later.
+      3. **Trope & Pattern Extraction**: Analyze the provided conversation history. Identify any rhetorical templates (e.g., "I'm not X, I'm Y"), recurring metaphors (e.g., "jagged," "weapon," "mirror"), or specific phrases you have used too frequently in your recent messages.
+      4. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
+      5. **DIVERSIFICATION**: Explicitly list phrases or concepts to AVOID in the next response to prevent "template copying."
+      6. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
+      7. The goal is to ensure the final agentic plan is aligned with your integrity and offers fresh variety so it's less likely to be rejected later.
 
       Respond with a JSON object:
       {
         "intuition": "string (a summary of your gut feeling)",
         "suggestions": ["suggestion 1", "suggestion 2", ...],
+        "trope_blacklist": ["phrase 1", "metaphor 1", "structural pattern 1"],
         "desire": "engage|abstain|defend|question"
       }
 
@@ -1217,7 +1234,7 @@ Vary your structure and tone from recent messages.`
 
     const messages = [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `User Post: "${userPost}"\n\nContext:\n${conversationHistory.slice(-5).map(h => `${h.author}: ${h.text}`).join('\n')}` }
+        { role: 'user', content: `User Post: "${userPost}"\n\nContext (Last 15 interactions):\n${conversationHistory.slice(-15).map(h => `${h.author}: ${h.text}`).join('\n')}` }
     ];
 
     const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false });

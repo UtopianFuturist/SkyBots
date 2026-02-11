@@ -1281,6 +1281,7 @@ Identify the topic and main takeaway.`;
     const performedQueries = new Set();
     let imageGenFulfilled = false;
     let responseText = null;
+    const additionalConstraints = [];
 
     const relRating = dataStore.getUserRating(handle);
     const recentBotMsgsInThread = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER);
@@ -1878,9 +1879,21 @@ Identify the topic and main takeaway.`;
       let candidates = [];
       if (attempts === 1) {
           console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
-          candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist });
+          candidates = await llmService.generateDrafts(attemptMessages, 5, {
+              useQwen: true,
+              temperature: currentTemp,
+              openingBlacklist,
+              tropeBlacklist: prePlanning?.trope_blacklist || [],
+              additionalConstraints
+          });
       } else {
-          const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist });
+          const singleResponse = await llmService.generateResponse(attemptMessages, {
+              useQwen: true,
+              temperature: currentTemp,
+              openingBlacklist,
+              tropeBlacklist: prePlanning?.trope_blacklist || [],
+              additionalConstraints
+          });
           if (singleResponse) candidates = [singleResponse];
       }
 
@@ -1939,6 +1952,25 @@ Identify the topic and main takeaway.`;
                                     (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                     (!responseSafetyCheck.safe ? "Failed safety check." :
                                     (varietyCheck.feedback || "Too similar to recent history.")));
+
+                  // Accumulate variety feedback as hard constraints
+                  if (varietyCheck.repetitive && varietyCheck.feedback) {
+                      additionalConstraints.push(varietyCheck.feedback);
+
+                      // Automated Trope Exhaustion: If we are struggling, pivot themes
+                      if (additionalConstraints.length >= 3) {
+                          try {
+                              const themePrompt = `Identify the core concept or metaphor that is being repeated in this feedback and suggest a 1-2 word theme to blacklist: "${varietyCheck.feedback}". Respond with ONLY the theme.`;
+                              const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
+                              if (theme) {
+                                  console.log(`[Bot] Automated Trope Exhaustion: Adding "${theme}" to exhausted themes.`);
+                                  await dataStore.addExhaustedTheme(theme);
+                              }
+                          } catch (e) {
+                              console.error('[Bot] Error in automated trope exhaustion:', e);
+                          }
+                      }
+                  }
               }
               rejectedAttempts.push(cand);
           }
@@ -2521,6 +2553,7 @@ Describe how you feel about this user and your relationship now.`;
       const MAX_ATTEMPTS = 5;
       let feedback = '';
       let rejectedAttempts = [];
+      const additionalConstraints = [];
 
       // Opening Phrase Blacklist - Capture both 5 and 10 word prefixes for stronger variation
       const openingBlacklist = [
@@ -2676,7 +2709,13 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], {
+              max_tokens: 4000,
+              temperature: currentTemp,
+              openingBlacklist,
+              tropeBlacklist: prePlanning?.trope_blacklist || [],
+              additionalConstraints
+          });
 
           embed = {
             $type: 'app.bsky.embed.images',
@@ -2710,7 +2749,13 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], {
+              max_tokens: 4000,
+              temperature: currentTemp,
+              openingBlacklist,
+              tropeBlacklist: prePlanning?.trope_blacklist || [],
+              additionalConstraints
+          });
         }
 
         if (postContent) {
@@ -2744,6 +2789,24 @@ Describe how you feel about this user and your relationship now.`;
             feedback = containsSlop ? "Contains repetitive metaphorical 'slop'." :
                        (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                        (varietyCheck.feedback || "Too similar to your recent history."));
+
+            if (varietyCheck.repetitive && varietyCheck.feedback) {
+                additionalConstraints.push(varietyCheck.feedback);
+
+                // Automated Trope Exhaustion
+                if (additionalConstraints.length >= 3) {
+                    try {
+                        const themePrompt = `Identify the core concept or metaphor being repeated: "${varietyCheck.feedback}". Respond with ONLY a 1-2 word theme to blacklist.`;
+                        const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
+                        if (theme) {
+                            console.log(`[Bot] Automated Trope Exhaustion (Autonomous): Adding "${theme}" to exhausted themes.`);
+                            await dataStore.addExhaustedTheme(theme);
+                        }
+                    } catch (e) {
+                        console.error('[Bot] Error in automated trope exhaustion:', e);
+                    }
+                }
+            }
 
             rejectedAttempts.push(postContent);
             postContent = null; // Clear to prevent accidental posting of rejected content
@@ -2843,7 +2906,13 @@ Describe how you feel about this user and your relationship now.`;
             EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
-        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: 0.8, openingBlacklist });
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], {
+            max_tokens: 4000,
+            temperature: 0.8,
+            openingBlacklist,
+            tropeBlacklist: prePlanning?.trope_blacklist || [],
+            additionalConstraints
+        });
         if (postContent) {
           postContent = sanitizeThinkingTags(postContent);
           postContent = sanitizeCharacterCount(postContent);

@@ -651,7 +651,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
         const messages = [
             { role: 'system', content: systemPrompt },
-            ...history.slice(-20).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content }))
+            ...history.slice(-20).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: `${h.role === 'assistant' ? 'Assistant (Self)' : 'User (Admin)'}: ${h.content}` }))
         ];
 
         try {
@@ -667,7 +667,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
                  // NEW: Pre-Planning Loop
-                 const prePlanning = await llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, latestMoodMemory);
+                 const prePlanning = await llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, latestMoodMemory);
 
                  let planAttempts = 0;
                  const MAX_PLAN_ATTEMPTS = 3;
@@ -678,12 +678,12 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      planAttempts++;
                      console.log(`[DiscordService] Admin Planning Attempt ${planAttempts}/${MAX_PLAN_ATTEMPTS}`);
 
-                     plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
+                     plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
                      console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                      // Autonomous Refusal Poll
                      const intentionality = await llmService.evaluateIntentionality(plan, {
-                         history: history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })),
+                         history: history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })),
                          platform: 'discord',
                          currentMood,
                          refusalCounts,

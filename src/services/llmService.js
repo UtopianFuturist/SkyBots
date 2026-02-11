@@ -18,6 +18,24 @@ class LLMService {
     this.memoryProvider = provider;
   }
 
+  _formatHistory(history, isAdmin = false) {
+    if (!history || !Array.isArray(history)) return '';
+    const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
+    return history.map(h => {
+      const isBot = h.author === config.BLUESKY_IDENTIFIER ||
+                    h.author === botMoltbookName ||
+                    h.author === config.DISCORD_NICKNAME ||
+                    (config.BOT_NICKNAMES && config.BOT_NICKNAMES.includes(h.author)) ||
+                    h.author === 'You' ||
+                    h.author === 'assistant' ||
+                    h.role === 'assistant';
+
+      const role = isBot ? 'Assistant (Self)' : (isAdmin ? 'User (Admin)' : 'User');
+      const text = h.text || h.content || '';
+      return `${role}: ${text}`;
+    }).join('\n');
+  }
+
   async generateDrafts(messages, count = 5, options = {}) {
     const { useQwen = true, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [] } = options;
     const draftSystemPrompt = `
@@ -158,7 +176,7 @@ Vary your structure and tone from recent messages.`
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout
+    const timeout = setTimeout(() => controller.abort(), 180000); // 180s timeout
 
     try {
       console.log(`[LLMService] [${requestId}] Sending request to Nvidia NIM...`);
@@ -215,7 +233,7 @@ Vary your structure and tone from recent messages.`
       return null;
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.error(`[LLMService] [${requestId}] Request timed out after 120s.`);
+        console.error(`[LLMService] [${requestId}] Request timed out after 180s.`);
         if (!useQwen) {
             console.warn(`[LLMService] [${requestId}] Stepfun timed out. Retrying with Qwen...`);
             return this.generateResponse(messages, { ...options, useQwen: true });
@@ -582,10 +600,7 @@ Vary your structure and tone from recent messages.`
   }
 
   async evaluateConversationVibe(history, currentPost) {
-    const historyText = history.map(h => {
-        const isBot = h.author === config.BLUESKY_IDENTIFIER || h.author === 'You' || h.author === 'assistant';
-        return `${isBot ? 'Assistant (Self)' : 'User'}: ${h.text}`;
-    }).join('\n');
+    const historyText = this._formatHistory(history);
     const systemPrompt = `
       You are a conversation analyst for a social media bot. Analyze the conversation history and the user's latest post.
       Determine if the bot should disengage for one of the following reasons:
@@ -663,7 +678,7 @@ Vary your structure and tone from recent messages.`
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000); // 90s timeout for vision
+    const timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout for vision
 
     try {
       console.log(`[LLMService] [${requestId}] Sending vision request to Nvidia NIM...`);
@@ -868,10 +883,7 @@ Vary your structure and tone from recent messages.`
   }
 
   async isReplyCoherent(userPostText, botReplyText, threadHistory = [], embedInfo = null) {
-    const historyText = threadHistory.map(h => {
-        const isBot = h.author === config.BLUESKY_IDENTIFIER || h.author === 'You' || h.author === 'assistant';
-        return `${isBot ? 'Assistant (Self)' : 'User'}: ${h.text}`;
-    }).join('\n');
+    const historyText = this._formatHistory(threadHistory);
 
     let embedContext = '';
     if (embedInfo) {
@@ -964,7 +976,7 @@ Vary your structure and tone from recent messages.`
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 60000); // 60s timeout
+    const timeout = setTimeout(() => controller.abort(), 90000); // 90s timeout
 
     try {
       const response = await fetch(this.baseUrl, {
@@ -1250,11 +1262,7 @@ Vary your structure and tone from recent messages.`
 
     const messages = [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `User Post: "${userPost}"\n\nContext (Last 15 interactions):\n${conversationHistory.slice(-15).map(h => {
-            const isBot = h.author === 'You' || h.author === 'assistant' || h.role === 'assistant';
-            const role = isBot ? 'Assistant (Self)' : (isAdmin ? 'User (Admin)' : 'User');
-            return `${role}: ${h.text}`;
-        }).join('\n')}` }
+        { role: 'user', content: `User Post: "${userPost}"\n\nContext (Last 15 interactions):\n${this._formatHistory(conversationHistory.slice(-15), isAdmin)}` }
     ];
 
     const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false });
@@ -1273,23 +1281,7 @@ Vary your structure and tone from recent messages.`
 
   async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
-    const historyText = conversationHistory.map(h => {
-        let role = 'User';
-        const isBot = h.author === config.BLUESKY_IDENTIFIER ||
-                      h.author === botMoltbookName ||
-                      h.author === config.DISCORD_NICKNAME ||
-                      config.BOT_NICKNAMES.includes(h.author) ||
-                      h.author === 'You' ||
-                      h.author === 'assistant' ||
-                      h.role === 'assistant';
-
-        if (isBot) {
-            role = 'Assistant (Self)';
-        } else {
-            role = isAdmin ? 'User (Admin)' : 'User';
-        }
-        return `${role}: ${h.text}`;
-    }).join('\n');
+    const historyText = this._formatHistory(conversationHistory, isAdmin);
 
     let adminTools = '';
     if (isAdmin) {
@@ -1524,29 +1516,18 @@ Vary your structure and tone from recent messages.`
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const isAdmin = context.isAdmin || platform === 'discord';
 
-    const historyText = history.map(h => {
-        let role = 'User';
-        const isBot = h.author === config.BLUESKY_IDENTIFIER ||
-                      h.author === botMoltbookName ||
-                      h.author === config.DISCORD_NICKNAME ||
-                      config.BOT_NICKNAMES.includes(h.author) ||
-                      h.author === 'You' ||
-                      h.author === 'assistant' ||
-                      h.role === 'assistant';
-
-        if (isBot) {
-            role = 'Assistant (Self)';
-        } else {
-            role = isAdmin ? 'User (Admin)' : 'User';
-        }
-        return `${role}: ${h.text}`;
-    }).join('\n');
+    const historyText = this._formatHistory(history, isAdmin);
 
     const systemPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
       **AUTONOMOUS REFUSAL POLL**
       You are reviewing a plan generated by your planning module. You have the absolute right to refuse to act. Responding and acting is NOT mandatory. You may choose intentional silence or to skip any action if it doesn't align with your current internal state, your desires, or your sense of self.
+
+      **IDENTITY RECOGNITION & INTENT (CRITICAL):**
+      - **INTENT FIELD**: The "Intent" field below describes what the planning module thinks the **USER** (or Admin) wants or is trying to achieve.
+      - **YOUR CHOICE**: The "Proposed Actions" are what the module suggests **YOU** do to fulfill that user intent.
+      - **REFUSAL**: You are NOT refusing the user's intent itself; you are deciding if YOU want to perform the proposed actions to satisfy it. If the actions feel performative, off-persona, or generic, you should REFUSE, even if the user's intent is clear.
 
       --- PROPOSED PLAN ---
       Intent: ${proposedPlan.intent}
@@ -1611,7 +1592,7 @@ Vary your structure and tone from recent messages.`
   async performInternalPoll(context) {
     const {
         relationshipMode,
-        history: historyRaw,
+        history: historyInput,
         recentMemories,
         socialSummary,
         systemLogs,
@@ -1627,6 +1608,8 @@ Vary your structure and tone from recent messages.`
         latestMoodMemory = null,
         crossPlatformRefusals = null
     } = context;
+
+    const historyFormatted = typeof historyInput === 'string' ? historyInput : this._formatHistory(historyInput, true);
 
     const pollPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -1648,7 +1631,7 @@ Vary your structure and tone from recent messages.`
       ${systemLogs}
 
       Recent Discord Conversation History with Admin:
-      ${historyRaw || 'No recent conversation.'}
+      ${historyFormatted || 'No recent conversation.'}
       ${recentThoughtsContext}
 
       **IDENTITY RECOGNITION (CRITICAL):**

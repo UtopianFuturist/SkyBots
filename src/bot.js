@@ -430,7 +430,7 @@ export class Bot {
 
                 const recentMemories = memoryService.formatMemoriesForPrompt();
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
-                const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'User (Admin)'}: ${h.content}`).join('\n');
+                const historyContext = history.slice(-20);
                 const recentThoughts = dataStore.getRecentThoughts();
                 const discordExhaustedThemes = dataStore.getDiscordExhaustedThemes();
                 const currentMood = dataStore.getMood();

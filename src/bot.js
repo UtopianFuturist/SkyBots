@@ -524,7 +524,8 @@ export class Bot {
                         platform: 'discord',
                         currentMood,
                         refusalCounts,
-                        latestMoodMemory
+                        latestMoodMemory,
+                        feedback: retryContext
                     });
 
                     if (intentionality.decision === 'refuse') {
@@ -1308,7 +1309,8 @@ Identify the topic and main takeaway.`;
           platform: 'bluesky',
           currentMood,
           refusalCounts,
-          latestMoodMemory
+          latestMoodMemory,
+          feedback: retryContext
       });
 
       if (intentionality.decision === 'refuse') {
@@ -3398,7 +3400,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                 platform: 'moltbook',
                 currentMood,
                 refusalCounts,
-                latestMoodMemory
+                latestMoodMemory,
+                feedback: retryContext
             });
 
             if (intentionality.decision === 'refuse') {

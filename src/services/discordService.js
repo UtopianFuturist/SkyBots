@@ -687,7 +687,8 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          platform: 'discord',
                          currentMood,
                          refusalCounts,
-                         latestMoodMemory
+                         latestMoodMemory,
+                         feedback: planFeedback
                      });
 
                      if (intentionality.decision === 'refuse') {

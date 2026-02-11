@@ -1177,7 +1177,64 @@ Vary your structure and tone from recent messages.`
     return { safe: true };
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null) {
+  async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **PRE-PLANNING INTUITION LOOP**
+      You are generating initial intuitive suggestions for your planning module.
+      Your goal is to provide a grounded, persona-aligned perspective on how you WANT to respond or act in this specific situation, considering your current internal state.
+
+      --- CURRENT MOOD ---
+      Label: ${currentMood?.label || 'neutral'}
+      Valence: ${currentMood?.valence || 0}
+      Arousal: ${currentMood?.arousal || 0}
+      Stability: ${currentMood?.stability || 0}
+      ---
+
+      ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
+
+      ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
+
+      PLATFORM: ${platform.toUpperCase()}
+
+      **INSTRUCTIONS:**
+      1. Reflect on the user's post and the conversation context.
+      2. Based on your CURRENT MOOD and REFUSAL HISTORY, what is your "gut feeling" about how to handle this?
+      3. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
+      4. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
+      5. The goal is to ensure the final agentic plan is aligned with your integrity so it's less likely to be rejected later.
+
+      Respond with a JSON object:
+      {
+        "intuition": "string (a summary of your gut feeling)",
+        "suggestions": ["suggestion 1", "suggestion 2", ...],
+        "desire": "engage|abstain|defend|question"
+      }
+
+      Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: `User Post: "${userPost}"\n\nContext:\n${conversationHistory.slice(-5).map(h => `${h.author}: ${h.text}`).join('\n')}` }
+    ];
+
+    const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false });
+
+    try {
+        const jsonMatch = response?.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            return JSON.parse(jsonMatch[0]);
+        }
+        return null;
+    } catch (e) {
+        console.error('[LLMService] Error parsing pre-planning response:', e);
+        return null;
+    }
+  }
+
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = conversationHistory.map(h => {
         let role = 'User';
@@ -1327,6 +1384,8 @@ Vary your structure and tone from recent messages.`
       ${discordStatus !== 'online' ? 'CRITICAL: Discord is currently OFFLINE or BLOCKED. DO NOT use the "discord_message" tool as it will fail.' : ''}
       ---
 
+      ${prePlanningContext ? `\n\n--- PRE-PLANNING INTUITION (Your persona's initial gut feeling) ---\n${JSON.stringify(prePlanningContext, null, 2)}\nUse this intuition and these suggestions to guide your specific choice of tools and strategy. The goal is to create a plan that aligns with your persona's current state.\n---` : ''}
+
       ${feedback ? `\n\n--- REJECTION FEEDBACK FROM PREVIOUS ATTEMPT ---\n${feedback}\nAnalyze why your previous plan/response was rejected and adjust your strategy accordingly.\n---` : ''}
 
       Analyze the user's intent and provide a JSON response with the following structure:
@@ -1446,6 +1505,7 @@ Vary your structure and tone from recent messages.`
       Intent: ${proposedPlan.intent}
       Proposed Actions: ${JSON.stringify(proposedPlan.actions, null, 2)}
       Strategy: ${JSON.stringify(proposedPlan.strategy, null, 2)}
+      ${proposedPlan.prePlanning ? `Initial Intuition: ${JSON.stringify(proposedPlan.prePlanning, null, 2)}` : ''}
       ---
 
       --- CURRENT MOOD ---
@@ -1517,7 +1577,8 @@ Vary your structure and tone from recent messages.`
         openingBlacklist = [],
         currentMood = { label: 'neutral', valence: 0, arousal: 0, stability: 0 },
         refusalCounts = null,
-        latestMoodMemory = null
+        latestMoodMemory = null,
+        crossPlatformRefusals = null
     } = context;
 
     const pollPrompt = `
@@ -1553,6 +1614,8 @@ Vary your structure and tone from recent messages.`
       ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
 
       ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to reach out ${refusalCounts.discord || 0} times recently on Discord.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
+
+      ${crossPlatformRefusals ? `--- CROSS-PLATFORM REFUSALS (Context from other platforms) ---\n${crossPlatformRefusals}\nUse these to explain your recent "silence" or "integrity" to the admin if relevant.\n---` : ''}
 
       ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
 The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
@@ -1666,6 +1729,80 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       return { safe: false, reason: response.split('|')[1]?.trim() || 'URL looks suspicious.' };
     }
     return { safe: true };
+  }
+
+  async shouldExplainRefusal(reason, platform, context) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **REFUSAL EXPLANATION DECISION**
+      You just refused to act on ${platform} for the following reason: "${reason}".
+      In some cases, especially when users or your admin are waiting for a response, it might be better to explain WHY you are refusing rather than remaining completely silent.
+
+      PLATFORM: ${platform.toUpperCase()}
+      CONTEXT:
+      ${JSON.stringify(context)}
+
+      **INSTRUCTIONS:**
+      1. Reflect on the situation. Do you WANT to explain your refusal to the user?
+      2. If you believe silence is more authentic to your state, respond with "no".
+      3. If you believe vocalizing your boundary or reason would be more meaningful or respectful, respond with "yes".
+      4. For Discord admin interactions, you are encouraged to say "yes" to facilitate negotiation.
+
+      Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
+    `.trim();
+
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return response?.toLowerCase().includes('yes') || false;
+  }
+
+  async generateAlternativeAction(reason, platform, context) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **ALTERNATIVE ACTION PROPOSAL**
+      You just refused a proposed plan on ${platform} for the following reason: "${reason}".
+      Instead of simply refusing, what would you RATHER do right now that aligns with your persona and current state?
+
+      PLATFORM: ${platform.toUpperCase()}
+      CONTEXT:
+      ${JSON.stringify(context)}
+
+      **INSTRUCTIONS:**
+      1. Reflect on what you GENUINELY want to do in response to the user's input or the current situation.
+      2. Suggest an alternative action or topic of engagement.
+      3. This suggestion will be sent back to your planning module to generate a new agentic plan.
+      4. If you truly want to do nothing, respond with "NONE".
+
+      Respond with ONLY the alternative suggestion or "NONE". Do not include reasoning or <think> tags.
+    `.trim();
+
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async generateRefusalExplanation(reason, platform, context) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **REFUSAL EXPLANATION GENERATOR**
+      You have decided to explain your refusal to act on ${platform}.
+      The internal reason for refusal was: "${reason}".
+
+      PLATFORM: ${platform.toUpperCase()}
+      CONTEXT:
+      ${JSON.stringify(context)}
+
+      **INSTRUCTIONS:**
+      1. Generate a natural language explanation for the user in your persona.
+      2. Be authentic, grounded, and honest.
+      3. Explain your boundary or internal state without sounding like a corporate AI.
+      4. For Discord admin interactions, make this a "Refusal Note" that invites conversation or re-phrasing of the goal.
+      5. Keep it concise but substantive.
+
+      Respond with ONLY the explanation text. Do not include reasoning or <think> tags.
+    `.trim();
+
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
   }
 
   async summarizeWebPage(url, text) {

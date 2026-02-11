@@ -209,7 +209,8 @@ class RenderService {
         'Autonomous post eligibility',
         'Learned something new',
         'Moltbook Activity Report',
-        'Social history'
+        'Social history',
+        'REFUSED'
     ];
 
     const planningLines = lines.filter(line =>

@@ -324,6 +324,15 @@ export class Bot {
         }
     }
 
+    // 1d. Mental Reflection (Every 6 hours)
+    const lastMental = dataStore.getLastMentalReflectionTime();
+    const mentalDiff = (now.getTime() - lastMental) / (1000 * 60 * 60);
+    if (mentalDiff >= 6 && memoryService.isEnabled()) {
+        console.log('[Bot] Triggering periodic [MENTAL] reflection...');
+        await this.performMentalReflection();
+        await dataStore.updateLastMentalReflectionTime(now.getTime());
+    }
+
     const dConfig = dataStore.getConfig();
 
     // 1c. Mood Sync (Every 2 hours)
@@ -472,6 +481,13 @@ export class Bot {
                     const refusalCounts = dataStore.getRefusalCounts();
                     const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
+                    // Gather refusal reasons from other platforms for context
+                    const refusalLogs = await renderService.getPlanningLogs(50);
+                    const crossPlatformRefusals = refusalLogs.split('\n')
+                        .filter(line => line.includes('REFUSED') && !line.includes('[DiscordService]'))
+                        .slice(-5)
+                        .join('\n');
+
                     pollResult = await llmService.performInternalPoll({
                         relationshipMode,
                         history: historyContext,
@@ -487,7 +503,8 @@ export class Bot {
                         openingBlacklist,
                         currentMood,
                         refusalCounts,
-                        latestMoodMemory
+                        latestMoodMemory,
+                        crossPlatformRefusals
                     });
 
                     if (!pollResult || pollResult.decision === 'none') break;
@@ -496,9 +513,12 @@ export class Bot {
                     if (!message) break;
 
                     // Autonomous Refusal Poll
+                    const prePlanning = await llmService.performPrePlanning(message, [], null, 'discord', currentMood, refusalCounts, latestMoodMemory);
+
                     const intentionality = await llmService.evaluateIntentionality({
                         intent: "Sending a spontaneous message to the admin to maintain connection.",
-                        actions: actions && actions.length > 0 ? actions : [{ tool: "discord_message", parameters: { message } }]
+                        actions: actions && actions.length > 0 ? actions : [{ tool: "discord_message", parameters: { message } }],
+                        prePlanning
                     }, {
                         history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
                         platform: 'discord',
@@ -1275,7 +1295,10 @@ Identify the topic and main takeaway.`;
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory);
+      // NEW: Pre-Planning Loop
+      const prePlanning = await llmService.performPrePlanning(text, threadContext, imageAnalysisResult, 'bluesky', currentMood, refusalCounts, latestMoodMemory);
+
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning);
       console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
 
       // Autonomous Refusal Poll
@@ -1290,6 +1313,24 @@ Identify the topic and main takeaway.`;
       if (intentionality.decision === 'refuse') {
           console.log(`[Bot] AGENT REFUSED TO ACT ON NOTIFICATION: ${intentionality.reason}`);
           await dataStore.incrementRefusalCount('bluesky');
+
+          // Option to generate alternative action
+          const alternative = await llmService.generateAlternativeAction(intentionality.reason, 'bluesky', { handle, text });
+          if (alternative && alternative.toUpperCase() !== 'NONE') {
+              console.log(`[Bot] Alternative action proposed: "${alternative}". Re-planning...`);
+              feedback = `Your previous plan was refused: ${intentionality.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
+              continue; // Trigger re-planning with alternative suggestion
+          }
+
+          // Option to explain refusal
+          const shouldExplain = await llmService.shouldExplainRefusal(intentionality.reason, 'bluesky', { handle, text });
+          if (shouldExplain) {
+              const explanation = await llmService.generateRefusalExplanation(intentionality.reason, 'bluesky', { handle, text });
+              if (explanation) {
+                  console.log(`[Bot] Explaining refusal to @${handle}: "${explanation}"`);
+                  await blueskyService.postReply(notif, explanation);
+              }
+          }
           return;
       }
 
@@ -2438,7 +2479,12 @@ Describe how you feel about this user and your relationship now.`;
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-      const intentionality = await llmService.evaluateIntentionality(autonomousPlan, {
+      // NEW: Pre-Planning for Autonomous Post
+      const prePlanning = await llmService.performPrePlanning(topic, [], null, 'bluesky', currentMood, refusalCounts, latestMoodMemory);
+      // For now we don't use pre-planning to re-generate autonomousPlan in the same way, but we could if needed.
+      // But we can pass it to evaluation.
+
+      const intentionality = await llmService.evaluateIntentionality({ ...autonomousPlan, prePlanning }, {
           history: recentTimelineActivity.split('\n').map(line => ({ author: 'You', text: line })),
           platform: 'bluesky',
           currentMood,
@@ -3024,9 +3070,12 @@ Describe how you feel about this user and your relationship now.`;
             const refusalCounts = dataStore.getRefusalCounts();
             const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
+            const prePlanning = await llmService.performPrePlanning(`${post.title} - ${post.content}`, [], null, 'moltbook', currentMood, refusalCounts, latestMoodMemory);
+
             const intentionality = await llmService.evaluateIntentionality({
                 intent: `Interact with a post by ${authorName} on Moltbook (${evaluation.action}).`,
-                actions: [{ tool: "moltbook_action", parameters: { action: evaluation.action, post_id: post.id, content: evaluation.content } }]
+                actions: [{ tool: "moltbook_action", parameters: { action: evaluation.action, post_id: post.id, content: evaluation.content } }],
+                prePlanning
             }, {
                 history: [{ author: authorName, text: `${post.title} - ${post.content}` }],
                 platform: 'moltbook',
@@ -3248,9 +3297,12 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             const refusalCounts = dataStore.getRefusalCounts();
             const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
+            const prePlanning = await llmService.performPrePlanning(content, [], null, 'moltbook', currentMood, refusalCounts, latestMoodMemory);
+
             const intentionality = await llmService.evaluateIntentionality({
                 intent: `Post a new musing to Moltbook m/${targetSubmolt} about "${title}".`,
-                actions: [{ tool: "moltbook_post", parameters: { title, content, submolt: targetSubmolt } }]
+                actions: [{ tool: "moltbook_post", parameters: { title, content, submolt: targetSubmolt } }],
+                prePlanning
             }, {
                 history: recentMoltbookPosts.map(m => ({ author: 'You', text: m })),
                 platform: 'moltbook',
@@ -3310,6 +3362,28 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       }
     } catch (error) {
       await this._handleError(error, 'Moltbook Tasks');
+    }
+  }
+
+  async performMentalReflection() {
+    try {
+      const mood = dataStore.getMood();
+      const refusalCounts = dataStore.getRefusalCounts();
+
+      // Get recent planning logs to see what was refused and why
+      const logs = await renderService.getPlanningLogs(50);
+      const filteredLogs = logs.split('\n').filter(line => line.includes('REFUSED')).join('\n');
+
+      const context = `
+Current Mood: ${mood.label} (Valence: ${mood.valence}, Arousal: ${mood.arousal}, Stability: ${mood.stability})
+Refusal Counts: ${JSON.stringify(refusalCounts)}
+Recent Refusal Logs:
+${filteredLogs || 'No recent refusal logs found.'}
+      `;
+
+      await memoryService.createMemoryEntry('mental', context);
+    } catch (error) {
+      console.error('[Bot] Error during mental reflection:', error);
     }
   }
 

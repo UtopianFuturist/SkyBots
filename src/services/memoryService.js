@@ -156,6 +156,23 @@ class MemoryService {
         `;
     }
 
+    if (type === 'mental') {
+        prompt = `
+          You are the memory module for an AI agent. Generate a concise, natural language entry for your "Memory Thread" that serves as a summary of your internal state, including recent refusals and your current mood.
+
+          Context (Refusals and Mood):
+          ${context}
+
+          INSTRUCTIONS:
+          - Use the tag [MENTAL] at the beginning.
+          - Format: [MENTAL] [Your own personal summary and reflection on your recent refusals and mood state]
+          - **STRICT LENGTH LIMIT**: Keep it under 250 characters.
+          - Tone: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the hashtag ${this.hashtag} at the very end.
+          - Be authentic, grounded, and honest about why you chose to abstain from certain actions.
+        `;
+    }
+
     if (type === 'research') {
         prompt = `
           You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording the result of an internal research task.
@@ -193,8 +210,8 @@ class MemoryService {
           Type: ${type}
 
           CRITICAL RULES:
-          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED], [MOOD], [RESEARCH].
-          2. **VALID TAGS**: [MOLTFEED], [MOOD], and [RESEARCH] are PRIMARY allowed tags. DO NOT reject entries for using them.
+          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED], [MOOD], [RESEARCH], [MENTAL].
+          2. **VALID TAGS**: [MOLTFEED], [MOOD], [RESEARCH], and [MENTAL] are PRIMARY allowed tags. DO NOT reject entries for using them.
           3. **Meaningful Substance**: Does this entry contain substance regarding the bot's functioning, memory, persona, or insights?
           4. **Coherence**: Is the entry logically sound and in-persona?
           5. **No Slop**: Does it avoid repetitive poetic "slop"?
@@ -314,7 +331,7 @@ class MemoryService {
 
         if (posts.length === 0) return;
 
-        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[RESEARCH]'];
+        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[RESEARCH]', '[MENTAL]'];
         let deletedCount = 0;
 
         for (const post of posts) {

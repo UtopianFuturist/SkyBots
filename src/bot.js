@@ -2542,7 +2542,7 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
           currentMood,
           refusalCounts,
           latestMoodMemory,
-          isAdmin: isAdminInThread
+          isAdmin: false
       });
 
       if (intentionality.decision === 'refuse') {

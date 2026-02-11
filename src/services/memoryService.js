@@ -94,6 +94,10 @@ class MemoryService {
         prompt = `
           You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing a recent interaction.
 
+          **IDENTITY RECOGNITION (CRITICAL):**
+          - In the interaction context, distinguish clearly between what the user SAID and what the bot (Assistant) said or predicted.
+          - **DO NOT** record a bot's prediction or hypothesis as a fact of the user's input. Only record information actually provided by the user.
+
           Interaction Context:
           ${context}
 

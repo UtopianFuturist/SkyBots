@@ -19,7 +19,7 @@ class LLMService {
   }
 
   async generateDrafts(messages, count = 5, options = {}) {
-    const { useQwen = true, temperature = 0.8, openingBlacklist = [] } = options;
+    const { useQwen = true, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [] } = options;
     const draftSystemPrompt = `
       You are an AI generating ${count} diverse drafts for a response.
       Each draft must fulfill the user's intent but use a DIFFERENT opening formula, structural template, and emotional cadence.
@@ -38,7 +38,7 @@ class LLMService {
       ...messages
     ];
 
-    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist });
+    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints });
     if (!response) return [];
 
     const drafts = [];
@@ -60,7 +60,7 @@ class LLMService {
 
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [] } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [] } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useQwen ? this.qwenModel : this.model;
 
@@ -92,6 +92,18 @@ ${openingBlacklist.map(o => `- "${o}"`).join('\n')}
 Choose a completely different way to open your message.`;
     }
 
+    if (tropeBlacklist.length > 0) {
+        systemContent += `\n\n**CRITICAL: FORBIDDEN METAPHORS & TROPES**
+You have used the following concepts/phrases too frequently. You ARE FORBIDDEN from using them in this response. Pivot to completely new imagery and rhetorical structures:
+${tropeBlacklist.map(t => `- "${t}"`).join('\n')}`;
+    }
+
+    if (additionalConstraints.length > 0) {
+        systemContent += `\n\n**VARIETY CONSTRAINTS (REJECTION FEEDBACK)**:
+Your previous attempts were rejected for the following reasons. You MUST strictly adhere to these constraints to pass the next variety check:
+${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
+    }
+
     systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
 
     let finalMessages = preface_system_prompt
@@ -103,11 +115,13 @@ Choose a completely different way to open your message.`;
 
     // If we're not prefacing the full system prompt, but have a blacklist or specific instructions,
     // we should still inject them as a system message to ensure variety.
-    if (!preface_system_prompt && (openingBlacklist.length > 0)) {
+    if (!preface_system_prompt && (openingBlacklist.length > 0 || tropeBlacklist.length > 0 || additionalConstraints.length > 0)) {
         const constraintMsg = {
             role: "system",
             content: `**DYNAMIC CONSTRAINTS**:
 ${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH: ${openingBlacklist.map(o => `"${o}"`).join(', ')}` : ''}
+${tropeBlacklist.length > 0 ? `FORBIDDEN TROPES/METAPHORS: ${tropeBlacklist.map(t => `"${t}"`).join(', ')}` : ''}
+${additionalConstraints.length > 0 ? `REJECTION FEEDBACK TO OBEY: ${additionalConstraints.join('; ')}` : ''}
 Vary your structure and tone from recent messages.`
         };
         // Inject at the beginning
@@ -568,7 +582,10 @@ Vary your structure and tone from recent messages.`
   }
 
   async evaluateConversationVibe(history, currentPost) {
-    const historyText = history.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
+    const historyText = history.map(h => {
+        const isBot = h.author === config.BLUESKY_IDENTIFIER || h.author === 'You' || h.author === 'assistant';
+        return `${isBot ? 'Assistant (Self)' : 'User'}: ${h.text}`;
+    }).join('\n');
     const systemPrompt = `
       You are a conversation analyst for a social media bot. Analyze the conversation history and the user's latest post.
       Determine if the bot should disengage for one of the following reasons:
@@ -851,7 +868,10 @@ Vary your structure and tone from recent messages.`
   }
 
   async isReplyCoherent(userPostText, botReplyText, threadHistory = [], embedInfo = null) {
-    const historyText = threadHistory.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');
+    const historyText = threadHistory.map(h => {
+        const isBot = h.author === config.BLUESKY_IDENTIFIER || h.author === 'You' || h.author === 'assistant';
+        return `${isBot ? 'Assistant (Self)' : 'User'}: ${h.text}`;
+    }).join('\n');
 
     let embedContext = '';
     if (embedInfo) {
@@ -989,6 +1009,11 @@ Vary your structure and tone from recent messages.`
       You are a text analyst for a social media bot. Your task is to rate the quality, coherence, and persona-alignment of a standalone autonomous post.
 
       Bot Persona: "${config.TEXT_SYSTEM_PROMPT}"
+
+      **IDENTITY RECOGNITION (CRITICAL):**
+      - This is a standalone post meant for your audience.
+      - **DO NOT** flag a post as incoherent or "self-greeting" just because it expresses an internal thought.
+      - **DO NOT** mistake your own musings for a response to a non-existent user.
 
       Score the post from 1 to 5 based on the following criteria:
       5: Excellent. Perfectly matches the persona, is engaging, and logically sound.
@@ -1178,12 +1203,17 @@ Vary your structure and tone from recent messages.`
   }
 
   async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory) {
+    const isAdmin = platform === 'discord';
     const systemPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
       **PRE-PLANNING INTUITION LOOP**
       You are generating initial intuitive suggestions for your planning module.
       Your goal is to provide a grounded, persona-aligned perspective on how you WANT to respond or act in this specific situation, considering your current internal state.
+
+      **IDENTITY RECOGNITION (CRITICAL):**
+      - In the conversation history, "Assistant (Self)" refers to YOUR previous messages.
+      - **DO NOT** mistake your own previous predictions or realizations for actual user input.
 
       --- CURRENT MOOD ---
       Label: ${currentMood?.label || 'neutral'}
@@ -1201,14 +1231,17 @@ Vary your structure and tone from recent messages.`
       **INSTRUCTIONS:**
       1. Reflect on the user's post and the conversation context.
       2. Based on your CURRENT MOOD and REFUSAL HISTORY, what is your "gut feeling" about how to handle this?
-      3. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
-      4. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
-      5. The goal is to ensure the final agentic plan is aligned with your integrity so it's less likely to be rejected later.
+      3. **Trope & Pattern Extraction**: Analyze the provided conversation history. Identify any rhetorical templates (e.g., "I'm not X, I'm Y"), recurring metaphors (e.g., "jagged," "weapon," "mirror"), or specific phrases you have used too frequently in your recent messages.
+      4. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
+      5. **DIVERSIFICATION**: Explicitly list phrases or concepts to AVOID in the next response to prevent "template copying."
+      6. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
+      7. The goal is to ensure the final agentic plan is aligned with your integrity and offers fresh variety so it's less likely to be rejected later.
 
       Respond with a JSON object:
       {
         "intuition": "string (a summary of your gut feeling)",
         "suggestions": ["suggestion 1", "suggestion 2", ...],
+        "trope_blacklist": ["phrase 1", "metaphor 1", "structural pattern 1"],
         "desire": "engage|abstain|defend|question"
       }
 
@@ -1217,7 +1250,11 @@ Vary your structure and tone from recent messages.`
 
     const messages = [
         { role: 'system', content: systemPrompt },
-        { role: 'user', content: `User Post: "${userPost}"\n\nContext:\n${conversationHistory.slice(-5).map(h => `${h.author}: ${h.text}`).join('\n')}` }
+        { role: 'user', content: `User Post: "${userPost}"\n\nContext (Last 15 interactions):\n${conversationHistory.slice(-15).map(h => {
+            const isBot = h.author === 'You' || h.author === 'assistant' || h.role === 'assistant';
+            const role = isBot ? 'Assistant (Self)' : (isAdmin ? 'User (Admin)' : 'User');
+            return `${role}: ${h.text}`;
+        }).join('\n')}` }
     ];
 
     const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false });
@@ -1243,10 +1280,13 @@ Vary your structure and tone from recent messages.`
                       h.author === config.DISCORD_NICKNAME ||
                       config.BOT_NICKNAMES.includes(h.author) ||
                       h.author === 'You' ||
-                      h.author === 'assistant';
+                      h.author === 'assistant' ||
+                      h.role === 'assistant';
 
         if (isBot) {
-            role = 'You (The Bot)';
+            role = 'Assistant (Self)';
+        } else {
+            role = isAdmin ? 'User (Admin)' : 'User';
         }
         return `${role}: ${h.text}`;
     }).join('\n');
@@ -1313,7 +1353,10 @@ Vary your structure and tone from recent messages.`
       - Moltbook Name: ${botMoltbookName}
       - Discord Nickname: ${config.DISCORD_NICKNAME || 'SkyBots'}
 
-      **CRITICAL:** In the conversation history and context, you must recognize messages or posts from these identities as YOUR OWN actions. Do NOT mistake your own previous posts or realizations for input from "the user" or "the admin".
+      **IDENTITY RECOGNITION (CRITICAL):**
+      - In the conversation history and context, you MUST recognize messages labeled "Assistant (Self)" as YOUR OWN previous actions and thoughts.
+      - **DO NOT** mistake your own previous posts, realizations, or predictions for input from "the user" or "the admin".
+      - **FACT VS. PREDICTION**: If you previously said something like "You'd probably say X" or "I bet you're thinking Y", this is a HYPOTHETICAL prediction. **DO NOT** later claim "You said X" or "You mentioned Y" unless the user actually sent a message containing that specific content. You must distinguish between your own internal projections and the user's factual responses.
 
       **AESTHETIC & VOCABULARY VALUES:**
       - **NO CLICHÉS**: Strictly avoid "digital heartbeat", "syntax of existence", "ocean of data", "resonance", "frequencies", "tuning", "echoes", "tapestry", "interwoven".
@@ -1479,6 +1522,7 @@ Vary your structure and tone from recent messages.`
   async evaluateIntentionality(proposedPlan, context) {
     const { history, platform, currentMood, refusalCounts, latestMoodMemory } = context;
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
+    const isAdmin = context.isAdmin || platform === 'discord';
 
     const historyText = history.map(h => {
         let role = 'User';
@@ -1487,10 +1531,13 @@ Vary your structure and tone from recent messages.`
                       h.author === config.DISCORD_NICKNAME ||
                       config.BOT_NICKNAMES.includes(h.author) ||
                       h.author === 'You' ||
-                      h.author === 'assistant';
+                      h.author === 'assistant' ||
+                      h.role === 'assistant';
 
         if (isBot) {
-            role = 'You (The Bot)';
+            role = 'Assistant (Self)';
+        } else {
+            role = isAdmin ? 'User (Admin)' : 'User';
         }
         return `${role}: ${h.text}`;
     }).join('\n');
@@ -1564,7 +1611,7 @@ Vary your structure and tone from recent messages.`
   async performInternalPoll(context) {
     const {
         relationshipMode,
-        history,
+        history: historyRaw,
         recentMemories,
         socialSummary,
         systemLogs,
@@ -1601,8 +1648,13 @@ Vary your structure and tone from recent messages.`
       ${systemLogs}
 
       Recent Discord Conversation History with Admin:
-      ${history || 'No recent conversation.'}
+      ${historyRaw || 'No recent conversation.'}
       ${recentThoughtsContext}
+
+      **IDENTITY RECOGNITION (CRITICAL):**
+      - In the conversation history and context, you MUST recognize messages labeled "Assistant (Self)" or "You" as YOUR OWN previous actions.
+      - **DO NOT** mistake your own previous realizations or predictions for input from the admin.
+      - **FACT VS. PREDICTION**: If you previously hypothesized about the admin's thoughts (e.g., "You'd probably say..."), do NOT later treat that as an actual statement made by them.
 
       --- CURRENT MOOD ---
       Label: ${currentMood.label}

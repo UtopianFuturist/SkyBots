@@ -38,6 +38,7 @@ const defaultData = {
   discord_exhausted_themes: [], // [ { theme, timestamp } ]
   lastMemoryCleanupTime: 0,
   lastMoltfeedSummaryTime: 0,
+  lastMentalReflectionTime: 0,
   moltbook_comments_today: 0,
   last_moltbook_comment_date: null,
   recent_moltbook_comments: [],
@@ -476,6 +477,15 @@ class DataStore {
     await this.db.write();
   }
 
+  getLastMentalReflectionTime() {
+    return this.db.data.lastMentalReflectionTime || 0;
+  }
+
+  async updateLastMentalReflectionTime(timestamp) {
+    this.db.data.lastMentalReflectionTime = timestamp;
+    await this.db.write();
+  }
+
   async incrementMoltbookCommentCount() {
     const today = new Date().toDateString();
     if (this.db.data.last_moltbook_comment_date !== today) {
@@ -637,6 +647,16 @@ class DataStore {
       this.db.data.intentional_refusals[platform]++;
     }
     this.db.data.intentional_refusals.global++;
+
+    // Refusal-Driven Mood Shift: Increase stability, decrease valence
+    const currentMood = this.getMood();
+    const newMood = {
+        ...currentMood,
+        valence: Math.max(-1, currentMood.valence - 0.1),
+        stability: Math.min(1, currentMood.stability + 0.1)
+    };
+    await this.updateMood(newMood);
+
     await this.db.write();
     console.log(`[DataStore] Refusal count incremented for ${platform}. Counts: ${JSON.stringify(this.db.data.intentional_refusals)}`);
   }

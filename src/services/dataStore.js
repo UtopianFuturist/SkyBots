@@ -80,7 +80,16 @@ const defaultData = {
   resting_until: 0,
   current_goal: null, // { goal, description, timestamp }
   last_admin_vibe_check: 0,
-  last_submolt_void_check: 0
+  last_submolt_void_check: 0,
+  last_persona_audit: 0,
+  last_mood_trend: 0,
+  last_memory_pruning: 0,
+  mutated_style: null, // { lens, timestamp }
+  dream_log: [], // [ { draft, reason, timestamp } ]
+  social_resonance: {}, // { topic: { engagement_score, last_interaction } }
+  interaction_heatmap: {}, // { userId: { warmth, last_interaction } }
+  nuance_gradience: 5, // 1 (direct) to 10 (layered)
+  state_snapshots: {} // { label: snapshot_data }
 };
 
 class DataStore {
@@ -795,6 +804,103 @@ class DataStore {
     await this.db.write();
     console.log(`[DataStore] Cooldown updated for ${platform}: ${minutes} minutes.`);
     return true;
+  }
+
+  async setMutatedStyle(lens) {
+    this.db.data.mutated_style = {
+        lens,
+        timestamp: Date.now()
+    };
+    await this.db.write();
+    console.log(`[DataStore] Style mutated to: ${lens}`);
+  }
+
+  getMutatedStyle() {
+    // Only valid for 1 hour
+    const style = this.db.data.mutated_style;
+    if (style && Date.now() - style.timestamp < 60 * 60 * 1000) {
+        return style.lens;
+    }
+    return null;
+  }
+
+  async addDreamLog(draft, reason) {
+    if (!this.db.data.dream_log) {
+        this.db.data.dream_log = [];
+    }
+    this.db.data.dream_log.push({
+        draft,
+        reason,
+        timestamp: Date.now()
+    });
+    // Keep last 50
+    if (this.db.data.dream_log.length > 50) {
+        this.db.data.dream_log.shift();
+    }
+    await this.db.write();
+    console.log(`[DataStore] Draft archived to Dream Log.`);
+  }
+
+  getDreamLog() {
+    return this.db.data.dream_log || [];
+  }
+
+  async updateSocialResonance(topic, score) {
+    if (!this.db.data.social_resonance) this.db.data.social_resonance = {};
+    const current = this.db.data.social_resonance[topic] || { engagement_score: 0 };
+    this.db.data.social_resonance[topic] = {
+        engagement_score: (current.engagement_score * 0.7) + (score * 0.3),
+        last_interaction: Date.now()
+    };
+    await this.db.write();
+  }
+
+  getSocialResonance() {
+    return this.db.data.social_resonance || {};
+  }
+
+  async updateInteractionHeat(userId, warmthChange) {
+    if (!this.db.data.interaction_heatmap) this.db.data.interaction_heatmap = {};
+    const current = this.db.data.interaction_heatmap[userId] || { warmth: 3 }; // Start neutral
+    this.db.data.interaction_heatmap[userId] = {
+        warmth: Math.max(1, Math.min(5, current.warmth + warmthChange)),
+        last_interaction: Date.now()
+    };
+    await this.db.write();
+  }
+
+  getInteractionHeat(userId) {
+    return this.db.data.interaction_heatmap[userId] || { warmth: 3 };
+  }
+
+  async setNuanceGradience(value) {
+    this.db.data.nuance_gradience = Math.max(1, Math.min(10, value));
+    await this.db.write();
+  }
+
+  getNuanceGradience() {
+    return this.db.data.nuance_gradience || 5;
+  }
+
+  async saveStateSnapshot(label) {
+    if (!this.db.data.state_snapshots) this.db.data.state_snapshots = {};
+    this.db.data.state_snapshots[label] = {
+        mood: this.db.data.current_mood,
+        config: this.getConfig(),
+        timestamp: Date.now()
+    };
+    await this.db.write();
+  }
+
+  async restoreStateSnapshot(label) {
+    const snapshot = this.db.data.state_snapshots?.[label];
+    if (snapshot) {
+        this.db.data.current_mood = snapshot.mood;
+        // Apply config changes if needed, but for now just mood is safest
+        await this.db.write();
+        return true;
+    }
+    return false;
   }
 }
 

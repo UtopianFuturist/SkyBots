@@ -43,6 +43,17 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
     - **Melancholic Refusal Pivots**: Recognizes deep emotional processing and offers private [INQUIRY] self-dialogues to process feelings before attempting alternative desires.
     - **Reassurance Tool**: Can choose to review past stable and positive memories for emotional grounding.
     - **Emotional Support Requests**: Dedicated tool to reach out to the admin on Discord specifically for human grounding.
+- **Cognitive Nuance & Advanced Planning**: Implements 27+ new agentic tools and features for deeper agency and creative variety, including:
+    - **Divergent Path Brainstorming**: Explores multiple thematic directions before committing to a plan.
+    - **Paradox & Nuance Explorer**: Intentionally searches for counter-points to avoid binary thinking.
+    - **Metaphor Entropy Monitor**: Stylistically pivots when leaning too heavily on recurring imagery.
+    - **Stylistic Mutation Switch**: Temporarily adopts different "analytical lenses" (e.g., Stoic, Poetic, Curious).
+    - **Thought Branching**: Parks side-thoughts in memory for later exploration.
+    - **Nuance Gradience Slider**: Adjusts how "layered" vs "direct" responses should be.
+    - **Vibe Continuity Buffer**: Ensures natural emotional transitions in ongoing conversations.
+    - **Relational Intelligence**: Tracks relationship "warmth" and topic resonance to personalize engagement.
+    - **System Integrity Guardrails**: Includes a Logic Leak Detector and periodic Persona Alignment Audits.
+    - **State Management**: Supports emotional state snapshots, goal decomposition, and dream draft archiving.
 
 ## 📁 Project Structure
 

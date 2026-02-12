@@ -77,7 +77,10 @@ const defaultData = {
   lurker_mode: false,
   mute_feed_impact_until: 0,
   energy_level: 1.0,
-  resting_until: 0
+  resting_until: 0,
+  current_goal: null, // { goal, description, timestamp }
+  last_admin_vibe_check: 0,
+  last_submolt_void_check: 0
 };
 
 class DataStore {
@@ -682,6 +685,25 @@ class DataStore {
     return Date.now() < (this.db.data.resting_until || 0);
   }
 
+  async setCurrentGoal(goal, description) {
+    this.db.data.current_goal = {
+        goal,
+        description,
+        timestamp: Date.now()
+    };
+    await this.db.write();
+    console.log(`[DataStore] Current goal set: ${goal}`);
+  }
+
+  getCurrentGoal() {
+    return this.db.data.current_goal;
+  }
+
+  async clearGoal() {
+    this.db.data.current_goal = null;
+    await this.db.write();
+  }
+
   async incrementRefusalCount(platform) {
     if (!this.db.data.intentional_refusals) {
       this.db.data.intentional_refusals = { ...defaultData.intentional_refusals };
@@ -748,6 +770,31 @@ class DataStore {
     }
     console.warn(`[DataStore] Attempted to update invalid config key: ${key}`);
     return false;
+  }
+
+  async updateCooldowns(platform, minutes) {
+    const defaults = {
+        bluesky: 90,
+        moltbook: 60
+    };
+    const current = platform === 'bluesky' ? this.db.data.bluesky_post_cooldown : this.db.data.moltbook_post_cooldown;
+    const min = defaults[platform] || 15;
+
+    // Constraint: Only allow increased cooldowns or decreasing down to the default
+    if (minutes < min) {
+        console.warn(`[DataStore] Attempted to set ${platform} cooldown below default (${min}m). Capping at default.`);
+        minutes = min;
+    }
+
+    if (platform === 'bluesky') {
+        this.db.data.bluesky_post_cooldown = minutes;
+    } else if (platform === 'moltbook') {
+        this.db.data.moltbook_post_cooldown = minutes;
+    }
+
+    await this.db.write();
+    console.log(`[DataStore] Cooldown updated for ${platform}: ${minutes} minutes.`);
+    return true;
   }
 }
 

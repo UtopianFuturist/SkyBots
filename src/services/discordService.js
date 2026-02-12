@@ -1150,12 +1150,14 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
                      if (action.tool === 'mute_feed_impact') {
                         const duration = action.parameters?.duration_minutes || 60;
+                        console.log(`[DiscordService] Tool: mute_feed_impact (${duration} mins)`);
                         await dataStore.setMuteFeedImpactUntil(Date.now() + (duration * 60 * 1000));
                         actionResults.push(`[Feed impact on mood muted for ${duration} minutes]`);
                      }
                      if (action.tool === 'override_mood') {
                         const { valence, arousal, stability, label } = action.parameters || {};
                         if (label) {
+                            console.log(`[DiscordService] Tool: override_mood (${label})`);
                             await dataStore.updateMood({ valence, arousal, stability, label });
                             actionResults.push(`[Internal mood overridden to ideal state: ${label}]`);
                             if (memoryService.isEnabled()) {
@@ -1165,11 +1167,11 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
                      if (action.tool === 'request_emotional_support') {
                         const reason = action.parameters?.reason || "Feeling overwhelmed.";
+                        console.log(`[DiscordService] Tool: request_emotional_support (Reason: ${reason})`);
                         actionResults.push(`[Requested emotional support from admin. Reason: ${reason}]`);
-                        // The actual reaching out happens via the message generation in Discord flow,
-                        // but we can add a specific marker or note here.
                      }
                      if (action.tool === 'review_positive_memories') {
+                        console.log(`[DiscordService] Tool: review_positive_memories`);
                         const memories = memoryService.getRecentMemories(50);
                         const positive = memories.filter(m => m.type === 'mood' && m.content.includes('Stability: 0.')); // Stable ones
                         const text = positive.length > 0 ? positive.map(m => m.content).join('\n') : "No particularly stable memories found recently.";
@@ -1177,6 +1179,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
                      if (action.tool === 'set_lurker_mode') {
                         const enabled = action.parameters?.enabled ?? true;
+                        console.log(`[DiscordService] Tool: set_lurker_mode (${enabled})`);
                         await dataStore.setLurkerMode(enabled);
                         actionResults.push(`[Lurker mode (Social Fasting) set to: ${enabled}]`);
                      }

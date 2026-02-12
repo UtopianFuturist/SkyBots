@@ -1150,7 +1150,15 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              if (result) {
                                  actionResults.push(`[Internal Inquiry Result for "${query}": ${result}]`);
                                  if (memoryService.isEnabled()) {
-                                     await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`);
+                                     // Reflector loop: Ask persona if they want results preserved
+                                     const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed an inquiry on "${query}". Should I record the finding: "${result.substring(0, 100)}..." in our memory thread?`, { details: { query, result } });
+
+                                     if (confirmation.confirmed) {
+                                         await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`);
+                                         actionResults.push(`[Inquiry results preserved in memory thread]`);
+                                     } else {
+                                         actionResults.push(`[Inquiry results kept private per persona request]`);
+                                     }
                                  }
                              }
                          }
@@ -1189,6 +1197,61 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                         console.log(`[DiscordService] Tool: set_lurker_mode (${enabled})`);
                         await dataStore.setLurkerMode(enabled);
                         actionResults.push(`[Lurker mode (Social Fasting) set to: ${enabled}]`);
+                     }
+
+                     if (action.tool === 'search_memories') {
+                        const query = action.parameters?.query || action.query;
+                        if (query) {
+                            const results = await memoryService.searchMemories(query);
+                            if (results.length > 0) {
+                                const text = results.map(r => `[${r.indexedAt}] ${r.text}`).join('\n\n');
+                                actionResults.push(`--- SEARCHED MEMORIES ---\n${text}\n---`);
+                            } else {
+                                actionResults.push(`[No matching memories found for: "${query}"]`);
+                            }
+                        }
+                     }
+
+                     if (action.tool === 'delete_memory') {
+                        const uri = action.parameters?.uri;
+                        if (uri) {
+                            const confirmation = await llmService.requestConfirmation("delete_memory", `I'm proposing to delete the memory entry at ${uri}.`, { details: { uri } });
+                            if (confirmation.confirmed) {
+                                const success = await memoryService.deleteMemory(uri);
+                                actionResults.push(`[Memory deletion ${success ? 'SUCCESSFUL' : 'FAILED'} for ${uri}]`);
+                            } else {
+                                actionResults.push(`[Memory deletion REFUSED by persona: ${confirmation.reason || 'No reason provided'}]`);
+                            }
+                        }
+                     }
+
+                     if (action.tool === 'update_cooldowns') {
+                        const { platform, minutes } = action.parameters || {};
+                        if (platform && minutes !== undefined) {
+                            const success = await dataStore.updateCooldowns(platform, minutes);
+                            actionResults.push(`[Cooldown update for ${platform}: ${minutes}m (${success ? 'SUCCESS' : 'FAILED'})]`);
+                        }
+                     }
+
+                     if (action.tool === 'get_identity_knowledge') {
+                        const knowledge = moltbookService.getIdentityKnowledge();
+                        actionResults.push(`--- MOLTBOOK IDENTITY KNOWLEDGE ---\n${knowledge || 'No knowledge recorded yet.'}\n---`);
+                     }
+
+                     if (action.tool === 'set_goal') {
+                        const { goal, description } = action.parameters || {};
+                        if (goal) {
+                            actionResults.push(`[Daily goal set: "${goal}"]`);
+                            if (memoryService.isEnabled()) {
+                                await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${goal} | Description: ${description || goal}`);
+                            }
+                        }
+                     }
+
+                     if (action.tool === 'confirm_action') {
+                        const { action: act, reason } = action.parameters || {};
+                        const confirmation = await llmService.requestConfirmation(act, reason);
+                        actionResults.push(`[Persona confirmation for "${act}": ${confirmation.confirmed ? 'YES' : 'NO'} | ${confirmation.reason || confirmation.inquiry || ''}]`);
                      }
                  }
 

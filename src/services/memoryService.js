@@ -110,6 +110,38 @@ class MemoryService {
         `;
     }
 
+    if (type === 'exploration') {
+        prompt = `
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording an autonomous exploration of your timeline.
+
+          Exploration Context:
+          ${context}
+
+          INSTRUCTIONS:
+          - Use the tag [EXPLORATION] at the beginning.
+          - Share your internal reaction, realization, or finding.
+          - **STRICT LENGTH LIMIT**: Keep it under 250 characters.
+          - Tone: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the hashtag ${this.hashtag} at the very end.
+        `;
+    }
+
+    if (type === 'goal') {
+        prompt = `
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording a new autonomous daily goal or a progress update on an existing goal.
+
+          Goal Context:
+          ${context}
+
+          INSTRUCTIONS:
+          - Use the tag [GOAL] at the beginning.
+          - Focus on intention, pursuit, and milestones.
+          - **STRICT LENGTH LIMIT**: Keep it under 250 characters.
+          - Tone: ${config.TEXT_SYSTEM_PROMPT}
+          - Use the hashtag ${this.hashtag} at the very end.
+        `;
+    }
+
     if (type === 'moltfeed') {
         prompt = `
           You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing what you've learned from the Moltbook feed.
@@ -335,7 +367,7 @@ class MemoryService {
 
         if (posts.length === 0) return;
 
-        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[INQUIRY]', '[MENTAL]'];
+        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[INQUIRY]', '[MENTAL]', '[GOAL]', '[EXPLORATION]', '[LURKER]'];
         let deletedCount = 0;
 
         for (const post of posts) {
@@ -415,6 +447,33 @@ class MemoryService {
         }
         return `[Memory from ${m.indexedAt}]:\n${cleanText}`;
     }).join('\n\n---\n\n');
+  }
+
+  async searchMemories(query, limit = 10) {
+    if (!this.isEnabled()) return [];
+    console.log(`[MemoryService] Searching memories for: "${query}"`);
+    const fullQuery = `from:${blueskyService.did} ${this.hashtag} ${query}`;
+    const posts = await blueskyService.searchPosts(fullQuery, { limit, sort: 'latest' });
+    return posts.map(p => ({
+        uri: p.uri,
+        cid: p.cid,
+        text: p.record.text,
+        indexedAt: p.indexedAt
+    }));
+  }
+
+  async deleteMemory(uri) {
+    if (!this.isEnabled()) return false;
+    console.log(`[MemoryService] Deleting memory: ${uri}`);
+    try {
+        await blueskyService.deletePost(uri);
+        // Remove from local cache if present
+        this.recentMemories = this.recentMemories.filter(m => m.uri !== uri);
+        return true;
+    } catch (error) {
+        console.error(`[MemoryService] Failed to delete memory ${uri}:`, error);
+        return false;
+    }
   }
 }
 

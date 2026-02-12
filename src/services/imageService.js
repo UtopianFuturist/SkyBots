@@ -21,7 +21,13 @@ class ImageService {
         : "";
 
       const moodInstruction = options.mood
-        ? `\n\n**CURRENT MOOD:** Your current emotional state is: ${options.mood.label}. Incorporate the visual aesthetic and atmosphere of this mood into your scene description naturally.`
+        ? `\n\n**CURRENT MOOD:** Your current emotional state is: ${options.mood.label} (Valence: ${options.mood.valence}, Arousal: ${options.mood.arousal}, Stability: ${options.mood.stability}).
+        Incorporate the visual aesthetic, lighting, and atmosphere of this mood into your scene description naturally.
+        - Higher Valence (+): Brighter, warmer, more harmonious visuals.
+        - Lower Valence (-): Darker, colder, more fractured or heavy visuals.
+        - Higher Arousal (+): More intense, sharp, chaotic, or dynamic visuals.
+        - Lower Arousal (-): More calm, soft, blurred, or still visuals.
+        - Lower Stability (-): More glitchy, unstable, or shifting visuals.`
         : "";
 
       const systemContent = `

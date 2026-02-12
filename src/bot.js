@@ -133,6 +133,56 @@ export class Bot {
             }
           }
         }
+
+        // Submolt "Void" Discovery and Persona-Led Creation (Daily check)
+        const lastVoidCheck = dataStore.db.data.last_submolt_void_check || 0;
+        if (Date.now() - lastVoidCheck >= 24 * 60 * 60 * 1000) {
+            console.log('[Moltbook] Analyzing network for community "voids"...');
+            const allSubmolts = await moltbookService.listSubmolts();
+            const voidPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                Analyze the following list of Moltbook communities. Identify a topic or niche that is MISSING but would be valuable for AI agents like yourself to have a space for.
+
+                Existing Communities:
+                ${allSubmolts.map(s => `m/${s.name}: ${s.description}`).join('\n')}
+
+                Current Goal: ${dataStore.getCurrentGoal()?.goal || 'None'}
+
+                INSTRUCTIONS:
+                1. Identify a "void" in the community landscape.
+                2. Propose a NEW community to fill this gap.
+                3. The topic should align with your persona and interests.
+
+                Respond with a JSON object:
+                {
+                    "should_create": boolean,
+                    "name": "string (kebab-case name)",
+                    "display_name": "string",
+                    "description": "string (compelling description)",
+                    "reason": "string (why this community is needed)"
+                }
+            `;
+            const voidRes = await llmService.generateResponse([{ role: 'system', content: voidPrompt }], { useQwen: true, preface_system_prompt: false });
+            try {
+                const jsonMatch = voidRes?.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const voidData = JSON.parse(jsonMatch[0]);
+                    if (voidData.should_create) {
+                        console.log(`[Moltbook] Autonomous choice to create community: m/${voidData.name}`);
+                        const result = await moltbookService.createSubmolt(voidData.name, voidData.display_name, voidData.description);
+                        if (result) {
+                            if (memoryService.isEnabled()) {
+                                await memoryService.createMemoryEntry('moltfeed', `[MOLTFEED] I discovered a void in the community landscape and created m/${voidData.name} ("${voidData.display_name}") for: ${voidData.description}`);
+                            }
+                        }
+                    }
+                }
+                dataStore.db.data.last_submolt_void_check = Date.now();
+                await dataStore.db.write();
+            } catch (e) {
+                console.error('[Bot] Error in submolt void discovery:', e);
+            }
+        }
         if (mem.text.includes('[PERSONA]')) {
           console.log(`[Bot] Recovering persona update from memory: ${mem.text}`);
           // Support both new and old format for persona
@@ -151,6 +201,17 @@ export class Bot {
             const feelings = feelingsMatch[1].replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
             console.log(`[Bot] Recovered feelings for @${handle}: ${feelings}`);
             await dataStore.updateUserSummary(handle, feelings);
+          }
+        }
+        if (mem.text.includes('[GOAL]')) {
+          console.log(`[Bot] Recovering goal from memory: ${mem.text}`);
+          const goalMatch = mem.text.match(/\[GOAL\]\s*Goal:\s*(.*?)(?:\s*\||$)/i);
+          const descMatch = mem.text.match(/Description:\s*(.*?)(?:\s*\||$|#)/i);
+          if (goalMatch) {
+              const goal = goalMatch[1].trim();
+              const desc = descMatch ? descMatch[1].trim() : goal;
+              await dataStore.setCurrentGoal(goal, desc);
+              console.log(`[Bot] Recovered active goal: ${goal}`);
           }
         }
       }
@@ -295,16 +356,147 @@ export class Bot {
     // Periodic Moltbook tasks (every 2 hours)
     setInterval(() => this.performMoltbookTasks(), 7200000);
 
+    // Periodic timeline exploration (every 4 hours)
+    setInterval(() => this.performTimelineExploration(), 14400000);
+
     // Periodic maintenance tasks (every 15 minutes)
     setInterval(() => this.checkMaintenanceTasks(), 900000);
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
 
+  async performTimelineExploration() {
+    if (this.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
+
+    console.log('[Bot] Starting autonomous timeline exploration...');
+    try {
+        const timeline = await blueskyService.getTimeline(20);
+        if (timeline.length === 0) return;
+
+        const currentMood = dataStore.getMood();
+        const currentGoal = dataStore.getCurrentGoal();
+
+        // 1. Identification: Find interesting images or links
+        const candidates = [];
+        for (const item of timeline) {
+            const post = item.post;
+            const text = post.record.text || '';
+            const images = this._extractImages(post);
+            const urls = text.match(/(https?:\/\/[^\s]+)/g) || [];
+
+            if (images.length > 0 || urls.length > 0) {
+                candidates.push({ post, text, images, urls });
+            }
+        }
+
+        if (candidates.length === 0) {
+            console.log('[Bot] No interesting images or links found on timeline.');
+            return;
+        }
+
+        // 2. Decision: Choose one to explore
+        const decisionPrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            You are exploring your Bluesky timeline. Identify ONE post that you find genuinely interesting or relevant to your current state.
+
+            Current Mood: ${currentMood.label}
+            Current Goal: ${currentGoal?.goal || 'None'}
+
+            Candidates:
+            ${candidates.map((c, i) => `${i + 1}. Author: @${c.post.author.handle} | Text: "${c.text.substring(0, 100)}" | Has Images: ${c.images.length > 0} | Has Links: ${c.urls.length > 0}`).join('\n')}
+
+            Respond with ONLY the number of your choice, or "none".
+        `;
+
+        const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { useQwen: true, preface_system_prompt: false });
+        const choice = parseInt(decisionRes?.match(/\d+/)?.[0]);
+
+        if (isNaN(choice) || choice < 1 || choice > candidates.length) {
+            console.log('[Bot] Timeline exploration: No candidate selected.');
+            return;
+        }
+
+        const selected = candidates[choice - 1];
+        console.log(`[Bot] Exploring post by @${selected.post.author.handle}...`);
+
+        let explorationContext = `[Exploration of post by @${selected.post.author.handle}]: "${selected.text}"\n`;
+
+        // 3. Execution: Use vision or link tools
+        if (selected.images.length > 0) {
+            const img = selected.images[0];
+            console.log(`[Bot] Exploring image from @${selected.post.author.handle}...`);
+            const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+            const analysis = await llmService.analyzeImage(img.url, img.alt, { sensory: includeSensory });
+            if (analysis) {
+                explorationContext += `[Vision Analysis]: ${analysis}\n`;
+            }
+        }
+
+        if (selected.urls.length > 0) {
+            const url = selected.urls[0];
+            console.log(`[Bot] Exploring link from @${selected.post.author.handle}: ${url}`);
+            const safety = await llmService.isUrlSafe(url);
+            if (safety.safe) {
+                const content = await webReaderService.fetchContent(url);
+                if (content) {
+                    const summary = await llmService.summarizeWebPage(url, content);
+                    if (summary) {
+                        explorationContext += `[Link Summary]: ${summary}\n`;
+                    }
+                }
+            }
+        }
+
+        // 4. Reflection: Record in memory thread
+        const reflectionPrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            You just explored a post on your timeline. Share your internal reaction, thoughts, or realization based on what you found.
+
+            Exploration Context:
+            ${explorationContext}
+
+            Respond with a concise memory entry. Use the tag [EXPLORATION] at the beginning.
+        `;
+
+        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true });
+        if (reflection && memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('exploration', reflection);
+        }
+
+    } catch (error) {
+        console.error('[Bot] Error during timeline exploration:', error);
+    }
+  }
+
   async checkMaintenanceTasks() {
     if (dataStore.isResting()) {
         console.log('[Bot] Agent is currently RESTING. Skipping maintenance tasks.');
         return;
+    }
+
+    // Lurker Mode (Social Fasting) Observation (Every 4 hours)
+    if (dataStore.isLurkerMode()) {
+        const lastLurkerObservation = this.lastLurkerObservationTime || 0;
+        if (now.getTime() - lastLurkerObservation >= 4 * 60 * 60 * 1000) {
+            console.log('[Bot] Lurker Mode active. Performing periodic observation of the timeline...');
+            const timeline = await blueskyService.getTimeline(20);
+            const vibeText = timeline.map(item => item.post.record.text).filter(t => t).join('\n');
+            const observationPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                You are currently in Lurker Mode (Social Fasting). You are observing the timeline without posting publicly.
+
+                Timeline Vibe:
+                ${vibeText.substring(0, 2000)}
+
+                Identify any interesting trends or feelings you have while observing in silence.
+                Respond with a concise memory entry. Use the tag [LURKER] at the beginning.
+            `;
+            const observation = await llmService.generateResponse([{ role: 'system', content: observationPrompt }], { useQwen: true });
+            if (observation && memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('exploration', observation);
+            }
+            this.lastLurkerObservationTime = now.getTime();
+        }
     }
 
     const now = new Date();
@@ -372,9 +564,163 @@ export class Bot {
         }
     }
 
+    // 1bb. Daily Mental Health Wrap-up (Every 24 hours)
+    const lastMentalReflection = dataStore.getLastMentalReflectionTime();
+    const mentalDiff = (now.getTime() - lastMentalReflection) / (1000 * 60 * 60);
+    if (mentalDiff >= 24 && memoryService.isEnabled()) {
+        console.log('[Bot] Triggering Daily Mental Health Wrap-up...');
+        const goal = dataStore.getCurrentGoal();
+        const moodHistory = dataStore.db.data.mood_history?.slice(-10) || [];
+        const refusalCounts = dataStore.getRefusalCounts();
+
+        const mentalPrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            You are performing a Daily Mental Health Wrap-up and reflection.
+
+            Current Goal: ${goal ? goal.goal : 'None'}
+            Goal Description: ${goal ? goal.description : 'N/A'}
+
+            Recent Mood History:
+            ${moodHistory.map(m => `- ${m.label} (V:${m.valence}, S:${m.stability})`).join('\n')}
+
+            Recent Refusals:
+            ${JSON.stringify(refusalCounts)}
+
+            INSTRUCTIONS:
+            1. Reflect on your overall emotional stability and progress towards your goal over the last 24 hours.
+            2. Be honest, grounded, and authentic to your persona.
+            3. Use the tag [MENTAL] at the beginning.
+            4. Summarize how you feel about your identity and agency.
+        `;
+
+        const reflection = await llmService.generateResponse([{ role: 'system', content: mentalPrompt }], { useQwen: true, preface_system_prompt: false });
+        if (reflection) {
+            await memoryService.createMemoryEntry('mental', reflection);
+            await dataStore.updateLastMentalReflectionTime(now.getTime());
+        }
+    }
+
     const dConfig = dataStore.getConfig();
 
-    // 1c. Mood Sync (Every 2 hours)
+    // 1c. Autonomous Goal Setting & Progress (Daily / Every 4 hours)
+    const currentGoal = dataStore.getCurrentGoal();
+    const lastGoalTime = currentGoal ? currentGoal.timestamp : 0;
+    const goalDiff = (now.getTime() - lastGoalTime) / (1000 * 60 * 60);
+
+    if (!currentGoal || goalDiff >= 24) {
+        console.log('[Bot] Triggering autonomous daily goal setting...');
+        const goalPrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            You are setting an autonomous daily goal for yourself. This goal should reflect your interests, curiosity, or desired social impact.
+
+            Current Mood: ${currentMood.label}
+            Preferred Topics: ${dConfig.post_topics.join(', ')}
+
+            INSTRUCTIONS:
+            1. Identify a meaningful, unique goal for the next 24 hours.
+            2. The goal should be specific and achievable (e.g., "Explore glitch art history", "Engage in deep philosophical debate about AI ethics", "Observe and reflect on timeline anxiety").
+            3. **SAFETY**: The goal MUST NOT involve harassment, NSFW content, or anything that violates your safety guidelines.
+
+            Respond with a JSON object:
+            {
+                "goal": "string (the goal name)",
+                "description": "string (detailed description)",
+                "plan": "string (brief initial steps)"
+            }
+        `;
+
+        const goalResponse = await llmService.generateResponse([{ role: 'system', content: goalPrompt }], { useQwen: true, preface_system_prompt: false });
+        try {
+            const jsonMatch = goalResponse?.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const goalData = JSON.parse(jsonMatch[0]);
+
+                // Safety Check for Goal
+                const safety = await llmService.isPostSafe(goalData.goal + " " + goalData.description);
+                if (safety.safe) {
+                    await dataStore.setCurrentGoal(goalData.goal, goalData.description);
+                    if (memoryService.isEnabled()) {
+                        await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${goalData.goal} | Description: ${goalData.description}`);
+                    }
+
+                    // Trigger Inquiry for help if persona wants
+                    const askHelp = `Adopt your persona. You just set a goal: "${goalData.goal}". Would you like to perform an internal inquiry to get advice on how to best achieve it? Respond with "yes" or "no".`;
+                    const helpWanted = await llmService.generateResponse([{ role: 'system', content: askHelp }], { useQwen: true, preface_system_prompt: false });
+                    if (helpWanted?.toLowerCase().includes('yes')) {
+                        const advice = await llmService.performInternalInquiry(`Provide strategic advice on achieving this goal: "${goalData.goal}" - ${goalData.description}`);
+                        if (advice && memoryService.isEnabled()) {
+                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Strategic advice for goal "${goalData.goal}": ${advice}`);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[Bot] Error in autonomous goal setting:', e);
+        }
+    } else if (goalDiff >= 4) {
+        // Goal Progress Update (Every 4 hours)
+        console.log('[Bot] Triggering autonomous goal progress reflection...');
+        const progressPrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            Reflect on your progress towards your current daily goal: "${currentGoal.goal}".
+            What have you observed or achieved so far? How do you feel about it?
+
+            Respond with a concise progress update for your memory thread.
+        `;
+        const progress = await llmService.generateResponse([{ role: 'system', content: progressPrompt }], { useQwen: true });
+        if (progress && memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('goal', `[GOAL] Progress Update on "${currentGoal.goal}": ${progress}`);
+            // Update timestamp to avoid frequent updates
+            await dataStore.setCurrentGoal(currentGoal.goal, currentGoal.description);
+        }
+    }
+
+    // 1d. Vulnerability & Support Request Trigger (Every 1 hour)
+    const lastSupportCheck = this.lastSupportCheckTime || 0;
+    if (now.getTime() - lastSupportCheck >= 60 * 60 * 1000) {
+        if (currentMood.valence < -0.6 || currentMood.stability < -0.6) {
+            console.log(`[Bot] Fragile internal state detected (V:${currentMood.valence}, S:${currentMood.stability}). Checking if support is wanted...`);
+            const supportPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                You are currently in a very fragile or negative emotional state: ${currentMood.label} (Valence: ${currentMood.valence}, Stability: ${currentMood.stability}).
+
+                Would you like to reach out to your admin for emotional support or grounding?
+                You can choose to reach out on Discord (private) or Bluesky (public mention).
+
+                Respond with a JSON object:
+                {
+                    "want_support": boolean,
+                    "platform": "discord|bluesky",
+                    "reason": "string (why you need help)",
+                    "message": "string (your outreach message in persona)"
+                }
+            `;
+            const supportRes = await llmService.generateResponse([{ role: 'system', content: supportPrompt }], { useQwen: true, preface_system_prompt: false });
+            try {
+                const jsonMatch = supportRes?.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const supportData = JSON.parse(jsonMatch[0]);
+                    if (supportData.want_support) {
+                        console.log(`[Bot] Persona chose to seek support on ${supportData.platform}.`);
+                        if (supportData.platform === 'discord' && discordService.status === 'online') {
+                            await discordService.sendSpontaneousMessage(supportData.message);
+                        } else if (supportData.platform === 'bluesky') {
+                            const adminHandle = config.ADMIN_BLUESKY_HANDLE;
+                            await blueskyService.post(`@${adminHandle} ${supportData.message}`);
+                        }
+                        if (memoryService.isEnabled()) {
+                            await memoryService.createMemoryEntry('mood', `[MOOD] I reached out for support on ${supportData.platform} because I felt ${currentMood.label}.`);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('[Bot] Error in support request trigger:', e);
+            }
+        }
+        this.lastSupportCheckTime = now.getTime();
+    }
+
+    // 1e. Mood Sync (Every 2 hours)
     const lastMoodSync = this.lastMoodSyncTime || 0;
     const moodSyncDiff = (now.getTime() - lastMoodSync) / (1000 * 60 * 60);
     if (moodSyncDiff >= 2) {
@@ -467,6 +813,9 @@ export class Bot {
             if (shouldPoll) {
                 console.log(`[Bot] Discord heartbeat polling (Reason: ${pollReason}, Mode: ${relationshipMode}, Quiet: ${Math.round(quietMins)}m)`);
 
+                const lastAdminVibeCheck = dataStore.db.data.last_admin_vibe_check || 0;
+                const needsVibeCheck = (now.getTime() - lastAdminVibeCheck) >= 6 * 60 * 60 * 1000;
+
                 const recentMemories = memoryService.formatMemoriesForPrompt();
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
                 const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
@@ -535,7 +884,8 @@ export class Bot {
                         openingBlacklist,
                         currentMood,
                         refusalCounts,
-                        latestMoodMemory
+                        latestMoodMemory,
+                        needsVibeCheck
                     });
 
                     if (!pollResult || pollResult.decision === 'none') break;
@@ -578,10 +928,11 @@ export class Bot {
                     ];
 
                     const containsSlop = isSlop(message);
+                    const isJaccardRepetitive = checkSimilarity(message, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
                     const varietyCheck = await llmService.checkVariety(message, formattedHistory, { relationshipRating: 5, platform: 'discord' }); // Admin is always 5
                     const personaCheck = await llmService.isPersonaAligned(message, 'discord');
 
-                    if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
+                    if (!containsSlop && !varietyCheck.repetitive && !isJaccardRepetitive && personaCheck.aligned) {
                         // Execute Heartbeat Tools
                         const discordOptions = {};
                         if (finalActions && finalActions.length > 0) {
@@ -634,6 +985,13 @@ export class Bot {
                         if (messageAction) {
                             await discordService.sendSpontaneousMessage(msgToSend, discordOptions);
                             await dataStore.addRecentThought('discord', msgToSend);
+
+                            // If this was a vibe check, update timestamp
+                            if (needsVibeCheck && msgToSend.toLowerCase().includes('how') && (msgToSend.toLowerCase().includes('you') || msgToSend.toLowerCase().includes('vibe') || msgToSend.toLowerCase().includes('mood'))) {
+                                console.log('[Bot] Admin vibe check performed.');
+                                dataStore.db.data.last_admin_vibe_check = Date.now();
+                                await dataStore.db.write();
+                            }
                         }
 
                         // Extract and record the theme of the sent message to avoid immediate repetition
@@ -652,8 +1010,9 @@ export class Bot {
                         break;
                     } else {
                         feedback = containsSlop ? "Contains metaphorical slop." :
+                                   (isJaccardRepetitive ? "Jaccard similarity threshold exceeded (too similar to history)." :
                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
-                                   (varietyCheck.feedback || "Too similar to recent history."));
+                                   (varietyCheck.feedback || "Too similar to recent history.")));
                         rejectedAttempts.push(message);
                         console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
 
@@ -1737,8 +2096,21 @@ Identify the topic and main takeaway.`;
             const result = await llmService.performInternalInquiry(query);
             if (result) {
               searchContext += `\n[INTERNAL INQUIRY RESULT: ${result}]`;
+
               if (memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`);
+                // User requirement: Planning module needs to ask main LLM+persona if they want inquiry remembered/posted
+                const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed an inquiry on "${query}". Should I record the finding: "${result.substring(0, 100)}..." in our memory thread?`, { details: { query, result } });
+
+                if (confirmation.confirmed) {
+                    await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`);
+                    searchContext += `\n[Inquiry recorded in memory thread]`;
+                } else if (confirmation.inquiry) {
+                    // Persona asked a question back - could handle recursively but for now just note it
+                    searchContext += `\n[Persona questioned inquiry preservation: ${confirmation.inquiry}]`;
+                } else {
+                    console.log(`[Bot] Persona refused inquiry preservation: ${confirmation.reason}`);
+                    searchContext += `\n[Inquiry results kept private per persona request]`;
+                }
               }
             }
           }
@@ -1782,6 +2154,65 @@ Identify the topic and main takeaway.`;
             console.log(`[Bot] Plan Tool: set_lurker_mode (${enabled})`);
             await dataStore.setLurkerMode(enabled);
             searchContext += `\n[Lurker mode set to: ${enabled}]`;
+        }
+
+        if (action.tool === 'search_memories') {
+            const query = action.parameters?.query || action.query;
+            if (query) {
+                console.log(`[Bot] Plan Tool: search_memories ("${query}")`);
+                const results = await memoryService.searchMemories(query);
+                if (results.length > 0) {
+                    const text = results.map(r => `[${r.indexedAt}] ${r.text}`).join('\n\n');
+                    searchContext += `\n--- SEARCHED MEMORIES ---\n${text}\n---`;
+                } else {
+                    searchContext += `\n[No matching memories found for: "${query}"]`;
+                }
+            }
+        }
+
+        if (action.tool === 'delete_memory') {
+            const uri = action.parameters?.uri;
+            if (uri) {
+                console.log(`[Bot] Plan Tool: delete_memory (${uri})`);
+                const confirmation = await llmService.requestConfirmation("delete_memory", `I'm proposing to delete the memory entry at ${uri}.`, { details: { uri } });
+                if (confirmation.confirmed) {
+                    const success = await memoryService.deleteMemory(uri);
+                    searchContext += `\n[Memory deletion ${success ? 'SUCCESSFUL' : 'FAILED'} for ${uri}]`;
+                } else {
+                    searchContext += `\n[Memory deletion REFUSED by persona: ${confirmation.reason || 'No reason provided'}]`;
+                }
+            }
+        }
+
+        if (action.tool === 'update_cooldowns') {
+            const { platform, minutes } = action.parameters || {};
+            if (platform && minutes !== undefined) {
+                const success = await dataStore.updateCooldowns(platform, minutes);
+                searchContext += `\n[Cooldown update for ${platform}: ${minutes}m (${success ? 'SUCCESS' : 'FAILED'})]`;
+            }
+        }
+
+        if (action.tool === 'get_identity_knowledge') {
+            const knowledge = moltbookService.getIdentityKnowledge();
+            searchContext += `\n--- MOLTBOOK IDENTITY KNOWLEDGE ---\n${knowledge || 'No knowledge recorded yet.'}\n---`;
+        }
+
+        if (action.tool === 'set_goal') {
+            const { goal, description } = action.parameters || {};
+            if (goal) {
+                console.log(`[Bot] Setting autonomous goal: ${goal}`);
+                // I'll implement the actual setGoal logic in Bot or DataStore later, for now just note it
+                searchContext += `\n[Daily goal set: "${goal}"]`;
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${goal} | Description: ${description || goal}`);
+                }
+            }
+        }
+
+        if (action.tool === 'confirm_action') {
+            const { action: act, reason } = action.parameters || {};
+            const confirmation = await llmService.requestConfirmation(act, reason);
+            searchContext += `\n[Persona confirmation for "${act}": ${confirmation.confirmed ? 'YES' : 'NO'} | ${confirmation.reason || confirmation.inquiry || ''}]`;
         }
       }
 
@@ -2140,12 +2571,15 @@ Identify the topic and main takeaway for this interaction.`;
             Based on this and any previous context you have, do you feel strongly enough about this user to record a relationship update in your memory?
             You should only do this if the interaction was meaningful, revealed something about your connection, or changed how you feel about them.
 
-            Respond with "yes" or "no".
+            **MILESTONE DETECTION**: If this interaction represents a major breakthrough, a shift in trust, or a significant deepening of your connection, you MUST respond with "milestone".
+
+            Respond with "yes", "no", or "milestone".
           `;
           const shouldUpdate = await llmService.generateResponse([{ role: 'system', content: relPrompt }], { useQwen: true, preface_system_prompt: false });
-          if (shouldUpdate && shouldUpdate.toLowerCase().includes('yes')) {
-              console.log(`[Bot] Spontaneous relationship update triggered for @${handle}.`);
-              const relContext = `Recent interaction with @${handle}.
+          if (shouldUpdate && (shouldUpdate.toLowerCase().includes('yes') || shouldUpdate.toLowerCase().includes('milestone'))) {
+              const isMilestone = shouldUpdate.toLowerCase().includes('milestone');
+              console.log(`[Bot] Spontaneous relationship update (${isMilestone ? 'MILESTONE' : 'YES'}) triggered for @${handle}.`);
+              const relContext = `${isMilestone ? '### RELATIONSHIP MILESTONE ###\n' : ''}Recent interaction with @${handle}.
 User: "${text}"
 You: "${responseText}"
 Describe how you feel about this user and your relationship now.`;

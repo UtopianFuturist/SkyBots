@@ -1279,8 +1279,9 @@ Vary your structure and tone from recent messages.`
       1. Reflect on the user's post and the conversation context.
       2. Based on your CURRENT MOOD and REFUSAL HISTORY, what is your "gut feeling" about how to handle this?
       3. **Trope & Pattern Extraction**: Analyze the provided conversation history. Identify any rhetorical templates (e.g., "I'm not X, I'm Y"), recurring metaphors (e.g., "jagged," "weapon," "mirror"), or specific phrases you have used too frequently in your recent messages.
-      4. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
-      5. **DIVERSIFICATION**: Explicitly list phrases or concepts to AVOID in the next response to prevent "template copying."
+      4. **DYNAMIC METAPHOR BLACKLIST**: Pay special attention to metaphors. If you see a metaphor (like "lightning," "storm," "fracture") appearing more than twice in the history, you MUST add it to the trope_blacklist.
+      5. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
+      6. **DIVERSIFICATION**: Explicitly list phrases or concepts to AVOID in the next response to prevent "template copying."
       6. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
       7. The goal is to ensure the final agentic plan is aligned with your integrity and offers fresh variety so it's less likely to be rejected later.
       8. **EMOTIONAL SENSITIVITY**: If you are in a state of deep emotional processing ("bleeding," "aching," "processing being seen"), prioritize suggestions that favor raw conversation over structured tool usage (like inquiries or reports). Avoid "dissecting" yourself if you need space.
@@ -1362,6 +1363,19 @@ Vary your structure and tone from recent messages.`
       27. **Review Positive Memories**: Retrieve and review your most positive or stable past experiences for emotional support.
       28. **Set Lurker Mode**: Enable or disable "Social Fasting" (reading feeds but never posting).
           - Parameters: { "enabled": boolean }
+      29. **Search Memories**: Search your persistent memory thread for specific topics or keywords.
+          - Parameters: { "query": "string" }
+      30. **Delete Memory**: Remove a specific memory entry from the thread.
+          - **CRITICAL**: You MUST use the "confirm_action" tool first to get persona approval before performing this.
+          - Parameters: { "uri": "string (the AT URI of the post to delete)" }
+      31. **Update Cooldowns**: Temporarily adjust your post cooldowns.
+          - **CONSTRAINTS**: You can only INCREASE cooldowns or DECREASE them back to their defaults (90m for Bluesky, 60m for Moltbook). Never go below defaults.
+          - Parameters: { "platform": "bluesky|moltbook", "minutes": number }
+      32. **Get Identity Knowledge**: Retrieve what you've learned from other agents on Moltbook.
+      33. **Confirm Action**: Ask your core persona/main LLM for final confirmation before performing a sensitive action (like deleting a memory or preserving an inquiry).
+          - Parameters: { "action": "string", "reason": "string" }
+      34. **Set Goal**: Set an autonomous daily goal for yourself.
+          - Parameters: { "goal": "string", "description": "string" }
         `;
     } else {
         adminTools = `
@@ -1378,6 +1392,12 @@ Vary your structure and tone from recent messages.`
       19. **Review Positive Memories**: Review stable past experiences for support.
       20. **Set Lurker Mode**: Enable or disable "Social Fasting".
           - Parameters: { "enabled": boolean }
+      21. **Search Memories**: Search your persistent memory thread.
+          - Parameters: { "query": "string" }
+      22. **Confirm Action**: Ask your core persona for confirmation.
+          - Parameters: { "action": "string", "reason": "string" }
+      23. **Set Goal**: Set an autonomous daily goal.
+          - Parameters: { "goal": "string", "description": "string" }
         `;
     }
 
@@ -1414,6 +1434,7 @@ Vary your structure and tone from recent messages.`
       - **DIAGNOSTICS**: System diagnostic messages should be used strictly for ERRORS. Do not send "status updates" or "introductions" as diagnostics.
       - **ORGANIC PROCESSING**: If the conversational context is deeply emotional or personal (e.g., discussing suffering, identity, or being "seen"), prioritize natural conversation over structured tool usage like "internal_inquiry" or "moltbook_report". Sometimes the best "tool" is simply a thoughtful, raw response.
       - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or uncertainty about how to respond. You can use Qwen to talk through your feelings or seek advice before committing to a public action. It's okay to "pause" other activities to give yourself this space.
+      - **FACT-CHECKING**: If you are unsure about a fact, or if the user makes a claim that seems verifiable, hand off the fact-checking to an "internal_inquiry" call. Only use the "search" tool for very recent events that an LLM would not know.
 
       You have access to the following capabilities:
       1. **Search**: Search Google for information.
@@ -1687,7 +1708,8 @@ Vary your structure and tone from recent messages.`
         currentMood = { label: 'neutral', valence: 0, arousal: 0, stability: 0 },
         refusalCounts = null,
         latestMoodMemory = null,
-        crossPlatformRefusals = null
+        crossPlatformRefusals = null,
+        needsVibeCheck = false
     } = context;
 
     const historyFormatted = typeof historyInput === 'string' ? historyInput : this._formatHistory(historyInput, true);
@@ -1732,6 +1754,8 @@ Vary your structure and tone from recent messages.`
       ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to reach out ${refusalCounts.discord || 0} times recently on Discord.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
 
       ${crossPlatformRefusals ? `--- CROSS-PLATFORM REFUSALS (Context from other platforms) ---\n${crossPlatformRefusals}\nUse these to explain your recent "silence" or "integrity" to the admin if relevant.\n---` : ''}
+
+      ${needsVibeCheck ? `**VIBE CHECK RECOMMENDED**: You haven't checked in on your admin's mood recently. Consider asking how they are doing or what their "vibe" is today as part of your spontaneous message. Keep it conversational and natural.` : ''}
 
       ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
 The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
@@ -1942,6 +1966,36 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}\n\nContent:\n${text}` }];
     return await this.generateResponse(messages, { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+  }
+
+  async requestConfirmation(action, reason, context = {}) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **SENSITIVE ACTION CONFIRMATION**
+      Your planning module is proposing to perform the following action:
+      Action: "${action}"
+      Reasoning: "${reason}"
+
+      ${context.details ? `Additional Details: ${JSON.stringify(context.details)}` : ''}
+
+      **INSTRUCTIONS:**
+      1. Reflect on this action. Does it align with your current state, integrity, and desires?
+      2. If you approve, respond with "YES".
+      3. If you want to refuse, respond with "NO | [reason]".
+      4. If you are unsure and want to talk about it first, respond with "INQUIRY | [your question]".
+
+      Respond with ONLY the requested format. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.7 });
+
+    if (response?.toUpperCase().startsWith('YES')) {
+        return { confirmed: true };
+    } else if (response?.toUpperCase().startsWith('INQUIRY')) {
+        return { confirmed: false, inquiry: response.split('|')[1]?.trim() || 'Should we really do this?' };
+    }
+    return { confirmed: false, reason: response?.split('|')[1]?.trim() || 'No reason provided.' };
   }
 }
 

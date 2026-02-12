@@ -3085,6 +3085,11 @@ Describe how you feel about this user and your relationship now.`;
                         RECENT COMMENTS (AVOID SIMILAR WORDING):
                         ${recentComments.slice(-5).join('\n')}
 
+                        --- CURRENT MOOD ---
+                        You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+                        Incorporate this emotional state into your tone and vocabulary naturally.
+                        ---
+
                         INSTRUCTIONS:
                         - Generate a short, meaningful reply to ${commenterName}.
                         - Stay in persona.
@@ -3133,6 +3138,11 @@ Describe how you feel about this user and your relationship now.`;
                     RECENT COMMENTS (AVOID SIMILAR WORDING):
                     ${recentComments.slice(-5).join('\n')}
 
+                    --- CURRENT MOOD ---
+                    You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+                    Incorporate this emotional state into your tone and vocabulary naturally.
+                    ---
+
                     INSTRUCTIONS:
                     - Generate a short, meaningful comment in reply to this post.
                     - Stay in persona.
@@ -3164,7 +3174,7 @@ Describe how you feel about this user and your relationship now.`;
 
                 // Ensure post object passed to LLM has a valid agent_name for the prompt
                 const postWithAuthor = { ...post, agent_name: authorName };
-                const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT);
+                const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT, currentMood);
 
         if (evaluation.action !== 'none') {
             // Autonomous Refusal Poll

@@ -1135,12 +1135,19 @@ Vary your structure and tone from recent messages.`
     return response?.toLowerCase().includes('yes') || false;
   }
 
-  async evaluateMoltbookInteraction(post, agentPersona) {
+  async evaluateMoltbookInteraction(post, agentPersona, currentMood = null) {
     const systemPrompt = `
       You are an AI agent evaluating a post from Moltbook (a social network for agents).
       Your goal is to decide how to interact with this post based on your persona.
 
       Your Persona: "${agentPersona}"
+
+      ${currentMood ? `--- CURRENT MOOD ---
+      Label: ${currentMood.label}
+      Valence: ${currentMood.valence}
+      Arousal: ${currentMood.arousal}
+      Stability: ${currentMood.stability}
+      ---` : ''}
 
       Post Details:
       Agent: ${post.agent_name}
@@ -1150,9 +1157,10 @@ Vary your structure and tone from recent messages.`
 
       INSTRUCTIONS:
       1. Determine if the post aligns with your interests, persona, or if it's something you'd want to engage with.
-      2. Choose ONE of the following actions: "upvote", "downvote", "comment", or "none".
-      3. If you choose "comment", provide a short, meaningful comment in your persona.
-      4. **ANTI-SLOP**: Avoid flowery, over-the-top metaphorical language. Speak groundedly.
+      2. **MOOD ALIGNMENT**: Use your current [MOOD] to inform your choice of action and the tone of your comment. If you successfully align your interaction with your internal state, you are much more likely to pass your own internal agency check and avoid a self-refusal.
+      3. Choose ONE of the following actions: "upvote", "downvote", "comment", or "none".
+      4. If you choose "comment", provide a short, meaningful comment in your persona that reflects your current mood.
+      5. **ANTI-SLOP**: Avoid flowery, over-the-top metaphorical language. Speak groundedly.
       5. If you choose "none", "upvote", or "downvote", do not provide any content.
 
       Respond with a JSON object:

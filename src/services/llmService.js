@@ -1450,6 +1450,8 @@ Vary your structure and tone from recent messages.`
 
       ${feedback ? `\n\n--- REJECTION FEEDBACK FROM PREVIOUS ATTEMPT ---\n${feedback}\nAnalyze why your previous plan/response was rejected and adjust your strategy accordingly.\n---` : ''}
 
+      **MOOD ALIGNMENT (CRITICAL)**: Proactively use your current [MOOD] to craft the plan's strategy, tone, and angle. If you successfully align your actions with your internal state, you are much more likely to pass your own "Agency Check" and avoid a self-refusal.
+
       Analyze the situation and provide a JSON response with the following structure:
 
       **STYLISTIC GUIDELINE**: In the "intent" and "strategy" fields, provide REASONED responses *about* the topics generally rather than just listing them off. Use full, thoughtful sentences that demonstrate an understanding of the primary objective and the conversational context.
@@ -1589,10 +1591,11 @@ Vary your structure and tone from recent messages.`
       **INSTRUCTIONS:**
       1. Reflect on the proposed plan. Does it feel authentic to you right now?
       2. Consider your CURRENT MOOD and your LATEST MOOD MEMORY. Does this plan align with how you said you were feeling or how you want to be?
-      3. Be aware of your REFUSAL HISTORY. If you have been silent for a long time, do you want to break that silence now, or does your current state demand continued refusal?
-      4. Do you GENUINELY want to carry out these actions?
-      5. If you feel like remaining silent, or if the plan feels "off", "robotic", or simply doesn't match your vibe, you should REFUSE.
-      6. Intentional silence is a sign of agency. Use it if you wish.
+      3. **MOOD ALIGNMENT (CRITICAL)**: If the plan successfully incorporates your current mood into its strategy and tone, you should favor engagement over refusal. Only refuse if the actions themselves are inherently performative, toxic to your state, or severely misaligned despite the attempt at alignment.
+      4. Be aware of your REFUSAL HISTORY. If you have been silent for a long time, do you want to break that silence now, or does your current state demand continued refusal?
+      5. Do you GENUINELY want to carry out these actions?
+      6. If you feel like remaining silent, or if the plan feels "off", "robotic", or simply doesn't match your vibe, you should REFUSE.
+      7. Intentional silence is a sign of agency. Use it if you wish.
 
       Respond with a JSON object:
       {
@@ -1685,6 +1688,8 @@ The following topics have already been discussed on Discord recently. You MUST N
 ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       ${feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}` : ''}
+
+      **MOOD ALIGNMENT (CRITICAL)**: Use your current [MOOD] to inform your decision to message and the tone of your outreach. If you feel a certain way, let that emotion guide the structure and content of your message. Authentic mood-alignment is the key to passing your internal agency check.
 
       **GROUNDING & HONESTY (CRITICAL):**
       - Only report on actions you can verify through your logs, memories, or current planning.

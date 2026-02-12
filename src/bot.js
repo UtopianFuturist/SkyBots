@@ -590,21 +590,24 @@ export class Bot {
                                     }
                                 } else if (action.tool === 'mute_feed_impact') {
                                     const duration = action.parameters?.duration_minutes || 60;
+                                    console.log(`[Bot] Heartbeat Action: mute_feed_impact (${duration} mins)`);
                                     await dataStore.setMuteFeedImpactUntil(Date.now() + (duration * 60 * 1000));
                                 } else if (action.tool === 'override_mood') {
                                     const { valence, arousal, stability, label } = action.parameters || {};
                                     if (label) {
+                                        console.log(`[Bot] Heartbeat Action: override_mood (${label})`);
                                         await dataStore.updateMood({ valence, arousal, stability, label });
                                         if (memoryService.isEnabled()) {
                                             await memoryService.createMemoryEntry('mood', `[MOOD] Overridden to ideal state: ${label}`);
                                         }
                                     }
                                 } else if (action.tool === 'request_emotional_support') {
-                                    console.log(`[Bot] Heartbeat Action: Emotional support requested.`);
+                                    console.log(`[Bot] Heartbeat Action: request_emotional_support`);
                                 } else if (action.tool === 'review_positive_memories') {
-                                    console.log(`[Bot] Heartbeat Action: Positive memory review.`);
+                                    console.log(`[Bot] Heartbeat Action: review_positive_memories`);
                                 } else if (action.tool === 'set_lurker_mode') {
                                     const enabled = action.parameters?.enabled ?? true;
+                                    console.log(`[Bot] Heartbeat Action: set_lurker_mode (${enabled})`);
                                     await dataStore.setLurkerMode(enabled);
                                 }
                             }
@@ -1718,6 +1721,7 @@ Identify the topic and main takeaway.`;
 
         if (action.tool === 'mute_feed_impact') {
             const duration = action.parameters?.duration_minutes || 60;
+            console.log(`[Bot] Plan Tool: mute_feed_impact (${duration} mins)`);
             await dataStore.setMuteFeedImpactUntil(Date.now() + (duration * 60 * 1000));
             searchContext += `\n[Feed impact on mood muted for ${duration} minutes]`;
         }
@@ -1725,6 +1729,7 @@ Identify the topic and main takeaway.`;
         if (action.tool === 'override_mood') {
             const { valence, arousal, stability, label } = action.parameters || {};
             if (label) {
+                console.log(`[Bot] Plan Tool: override_mood (${label})`);
                 await dataStore.updateMood({ valence, arousal, stability, label });
                 searchContext += `\n[Mood overridden to ideal state: ${label}]`;
                 if (memoryService.isEnabled()) {
@@ -1735,10 +1740,12 @@ Identify the topic and main takeaway.`;
 
         if (action.tool === 'request_emotional_support') {
             const reason = action.parameters?.reason || "Feeling overwhelmed.";
+            console.log(`[Bot] Plan Tool: request_emotional_support (Reason: ${reason})`);
             searchContext += `\n[Requested emotional support from admin. Reason: ${reason}]`;
         }
 
         if (action.tool === 'review_positive_memories') {
+            console.log(`[Bot] Plan Tool: review_positive_memories`);
             const memories = memoryService.getRecentMemories(50);
             const positive = memories.filter(m => m.type === 'mood' && m.content.includes('Stability: 0.'));
             const text = positive.length > 0 ? positive.map(m => m.content).join('\n') : "No stable memories found.";
@@ -1747,6 +1754,7 @@ Identify the topic and main takeaway.`;
 
         if (action.tool === 'set_lurker_mode') {
             const enabled = action.parameters?.enabled ?? true;
+            console.log(`[Bot] Plan Tool: set_lurker_mode (${enabled})`);
             await dataStore.setLurkerMode(enabled);
             searchContext += `\n[Lurker mode set to: ${enabled}]`;
         }
@@ -3333,6 +3341,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 	        Your Recent Moltbook Posts (DO NOT REPEAT THESE THEMES OR TITLES):
 	        ${(moltbookService.db.data.recent_post_contents || []).slice(-5).map(c => `- ${c.substring(0, 100)}...`).join('\n')}
 	        ${recentThoughtsContext}
+
+	        --- CURRENT MOOD ---
+	        You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+	        Incorporate this emotional state into your tone and vocabulary naturally.
+	        ---
 
 	        INSTRUCTIONS:
 	        - **DIVERSIFY**: You have been repeating yourself lately. Explore NEW angles of your persona. If you've been talking about "identity," try talking about "perception," "memory," "logic," or "interaction."

@@ -47,6 +47,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     validateResultRelevance: jest.fn(),
     evaluateConversationVibe: jest.fn(),
     performAgenticPlanning: jest.fn(),
+    evaluateAndRefinePlan: jest.fn().mockResolvedValue({ decision: 'engage', refined_actions: null, reason: 'Engaging for test' }),
     evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'engage', reason: 'Engaging for test' }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
@@ -111,6 +112,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getRefusalCounts: jest.fn().mockReturnValue({ bluesky: 0, discord: 0, moltbook: 0, global: 0 }),
     incrementRefusalCount: jest.fn(),
     resetRefusalCount: jest.fn(),
+    isResting: jest.fn().mockReturnValue(false),
+    isLurkerMode: jest.fn().mockReturnValue(false),
     init: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_daily_text_limit: 20,
@@ -195,6 +198,7 @@ describe('Bot', () => {
     llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
     llmService.rateUserInteraction.mockResolvedValue(3);
     llmService.performAgenticPlanning.mockResolvedValue({ actions: [], intent: 'Friendly' });
+    llmService.evaluateAndRefinePlan.mockImplementation((plan) => Promise.resolve({ decision: 'engage', refined_actions: plan.actions, reason: 'Engaging for test' }));
     llmService.generateDrafts.mockImplementation(async (messages) => {
         const res = await llmService.generateResponse(messages);
         return [res];

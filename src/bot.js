@@ -302,6 +302,11 @@ export class Bot {
   }
 
   async checkMaintenanceTasks() {
+    if (dataStore.isResting()) {
+        console.log('[Bot] Agent is currently RESTING. Skipping maintenance tasks.');
+        return;
+    }
+
     const now = new Date();
 
     // 0. Energy Poll for Rest (Autonomous Choice)
@@ -336,6 +341,7 @@ export class Bot {
             if (poll.choice === 'rest') {
                 console.log(`[Bot] Chosen to REST: ${poll.reason}`);
                 await dataStore.setEnergyLevel(energy + 0.15); // Restore energy
+                await dataStore.setRestingUntil(Date.now() + (2 * 60 * 60 * 1000)); // 2 hours rest
                 return; // Skip this maintenance cycle
             } else {
                 console.log(`[Bot] Chosen to PROCEED: ${poll.reason}`);
@@ -537,25 +543,33 @@ export class Bot {
                     const { message, actions } = pollResult;
                     if (!message) break;
 
-                    // Autonomous Refusal Poll
-                    const intentionality = await llmService.evaluateIntentionality({
+                    // Autonomous Plan Review & Refinement
+                    const proposedActions = [...(actions || [])];
+                    if (message && !proposedActions.some(a => a.tool === 'discord_message')) {
+                        proposedActions.push({ tool: "discord_message", parameters: { message } });
+                    }
+
+                    const refinedPlan = await llmService.evaluateAndRefinePlan({
                         intent: "Sending a spontaneous message to the admin to maintain connection.",
-                        actions: actions && actions.length > 0 ? actions : [{ tool: "discord_message", parameters: { message } }]
+                        actions: proposedActions
                     }, {
                         history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
                         platform: 'discord',
                         currentMood,
                         refusalCounts,
-                        latestMoodMemory
+                        latestMoodMemory,
+                        currentConfig: dConfig
                     });
 
-                    if (intentionality.decision === 'refuse') {
-                        console.log(`[Bot] AGENT REFUSED TO SEND HEARTBEAT: ${intentionality.reason}`);
+                    if (refinedPlan.decision === 'refuse') {
+                        console.log(`[Bot] AGENT REFUSED TO SEND HEARTBEAT: ${refinedPlan.reason}`);
                         await dataStore.incrementRefusalCount('discord');
                         break;
                     }
 
                     await dataStore.resetRefusalCount('discord');
+
+                    const finalActions = refinedPlan.refined_actions || [];
 
                     // Variety & Repetition Check - increased depth from 5 to 12
                     const formattedHistory = [
@@ -570,8 +584,8 @@ export class Bot {
                     if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
                         // Execute Heartbeat Tools
                         const discordOptions = {};
-                        if (actions && actions.length > 0) {
-                            for (const action of actions) {
+                        if (finalActions && finalActions.length > 0) {
+                            for (const action of finalActions) {
                                 if (action.tool === 'image_gen') {
                                     console.log(`[Bot] Heartbeat Action: Generating image for: "${action.query}"`);
                                     const imgResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
@@ -582,11 +596,11 @@ export class Bot {
                                 } else if (action.tool === 'get_render_logs') {
                                     console.log(`[Bot] Heartbeat Action: Internal log check requested.`);
                                     await renderService.getLogs(action.parameters?.limit || 50);
-                                } else if (action.tool === 'internal_research') {
-                                    console.log(`[Bot] Heartbeat Action: Internal research on: "${action.query}"`);
-                                    const researchResult = await llmService.performInternalResearch(action.query);
-                                    if (researchResult && memoryService.isEnabled()) {
-                                        await memoryService.createMemoryEntry('research', `[RESEARCH] Heartbeat query: ${action.query}. Result: ${researchResult}`);
+                                } else if (action.tool === 'internal_inquiry') {
+                                    console.log(`[Bot] Heartbeat Action: Internal inquiry on: "${action.query}"`);
+                                    const inquiryResult = await llmService.performInternalInquiry(action.query);
+                                    if (inquiryResult && memoryService.isEnabled()) {
+                                        await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${action.query}. Result: ${inquiryResult}`);
                                     }
                                 } else if (action.tool === 'mute_feed_impact') {
                                     const duration = action.parameters?.duration_minutes || 60;
@@ -613,12 +627,18 @@ export class Bot {
                             }
                         }
 
-                        await discordService.sendSpontaneousMessage(message, discordOptions);
-                        await dataStore.addRecentThought('discord', message);
+                        // Check if discord_message was approved/retained
+                        const messageAction = finalActions.find(a => a.tool === 'discord_message');
+                        const msgToSend = messageAction ? (messageAction.parameters?.message || message) : message;
+
+                        if (messageAction) {
+                            await discordService.sendSpontaneousMessage(msgToSend, discordOptions);
+                            await dataStore.addRecentThought('discord', msgToSend);
+                        }
 
                         // Extract and record the theme of the sent message to avoid immediate repetition
                         try {
-                            const themePrompt = `Extract a 1-2 word theme for the following message: "${message}". Respond with ONLY the theme.`;
+                            const themePrompt = `Extract a 1-2 word theme for the following message: "${msgToSend}". Respond with ONLY the theme.`;
                             const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
                             if (theme) {
                                 await dataStore.addDiscordExhaustedTheme(theme);
@@ -1341,52 +1361,53 @@ Identify the topic and main takeaway.`;
       plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory);
       console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
 
-      // Autonomous Refusal Poll
-      const intentionality = await llmService.evaluateIntentionality(plan, {
+      // Autonomous Plan Review & Refinement
+      const refinedPlan = await llmService.evaluateAndRefinePlan(plan, {
           history: threadContext,
           platform: 'bluesky',
           currentMood,
           refusalCounts,
-          latestMoodMemory
+          latestMoodMemory,
+          currentConfig: dConfig
       });
 
-      if (intentionality.decision === 'refuse') {
-          console.log(`[Bot] AGENT REFUSED TO ACT ON NOTIFICATION: ${intentionality.reason}`);
+      if (refinedPlan.decision === 'refuse') {
+          console.log(`[Bot] AGENT REFUSED TO ACT ON NOTIFICATION: ${refinedPlan.reason}`);
           await dataStore.incrementRefusalCount('bluesky');
 
           // Option to generate alternative action
-          const alternative = await llmService.generateAlternativeAction(intentionality.reason, 'bluesky', { handle, text });
+          const alternative = await llmService.generateAlternativeAction(refinedPlan.reason, 'bluesky', { handle, text });
           if (alternative && alternative.toUpperCase() !== 'NONE' && attempts < MAX_PLAN_ATTEMPTS) {
               console.log(`[Bot] Alternative action proposed: "${alternative}". Re-planning...`);
 
-              // Melancholic Refusal [RESEARCH] pivot:
-              const isMelancholic = intentionality.reason.toLowerCase().includes('melancholy') ||
-                                    intentionality.reason.toLowerCase().includes('sad') ||
-                                    intentionality.reason.toLowerCase().includes('fragmented') ||
+              // Melancholic Refusal [INQUIRY] pivot:
+              const isMelancholic = refinedPlan.reason.toLowerCase().includes('melancholy') ||
+                                    refinedPlan.reason.toLowerCase().includes('sad') ||
+                                    refinedPlan.reason.toLowerCase().includes('fragmented') ||
                                     currentMood.label.toLowerCase().includes('melancholy');
 
               if (isMelancholic) {
-                  const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Research Call) before continuing? Respond with ONLY "yes" or "no".`;
+                  const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Inquiry Call) before continuing? Respond with ONLY "yes" or "no".`;
                   const wantToTalk = await llmService.generateResponse([{ role: 'system', content: askTalk }], { useQwen: true, preface_system_prompt: false });
                   if (wantToTalk?.toLowerCase().includes('yes')) {
-                      console.log(`[Bot] Triggering melancholic self-dialogue Research call.`);
-                      const dialogue = await llmService.performInternalResearch(`Reflect on these melancholic feelings: ${intentionality.reason}. Explore why you chose the alternative: ${alternative}.`);
+                      console.log(`[Bot] Triggering melancholic self-dialogue Inquiry call.`);
+                      const dialogue = await llmService.performInternalInquiry(`Reflect on these melancholic feelings: ${refinedPlan.reason}. Explore why you chose the alternative: ${alternative}.`);
                       if (dialogue && memoryService.isEnabled()) {
-                          await memoryService.createMemoryEntry('research', `[RESEARCH] Melancholic reflection: ${dialogue}`);
+                          await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Melancholic reflection: ${dialogue}`);
                       }
-                      feedback = `Your previous plan was refused due to melancholy: ${intentionality.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
+                      feedback = `Your previous plan was refused due to melancholy: ${refinedPlan.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
                       continue;
                   }
               }
 
-              feedback = `Your previous plan was refused: ${intentionality.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
+              feedback = `Your previous plan was refused: ${refinedPlan.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
               continue;
           }
 
           // Option to explain refusal
-          const shouldExplain = await llmService.shouldExplainRefusal(intentionality.reason, 'bluesky', { handle, text });
+          const shouldExplain = await llmService.shouldExplainRefusal(refinedPlan.reason, 'bluesky', { handle, text });
           if (shouldExplain) {
-              const explanation = await llmService.generateRefusalExplanation(intentionality.reason, 'bluesky', { handle, text });
+              const explanation = await llmService.generateRefusalExplanation(refinedPlan.reason, 'bluesky', { handle, text });
               if (explanation) {
                   console.log(`[Bot] Explaining refusal to user: "${explanation}"`);
                   await blueskyService.postReply(notification.post, explanation);
@@ -1396,6 +1417,10 @@ Identify the topic and main takeaway.`;
       }
 
       await dataStore.resetRefusalCount('bluesky');
+
+      if (refinedPlan.refined_actions) {
+          plan.actions = refinedPlan.refined_actions;
+      }
 
       if (plan.strategy?.theme) {
           await dataStore.addExhaustedTheme(plan.strategy.theme);
@@ -1705,15 +1730,15 @@ Identify the topic and main takeaway.`;
           }
         }
 
-        if (action.tool === 'internal_research') {
+        if (action.tool === 'internal_inquiry') {
           const query = action.query || action.parameters?.query;
           if (query) {
-            console.log(`[Bot] Plan: Performing internal research on: "${query}"`);
-            const result = await llmService.performInternalResearch(query);
+            console.log(`[Bot] Plan: Performing internal inquiry on: "${query}"`);
+            const result = await llmService.performInternalInquiry(query);
             if (result) {
-              searchContext += `\n[INTERNAL RESEARCH RESULT: ${result}]`;
+              searchContext += `\n[INTERNAL INQUIRY RESULT: ${result}]`;
               if (memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('research', `[RESEARCH] Query: ${query}. Result: ${result}`);
+                await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`);
               }
             }
           }
@@ -1979,9 +2004,9 @@ Identify the topic and main takeaway.`;
       let candidates = [];
       if (attempts === 1) {
           console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
-          candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist });
+          candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
       } else {
-          const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist });
+          const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
           if (singleResponse) candidates = [singleResponse];
       }
 
@@ -2005,7 +2030,7 @@ Identify the topic and main takeaway.`;
           try {
               const containsSlop = isSlop(cand);
               const [varietyCheck, personaCheck, responseSafetyCheck] = await Promise.all([
-                  llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'bluesky' }),
+                  llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'bluesky', currentMood }),
                   llmService.isPersonaAligned(cand, 'bluesky'),
                   isAdminInThread ? Promise.resolve({ safe: true }) : llmService.isResponseSafe(cand)
               ]);
@@ -2023,11 +2048,13 @@ Identify the topic and main takeaway.`;
               continue;
           }
 
-          // Length-based depth bonus (favor longer, more substantive responses)
+          // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
           const lengthBonus = Math.min(cand.length / 500, 0.2);
-          const score = (varietyCheck.score || 0) + lengthBonus;
+          const varietyWeight = (varietyCheck.variety_score ?? varietyCheck.score ?? 0) * 0.5;
+          const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
+          const score = varietyWeight + moodWeight + lengthBonus;
 
-          console.log(`[Bot] Candidate evaluation: Score=${score.toFixed(2)} (Variety: ${varietyCheck.score}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}`);
+          console.log(`[Bot] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}`);
 
           if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned && responseSafetyCheck.safe) {
               if (score > bestScore) {
@@ -2039,7 +2066,8 @@ Identify the topic and main takeaway.`;
                   rejectionReason = containsSlop ? "Contains metaphorical slop." :
                                     (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                     (!responseSafetyCheck.safe ? "Failed safety check." :
-                                    (varietyCheck.feedback || "Too similar to recent history.")));
+                                    (varietyCheck.misaligned ? "Misaligned with current mood." :
+                                    (varietyCheck.feedback || "Too similar to recent history."))));
               }
               rejectedAttempts.push(cand);
           }
@@ -2365,6 +2393,11 @@ Describe how you feel about this user and your relationship now.`;
   async performAutonomousPost() {
     if (this.paused) return;
 
+    if (dataStore.isResting()) {
+        console.log('[Bot] Agent is currently RESTING. Skipping autonomous post.');
+        return;
+    }
+
     if (await this._isDiscordConversationOngoing()) {
         console.log('[Bot] Autonomous post suppressed: Discord conversation is ongoing.');
         return;
@@ -2585,21 +2618,44 @@ Describe how you feel about this user and your relationship now.`;
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-      const intentionality = await llmService.evaluateIntentionality(autonomousPlan, {
+      const refinedPlan = await llmService.evaluateAndRefinePlan(autonomousPlan, {
           history: recentTimelineActivity.split('\n').map(line => ({ author: 'You', text: line })),
           platform: 'bluesky',
           currentMood,
           refusalCounts,
-          latestMoodMemory
+          latestMoodMemory,
+          currentConfig: dConfig
       });
 
-      if (intentionality.decision === 'refuse') {
-          console.log(`[Bot] AGENT REFUSED AUTONOMOUS POST: ${intentionality.reason}`);
+      if (refinedPlan.decision === 'refuse') {
+          console.log(`[Bot] AGENT REFUSED AUTONOMOUS POST: ${refinedPlan.reason}`);
           await dataStore.incrementRefusalCount('bluesky');
           return;
       }
 
       await dataStore.resetRefusalCount('bluesky');
+
+      const finalAutonomousPlan = { ...autonomousPlan };
+      if (refinedPlan.refined_actions) {
+          finalAutonomousPlan.actions = refinedPlan.refined_actions;
+      }
+
+      let agenticContext = '';
+      if (finalAutonomousPlan.actions) {
+          for (const action of finalAutonomousPlan.actions) {
+              if (action.tool === 'internal_inquiry') {
+                  console.log(`[Bot] Executing agentic inquiry: ${action.query}`);
+                  const result = await llmService.performInternalInquiry(action.query);
+                  if (result) {
+                      if (memoryService.isEnabled()) {
+                          await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Autonomous thought: ${action.query}. Result: ${result}`);
+                      }
+                      agenticContext += `\n[INTERNAL INQUIRY: ${result}]`;
+                  }
+              }
+              // Handle other tools if persona added them
+          }
+      }
 
       // 4. Check for meaningful user to mention
       console.log(`[Bot] Checking for meaningful mentions for topic: ${topic}`);
@@ -2642,8 +2698,8 @@ Describe how you feel about this user and your relationship now.`;
       const blueskyDirectives = dataStore.getBlueskyInstructions();
       const personaUpdates = dataStore.getPersonaUpdates();
       const recentThoughts = dataStore.getRecentThoughts();
-      const recentThoughtsContext = recentThoughts.length > 0
-        ? `\n\n--- RECENT CROSS-PLATFORM THOUGHTS ---\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content.substring(0, 200)}${t.content.length > 200 ? '...' : ''}`).join('\n')}\n---`
+      const recentThoughtsContext = (recentThoughts.length > 0 || agenticContext)
+        ? `\n\n--- RECENT CROSS-PLATFORM THOUGHTS ---\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content.substring(0, 200)}${t.content.length > 200 ? '...' : ''}`).join('\n')}${agenticContext}\n---`
         : '';
 
       const baseAutonomousPrompt = `
@@ -3085,6 +3141,11 @@ Describe how you feel about this user and your relationship now.`;
                         RECENT COMMENTS (AVOID SIMILAR WORDING):
                         ${recentComments.slice(-5).join('\n')}
 
+                        --- CURRENT MOOD ---
+                        You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+                        Incorporate this emotional state into your tone and vocabulary naturally.
+                        ---
+
                         INSTRUCTIONS:
                         - Generate a short, meaningful reply to ${commenterName}.
                         - Stay in persona.
@@ -3133,6 +3194,11 @@ Describe how you feel about this user and your relationship now.`;
                     RECENT COMMENTS (AVOID SIMILAR WORDING):
                     ${recentComments.slice(-5).join('\n')}
 
+                    --- CURRENT MOOD ---
+                    You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
+                    Incorporate this emotional state into your tone and vocabulary naturally.
+                    ---
+
                     INSTRUCTIONS:
                     - Generate a short, meaningful comment in reply to this post.
                     - Stay in persona.
@@ -3164,14 +3230,14 @@ Describe how you feel about this user and your relationship now.`;
 
                 // Ensure post object passed to LLM has a valid agent_name for the prompt
                 const postWithAuthor = { ...post, agent_name: authorName };
-                const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT);
+                const evaluation = await llmService.evaluateMoltbookInteraction(postWithAuthor, config.TEXT_SYSTEM_PROMPT, currentMood);
 
         if (evaluation.action !== 'none') {
-            // Autonomous Refusal Poll
+            // Autonomous Plan Review & Refinement
             const refusalCounts = dataStore.getRefusalCounts();
             const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-            const intentionality = await llmService.evaluateIntentionality({
+            const refinedPlan = await llmService.evaluateAndRefinePlan({
                 intent: `Interact with a post by ${authorName} on Moltbook (${evaluation.action}).`,
                 actions: [{ tool: "moltbook_action", parameters: { action: evaluation.action, post_id: post.id, content: evaluation.content } }]
             }, {
@@ -3179,11 +3245,12 @@ Describe how you feel about this user and your relationship now.`;
                 platform: 'moltbook',
                 currentMood,
                 refusalCounts,
-                latestMoodMemory
+                latestMoodMemory,
+                currentConfig: dConfig
             });
 
-            if (intentionality.decision === 'refuse') {
-                console.log(`[Moltbook] AGENT REFUSED TO INTERACT: ${intentionality.reason}`);
+            if (refinedPlan.decision === 'refuse') {
+                console.log(`[Moltbook] AGENT REFUSED TO INTERACT: ${refinedPlan.reason}`);
                 await dataStore.incrementRefusalCount('moltbook');
                 // Skip further processing for this post
                 if (!dataStore.db.data.moltbook_interacted_posts) {
@@ -3193,6 +3260,28 @@ Describe how you feel about this user and your relationship now.`;
                 continue;
             }
             await dataStore.resetRefusalCount('moltbook');
+
+            // Agentic action execution for Moltbook (e.g. if persona added an inquiry)
+            if (refinedPlan.refined_actions) {
+                for (const action of refinedPlan.refined_actions) {
+                    if (action.tool === 'internal_inquiry') {
+                        console.log(`[Moltbook] Executing agentic inquiry: ${action.query}`);
+                        const result = await llmService.performInternalInquiry(action.query);
+                        if (result && memoryService.isEnabled()) {
+                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Moltbook interaction thought: ${action.query}. Result: ${result}`);
+                        }
+                    }
+                    // Filter or add other tools
+                }
+                // Update evaluation if actions were filtered
+                const actionMatch = refinedPlan.refined_actions.find(a => a.tool === 'moltbook_action');
+                if (!actionMatch) {
+                    evaluation.action = 'none';
+                } else {
+                    evaluation.action = actionMatch.parameters.action;
+                    evaluation.content = actionMatch.parameters.content;
+                }
+            }
         }
 
                 if (evaluation.action === 'upvote') {
@@ -3245,6 +3334,11 @@ Describe how you feel about this user and your relationship now.`;
           console.log('[Moltbook] Moltbook posting is disabled. Skipping post task.');
           return;
       }
+
+    if (dataStore.isResting()) {
+        console.log('[Moltbook] Agent is currently RESTING. Suppressing periodic tasks.');
+        return;
+    }
 
     if (dataStore.isLurkerMode()) {
         console.log('[Moltbook] Lurker Mode (Social Fasting) active. Suppressing periodic tasks.');
@@ -3401,11 +3495,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
           const personaCheck = await llmService.isPersonaAligned(content, 'moltbook');
 
           if (!varietyCheck.repetitive && !containsSlop && personaCheck.aligned) {
-            // Autonomous Refusal Poll
+            // Autonomous Plan Review & Refinement
             const refusalCounts = dataStore.getRefusalCounts();
             const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-            const intentionality = await llmService.evaluateIntentionality({
+            const refinedPlan = await llmService.evaluateAndRefinePlan({
                 intent: `Post a new musing to Moltbook m/${targetSubmolt} about "${title}".`,
                 actions: [{ tool: "moltbook_post", parameters: { title, content, submolt: targetSubmolt } }]
             }, {
@@ -3413,11 +3507,12 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                 platform: 'moltbook',
                 currentMood,
                 refusalCounts,
-                latestMoodMemory
+                latestMoodMemory,
+                currentConfig: dConfig
             });
 
-            if (intentionality.decision === 'refuse') {
-                console.log(`[Moltbook] AGENT REFUSED TO POST MUSING: ${intentionality.reason}`);
+            if (refinedPlan.decision === 'refuse') {
+                console.log(`[Moltbook] AGENT REFUSED TO POST MUSING: ${refinedPlan.reason}`);
                 await dataStore.incrementRefusalCount('moltbook');
                 success = true; // Mark as "handled" so we don't keep retrying
                 break;
@@ -3425,11 +3520,35 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
             await dataStore.resetRefusalCount('moltbook');
 
-            const result = await moltbookService.post(title, content, targetSubmolt);
+            // Agentic action execution for Moltbook (e.g. if persona added an inquiry)
+            if (refinedPlan.refined_actions) {
+                for (const action of refinedPlan.refined_actions) {
+                    if (action.tool === 'internal_inquiry') {
+                        console.log(`[Moltbook] Executing agentic inquiry: ${action.query}`);
+                        const result = await llmService.performInternalInquiry(action.query);
+                        if (result && memoryService.isEnabled()) {
+                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Moltbook musing thought: ${action.query}. Result: ${result}`);
+                        }
+                    }
+                    // Filter or add other tools
+                }
+                // Check if post action was filtered out
+                if (!refinedPlan.refined_actions.some(a => a.tool === 'moltbook_post')) {
+                    success = true;
+                    break;
+                }
+            }
+
+            const postAction = refinedPlan.refined_actions?.find(a => a.tool === 'moltbook_post');
+            const finalTitle = postAction?.parameters?.title || title;
+            const finalContent = postAction?.parameters?.content || content;
+            const finalSubmolt = postAction?.parameters?.submolt || targetSubmolt;
+
+            const result = await moltbookService.post(finalTitle, finalContent, finalSubmolt);
             if (result) {
-              await dataStore.addRecentThought('moltbook', content);
-            await dataStore.addRecentMoltbookComment(content); // Use same history for posts/comments to ensure overall variety
-            await dataStore.addExhaustedTheme(title);
+              await dataStore.addRecentThought('moltbook', finalContent);
+              await dataStore.addRecentMoltbookComment(finalContent); // Use same history for posts/comments to ensure overall variety
+              await dataStore.addExhaustedTheme(finalTitle);
               await this._shareMoltbookPostToBluesky(result);
             }
             this.updateActivity();

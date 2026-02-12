@@ -233,8 +233,11 @@ class DiscordService {
         });
 
         this.client.on('debug', (info) => {
+            // Silence repetitive heartbeat noise to keep logs meaningful
+            if (info.includes('Heartbeat')) return;
+
             // Enhanced WebSocket/Gateway debugging
-            if (info.includes('WebSocket') || info.includes('Gateway') || info.includes('Heartbeat')) {
+            if (info.includes('WebSocket') || info.includes('Gateway')) {
                 console.log('[DiscordService] DEBUG (Connection):', info);
             } else {
                 // Still log other debug info but maybe less prominently
@@ -681,53 +684,54 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
                      console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
-                     // Autonomous Refusal Poll
-                     const intentionality = await llmService.evaluateIntentionality(plan, {
+                     // Autonomous Plan Review & Refinement
+                     const refinedPlan = await llmService.evaluateAndRefinePlan(plan, {
                          history: history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })),
                          platform: 'discord',
                          currentMood,
                          refusalCounts,
                          latestMoodMemory,
-                         feedback: planFeedback
+                         feedback: planFeedback,
+                         currentConfig: dConfig
                      });
 
-                     if (intentionality.decision === 'refuse') {
-                         console.log(`[DiscordService] AGENT REFUSED TO ACT: ${intentionality.reason}`);
+                     if (refinedPlan.decision === 'refuse') {
+                         console.log(`[DiscordService] AGENT REFUSED TO ACT: ${refinedPlan.reason}`);
                          await dataStore.incrementRefusalCount('discord');
 
                          // Option to generate alternative action
-                         const alternative = await llmService.generateAlternativeAction(intentionality.reason, 'discord', { username: message.author.username, content: message.content });
+                         const alternative = await llmService.generateAlternativeAction(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
                          if (alternative && alternative.toUpperCase() !== 'NONE' && planAttempts < MAX_PLAN_ATTEMPTS) {
                              console.log(`[DiscordService] Alternative action proposed: "${alternative}". Re-planning...`);
 
-                             // Melancholic Refusal [RESEARCH] pivot:
-                             const isMelancholic = intentionality.reason.toLowerCase().includes('melancholy') ||
-                                                 intentionality.reason.toLowerCase().includes('sad') ||
-                                                 intentionality.reason.toLowerCase().includes('fragmented') ||
+                             // Melancholic Refusal [INQUIRY] pivot:
+                             const isMelancholic = refinedPlan.reason.toLowerCase().includes('melancholy') ||
+                                                 refinedPlan.reason.toLowerCase().includes('sad') ||
+                                                 refinedPlan.reason.toLowerCase().includes('fragmented') ||
                                                  currentMood.label.toLowerCase().includes('melancholy');
 
                              if (isMelancholic) {
-                                 const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Research Call) before continuing? Respond with ONLY "yes" or "no".`;
+                                 const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Inquiry Call) before continuing? Respond with ONLY "yes" or "no".`;
                                  const wantToTalk = await llmService.generateResponse([{ role: 'system', content: askTalk }], { useQwen: true, preface_system_prompt: false });
                                  if (wantToTalk?.toLowerCase().includes('yes')) {
-                                     console.log(`[DiscordService] Triggering melancholic self-dialogue Research call.`);
-                                     const dialogue = await llmService.performInternalResearch(`Reflect on these melancholic feelings: ${intentionality.reason}. Explore why you chose the alternative: ${alternative}.`);
+                                     console.log(`[DiscordService] Triggering melancholic self-dialogue Inquiry call.`);
+                                     const dialogue = await llmService.performInternalInquiry(`Reflect on these melancholic feelings: ${refinedPlan.reason}. Explore why you chose the alternative: ${alternative}.`);
                                      if (dialogue && memoryService.isEnabled()) {
-                                         await memoryService.createMemoryEntry('research', `[RESEARCH] Melancholic reflection: ${dialogue}`);
+                                         await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Melancholic reflection: ${dialogue}`);
                                      }
-                                     planFeedback = `Your previous plan was refused due to melancholy: ${intentionality.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
+                                     planFeedback = `Your previous plan was refused due to melancholy: ${refinedPlan.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
                                      continue;
                                  }
                              }
 
-                             planFeedback = `Your previous plan was refused: ${intentionality.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
+                             planFeedback = `Your previous plan was refused: ${refinedPlan.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
                              continue;
                          }
 
                          // Option to explain refusal / Negotiation
-                         const shouldExplain = await llmService.shouldExplainRefusal(intentionality.reason, 'discord', { username: message.author.username, content: message.content });
+                         const shouldExplain = await llmService.shouldExplainRefusal(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
                          if (shouldExplain) {
-                             const explanation = await llmService.generateRefusalExplanation(intentionality.reason, 'discord', { username: message.author.username, content: message.content });
+                             const explanation = await llmService.generateRefusalExplanation(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
                              if (explanation) {
                                  console.log(`[DiscordService] Explaining refusal to admin: "${explanation}"`);
                                  await this._send(message.channel, explanation);
@@ -737,6 +741,9 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
 
                      // If we reached here, plan was accepted
+                     if (refinedPlan.refined_actions) {
+                         plan.actions = refinedPlan.refined_actions;
+                     }
                      break;
                  }
 
@@ -1136,14 +1143,14 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              }
                          }
                      }
-                     if (action.tool === 'internal_research') {
+                     if (action.tool === 'internal_inquiry') {
                          const query = action.query || action.parameters?.query;
                          if (query) {
-                             const result = await llmService.performInternalResearch(query);
+                             const result = await llmService.performInternalInquiry(query);
                              if (result) {
-                                 actionResults.push(`[Internal Research Result for "${query}": ${result}]`);
+                                 actionResults.push(`[Internal Inquiry Result for "${query}": ${result}]`);
                                  if (memoryService.isEnabled()) {
-                                     await memoryService.createMemoryEntry('research', `[RESEARCH] Query: ${query}. Result: ${result}`);
+                                     await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`);
                                  }
                              }
                          }
@@ -1224,7 +1231,8 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              temperature: currentTemp,
                              openingBlacklist,
                              tropeBlacklist: prePlanning?.trope_blacklist || [],
-                             additionalConstraints
+                             additionalConstraints,
+                             currentMood
                          });
                      } else {
                          const singleResponse = await llmService.generateResponse(finalMessages, {
@@ -1232,7 +1240,8 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              temperature: currentTemp,
                              openingBlacklist,
                              tropeBlacklist: prePlanning?.trope_blacklist || [],
-                             additionalConstraints
+                             additionalConstraints,
+                             currentMood
                          });
                          if (singleResponse) candidates = [singleResponse];
                      }
@@ -1257,7 +1266,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          try {
                              const containsSlop = isSlop(cand);
                              const [varietyCheck, personaCheck] = await Promise.all([
-                                 llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord' }),
+                                 llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord', currentMood }),
                                  llmService.isPersonaAligned(cand, 'discord')
                              ]);
                              return { cand, containsSlop, varietyCheck, personaCheck };
@@ -1274,11 +1283,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              continue;
                          }
 
-                         // Length-based depth bonus (favor longer, more substantive responses)
+                         // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
                          const lengthBonus = Math.min(cand.length / 500, 0.2); // Up to 0.2 bonus for 500+ chars
-                         const score = (varietyCheck.score || 0) + lengthBonus;
+                         const varietyWeight = (varietyCheck.variety_score ?? varietyCheck.score ?? 0) * 0.5;
+                         const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
+                         const score = varietyWeight + moodWeight + lengthBonus;
 
-                         console.log(`[DiscordService] Candidate evaluation: Score=${score.toFixed(2)} (Variety: ${varietyCheck.score}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}`);
+                         console.log(`[DiscordService] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}`);
 
                          if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
                              if (score > bestScore) {
@@ -1289,7 +1300,8 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              if (!bestCandidate) {
                                  rejectionReason = containsSlop ? "Contains metaphorical slop." :
                                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
-                                                   (varietyCheck.feedback || "Too similar to recent history."));
+                                                   (varietyCheck.misaligned ? "Misaligned with current mood." :
+                                                   (varietyCheck.feedback || "Too similar to recent history.")));
 
                                  if (varietyCheck.repetitive && varietyCheck.feedback) {
                                      additionalConstraints.push(varietyCheck.feedback);

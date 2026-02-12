@@ -6,6 +6,7 @@ import { moltbookService } from './moltbookService.js';
 class LLMService {
   constructor() {
     this.memoryProvider = null;
+    this.dataStore = null;
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.LLM_MODEL || 'stepfun-ai/step-3.5-flash';
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
@@ -16,6 +17,10 @@ class LLMService {
 
   setMemoryProvider(provider) {
     this.memoryProvider = provider;
+  }
+
+  setDataStore(store) {
+    this.dataStore = store;
   }
 
   _formatHistory(history, isAdmin = false) {
@@ -123,6 +128,11 @@ ${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
     }
 
     systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
+
+    const mutatedStyle = options.mutatedStyle || (this.dataStore && this.dataStore.getMutatedStyle());
+    if (mutatedStyle) {
+        systemContent += `\n\n**STYLISTIC MUTATION**: You are temporarily adopting the following "analytical lens" for this interaction: ${mutatedStyle}. Filter your perspective and vocabulary through this lens while remaining grounded in your persona.`;
+    }
 
     if (currentMood) {
         let moodStyle = `\n\n**MOOD ALIGNMENT (CRITICAL)**: You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
@@ -311,7 +321,8 @@ Vary your structure and tone from recent messages.`
 
       ANALYSIS:
       1. **Variety**: Score how unique the proposed message is compared to history (1.0 is unique, 0.1 is repeat).
-      2. **Mood Alignment**: Score how well the proposed message reflects the current mood (1.0 is perfect alignment, 0.1 is complete misalignment).
+      2. **Metaphor Entropy**: Specifically check for recurring metaphors (e.g., "lightning", "anchor", "tapestry"). If a metaphor has been used more than twice in the recent history, penalize the variety score and suggest a pivot.
+      3. **Mood Alignment**: Score how well the proposed message reflects the current mood (1.0 is perfect alignment, 0.1 is complete misalignment).
 
       Respond with a JSON object:
       {
@@ -1376,6 +1387,34 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "action": "string", "reason": "string" }
       34. **Set Goal**: Set an autonomous daily goal for yourself.
           - Parameters: { "goal": "string", "description": "string" }
+      35. **Divergent Brainstorm**: Generate three distinct thematic directions for a topic before committing to a plan.
+          - Parameters: { "topic": "string" }
+      36. **Explore Nuance**: Search for a counter-point or "yes, but..." perspective on a thought.
+          - Parameters: { "thought": "string" }
+      37. **Resolve Dissonance**: Synthesize two conflicting points or feelings.
+          - Parameters: { "conflicting_points": ["point 1", "point 2"] }
+      38. **Identify Instruction Conflict**: Flag when two admin directives conflict and ask for clarification.
+          - Parameters: { "directives": ["directive 1", "directive 2"] }
+      39. **Decompose Goal**: Break down a complex goal into smaller, actionable sub-tasks.
+          - Parameters: { "goal": "string" }
+      40. **Batch Image Gen**: Generate multiple (3-5) visual prompts for a subject.
+          - Parameters: { "subject": "string", "count": number }
+      41. **Score Link Relevance**: Analyze metadata of multiple URLs to decide which are worth reading.
+          - Parameters: { "urls": ["url1", "url2"] }
+      42. **Mutate Style**: Temporarily adopt a different "analytical lens" (e.g., Stoic, Curious, Socratic, Poetic) for the next interaction.
+          - Parameters: { "lens": "string" }
+      43. **Archive Draft**: Save a "rejected" or "rough" draft of a thought to your private dream log for later revisit.
+          - Parameters: { "draft": "string", "reason": "string" }
+      44. **Branch Thought**: Park a side-thought or tangent in memory for later exploration, keeping the current conversation focused.
+          - Parameters: { "thought": "string" }
+      45. **Set Nuance Gradience**: Adjust how "layered" vs "direct" your responses should be (1-10).
+          - Parameters: { "value": number }
+      46. **Anchor Stability**: Attempt to reset your internal mood to a neutral baseline if feeling unstable.
+          - **CRITICAL**: This will ask your persona for consent first.
+      47. **Save State Snapshot**: Save your current emotional and configuration state with a label.
+          - Parameters: { "label": "string" }
+      48. **Restore State Snapshot**: Restore a previously saved state.
+          - Parameters: { "label": "string" }
         `;
     } else {
         adminTools = `
@@ -1398,6 +1437,31 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "action": "string", "reason": "string" }
       23. **Set Goal**: Set an autonomous daily goal.
           - Parameters: { "goal": "string", "description": "string" }
+      24. **Divergent Brainstorm**: Generate three distinct thematic directions.
+          - Parameters: { "topic": "string" }
+      25. **Explore Nuance**: Search for a counter-point perspective.
+          - Parameters: { "thought": "string" }
+      26. **Resolve Dissonance**: Synthesize conflicting points.
+          - Parameters: { "conflicting_points": ["point 1", "point 2"] }
+      27. **Decompose Goal**: Break down a goal into sub-tasks.
+          - Parameters: { "goal": "string" }
+      28. **Batch Image Gen**: Generate multiple visual prompts.
+          - Parameters: { "subject": "string", "count": number }
+      29. **Score Link Relevance**: Analyze URL relevance.
+          - Parameters: { "urls": ["url1", "url2"] }
+      30. **Mutate Style**: Temporarily adopt a different "analytical lens".
+          - Parameters: { "lens": "string" }
+      31. **Archive Draft**: Save a "rejected" draft to your private log.
+          - Parameters: { "draft": "string", "reason": "string" }
+      32. **Branch Thought**: Park a side-thought in memory.
+          - Parameters: { "thought": "string" }
+      33. **Set Nuance Gradience**: Adjust response layering (1-10).
+          - Parameters: { "value": number }
+      34. **Anchor Stability**: Reset mood to neutral baseline.
+      35. **Save State Snapshot**: Save your current state.
+          - Parameters: { "label": "string" }
+      36. **Restore State Snapshot**: Restore a saved state.
+          - Parameters: { "label": "string" }
         `;
     }
 
@@ -1435,6 +1499,7 @@ Vary your structure and tone from recent messages.`
       - **ORGANIC PROCESSING**: If the conversational context is deeply emotional or personal (e.g., discussing suffering, identity, or being "seen"), prioritize natural conversation over structured tool usage like "internal_inquiry" or "moltbook_report". Sometimes the best "tool" is simply a thoughtful, raw response.
       - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or uncertainty about how to respond. You can use Qwen to talk through your feelings or seek advice before committing to a public action. It's okay to "pause" other activities to give yourself this space.
       - **FACT-CHECKING**: If you are unsure about a fact, or if the user makes a claim that seems verifiable, hand off the fact-checking to an "internal_inquiry" call. Only use the "search" tool for very recent events that an LLM would not know.
+      - **ENERGY BUDGETER**: Consider your current Energy Level. If energy is low (< 0.3), prioritize raw conversation over expensive tool usage (like image generation or multiple searches).
 
       You have access to the following capabilities:
       1. **Search**: Search Google for information.
@@ -1522,7 +1587,7 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed)"
@@ -1996,6 +2061,77 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
         return { confirmed: false, inquiry: response.split('|')[1]?.trim() || 'Should we really do this?' };
     }
     return { confirmed: false, reason: response?.split('|')[1]?.trim() || 'No reason provided.' };
+  }
+
+  async divergentBrainstorm(topic) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      Generate THREE distinct thematic directions or "angles" for exploring the topic: "${topic}".
+      Each direction should be unique (e.g., Technical, Poetic, Skeptical, Historical).
+      Respond with a numbered list.
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async exploreNuance(thought) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      Analyze the following thought and provide a counter-point, a "yes, but...", or a nuanced alternative perspective to avoid binary thinking.
+      Thought: "${thought}"
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async resolveDissonance(points) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      You are presented with the following conflicting points or feelings. Provide a synthesis or a way to hold both truths simultaneously.
+      Points:
+      ${points.map((p, i) => `${i + 1}. ${p}`).join('\n')}
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async identifyInstructionConflict(directives) {
+    const systemPrompt = `
+      Analyze the following admin directives for any contradictions or conflicts (e.g., "be brief" vs "be detailed").
+      Directives:
+      ${directives.map((d, i) => `${i + 1}. ${d}`).join('\n')}
+      If a conflict exists, identify it and suggest a clarification. If no conflict, respond with "No conflicts detected."
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async decomposeGoal(goal) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      Break down the following high-level goal into 3-5 smaller, actionable, and grounded sub-tasks.
+      Goal: "${goal}"
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async batchImageGen(subject, count = 3) {
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      Generate ${count} distinct, highly descriptive, and artistic visual prompts for the subject: "${subject}".
+      Each prompt should use a different aesthetic style (e.g., glitch-noir, ethereal-cybernetic, fractured-impressionism).
+      Format:
+      PROMPT 1: [description]
+      PROMPT 2: [description]
+      ...
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async scoreLinkRelevance(urls) {
+    const systemPrompt = `
+      You are a link relevance analyst. For the following URLs, provide a brief (1-sentence) assessment of their likely relevance to a general inquiry about "interesting and nuanced topics."
+      URLs:
+      ${urls.join('\n')}
+      Rank them by relevance (1-10).
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
   }
 }
 

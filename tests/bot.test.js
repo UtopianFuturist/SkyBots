@@ -54,6 +54,17 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     shouldIncludeSensory: jest.fn().mockResolvedValue(false),
     performInternalResearch: jest.fn(),
     generateDrafts: jest.fn(),
+    setDataStore: jest.fn(),
+    divergentBrainstorm: jest.fn(),
+    exploreNuance: jest.fn(),
+    resolveDissonance: jest.fn(),
+    identifyInstructionConflict: jest.fn(),
+    decomposeGoal: jest.fn(),
+    batchImageGen: jest.fn(),
+    scoreLinkRelevance: jest.fn(),
+    generateRefusalExplanation: jest.fn(),
+    generateAlternativeAction: jest.fn(),
+    shouldExplainRefusal: jest.fn(),
   },
 }));
 
@@ -114,6 +125,10 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     resetRefusalCount: jest.fn(),
     isResting: jest.fn().mockReturnValue(false),
     isLurkerMode: jest.fn().mockReturnValue(false),
+    getMutatedStyle: jest.fn().mockReturnValue(null),
+    getInteractionHeat: jest.fn().mockReturnValue({ warmth: 3 }),
+    updateInteractionHeat: jest.fn(),
+    updateSocialResonance: jest.fn(),
     init: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_daily_text_limit: 20,

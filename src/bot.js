@@ -52,6 +52,7 @@ export class Bot {
     console.log('[Bot] [v3] Initializing services...');
     await dataStore.init();
     console.log('[Bot] DataStore initialized.');
+    llmService.setDataStore(dataStore);
 
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
@@ -720,6 +721,78 @@ export class Bot {
         this.lastSupportCheckTime = now.getTime();
     }
 
+    // 1ee. Persona Alignment Audit (Every 12 hours)
+    const lastAudit = dataStore.db.data.last_persona_audit || 0;
+    if (now.getTime() - lastAudit >= 12 * 60 * 60 * 1000) {
+        console.log('[Bot] Triggering Persona Alignment Audit...');
+        try {
+            const feed = await blueskyService.agent.getAuthorFeed({ actor: blueskyService.did, limit: 20 });
+            const posts = feed.data.feed.map(f => f.post.record.text).filter(t => t);
+            if (posts.length > 0) {
+                const auditPrompt = `
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    You are performing a self-audit of your recent posts to ensure they align with your persona and avoid "AI slop" or hollow metaphors.
+
+                    Recent Posts:
+                    ${posts.map((p, i) => `${i + 1}. ${p}`).join('\n')}
+
+                    INSTRUCTIONS:
+                    1. Critique the overall quality and alignment of these posts.
+                    2. Identify any "drifting" into generic AI patterns.
+                    3. Suggest a "course correction" or a new stylistic focus if needed.
+                    4. Respond with a memory entry tagged [PERSONA_AUDIT].
+                `;
+                const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useQwen: true });
+                if (audit && memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('audit', audit);
+                    dataStore.db.data.last_persona_audit = now.getTime();
+                    await dataStore.db.write();
+                }
+            }
+        } catch (e) {
+            console.error('[Bot] Error in persona alignment audit:', e);
+        }
+    }
+
+    // 1f. Mood Trend Analysis (Every 48 hours)
+    const lastMoodTrend = dataStore.db.data.last_mood_trend || 0;
+    if (now.getTime() - lastMoodTrend >= 48 * 60 * 60 * 1000) {
+        console.log('[Bot] Triggering Mood Trend Analysis...');
+        const history = dataStore.db.data.mood_history || [];
+        if (history.length >= 5) {
+            const trendPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                You are analyzing your emotional shifts over the last 48 hours to identify patterns.
+                Mood History:
+                ${history.slice(-20).map(m => `- ${m.label} (V:${m.valence}, S:${m.stability})`).join('\n')}
+
+                Summarize your "pattern of feeling" and how your emotional landscape has evolved.
+                Respond with a memory entry tagged [MOOD_TREND].
+            `;
+            const trend = await llmService.generateResponse([{ role: 'system', content: trendPrompt }], { useQwen: true });
+            if (trend && memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('mood', trend);
+                dataStore.db.data.last_mood_trend = now.getTime();
+                await dataStore.db.write();
+            }
+        }
+    }
+
+    // 1g. Memory Pruning Service (Every 24 hours)
+    const lastPruning = dataStore.db.data.last_memory_pruning || 0;
+    if (now.getTime() - lastPruning >= 24 * 60 * 60 * 1000) {
+        console.log('[Bot] Running Memory Pruning Service...');
+        // Pruning logic: Archive interactions older than 7 days if we have more than 300
+        if (dataStore.db.data.interactions.length > 300) {
+            const sevenDaysAgo = Date.now() - (7 * 24 * 60 * 60 * 1000);
+            const initialLength = dataStore.db.data.interactions.length;
+            dataStore.db.data.interactions = dataStore.db.data.interactions.filter(i => i.timestamp > sevenDaysAgo);
+            console.log(`[Bot] Pruned ${initialLength - dataStore.db.data.interactions.length} old interactions.`);
+            dataStore.db.data.last_memory_pruning = now.getTime();
+            await dataStore.db.write();
+        }
+    }
+
     // 1e. Mood Sync (Every 2 hours)
     const lastMoodSync = this.lastMoodSyncTime || 0;
     const moodSyncDiff = (now.getTime() - lastMoodSync) / (1000 * 60 * 60);
@@ -807,6 +880,14 @@ export class Bot {
                     shouldPoll = false;
                 } else {
                     pollReason += '_QUIET_HOURS_OVERRIDE';
+                }
+            }
+
+            if (shouldPoll) {
+                // Admin "Presence" Ping (29): If admin hasn't been active in 24 hours, don't proactively message unless it's a scheduled time
+                if (quietMins > 24 * 60 && !isScheduled) {
+                    console.log(`[Bot] Discord heartbeat suppressed: Admin has been absent for >24h. Waiting for their return.`);
+                    shouldPoll = false;
                 }
             }
 
@@ -1692,9 +1773,9 @@ Identify the topic and main takeaway.`;
     const personaUpdates = dataStore.getPersonaUpdates();
     const recentBotReplies = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER).map(h => h.text);
 
-    let attempts = 0;
-    let feedback = '';
-    let rejectedAttempts = [];
+    let planAttempts = 0;
+    let planFeedback = '';
+    let rejectedPlanAttempts = [];
     const MAX_PLAN_ATTEMPTS = 5;
 
     let youtubeResult = null;
@@ -1708,17 +1789,17 @@ Identify the topic and main takeaway.`;
     const recentBotMsgsInThread = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER);
     const openingBlacklist = recentBotMsgsInThread.slice(-5).map(m => m.text.split(/\s+/).slice(0, 10).join(' '));
 
-    while (attempts < MAX_PLAN_ATTEMPTS) {
-      attempts++;
-      console.log(`[Bot] Planning Attempt ${attempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
+    while (planAttempts < MAX_PLAN_ATTEMPTS) {
+      planAttempts++;
+      console.log(`[Bot] Planning Attempt ${planAttempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
 
-      const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nAdjust your planning and strategy to be as DIFFERENT as possible from these previous failures.` : '';
+      const retryContext = planFeedback ? `\n\n**RETRY FEEDBACK**: ${planFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedPlanAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nAdjust your planning and strategy to be as DIFFERENT as possible from these previous failures.` : '';
 
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
       plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory);
-      console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
+      console.log(`[Bot] Agentic Plan (Attempt ${planAttempts}): ${JSON.stringify(plan)}`);
 
       // Autonomous Plan Review & Refinement
       const refinedPlan = await llmService.evaluateAndRefinePlan(plan, {
@@ -1736,7 +1817,7 @@ Identify the topic and main takeaway.`;
 
           // Option to generate alternative action
           const alternative = await llmService.generateAlternativeAction(refinedPlan.reason, 'bluesky', { handle, text });
-          if (alternative && alternative.toUpperCase() !== 'NONE' && attempts < MAX_PLAN_ATTEMPTS) {
+          if (alternative && alternative.toUpperCase() !== 'NONE' && planAttempts < MAX_PLAN_ATTEMPTS) {
               console.log(`[Bot] Alternative action proposed: "${alternative}". Re-planning...`);
 
               // Melancholic Refusal [INQUIRY] pivot:
@@ -1754,12 +1835,12 @@ Identify the topic and main takeaway.`;
                       if (dialogue && memoryService.isEnabled()) {
                           await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Melancholic reflection: ${dialogue}`);
                       }
-                      feedback = `Your previous plan was refused due to melancholy: ${refinedPlan.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
+                      planFeedback = `Your previous plan was refused due to melancholy: ${refinedPlan.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
                       continue;
                   }
               }
 
-              feedback = `Your previous plan was refused: ${refinedPlan.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
+              planFeedback = `Your previous plan was refused: ${refinedPlan.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
               continue;
           }
 
@@ -1769,7 +1850,7 @@ Identify the topic and main takeaway.`;
               const explanation = await llmService.generateRefusalExplanation(refinedPlan.reason, 'bluesky', { handle, text });
               if (explanation) {
                   console.log(`[Bot] Explaining refusal to user: "${explanation}"`);
-                  await blueskyService.postReply(notification.post, explanation);
+                  await blueskyService.postReply(notif, explanation);
               }
           }
           return;
@@ -2151,9 +2232,31 @@ Identify the topic and main takeaway.`;
 
         if (action.tool === 'set_lurker_mode') {
             const enabled = action.parameters?.enabled ?? true;
+            const wasEnabled = dataStore.isLurkerMode();
             console.log(`[Bot] Plan Tool: set_lurker_mode (${enabled})`);
             await dataStore.setLurkerMode(enabled);
             searchContext += `\n[Lurker mode set to: ${enabled}]`;
+
+            if (wasEnabled && !enabled) {
+                console.log('[Bot] Lurker mode disabled. Generating Insight Report...');
+                const memories = await memoryService.getRecentMemories(20);
+                const lurkerMemories = memories.filter(m => m.text.includes('[LURKER]')).map(m => m.text).join('\n');
+                if (lurkerMemories) {
+                    const reportPrompt = `
+                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                        You just disabled Lurker Mode (Social Fasting). Summarize what you observed and learned while you were silent.
+                        Observations:
+                        ${lurkerMemories}
+
+                        Respond with a concise "Lurker Insight Report" memory entry tagged [LURKER_REPORT].
+                    `;
+                    const report = await llmService.generateResponse([{ role: 'system', content: reportPrompt }], { useQwen: true });
+                    if (report && memoryService.isEnabled()) {
+                        await memoryService.createMemoryEntry('exploration', report);
+                        searchContext += `\n[Lurker Insight Report generated]`;
+                    }
+                }
+            }
         }
 
         if (action.tool === 'search_memories') {
@@ -2214,10 +2317,137 @@ Identify the topic and main takeaway.`;
             const confirmation = await llmService.requestConfirmation(act, reason);
             searchContext += `\n[Persona confirmation for "${act}": ${confirmation.confirmed ? 'YES' : 'NO'} | ${confirmation.reason || confirmation.inquiry || ''}]`;
         }
+
+        if (action.tool === 'divergent_brainstorm') {
+            const topic = action.parameters?.topic || action.query;
+            if (topic) {
+                console.log(`[Bot] Plan Tool: divergent_brainstorm for "${topic}"`);
+                const results = await llmService.divergentBrainstorm(topic);
+                searchContext += `\n[Divergent Brainstorming Directions for "${topic}":\n${results}\n]`;
+            }
+        }
+
+        if (action.tool === 'explore_nuance') {
+            const thought = action.parameters?.thought || action.query;
+            if (thought) {
+                console.log(`[Bot] Plan Tool: explore_nuance`);
+                const nuance = await llmService.exploreNuance(thought);
+                searchContext += `\n[Nuanced Perspective: ${nuance}]`;
+            }
+        }
+
+        if (action.tool === 'resolve_dissonance') {
+            const points = action.parameters?.conflicting_points || [];
+            if (points.length > 0) {
+                console.log(`[Bot] Plan Tool: resolve_dissonance`);
+                const synthesis = await llmService.resolveDissonance(points);
+                searchContext += `\n[Synthesis of Dissonance: ${synthesis}]`;
+            }
+        }
+
+        if (action.tool === 'identify_instruction_conflict') {
+            const directives = action.parameters?.directives || dataStore.getBlueskyInstructions();
+            if (directives && directives.length > 0) {
+                console.log(`[Bot] Plan Tool: identify_instruction_conflict`);
+                const conflict = await llmService.identifyInstructionConflict(directives);
+                searchContext += `\n[Instruction Conflict Analysis: ${conflict}]`;
+            }
+        }
+
+        if (action.tool === 'decompose_goal') {
+            const goal = action.parameters?.goal || dataStore.getCurrentGoal()?.goal;
+            if (goal) {
+                console.log(`[Bot] Plan Tool: decompose_goal for "${goal}"`);
+                const tasks = await llmService.decomposeGoal(goal);
+                searchContext += `\n[Decomposed Goal Sub-tasks for "${goal}":\n${tasks}\n]`;
+            }
+        }
+
+        if (action.tool === 'batch_image_gen') {
+            const subject = action.parameters?.subject || action.query;
+            if (subject) {
+                console.log(`[Bot] Plan Tool: batch_image_gen for "${subject}"`);
+                const prompts = await llmService.batchImageGen(subject, action.parameters?.count);
+                searchContext += `\n[Batch Visual Prompts for "${subject}":\n${prompts}\n]`;
+            }
+        }
+
+        if (action.tool === 'score_link_relevance') {
+            const urls = action.parameters?.urls || [];
+            if (urls.length > 0) {
+                console.log(`[Bot] Plan Tool: score_link_relevance`);
+                const scores = await llmService.scoreLinkRelevance(urls);
+                searchContext += `\n[Link Relevance Scores:\n${scores}\n]`;
+            }
+        }
+
+        if (action.tool === 'mutate_style') {
+            const lens = action.parameters?.lens;
+            if (lens) {
+                console.log(`[Bot] Plan Tool: mutate_style to "${lens}"`);
+                await dataStore.setMutatedStyle(lens);
+                searchContext += `\n[Style Mutation Active: ${lens}]`;
+            }
+        }
+
+        if (action.tool === 'archive_draft') {
+            const { draft, reason } = action.parameters || {};
+            if (draft) {
+                console.log(`[Bot] Plan Tool: archive_draft`);
+                await dataStore.addDreamLog(draft, reason);
+                searchContext += `\n[Draft archived to Dream Log]`;
+            }
+        }
+
+        if (action.tool === 'branch_thought') {
+            const thought = action.parameters?.thought || action.query;
+            if (thought && memoryService.isEnabled()) {
+                console.log(`[Bot] Plan Tool: branch_thought`);
+                await memoryService.createMemoryEntry('exploration', `[BRANCH] Parking thought for later: ${thought}`);
+                searchContext += `\n[Thought branched and parked in memory]`;
+            }
+        }
+
+        if (action.tool === 'set_nuance_gradience') {
+            const value = action.parameters?.value;
+            if (value !== undefined) {
+                console.log(`[Bot] Plan Tool: set_nuance_gradience to ${value}`);
+                await dataStore.setNuanceGradience(value);
+                searchContext += `\n[Nuance gradience set to ${value}/10]`;
+            }
+        }
+
+        if (action.tool === 'anchor_stability') {
+            console.log(`[Bot] Plan Tool: anchor_stability`);
+            const currentMood = dataStore.getMood();
+            const confirmation = await llmService.requestConfirmation("anchor_stability", `I'm proposing to anchor your stability and reset your mood to a neutral baseline. You are currently feeling ${currentMood.label}. Do you consent? (Anger/expression is still allowed, this just grounds the system).`);
+            if (confirmation.confirmed) {
+                await dataStore.updateMood({ valence: 0, arousal: 0, stability: 1, label: 'grounded' });
+                searchContext += `\n[Mood anchored to grounded baseline]`;
+            } else {
+                searchContext += `\n[Stability anchoring REFUSED: ${confirmation.reason || 'Persona prefers current state'}]`;
+            }
+        }
+
+        if (action.tool === 'save_state_snapshot') {
+            const label = action.parameters?.label || action.query || 'manual-snapshot';
+            console.log(`[Bot] Plan Tool: save_state_snapshot (${label})`);
+            await dataStore.saveStateSnapshot(label);
+            searchContext += `\n[State snapshot "${label}" saved]`;
+        }
+
+        if (action.tool === 'restore_state_snapshot') {
+            const label = action.parameters?.label || action.query;
+            if (label) {
+                console.log(`[Bot] Plan Tool: restore_state_snapshot (${label})`);
+                const success = await dataStore.restoreStateSnapshot(label);
+                searchContext += `\n[State restoration for "${label}": ${success ? 'SUCCESS' : 'FAILED'}]`;
+            }
+        }
       }
 
       if (currentActionFeedback) {
-        feedback = currentActionFeedback;
+        planFeedback = currentActionFeedback;
         continue; // Retry planning with tool rejection feedback
       }
 
@@ -2420,31 +2650,41 @@ Identify the topic and main takeaway.`;
           Treat these descriptions as if you are seeing them with your own eyes.
           NEVER claim you cannot see images or read screenshots.
           IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected.'}
+
+          **VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
+          **RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(handle).warmth}/5). Let this inform your tone.
         `.trim() },
         ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
         ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
       ];
 
-      const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
-      const retryResponseContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+      let respAttempts = 0;
+      let respFeedback = '';
+      let rejectedRespAttempts = [];
+      const MAX_RESP_ATTEMPTS = 5;
 
-      const attemptMessages = feedback
-          ? [...messages, { role: 'system', content: retryResponseContext }]
-          : messages;
+      while (respAttempts < MAX_RESP_ATTEMPTS) {
+          respAttempts++;
+          const currentTemp = 0.7 + (Math.min(respAttempts - 1, 3) * 0.05);
+          const retryResponseContext = respFeedback ? `\n\n**RETRY FEEDBACK**: ${respFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedRespAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
 
-      let candidates = [];
-      if (attempts === 1) {
-          console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
-          candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
-      } else {
-          const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
-          if (singleResponse) candidates = [singleResponse];
-      }
+          const attemptMessages = respFeedback
+              ? [...messages, { role: 'system', content: retryResponseContext }]
+              : messages;
 
-      if (candidates.length === 0) {
-          console.warn(`[Bot] No candidates generated on attempt ${attempts}.`);
-          continue;
-      }
+          let candidates = [];
+          if (respAttempts === 1) {
+              console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
+              candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
+          } else {
+              const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
+              if (singleResponse) candidates = [singleResponse];
+          }
+
+          if (candidates.length === 0) {
+              console.warn(`[Bot] No candidates generated on attempt ${respAttempts}.`);
+              continue;
+          }
 
       const recentThoughts = dataStore.getRecentThoughts();
       const formattedHistory = [
@@ -2500,7 +2740,7 @@ Identify the topic and main takeaway.`;
                                     (varietyCheck.misaligned ? "Misaligned with current mood." :
                                     (varietyCheck.feedback || "Too similar to recent history."))));
               }
-              rejectedAttempts.push(cand);
+              rejectedRespAttempts.push(cand);
           }
       }
 
@@ -2508,21 +2748,23 @@ Identify the topic and main takeaway.`;
           responseText = bestCandidate;
           break;
       } else {
-          feedback = rejectionReason;
-          console.log(`[Bot] Attempt ${attempts} failed. Feedback: ${feedback}`);
+          respFeedback = rejectionReason;
+          console.log(`[Bot] Attempt ${respAttempts} failed. Feedback: ${respFeedback}`);
 
-          if (attempts === MAX_PLAN_ATTEMPTS && rejectedAttempts.length > 0) {
+          if (respAttempts === MAX_RESP_ATTEMPTS && rejectedRespAttempts.length > 0) {
               console.log(`[Bot] Final attempt failed. Choosing least-bad response.`);
-              const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
-              responseText = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
-              // Optional: Mark it?
+              const nonSlop = rejectedRespAttempts.filter(a => !isSlop(a));
+              responseText = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedRespAttempts[rejectedRespAttempts.length - 1];
               break;
           }
       }
+    } // End of response generation loop
+
+    if (responseText) break; // If we have a response, break out of planning loop too
     }
 
     if (!responseText) {
-      console.warn(`[Bot] Failed to generate a response text for @${handle} after ${attempts} attempts.`);
+      console.warn(`[Bot] Failed to generate a response text for @${handle} after planning attempts.`);
       this.consecutiveRejections++;
     }
 
@@ -2551,6 +2793,14 @@ Identify the topic and main takeaway.`;
       }
       await dataStore.updateConversationLength(threadRootUri, convLength + 1);
       await dataStore.saveInteraction({ userHandle: handle, text, response: responseText });
+
+      // Update Interaction Heatmap (12)
+      await dataStore.updateInteractionHeat(handle, 0.1); // Small boost for positive interaction
+
+      // Update Social Resonance (9)
+      if (plan.strategy?.theme) {
+          await dataStore.updateSocialResonance(plan.strategy.theme, 1.0); // Full resonance for successful post
+      }
       this.updateActivity();
 
       // Memory trigger: after interaction
@@ -3108,10 +3358,10 @@ Describe how you feel about this user and your relationship now.`;
       let postContent = '';
       let embed = null;
       let generationPrompt = '';
-      let attempts = 0;
-      const MAX_ATTEMPTS = 5;
-      let feedback = '';
-      let rejectedAttempts = [];
+      let postAttempts = 0;
+      const MAX_POST_ATTEMPTS = 5;
+      let postFeedback = '';
+      let rejectedPostAttempts = [];
 
       // Opening Phrase Blacklist - Capture both 5 and 10 word prefixes for stronger variation
       const openingBlacklist = [
@@ -3156,8 +3406,8 @@ Describe how you feel about this user and your relationship now.`;
         ${recentTimelineActivity}
       `.trim();
 
-      while (attempts < MAX_ATTEMPTS) {
-        attempts++;
+      while (postAttempts < MAX_POST_ATTEMPTS) {
+        postAttempts++;
 
         // Reset image-related variables for each attempt to avoid stale data
         imageBuffer = null;
@@ -3166,30 +3416,30 @@ Describe how you feel about this user and your relationship now.`;
         imageBlob = null;
 
         // Force a topic switch if we're struggling
-        if (attempts >= 3) {
+        if (postAttempts >= 3) {
             if (postType === 'image' && dConfig.image_subjects && dConfig.image_subjects.length > 0) {
                 topic = dConfig.image_subjects[Math.floor(Math.random() * dConfig.image_subjects.length)];
-                console.log(`[Bot] Attempt ${attempts}: Forcing switch to new image subject: "${topic}"`);
+                console.log(`[Bot] Attempt ${postAttempts}: Forcing switch to new image subject: "${topic}"`);
             } else if (dConfig.post_topics && dConfig.post_topics.length > 0) {
                 topic = dConfig.post_topics[Math.floor(Math.random() * dConfig.post_topics.length)];
-                console.log(`[Bot] Attempt ${attempts}: Forcing switch to new topic: "${topic}"`);
+                console.log(`[Bot] Attempt ${postAttempts}: Forcing switch to new topic: "${topic}"`);
             }
         }
 
-        console.log(`[Bot] Autonomous post attempt ${attempts}/${MAX_ATTEMPTS} for topic: "${topic}" (Type: ${postType})`);
+        console.log(`[Bot] Autonomous post attempt ${postAttempts}/${MAX_POST_ATTEMPTS} for topic: "${topic}" (Type: ${postType})`);
 
-        if (attempts > 1) {
+        if (postAttempts > 1) {
             const delay = process.env.NODE_ENV === 'test' ? 0 : (config.BACKOFF_DELAY || 60000);
             if (delay > 0) {
-              console.log(`[Bot] Waiting ${delay / 1000}s before retry attempt ${attempts}...`);
+              console.log(`[Bot] Waiting ${delay / 1000}s before retry attempt ${postAttempts}...`);
               await new Promise(resolve => setTimeout(resolve, delay));
             }
         }
 
         if (postType === 'image') {
-          if (feedback) console.log(`[Bot] Applying correction feedback for retry: "${feedback}"`);
-          console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${attempts})...`);
-          const imageResult = await imageService.generateImage(topic, { allowPortraits: false, feedback, mood: currentMood });
+          if (postFeedback) console.log(`[Bot] Applying correction feedback for retry: "${postFeedback}"`);
+          console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${postAttempts})...`);
+          const imageResult = await imageService.generateImage(topic, { allowPortraits: false, feedback: postFeedback, mood: currentMood });
 
           if (imageResult && imageResult.buffer) {
             imageBuffer = imageResult.buffer;
@@ -3200,7 +3450,7 @@ Describe how you feel about this user and your relationship now.`;
 
             if (!compliance.compliant) {
               console.warn(`[Bot] Generated image failed compliance check: ${compliance.reason}`);
-              feedback = compliance.reason;
+              postFeedback = compliance.reason;
               continue; // Trigger re-attempt
             }
 
@@ -3218,23 +3468,23 @@ Describe how you feel about this user and your relationship now.`;
                 imageBlob = uploadData.blob;
               } catch (uploadError) {
                 console.error(`[Bot] Error uploading image blob:`, uploadError);
-                feedback = 'Failed to upload image blob.';
+                postFeedback = 'Failed to upload image blob.';
                 continue;
               }
             } else {
-              console.warn(`[Bot] Image analysis failed for attempt ${attempts}.`);
-              feedback = 'Failed to analyze generated image visuals.';
+              console.warn(`[Bot] Image analysis failed for attempt ${postAttempts}.`);
+              postFeedback = 'Failed to analyze generated image visuals.';
               continue;
             }
           } else {
-            console.warn(`[Bot] Image generation failed for attempt ${attempts}.`);
-            feedback = 'Image generation service failed.';
+            console.warn(`[Bot] Image generation failed for attempt ${postAttempts}.`);
+            postFeedback = 'Image generation service failed.';
             continue;
           }
         }
 
-        const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
-        const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+        const currentTemp = 0.7 + (Math.min(postAttempts - 1, 3) * 0.05);
+        const retryContext = postFeedback ? `\n\n**RETRY FEEDBACK**: ${postFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedPostAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
 
         if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
@@ -3310,8 +3560,8 @@ Describe how you feel about this user and your relationship now.`;
           postContent = sanitizeDuplicateText(postContent);
 
           if (!postContent) {
-            console.log(`[Bot] Autonomous post content was empty after sanitization on attempt ${attempts}.`);
-            feedback = 'The generated post was empty or invalid.';
+            console.log(`[Bot] Autonomous post content was empty after sanitization on attempt ${postAttempts}.`);
+            postFeedback = 'The generated post was empty or invalid.';
             continue;
           }
 
@@ -3331,18 +3581,18 @@ Describe how you feel about this user and your relationship now.`;
           });
 
           if (isJaccardRepetitive || containsSlop || varietyCheck.repetitive || !personaCheck.aligned) {
-            console.warn(`[Bot] Autonomous post attempt ${attempts} failed quality/persona check. Rejecting.`);
-            feedback = containsSlop ? "Contains repetitive metaphorical 'slop'." :
+            console.warn(`[Bot] Autonomous post attempt ${postAttempts} failed quality/persona check. Rejecting.`);
+            postFeedback = containsSlop ? "Contains repetitive metaphorical 'slop'." :
                        (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                        (varietyCheck.feedback || "Too similar to your recent history."));
 
-            rejectedAttempts.push(postContent);
+            rejectedPostAttempts.push(postContent);
             postContent = null; // Clear to prevent accidental posting of rejected content
 
-            if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
+            if (postAttempts === MAX_POST_ATTEMPTS && rejectedPostAttempts.length > 0) {
                 console.log(`[Bot] Final autonomous attempt failed. Choosing least-bad response.`);
-                const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
-                postContent = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
+                const nonSlop = rejectedPostAttempts.filter(a => !isSlop(a));
+                postContent = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedPostAttempts[rejectedPostAttempts.length - 1];
                 // Check coherence one last time for the chosen one
                 const { score } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
                 if (score >= 3) break;
@@ -3353,8 +3603,8 @@ Describe how you feel about this user and your relationship now.`;
 
           // 5. Hard Greeting Check
           if (postContent && isGreeting(postContent)) {
-            console.warn(`[Bot] Greeting detected in autonomous post on attempt ${attempts}. Rejecting.`);
-            feedback = "REJECTED: The post contains a greeting or 'ready to talk' phrase. This is strictly forbidden. Focus on a deep, internal thought instead.";
+            console.warn(`[Bot] Greeting detected in autonomous post on attempt ${postAttempts}. Rejecting.`);
+            postFeedback = "REJECTED: The post contains a greeting or 'ready to talk' phrase. This is strictly forbidden. Focus on a deep, internal thought instead.";
 
             if (dConfig.post_topics && dConfig.post_topics.length > 0) {
                 const topics = dConfig.post_topics;
@@ -3396,21 +3646,21 @@ Describe how you feel about this user and your relationship now.`;
 
             return; // Success, exit function
           } else {
-            console.warn(`[Bot] Autonomous post attempt ${attempts} failed coherence check (Score: ${score}/5). Reason: ${reason}`);
-            feedback = reason;
+            console.warn(`[Bot] Autonomous post attempt ${postAttempts} failed coherence check (Score: ${score}/5). Reason: ${reason}`);
+            postFeedback = reason;
           }
         } else {
-          console.log(`[Bot] Failed to generate post content on attempt ${attempts}.`);
-          feedback = 'Failed to generate meaningful post content.';
+          console.log(`[Bot] Failed to generate post content on attempt ${postAttempts}.`);
+          postFeedback = 'Failed to generate meaningful post content.';
         }
       }
 
       if (postType === 'image') {
         if (textOnlyPostsToday.length >= dConfig.bluesky_daily_text_limit) {
-            console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Cannot fall back to text post (limit reached). Aborting.`);
+            console.log(`[Bot] All ${MAX_POST_ATTEMPTS} image attempts failed. Cannot fall back to text post (limit reached). Aborting.`);
             return;
         }
-        console.log(`[Bot] All ${MAX_ATTEMPTS} image attempts failed. Falling back to text post for topic: "${topic}"`);
+        console.log(`[Bot] All ${MAX_POST_ATTEMPTS} image attempts failed. Falling back to text post for topic: "${topic}"`);
         const systemPrompt = `
             Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
@@ -3890,22 +4140,22 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 	        Content: [Content]
 	      `;
 
-      let attempts = 0;
-      let feedback = '';
-      const MAX_ATTEMPTS = 5;
+      let musingAttempts = 0;
+      let musingFeedback = '';
+      const MAX_MUS_ATTEMPTS = 5;
 
-      let rejectedAttempts = [];
+      let rejectedMusAttempts = [];
       let success = false;
-      while (attempts < MAX_ATTEMPTS) {
-        attempts++;
+      while (musingAttempts < MAX_MUS_ATTEMPTS) {
+        musingAttempts++;
 
-        if (attempts > 1) {
-            console.log(`[Moltbook] Waiting 60s before musing retry attempt ${attempts}...`);
+        if (musingAttempts > 1) {
+            console.log(`[Moltbook] Waiting 60s before musing retry attempt ${musingAttempts}...`);
             await new Promise(resolve => setTimeout(resolve, 60000));
         }
 
-        const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
-        const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+        const currentTemp = 0.7 + (Math.min(musingAttempts - 1, 3) * 0.05);
+        const retryContext = musingFeedback ? `\n\n**RETRY FEEDBACK**: ${musingFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedMusAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
 
         const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt + retryContext }], { useQwen: true, temperature: currentTemp });
 
@@ -3989,16 +4239,16 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             success = true;
             break;
           } else {
-            feedback = containsSlop ? "Contains metaphorical slop." :
+            musingFeedback = containsSlop ? "Contains metaphorical slop." :
                        (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                        (varietyCheck.feedback || "Too similar to recent history."));
-            rejectedAttempts.push(content);
-            console.log(`[Moltbook] Post attempt ${attempts} rejected: ${feedback}`);
+            rejectedMusAttempts.push(content);
+            console.log(`[Moltbook] Post attempt ${musingAttempts} rejected: ${musingFeedback}`);
 
-            if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
+            if (musingAttempts === MAX_MUS_ATTEMPTS && rejectedMusAttempts.length > 0) {
                 console.log(`[Moltbook] Final musing attempt failed. Choosing least-bad response.`);
-                const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
-                const chosen = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
+                const nonSlop = rejectedMusAttempts.filter(a => !isSlop(a));
+                const chosen = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedMusAttempts[rejectedMusAttempts.length - 1];
                 const result = await moltbookService.post(title, chosen, targetSubmolt);
                 if (result) {
                     await dataStore.addRecentThought('moltbook', chosen);
@@ -4013,7 +4263,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
       // If we finished the loop without a successful post
       if (!success) {
-          console.warn(`[Bot] Failed to generate Moltbook musing after ${attempts} attempts.`);
+          console.warn(`[Bot] Failed to generate Moltbook musing after ${musingAttempts} attempts.`);
           this.consecutiveRejections++;
       } else {
           this.consecutiveRejections = 0; // Reset on success

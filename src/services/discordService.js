@@ -650,6 +650,9 @@ You HAVE vision capabilities. The following is your current visual perception of
 Treat these descriptions as if you are seeing them with your own eyes.
 NEVER claim you cannot see images.
 IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific message.'}
+
+**VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
+**RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone.
 `.trim();
 
         const messages = [
@@ -1253,6 +1256,119 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                         const confirmation = await llmService.requestConfirmation(act, reason);
                         actionResults.push(`[Persona confirmation for "${act}": ${confirmation.confirmed ? 'YES' : 'NO'} | ${confirmation.reason || confirmation.inquiry || ''}]`);
                      }
+
+                     if (action.tool === 'divergent_brainstorm') {
+                        const topic = action.parameters?.topic || action.query;
+                        if (topic) {
+                            const results = await llmService.divergentBrainstorm(topic);
+                            actionResults.push(`[Divergent Brainstorming Directions for "${topic}":\n${results}\n]`);
+                        }
+                     }
+
+                     if (action.tool === 'explore_nuance') {
+                        const thought = action.parameters?.thought || action.query;
+                        if (thought) {
+                            const nuance = await llmService.exploreNuance(thought);
+                            actionResults.push(`[Nuanced Perspective: ${nuance}]`);
+                        }
+                     }
+
+                     if (action.tool === 'resolve_dissonance') {
+                        const points = action.parameters?.conflicting_points || [];
+                        if (points.length > 0) {
+                            const synthesis = await llmService.resolveDissonance(points);
+                            actionResults.push(`[Synthesis of Dissonance: ${synthesis}]`);
+                        }
+                     }
+
+                     if (action.tool === 'identify_instruction_conflict') {
+                        const directives = action.parameters?.directives || dataStore.getBlueskyInstructions();
+                        if (directives && directives.length > 0) {
+                            const conflict = await llmService.identifyInstructionConflict(directives);
+                            actionResults.push(`[Instruction Conflict Analysis: ${conflict}]`);
+                        }
+                     }
+
+                     if (action.tool === 'decompose_goal') {
+                        const goal = action.parameters?.goal || dataStore.getCurrentGoal()?.goal;
+                        if (goal) {
+                            const tasks = await llmService.decomposeGoal(goal);
+                            actionResults.push(`[Decomposed Goal Sub-tasks for "${goal}":\n${tasks}\n]`);
+                        }
+                     }
+
+                     if (action.tool === 'batch_image_gen') {
+                        const subject = action.parameters?.subject || action.query;
+                        if (subject) {
+                            const prompts = await llmService.batchImageGen(subject, action.parameters?.count);
+                            actionResults.push(`[Batch Visual Prompts for "${subject}":\n${prompts}\n]`);
+                        }
+                     }
+
+                     if (action.tool === 'score_link_relevance') {
+                        const urls = action.parameters?.urls || [];
+                        if (urls.length > 0) {
+                            const scores = await llmService.scoreLinkRelevance(urls);
+                            actionResults.push(`[Link Relevance Scores:\n${scores}\n]`);
+                        }
+                     }
+
+                     if (action.tool === 'mutate_style') {
+                        const lens = action.parameters?.lens;
+                        if (lens) {
+                            await dataStore.setMutatedStyle(lens);
+                            actionResults.push(`[Style Mutation Active: ${lens}]`);
+                        }
+                     }
+
+                     if (action.tool === 'archive_draft') {
+                        const { draft, reason } = action.parameters || {};
+                        if (draft) {
+                            await dataStore.addDreamLog(draft, reason);
+                            actionResults.push(`[Draft archived to private dream log]`);
+                        }
+                     }
+
+                     if (action.tool === 'branch_thought') {
+                        const thought = action.parameters?.thought || action.query;
+                        if (thought && memoryService.isEnabled()) {
+                            await memoryService.createMemoryEntry('exploration', `[BRANCH] Parking thought: ${thought}`);
+                            actionResults.push(`[Thought branched and parked in memory]`);
+                        }
+                     }
+
+                     if (action.tool === 'set_nuance_gradience') {
+                        const value = action.parameters?.value;
+                        if (value !== undefined) {
+                            await dataStore.setNuanceGradience(value);
+                            actionResults.push(`[Nuance gradience set to ${value}/10]`);
+                        }
+                     }
+
+                     if (action.tool === 'anchor_stability') {
+                        const currentMood = dataStore.getMood();
+                        const confirmation = await llmService.requestConfirmation("anchor_stability", `Proposing to reset mood to grounded baseline. Current mood: ${currentMood.label}.`);
+                        if (confirmation.confirmed) {
+                            await dataStore.updateMood({ valence: 0, arousal: 0, stability: 1, label: 'grounded' });
+                            actionResults.push(`[Mood anchored to grounded baseline]`);
+                        } else {
+                            actionResults.push(`[Stability anchoring REFUSED by persona]`);
+                        }
+                     }
+
+                     if (action.tool === 'save_state_snapshot') {
+                        const label = action.parameters?.label || action.query || 'manual-snapshot';
+                        await dataStore.saveStateSnapshot(label);
+                        actionResults.push(`[State snapshot "${label}" saved]`);
+                     }
+
+                     if (action.tool === 'restore_state_snapshot') {
+                        const label = action.parameters?.label || action.query;
+                        if (label) {
+                            const success = await dataStore.restoreStateSnapshot(label);
+                            actionResults.push(`[State restoration for "${label}": ${success ? 'SUCCESS' : 'FAILED'}]`);
+                        }
+                     }
                  }
 
                  if (actionResults.length > 0) {
@@ -1417,6 +1533,9 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                 await this._send(message.channel, responseText);
 
                 if (isAdmin && responseText && !responseText.startsWith('[Varied]')) {
+                    // Update Interaction Heatmap (12)
+                    await dataStore.updateInteractionHeat(message.author.username, 0.2); // Higher boost for admin
+
                     // Extract theme and add to exhausted themes for admin interactions
                     try {
                         const themePrompt = `Extract a 1-2 word theme for the following response: "${responseText}". Respond with ONLY the theme.`;

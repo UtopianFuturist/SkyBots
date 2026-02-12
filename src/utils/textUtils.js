@@ -107,9 +107,9 @@ export const sanitizeThinkingTags = (text) => {
   // We avoid the $ anchor at the end to prevent accidental deletion of the entire response
   // unless there's a clear separation.
   const artifacts = [
-      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue)\s*:\s*[\s\S]*?\n\n/i,
-      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue)\s*:\s*[\s\S]*?\n\n/i,
-      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue)\s*:\s*/i
+      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy)\s*:\s*[\s\S]*?\n\n/i,
+      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy)\s*:\s*[\s\S]*?\n\n/i,
+      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy)\s*:\s*/i
   ];
   for (const pattern of artifacts) {
       sanitized = sanitized.replace(pattern, '\n\n');

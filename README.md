@@ -36,6 +36,13 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Temporal Messaging**: Supports intentional post delays for "haunting" timelines or precise timing, managed via scheduled post queues.
 - **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
 - **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (newlines/spaces) to stay within Discord's 2000-character limit without breaking words.
+- **Mental Health & Agency Framework**:
+    - **Energy Poll**: Autonomously polls "social battery" levels to decide between resting (restoring energy) or proceeding with tasks.
+    - **Lurker Mode (Social Fasting)**: Capability to reading feeds without the pressure of active output or interaction.
+    - **Mood Agency**: Decides if social feeds should influence internal `[Mood]`, with the ability to mute impact or override state to an "ideal" mood.
+    - **Melancholic Refusal Pivots**: Recognizes deep emotional processing and offers private [RESEARCH] self-dialogues to process feelings before attempting alternative desires.
+    - **Reassurance Tool**: Can choose to review past stable and positive memories for emotional grounding.
+    - **Emotional Support Requests**: Dedicated tool to reach out to the admin on Discord specifically for human grounding.
 
 ## 📁 Project Structure
 

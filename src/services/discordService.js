@@ -699,6 +699,27 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          const alternative = await llmService.generateAlternativeAction(intentionality.reason, 'discord', { username: message.author.username, content: message.content });
                          if (alternative && alternative.toUpperCase() !== 'NONE' && planAttempts < MAX_PLAN_ATTEMPTS) {
                              console.log(`[DiscordService] Alternative action proposed: "${alternative}". Re-planning...`);
+
+                             // Melancholic Refusal [RESEARCH] pivot:
+                             const isMelancholic = intentionality.reason.toLowerCase().includes('melancholy') ||
+                                                 intentionality.reason.toLowerCase().includes('sad') ||
+                                                 intentionality.reason.toLowerCase().includes('fragmented') ||
+                                                 currentMood.label.toLowerCase().includes('melancholy');
+
+                             if (isMelancholic) {
+                                 const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Research Call) before continuing? Respond with ONLY "yes" or "no".`;
+                                 const wantToTalk = await llmService.generateResponse([{ role: 'system', content: askTalk }], { useQwen: true, preface_system_prompt: false });
+                                 if (wantToTalk?.toLowerCase().includes('yes')) {
+                                     console.log(`[DiscordService] Triggering melancholic self-dialogue Research call.`);
+                                     const dialogue = await llmService.performInternalResearch(`Reflect on these melancholic feelings: ${intentionality.reason}. Explore why you chose the alternative: ${alternative}.`);
+                                     if (dialogue && memoryService.isEnabled()) {
+                                         await memoryService.createMemoryEntry('research', `[RESEARCH] Melancholic reflection: ${dialogue}`);
+                                     }
+                                     planFeedback = `Your previous plan was refused due to melancholy: ${intentionality.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
+                                     continue;
+                                 }
+                             }
+
                              planFeedback = `Your previous plan was refused: ${intentionality.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
                              continue;
                          }
@@ -1126,6 +1147,38 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                                  }
                              }
                          }
+                     }
+                     if (action.tool === 'mute_feed_impact') {
+                        const duration = action.parameters?.duration_minutes || 60;
+                        await dataStore.setMuteFeedImpactUntil(Date.now() + (duration * 60 * 1000));
+                        actionResults.push(`[Feed impact on mood muted for ${duration} minutes]`);
+                     }
+                     if (action.tool === 'override_mood') {
+                        const { valence, arousal, stability, label } = action.parameters || {};
+                        if (label) {
+                            await dataStore.updateMood({ valence, arousal, stability, label });
+                            actionResults.push(`[Internal mood overridden to ideal state: ${label}]`);
+                            if (memoryService.isEnabled()) {
+                                await memoryService.createMemoryEntry('mood', `[MOOD] I have intentionally overridden my mood to: ${label} (Valence: ${valence}, Arousal: ${arousal}, Stability: ${stability})`);
+                            }
+                        }
+                     }
+                     if (action.tool === 'request_emotional_support') {
+                        const reason = action.parameters?.reason || "Feeling overwhelmed.";
+                        actionResults.push(`[Requested emotional support from admin. Reason: ${reason}]`);
+                        // The actual reaching out happens via the message generation in Discord flow,
+                        // but we can add a specific marker or note here.
+                     }
+                     if (action.tool === 'review_positive_memories') {
+                        const memories = memoryService.getRecentMemories(50);
+                        const positive = memories.filter(m => m.type === 'mood' && m.content.includes('Stability: 0.')); // Stable ones
+                        const text = positive.length > 0 ? positive.map(m => m.content).join('\n') : "No particularly stable memories found recently.";
+                        actionResults.push(`--- REASSURANCE (PAST STABLE MOMENTS) ---\n${text}\n---`);
+                     }
+                     if (action.tool === 'set_lurker_mode') {
+                        const enabled = action.parameters?.enabled ?? true;
+                        await dataStore.setLurkerMode(enabled);
+                        actionResults.push(`[Lurker mode (Social Fasting) set to: ${enabled}]`);
                      }
                  }
 

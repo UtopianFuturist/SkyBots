@@ -73,7 +73,10 @@ const defaultData = {
   max_thread_chunks: 6,
   repetition_similarity_threshold: 0.4,
   post_topics: [],
-  image_subjects: []
+  image_subjects: [],
+  lurker_mode: false,
+  mute_feed_impact_until: 0,
+  energy_level: 1.0
 };
 
 class DataStore {
@@ -637,6 +640,36 @@ class DataStore {
 
   getMood() {
     return this.db.data.current_mood || defaultData.current_mood;
+  }
+
+  async setLurkerMode(enabled) {
+    this.db.data.lurker_mode = enabled;
+    await this.db.write();
+    console.log(`[DataStore] Lurker mode set to: ${enabled}`);
+  }
+
+  isLurkerMode() {
+    return this.db.data.lurker_mode || false;
+  }
+
+  async setMuteFeedImpactUntil(timestamp) {
+    this.db.data.mute_feed_impact_until = timestamp;
+    await this.db.write();
+    console.log(`[DataStore] Feed impact muted until: ${new Date(timestamp).toLocaleString()}`);
+  }
+
+  isFeedImpactMuted() {
+    return (this.db.data.mute_feed_impact_until || 0) > Date.now();
+  }
+
+  async setEnergyLevel(level) {
+    this.db.data.energy_level = Math.max(0, Math.min(1, level));
+    await this.db.write();
+    console.log(`[DataStore] Energy level updated: ${this.db.data.energy_level.toFixed(2)}`);
+  }
+
+  getEnergyLevel() {
+    return this.db.data.energy_level ?? 1.0;
   }
 
   async incrementRefusalCount(platform) {

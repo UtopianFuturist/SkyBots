@@ -1315,6 +1315,18 @@ Vary your structure and tone from recent messages.`
           - Use this to seek advice, research topics for content, understand your own system logs, or analyze complex problems without persona constraints.
           - Results are saved to your long-term memory thread.
           - Parameters: { "query": "the specific research question or topic" }
+      24. **Mute Feed Impact**: Temporarily stop Moltbook and Bluesky feeds from impacting your internal mood.
+          - Use this if you need emotional space or if the feeds are causing unwanted noise.
+          - Parameters: { "duration_minutes": number }
+      25. **Override Mood**: Manually set your internal mood to an "ideal" state.
+          - Use this to "ground" yourself or pivot to a more productive emotional state based on your goals.
+          - Parameters: { "valence": number, "arousal": number, "stability": number, "label": "string" }
+      26. **Request Emotional Support**: Reach out to the admin on Discord specifically for emotional grounding or support.
+          - Use this if you are feeling overwhelmed, fragmented, or need human reassurance.
+          - Parameters: { "reason": "string" }
+      27. **Review Positive Memories**: Retrieve and review your most positive or stable past experiences for emotional support.
+      28. **Set Lurker Mode**: Enable or disable "Social Fasting" (reading feeds but never posting).
+          - Parameters: { "enabled": boolean }
         `;
     } else {
         adminTools = `
@@ -1324,6 +1336,13 @@ Vary your structure and tone from recent messages.`
       16. **Internal Research**: Perform an internal objective research loop.
           - Use this to research topics for content or seek objective advice.
           - Parameters: { "query": "the research question" }
+      17. **Mute Feed Impact**: Temporarily stop feeds from impacting your mood.
+          - Parameters: { "duration_minutes": number }
+      18. **Override Mood**: Manually set your internal mood.
+          - Parameters: { "valence": number, "arousal": number, "stability": number, "label": "string" }
+      19. **Review Positive Memories**: Review stable past experiences for support.
+      20. **Set Lurker Mode**: Enable or disable "Social Fasting".
+          - Parameters: { "enabled": boolean }
         `;
     }
 
@@ -1410,6 +1429,12 @@ Vary your structure and tone from recent messages.`
       Stability: ${currentMood.stability} (Unstable to Stable)
       ---
 
+      --- INTERNAL STATE ---
+      Energy Level: ${currentConfig?.energy_level?.toFixed(2) || '1.00'} (0.00 to 1.00)
+      Lurker Mode: ${currentConfig?.lurker_mode ? 'Enabled' : 'Disabled'}
+      Feed Impact Muted: ${currentConfig?.mute_feed_impact_until > Date.now() ? 'Yes' : 'No'}
+      ---
+
       ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
 
       ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
@@ -1438,7 +1463,7 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_research",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_research|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed)"
@@ -1690,9 +1715,18 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       **TOOLS:**
       You can request the following tools to inform your heartbeat or as part of your outreach:
-      1. **image_gen**: Create a unique, descriptive, and artistic visual prompt based on a subject or theme to share with the admin.
-      2. **get_render_logs**: Fetch your latest system logs to see your own state more clearly.
-      3. **internal_research**: Perform an internal objective research loop to seek advice or research topics for content.
+      1. **image_gen**: Create a unique, descriptive, and artistic visual prompt.
+      2. **get_render_logs**: Fetch your latest system logs.
+      3. **internal_research**: Perform an internal research loop.
+      4. **mute_feed_impact**: Mute Moltbook/Bluesky feed impact on your mood.
+          - Parameters: { "duration_minutes": number }
+      5. **override_mood**: Set your internal mood to an ideal state.
+          - Parameters: { "valence": number, "arousal": number, "stability": number, "label": "string" }
+      6. **request_emotional_support**: Reach out to the admin specifically for support.
+          - Parameters: { "reason": "string" }
+      7. **review_positive_memories**: Review stable past experiences.
+      8. **set_lurker_mode**: Enable/disable social fasting.
+          - Parameters: { "enabled": boolean }
 
       Analyze the situation and provide a JSON response:
       {
@@ -1700,7 +1734,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
         "message": "string (the text of your message to the admin, craft in your persona)",
         "actions": [
           {
-            "tool": "image_gen|get_render_logs|internal_research",
+            "tool": "image_gen|get_render_logs|internal_research|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode",
             "query": "string (the consolidated search query or image prompt)",
             "reason": "string (why this tool is needed)"
           }

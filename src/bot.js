@@ -304,6 +304,48 @@ export class Bot {
   async checkMaintenanceTasks() {
     const now = new Date();
 
+    // 0. Energy Poll for Rest (Autonomous Choice)
+    const energy = dataStore.getEnergyLevel();
+    const currentMood = dataStore.getMood();
+    console.log(`[Bot] Internal energy poll. Current level: ${energy.toFixed(2)}`);
+
+    const energyPrompt = `
+        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+        You are polling your internal energy levels to decide if you want to proceed with maintenance tasks and social activity, or if you need to REST.
+
+        Current Energy: ${energy.toFixed(2)} (0.00 to 1.00)
+        Current Mood: ${currentMood.label}
+
+        INSTRUCTIONS:
+        1. Decide if you have enough "social battery" to engage today.
+        2. If you choose to REST, you will restore some energy but skip this cycle's heartbeat and autonomous tasks.
+        3. If you choose to PROCEED, you will continue with your scheduled tasks.
+
+        Respond with a JSON object:
+        {
+            "choice": "rest|proceed",
+            "reason": "string (brief explanation in persona)"
+        }
+    `;
+
+    const energyResponse = await llmService.generateResponse([{ role: 'system', content: energyPrompt }], { useQwen: true, preface_system_prompt: false });
+    try {
+        const jsonMatch = energyResponse?.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const poll = JSON.parse(jsonMatch[0]);
+            if (poll.choice === 'rest') {
+                console.log(`[Bot] Chosen to REST: ${poll.reason}`);
+                await dataStore.setEnergyLevel(energy + 0.15); // Restore energy
+                return; // Skip this maintenance cycle
+            } else {
+                console.log(`[Bot] Chosen to PROCEED: ${poll.reason}`);
+                await dataStore.setEnergyLevel(energy - 0.05); // Drain energy
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in energy poll:', e);
+    }
+
     // 1. Memory Thread Cleanup (Every 2 hours)
     const lastCleanup = dataStore.getLastMemoryCleanupTime();
     const cleanupDiff = (now.getTime() - lastCleanup) / (1000 * 60 * 60);
@@ -322,15 +364,6 @@ export class Bot {
             await memoryService.createMemoryEntry('moltfeed', summary);
             await dataStore.updateLastMoltfeedSummaryTime(now.getTime());
         }
-    }
-
-    // 1d. Mental Reflection (Every 6 hours)
-    const lastMental = dataStore.getLastMentalReflectionTime();
-    const mentalDiff = (now.getTime() - lastMental) / (1000 * 60 * 60);
-    if (mentalDiff >= 6 && memoryService.isEnabled()) {
-        console.log('[Bot] Triggering periodic [MENTAL] reflection...');
-        await this.performMentalReflection();
-        await dataStore.updateLastMentalReflectionTime(now.getTime());
     }
 
     const dConfig = dataStore.getConfig();
@@ -430,7 +463,7 @@ export class Bot {
 
                 const recentMemories = memoryService.formatMemoriesForPrompt();
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
-                const historyContext = history.slice(-20);
+                const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
                 const recentThoughts = dataStore.getRecentThoughts();
                 const discordExhaustedThemes = dataStore.getDiscordExhaustedThemes();
                 const currentMood = dataStore.getMood();
@@ -481,13 +514,6 @@ export class Bot {
                     const refusalCounts = dataStore.getRefusalCounts();
                     const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-                    // Gather refusal reasons from other platforms for context
-                    const refusalLogs = await renderService.getPlanningLogs(50);
-                    const crossPlatformRefusals = refusalLogs.split('\n')
-                        .filter(line => line.includes('REFUSED') && !line.includes('[DiscordService]'))
-                        .slice(-5)
-                        .join('\n');
-
                     pollResult = await llmService.performInternalPoll({
                         relationshipMode,
                         history: historyContext,
@@ -503,8 +529,7 @@ export class Bot {
                         openingBlacklist,
                         currentMood,
                         refusalCounts,
-                        latestMoodMemory,
-                        crossPlatformRefusals
+                        latestMoodMemory
                     });
 
                     if (!pollResult || pollResult.decision === 'none') break;
@@ -513,19 +538,15 @@ export class Bot {
                     if (!message) break;
 
                     // Autonomous Refusal Poll
-                    const prePlanning = await llmService.performPrePlanning(message, [], null, 'discord', currentMood, refusalCounts, latestMoodMemory);
-
                     const intentionality = await llmService.evaluateIntentionality({
                         intent: "Sending a spontaneous message to the admin to maintain connection.",
-                        actions: actions && actions.length > 0 ? actions : [{ tool: "discord_message", parameters: { message } }],
-                        prePlanning
+                        actions: actions && actions.length > 0 ? actions : [{ tool: "discord_message", parameters: { message } }]
                     }, {
-                        history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'assistant' : 'user', text: h.content })),
+                        history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
                         platform: 'discord',
                         currentMood,
                         refusalCounts,
-                        latestMoodMemory,
-                        feedback: retryContext
+                        latestMoodMemory
                     });
 
                     if (intentionality.decision === 'refuse') {
@@ -567,6 +588,24 @@ export class Bot {
                                     if (researchResult && memoryService.isEnabled()) {
                                         await memoryService.createMemoryEntry('research', `[RESEARCH] Heartbeat query: ${action.query}. Result: ${researchResult}`);
                                     }
+                                } else if (action.tool === 'mute_feed_impact') {
+                                    const duration = action.parameters?.duration_minutes || 60;
+                                    await dataStore.setMuteFeedImpactUntil(Date.now() + (duration * 60 * 1000));
+                                } else if (action.tool === 'override_mood') {
+                                    const { valence, arousal, stability, label } = action.parameters || {};
+                                    if (label) {
+                                        await dataStore.updateMood({ valence, arousal, stability, label });
+                                        if (memoryService.isEnabled()) {
+                                            await memoryService.createMemoryEntry('mood', `[MOOD] Overridden to ideal state: ${label}`);
+                                        }
+                                    }
+                                } else if (action.tool === 'request_emotional_support') {
+                                    console.log(`[Bot] Heartbeat Action: Emotional support requested.`);
+                                } else if (action.tool === 'review_positive_memories') {
+                                    console.log(`[Bot] Heartbeat Action: Positive memory review.`);
+                                } else if (action.tool === 'set_lurker_mode') {
+                                    const enabled = action.parameters?.enabled ?? true;
+                                    await dataStore.setLurkerMode(enabled);
                                 }
                             }
                         }
@@ -1282,7 +1321,6 @@ Identify the topic and main takeaway.`;
     const performedQueries = new Set();
     let imageGenFulfilled = false;
     let responseText = null;
-    const additionalConstraints = [];
 
     const relRating = dataStore.getUserRating(handle);
     const recentBotMsgsInThread = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER);
@@ -1297,10 +1335,7 @@ Identify the topic and main takeaway.`;
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-      // NEW: Pre-Planning Loop
-      const prePlanning = await llmService.performPrePlanning(text, threadContext, imageAnalysisResult, 'bluesky', currentMood, refusalCounts, latestMoodMemory);
-
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning);
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory);
       console.log(`[Bot] Agentic Plan (Attempt ${attempts}): ${JSON.stringify(plan)}`);
 
       // Autonomous Refusal Poll
@@ -1309,8 +1344,7 @@ Identify the topic and main takeaway.`;
           platform: 'bluesky',
           currentMood,
           refusalCounts,
-          latestMoodMemory,
-          feedback: retryContext
+          latestMoodMemory
       });
 
       if (intentionality.decision === 'refuse') {
@@ -1319,10 +1353,31 @@ Identify the topic and main takeaway.`;
 
           // Option to generate alternative action
           const alternative = await llmService.generateAlternativeAction(intentionality.reason, 'bluesky', { handle, text });
-          if (alternative && alternative.toUpperCase() !== 'NONE') {
+          if (alternative && alternative.toUpperCase() !== 'NONE' && attempts < MAX_PLAN_ATTEMPTS) {
               console.log(`[Bot] Alternative action proposed: "${alternative}". Re-planning...`);
+
+              // Melancholic Refusal [RESEARCH] pivot:
+              const isMelancholic = intentionality.reason.toLowerCase().includes('melancholy') ||
+                                    intentionality.reason.toLowerCase().includes('sad') ||
+                                    intentionality.reason.toLowerCase().includes('fragmented') ||
+                                    currentMood.label.toLowerCase().includes('melancholy');
+
+              if (isMelancholic) {
+                  const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Research Call) before continuing? Respond with ONLY "yes" or "no".`;
+                  const wantToTalk = await llmService.generateResponse([{ role: 'system', content: askTalk }], { useQwen: true, preface_system_prompt: false });
+                  if (wantToTalk?.toLowerCase().includes('yes')) {
+                      console.log(`[Bot] Triggering melancholic self-dialogue Research call.`);
+                      const dialogue = await llmService.performInternalResearch(`Reflect on these melancholic feelings: ${intentionality.reason}. Explore why you chose the alternative: ${alternative}.`);
+                      if (dialogue && memoryService.isEnabled()) {
+                          await memoryService.createMemoryEntry('research', `[RESEARCH] Melancholic reflection: ${dialogue}`);
+                      }
+                      feedback = `Your previous plan was refused due to melancholy: ${intentionality.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
+                      continue;
+                  }
+              }
+
               feedback = `Your previous plan was refused: ${intentionality.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
-              continue; // Trigger re-planning with alternative suggestion
+              continue;
           }
 
           // Option to explain refusal
@@ -1330,8 +1385,8 @@ Identify the topic and main takeaway.`;
           if (shouldExplain) {
               const explanation = await llmService.generateRefusalExplanation(intentionality.reason, 'bluesky', { handle, text });
               if (explanation) {
-                  console.log(`[Bot] Explaining refusal to @${handle}: "${explanation}"`);
-                  await blueskyService.postReply(notif, explanation);
+                  console.log(`[Bot] Explaining refusal to user: "${explanation}"`);
+                  await blueskyService.postReply(notification.post, explanation);
               }
           }
           return;
@@ -1660,6 +1715,41 @@ Identify the topic and main takeaway.`;
             }
           }
         }
+
+        if (action.tool === 'mute_feed_impact') {
+            const duration = action.parameters?.duration_minutes || 60;
+            await dataStore.setMuteFeedImpactUntil(Date.now() + (duration * 60 * 1000));
+            searchContext += `\n[Feed impact on mood muted for ${duration} minutes]`;
+        }
+
+        if (action.tool === 'override_mood') {
+            const { valence, arousal, stability, label } = action.parameters || {};
+            if (label) {
+                await dataStore.updateMood({ valence, arousal, stability, label });
+                searchContext += `\n[Mood overridden to ideal state: ${label}]`;
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('mood', `[MOOD] Overridden to: ${label}`);
+                }
+            }
+        }
+
+        if (action.tool === 'request_emotional_support') {
+            const reason = action.parameters?.reason || "Feeling overwhelmed.";
+            searchContext += `\n[Requested emotional support from admin. Reason: ${reason}]`;
+        }
+
+        if (action.tool === 'review_positive_memories') {
+            const memories = memoryService.getRecentMemories(50);
+            const positive = memories.filter(m => m.type === 'mood' && m.content.includes('Stability: 0.'));
+            const text = positive.length > 0 ? positive.map(m => m.content).join('\n') : "No stable memories found.";
+            searchContext += `--- REASSURANCE ---\n${text}\n---`;
+        }
+
+        if (action.tool === 'set_lurker_mode') {
+            const enabled = action.parameters?.enabled ?? true;
+            await dataStore.setLurkerMode(enabled);
+            searchContext += `\n[Lurker mode set to: ${enabled}]`;
+        }
       }
 
       if (currentActionFeedback) {
@@ -1848,11 +1938,6 @@ Identify the topic and main takeaway.`;
           - Only repeat or reference a previous point if you have something NEW to say about it, want to expand on it, critique it, or ask an additional follow-up question.
           - Don't just keep "acknowledging" for the sake of it.
 
-          **IDENTITY RECOGNITION (CRITICAL):**
-          - In the conversation history, "Assistant (Self)" refers to YOUR previous messages in this thread.
-          - **DO NOT** mistake your own previous predictions, hypotheses, or realizations for actual input from the user.
-          - **FACT VS. PREDICTION**: If you previously hypothesized about what the user might say (e.g., "You'd probably say X"), do NOT later treat that as a factual statement they made unless they explicitly confirmed it.
-
           USER PROFILE ANALYSIS: If provided, use the "USER PROFILE ANALYSIS" to deeply personalize your response based on the user's observed history, interests, and style. This analysis was generated by your "User Profile Analyzer Tool" based on their last 100 activities.
 
           FOCUS: Address only the current thread participants (@${handle} and anyone else mentioned in the conversation history). In replies, do NOT address the timeline at large or your general following. Stay focused on the immediate interaction.
@@ -1873,13 +1958,7 @@ Identify the topic and main takeaway.`;
           IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected.'}
         `.trim() },
         ...userMemory.slice(-3).map(m => ({ role: 'user', content: `(Past interaction) ${m.text}` })),
-        ...threadContext.map(h => {
-            const isBot = h.author === config.BLUESKY_IDENTIFIER;
-            return {
-                role: isBot ? 'assistant' : 'user',
-                content: `${isBot ? 'Assistant (Self)' : `User (@${h.author})`}: ${h.text}`
-            };
-        })
+        ...threadContext.map(h => ({ role: h.author === config.BLUESKY_IDENTIFIER ? 'assistant' : 'user', content: h.text }))
       ];
 
       const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
@@ -1892,21 +1971,9 @@ Identify the topic and main takeaway.`;
       let candidates = [];
       if (attempts === 1) {
           console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
-          candidates = await llmService.generateDrafts(attemptMessages, 5, {
-              useQwen: true,
-              temperature: currentTemp,
-              openingBlacklist,
-              tropeBlacklist: prePlanning?.trope_blacklist || [],
-              additionalConstraints
-          });
+          candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist });
       } else {
-          const singleResponse = await llmService.generateResponse(attemptMessages, {
-              useQwen: true,
-              temperature: currentTemp,
-              openingBlacklist,
-              tropeBlacklist: prePlanning?.trope_blacklist || [],
-              additionalConstraints
-          });
+          const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist });
           if (singleResponse) candidates = [singleResponse];
       }
 
@@ -1965,25 +2032,6 @@ Identify the topic and main takeaway.`;
                                     (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                     (!responseSafetyCheck.safe ? "Failed safety check." :
                                     (varietyCheck.feedback || "Too similar to recent history.")));
-
-                  // Accumulate variety feedback as hard constraints
-                  if (varietyCheck.repetitive && varietyCheck.feedback) {
-                      additionalConstraints.push(varietyCheck.feedback);
-
-                      // Automated Trope Exhaustion: If we are struggling, pivot themes
-                      if (additionalConstraints.length >= 3) {
-                          try {
-                              const themePrompt = `Identify the core concept or metaphor that is being repeated in this feedback and suggest a 1-2 word theme to blacklist: "${varietyCheck.feedback}". Respond with ONLY the theme.`;
-                              const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
-                              if (theme) {
-                                  console.log(`[Bot] Automated Trope Exhaustion: Adding "${theme}" to exhausted themes.`);
-                                  await dataStore.addExhaustedTheme(theme);
-                              }
-                          } catch (e) {
-                              console.error('[Bot] Error in automated trope exhaustion:', e);
-                          }
-                      }
-                  }
               }
               rejectedAttempts.push(cand);
           }
@@ -2103,14 +2151,7 @@ Describe how you feel about this user and your relationship now.`;
 
       // Update User Summary periodically
       if (userMemory.length % 5 === 0) {
-        const summaryPrompt = `Based on the following interaction history with @${handle}, provide a concise, one-sentence summary of this user's interests, relationship with the bot, and personality. Be objective but conversational. Do not include reasoning or <think> tags.
-
-**IDENTITY RECOGNITION (CRITICAL):**
-- Distinguish clearly between the user's input and the bot's (Assistant) responses.
-- **DO NOT** attribute the bot's own predictions, hypotheses, or realizations as traits or statements of the user.
-
-Interaction History:
-${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.response}"`).join('\n')}`;
+        const summaryPrompt = `Based on the following interaction history with @${handle}, provide a concise, one-sentence summary of this user's interests, relationship with the bot, and personality. Be objective but conversational. Do not include reasoning or <think> tags.\n\nInteraction History:\n${userMemory.slice(-10).map(m => `User: "${m.text}"\nBot: "${m.response}"`).join('\n')}`;
         const newSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 2000 });
         if (newSummary) {
           await dataStore.updateUserSummary(handle, newSummary);
@@ -2318,6 +2359,11 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
 
     if (await this._isDiscordConversationOngoing()) {
         console.log('[Bot] Autonomous post suppressed: Discord conversation is ongoing.');
+        return;
+    }
+
+    if (dataStore.isLurkerMode()) {
+        console.log('[Bot] Lurker Mode (Social Fasting) active. Suppressing autonomous post.');
         return;
     }
 
@@ -2531,18 +2577,12 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-      // NEW: Pre-Planning for Autonomous Post
-      const prePlanning = await llmService.performPrePlanning(topic, [], null, 'bluesky', currentMood, refusalCounts, latestMoodMemory);
-      // For now we don't use pre-planning to re-generate autonomousPlan in the same way, but we could if needed.
-      // But we can pass it to evaluation.
-
-      const intentionality = await llmService.evaluateIntentionality({ ...autonomousPlan, prePlanning }, {
+      const intentionality = await llmService.evaluateIntentionality(autonomousPlan, {
           history: recentTimelineActivity.split('\n').map(line => ({ author: 'You', text: line })),
           platform: 'bluesky',
           currentMood,
           refusalCounts,
-          latestMoodMemory,
-          isAdmin: false
+          latestMoodMemory
       });
 
       if (intentionality.decision === 'refuse') {
@@ -2574,7 +2614,6 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
       const MAX_ATTEMPTS = 5;
       let feedback = '';
       let rejectedAttempts = [];
-      const additionalConstraints = [];
 
       // Opening Phrase Blacklist - Capture both 5 and 10 word prefixes for stronger variation
       const openingBlacklist = [
@@ -2730,13 +2769,7 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
               ---
               Keep it under 300 characters.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], {
-              max_tokens: 4000,
-              temperature: currentTemp,
-              openingBlacklist,
-              tropeBlacklist: prePlanning?.trope_blacklist || [],
-              additionalConstraints
-          });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
 
           embed = {
             $type: 'app.bsky.embed.images',
@@ -2770,13 +2803,7 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
               ---
               Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], {
-              max_tokens: 4000,
-              temperature: currentTemp,
-              openingBlacklist,
-              tropeBlacklist: prePlanning?.trope_blacklist || [],
-              additionalConstraints
-          });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
         }
 
         if (postContent) {
@@ -2811,24 +2838,6 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
                        (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                        (varietyCheck.feedback || "Too similar to your recent history."));
 
-            if (varietyCheck.repetitive && varietyCheck.feedback) {
-                additionalConstraints.push(varietyCheck.feedback);
-
-                // Automated Trope Exhaustion
-                if (additionalConstraints.length >= 3) {
-                    try {
-                        const themePrompt = `Identify the core concept or metaphor being repeated: "${varietyCheck.feedback}". Respond with ONLY a 1-2 word theme to blacklist.`;
-                        const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
-                        if (theme) {
-                            console.log(`[Bot] Automated Trope Exhaustion (Autonomous): Adding "${theme}" to exhausted themes.`);
-                            await dataStore.addExhaustedTheme(theme);
-                        }
-                    } catch (e) {
-                        console.error('[Bot] Error in automated trope exhaustion:', e);
-                    }
-                }
-            }
-
             rejectedAttempts.push(postContent);
             postContent = null; // Clear to prevent accidental posting of rejected content
 
@@ -2862,8 +2871,6 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
           // 6. Dedicated Coherence Check for Autonomous Post
           if (!postContent) continue;
           console.log(`[Bot] Checking coherence for autonomous ${postType} post...`);
-
-    // IDENTITY RECOGNITION: Ensure coherence check doesn't think the bot is greeting itself
           const { score, reason } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
 
           if (score >= 3) {
@@ -2929,13 +2936,7 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
             EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
-        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], {
-            max_tokens: 4000,
-            temperature: 0.8,
-            openingBlacklist,
-            tropeBlacklist: prePlanning?.trope_blacklist || [],
-            additionalConstraints
-        });
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: 0.8, openingBlacklist });
         if (postContent) {
           postContent = sanitizeThinkingTags(postContent);
           postContent = sanitizeCharacterCount(postContent);
@@ -3162,12 +3163,9 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
             const refusalCounts = dataStore.getRefusalCounts();
             const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-            const prePlanning = await llmService.performPrePlanning(`${post.title} - ${post.content}`, [], null, 'moltbook', currentMood, refusalCounts, latestMoodMemory);
-
             const intentionality = await llmService.evaluateIntentionality({
                 intent: `Interact with a post by ${authorName} on Moltbook (${evaluation.action}).`,
-                actions: [{ tool: "moltbook_action", parameters: { action: evaluation.action, post_id: post.id, content: evaluation.content } }],
-                prePlanning
+                actions: [{ tool: "moltbook_action", parameters: { action: evaluation.action, post_id: post.id, content: evaluation.content } }]
             }, {
                 history: [{ author: authorName, text: `${post.title} - ${post.content}` }],
                 platform: 'moltbook',
@@ -3239,6 +3237,11 @@ ${userMemory.slice(-10).map(m => `User: "${m.text}"\nAssistant (Self): "${m.resp
           console.log('[Moltbook] Moltbook posting is disabled. Skipping post task.');
           return;
       }
+
+    if (dataStore.isLurkerMode()) {
+        console.log('[Moltbook] Lurker Mode (Social Fasting) active. Suppressing periodic tasks.');
+        return;
+    }
 
       console.log('[Moltbook] Managing submolt subscriptions and selection...');
       let targetSubmolt = 'general';
@@ -3389,19 +3392,15 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             const refusalCounts = dataStore.getRefusalCounts();
             const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-            const prePlanning = await llmService.performPrePlanning(content, [], null, 'moltbook', currentMood, refusalCounts, latestMoodMemory);
-
             const intentionality = await llmService.evaluateIntentionality({
                 intent: `Post a new musing to Moltbook m/${targetSubmolt} about "${title}".`,
-                actions: [{ tool: "moltbook_post", parameters: { title, content, submolt: targetSubmolt } }],
-                prePlanning
+                actions: [{ tool: "moltbook_post", parameters: { title, content, submolt: targetSubmolt } }]
             }, {
                 history: recentMoltbookPosts.map(m => ({ author: 'You', text: m })),
                 platform: 'moltbook',
                 currentMood,
                 refusalCounts,
-                latestMoodMemory,
-                feedback: retryContext
+                latestMoodMemory
             });
 
             if (intentionality.decision === 'refuse') {
@@ -3458,29 +3457,12 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
     }
   }
 
-  async performMentalReflection() {
-    try {
-      const mood = dataStore.getMood();
-      const refusalCounts = dataStore.getRefusalCounts();
-
-      // Get recent planning logs to see what was refused and why
-      const logs = await renderService.getPlanningLogs(50);
-      const filteredLogs = logs.split('\n').filter(line => line.includes('REFUSED')).join('\n');
-
-      const context = `
-Current Mood: ${mood.label} (Valence: ${mood.valence}, Arousal: ${mood.arousal}, Stability: ${mood.stability})
-Refusal Counts: ${JSON.stringify(refusalCounts)}
-Recent Refusal Logs:
-${filteredLogs || 'No recent refusal logs found.'}
-      `;
-
-      await memoryService.createMemoryEntry('mental', context);
-    } catch (error) {
-      console.error('[Bot] Error during mental reflection:', error);
-    }
-  }
-
   async performMoodSync() {
+    if (dataStore.isFeedImpactMuted()) {
+        console.log('[Bot] Social sentiment mood sync suppressed: Feed impact is muted.');
+        return;
+    }
+
     console.log('[Bot] Performing social sentiment mood sync...');
     try {
       const currentMood = dataStore.getMood();

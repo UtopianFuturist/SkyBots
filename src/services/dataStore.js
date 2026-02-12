@@ -76,7 +76,8 @@ const defaultData = {
   image_subjects: [],
   lurker_mode: false,
   mute_feed_impact_until: 0,
-  energy_level: 1.0
+  energy_level: 1.0,
+  resting_until: 0
 };
 
 class DataStore {
@@ -670,6 +671,15 @@ class DataStore {
 
   getEnergyLevel() {
     return this.db.data.energy_level ?? 1.0;
+  }
+
+  setRestingUntil(timestamp) {
+    this.db.data.resting_until = timestamp;
+    return this.db.write();
+  }
+
+  isResting() {
+    return Date.now() < (this.db.data.resting_until || 0);
   }
 
   async incrementRefusalCount(platform) {

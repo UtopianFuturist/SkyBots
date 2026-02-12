@@ -28,6 +28,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     performAgenticPlanning: jest.fn().mockResolvedValue({ strategy: { angle: 'natural', tone: 'conversational', theme: 'test' }, actions: [] }),
+    evaluateAndRefinePlan: jest.fn().mockImplementation((plan) => Promise.resolve({ decision: 'engage', refined_actions: plan.actions, reason: 'Engaging for test' })),
     evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'engage', reason: 'Engaging for test' }),
     shouldIncludeSensory: jest.fn().mockResolvedValue(false),
     performInternalResearch: jest.fn(),
@@ -66,6 +67,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getRefusalCounts: jest.fn().mockReturnValue({ bluesky: 0, discord: 0, moltbook: 0, global: 0 }),
     incrementRefusalCount: jest.fn(),
     resetRefusalCount: jest.fn(),
+    isResting: jest.fn().mockReturnValue(false),
+    isLurkerMode: jest.fn().mockReturnValue(false),
     getLastAutonomousPostTime: jest.fn().mockReturnValue(null),
     updateLastAutonomousPostTime: jest.fn(),
     getConfig: jest.fn().mockReturnValue({

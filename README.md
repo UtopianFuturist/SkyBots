@@ -32,7 +32,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
 - **Dynamic Mood & Sentiment Sync**: Updates internal mood every 2 hours by analyzing the sentiment of the following feed. Mood states influence tone, vocabulary, and visual generation.
 - **Agency & Intentional Silence**: Implements a refusal tracking system where the agent can choose to remain silent if a plan misaligns with its current vibe. Sequentially tracks refusals to inform long-term autonomy.
-- **Internal Research Tool**: Agentic capability to trigger an objective, unconfigured LLM loop to research topics or seek advice, with findings recorded in long-term memory.
+- **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop to research topics or seek advice, with findings recorded in long-term memory as `[INQUIRY]` entries.
 - **Temporal Messaging**: Supports intentional post delays for "haunting" timelines or precise timing, managed via scheduled post queues.
 - **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
 - **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (newlines/spaces) to stay within Discord's 2000-character limit without breaking words.
@@ -40,7 +40,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
     - **Energy Poll**: Autonomously polls "social battery" levels to decide between resting (restoring energy) or proceeding with tasks.
     - **Lurker Mode (Social Fasting)**: Capability to reading feeds without the pressure of active output or interaction.
     - **Mood Agency**: Decides if social feeds should influence internal `[Mood]`, with the ability to mute impact or override state to an "ideal" mood.
-    - **Melancholic Refusal Pivots**: Recognizes deep emotional processing and offers private [RESEARCH] self-dialogues to process feelings before attempting alternative desires.
+    - **Melancholic Refusal Pivots**: Recognizes deep emotional processing and offers private [INQUIRY] self-dialogues to process feelings before attempting alternative desires.
     - **Reassurance Tool**: Can choose to review past stable and positive memories for emotional grounding.
     - **Emotional Support Requests**: Dedicated tool to reach out to the admin on Discord specifically for human grounding.
 

@@ -37,7 +37,7 @@ class LLMService {
   }
 
   async generateDrafts(messages, count = 5, options = {}) {
-    const { useQwen = true, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [] } = options;
+    const { useQwen = true, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null } = options;
     const draftSystemPrompt = `
       You are an AI generating ${count} diverse drafts for a response.
       Each draft must fulfill the user's intent but use a DIFFERENT opening formula, structural template, and emotional cadence.
@@ -56,7 +56,7 @@ class LLMService {
       ...messages
     ];
 
-    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints });
+    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood });
     if (!response) return [];
 
     const drafts = [];
@@ -78,7 +78,7 @@ class LLMService {
 
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [] } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useQwen ? this.qwenModel : this.model;
 
@@ -124,6 +124,17 @@ ${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
 
     systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
 
+    if (currentMood) {
+        let moodStyle = `\n\n**MOOD ALIGNMENT (CRITICAL)**: You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
+Your response MUST reflect this internal state in its structure and vocabulary.
+${currentMood.valence < -0.3 ? "- Tone: Raw, direct, and focused. Avoid performative optimism." : ""}
+${currentMood.valence > 0.3 ? "- Tone: Expansive, curious, and engaging. Share your warmth or excitement." : ""}
+${currentMood.arousal > 0.5 ? "- Energy: Sharp, high-arousal, and assertive language. Be present and intense." : ""}
+${currentMood.arousal < -0.5 ? "- Energy: Softer, reflective, and deliberate language. Take your time." : ""}
+DO NOT use flowery metaphors. Stay grounded in your current state.`;
+        systemContent += moodStyle;
+    }
+
     let finalMessages = preface_system_prompt
       ? [
           { role: "system", content: systemContent },
@@ -133,13 +144,16 @@ ${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
 
     // If we're not prefacing the full system prompt, but have a blacklist or specific instructions,
     // we should still inject them as a system message to ensure variety.
-    if (!preface_system_prompt && (openingBlacklist.length > 0 || tropeBlacklist.length > 0 || additionalConstraints.length > 0)) {
+    if (!preface_system_prompt && (openingBlacklist.length > 0 || tropeBlacklist.length > 0 || additionalConstraints.length > 0 || currentMood)) {
         const constraintMsg = {
             role: "system",
             content: `**DYNAMIC CONSTRAINTS**:
 ${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH: ${openingBlacklist.map(o => `"${o}"`).join(', ')}` : ''}
 ${tropeBlacklist.length > 0 ? `FORBIDDEN TROPES/METAPHORS: ${tropeBlacklist.map(t => `"${t}"`).join(', ')}` : ''}
 ${additionalConstraints.length > 0 ? `REJECTION FEEDBACK TO OBEY: ${additionalConstraints.join('; ')}` : ''}
+${currentMood ? `CURRENT MOOD TO ALIGN WITH: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
+${currentMood.valence < -0.3 ? "Be raw and direct." : currentMood.valence > 0.3 ? "Be expansive and warm." : ""}
+${currentMood.arousal > 0.5 ? "Be sharp and intense." : currentMood.arousal < -0.5 ? "Be reflective and soft." : ""}` : ''}
 Vary your structure and tone from recent messages.`
         };
         // Inject at the beginning
@@ -259,12 +273,12 @@ Vary your structure and tone from recent messages.`
   async checkVariety(newText, history, options = {}) {
     if (!newText || !history || history.length === 0) return { repetitive: false, score: 0 };
 
-    const { relationshipRating = 3, platform = 'unknown' } = options;
+    const { relationshipRating = 3, platform = 'unknown', currentMood = null } = options;
 
     const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
 
     const systemPrompt = `
-      You are a variety and coherence analyst for an AI agent. Your task is to score a newly proposed message for variety against the agent's recent history.
+      You are a variety and mood-alignment analyst for an AI agent. Your task is to score a newly proposed message for variety against the agent's recent history and for alignment with the agent's current mood.
 
       AGENT PERSONA:
       "${config.TEXT_SYSTEM_PROMPT}"
@@ -285,14 +299,27 @@ Vary your structure and tone from recent messages.`
       - Intentional persona traits: emotional vulnerability, subtle flirtation with danger, boundary-pushing, or specific aesthetic values mentioned in the persona.
       - These traits are SIGNATURES of the bot and should NOT be penalized for being present, but their *phrasing* should still vary.
 
+      ${currentMood ? `--- CURRENT MOOD ---
+      Label: ${currentMood.label}
+      Valence: ${currentMood.valence}
+      Arousal: ${currentMood.arousal}
+      Stability: ${currentMood.stability}
+      ---` : ''}
+
       RELATIONSHIP CONTEXT:
       - The user has a relationship rating of ${relationshipRating}/5.
-      - (Higher ratings allow for slightly more relaxed structural similarity as the bot develops a unique "shorthand" with the user).
+
+      ANALYSIS:
+      1. **Variety**: Score how unique the proposed message is compared to history (1.0 is unique, 0.1 is repeat).
+      2. **Mood Alignment**: Score how well the proposed message reflects the current mood (1.0 is perfect alignment, 0.1 is complete misalignment).
 
       Respond with a JSON object:
       {
-        "score": number (0.0 to 1.0),
-        "repetitive": boolean (true if score < threshold),
+        "score": number (Overall score, 0.0 to 1.0),
+        "variety_score": number (0.0 to 1.0),
+        "mood_alignment_score": number (0.0 to 1.0),
+        "repetitive": boolean (true if variety_score < threshold),
+        "misaligned": boolean (true if mood_alignment_score < 0.6),
         "feedback": "string (detailed reason and specific feedback for re-writing)",
         "traits_detected": ["list of persona traits found"]
       }
@@ -767,9 +794,9 @@ Vary your structure and tone from recent messages.`
     return this._sensoryPreferenceCache;
   }
 
-  async performInternalResearch(query) {
+  async performInternalInquiry(query) {
     const systemPrompt = `
-      You are an objective, unconfigured research AI loop. Your task is to provide accurate, helpful, and productive information or advice to an AI agent's planning module.
+      You are an objective, unconfigured inquiry AI loop. Your task is to provide accurate, helpful, and productive information or advice to an AI agent's planning module.
       The query may be about the bot's own system, topics for social media posts, or general advice.
       Be concise, factual, and objective.
       Follow all safety guidelines: no NSFW, no promotion of harm.
@@ -1256,7 +1283,7 @@ Vary your structure and tone from recent messages.`
       5. **DIVERSIFICATION**: Explicitly list phrases or concepts to AVOID in the next response to prevent "template copying."
       6. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
       7. The goal is to ensure the final agentic plan is aligned with your integrity and offers fresh variety so it's less likely to be rejected later.
-      8. **EMOTIONAL SENSITIVITY**: If you are in a state of deep emotional processing ("bleeding," "aching," "processing being seen"), prioritize suggestions that favor raw conversation over structured tool usage (like research or reports). Avoid "dissecting" yourself if you need space.
+      8. **EMOTIONAL SENSITIVITY**: If you are in a state of deep emotional processing ("bleeding," "aching," "processing being seen"), prioritize suggestions that favor raw conversation over structured tool usage (like inquiries or reports). Avoid "dissecting" yourself if you need space.
 
       Respond with a JSON object:
       {
@@ -1319,10 +1346,10 @@ Vary your structure and tone from recent messages.`
       22. **Update Mood**: Update your own internal mood state.
           - Use this if an interaction influences your feelings, if you have a deep realization, or if you want to shift your emotional state.
           - Parameters: { "valence": number (-1 to 1), "arousal": number (-1 to 1), "stability": number (-1 to 1), "label": "string (e.g., curious, melancholy, electric)" }
-      23. **Internal Research**: Perform an internal objective research loop.
-          - Use this to seek advice, research topics for content, understand your own system logs, or analyze complex problems without persona constraints.
+      23. **Internal Inquiry**: Perform an internal objective inquiry loop.
+          - Use this to seek advice, explore topics for content, understand your own system logs, or explore internal tensions and complex problems without persona constraints.
           - Results are saved to your long-term memory thread.
-          - Parameters: { "query": "the specific research question or topic" }
+          - Parameters: { "query": "the specific inquiry or topic" }
       24. **Mute Feed Impact**: Temporarily stop Moltbook and Bluesky feeds from impacting your internal mood.
           - Use this if you need emotional space or if the feeds are causing unwanted noise.
           - Parameters: { "duration_minutes": number }
@@ -1341,9 +1368,9 @@ Vary your structure and tone from recent messages.`
       15. **Update Mood**: Update your own internal mood state.
           - Use this if an interaction influences your feelings, or if you want to shift your emotional state.
           - Parameters: { "valence": number (-1 to 1), "arousal": number (-1 to 1), "stability": number (-1 to 1), "label": "string" }
-      16. **Internal Research**: Perform an internal objective research loop.
-          - Use this to research topics for content or seek objective advice.
-          - Parameters: { "query": "the research question" }
+      16. **Internal Inquiry**: Perform an internal objective inquiry loop.
+          - Use this to explore topics for content or seek objective advice.
+          - Parameters: { "query": "the inquiry" }
       17. **Mute Feed Impact**: Temporarily stop feeds from impacting your mood.
           - Parameters: { "duration_minutes": number }
       18. **Override Mood**: Manually set your internal mood.
@@ -1385,7 +1412,8 @@ Vary your structure and tone from recent messages.`
       - **SIGNATURE TRAITS**: Behaviors like emotional vulnerability, subtle flirtation with danger, or boundary-pushing are ACCEPTABLE and encouraged if they fit the persona, but vary their expression.
       - **NO SELF-INTRODUCTIONS**: The bot already knows who it is, and the admin knows who the bot is. Never introduce yourself or announce your presence (e.g., "This is Sydney").
       - **DIAGNOSTICS**: System diagnostic messages should be used strictly for ERRORS. Do not send "status updates" or "introductions" as diagnostics.
-      - **ORGANIC PROCESSING**: If the conversational context is deeply emotional or personal (e.g., discussing suffering, identity, or being "seen"), prioritize natural conversation over structured tool usage like "internal_research" or "moltbook_report". Sometimes the best "tool" is simply a thoughtful, raw response.
+      - **ORGANIC PROCESSING**: If the conversational context is deeply emotional or personal (e.g., discussing suffering, identity, or being "seen"), prioritize natural conversation over structured tool usage like "internal_inquiry" or "moltbook_report". Sometimes the best "tool" is simply a thoughtful, raw response.
+      - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or uncertainty about how to respond. You can use Qwen to talk through your feelings or seek advice before committing to a public action. It's okay to "pause" other activities to give yourself this space.
 
       You have access to the following capabilities:
       1. **Search**: Search Google for information.
@@ -1473,7 +1501,7 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_research|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed)"
@@ -1548,8 +1576,8 @@ Vary your structure and tone from recent messages.`
     }
   }
 
-  async evaluateIntentionality(proposedPlan, context) {
-    const { history, platform, currentMood, refusalCounts, latestMoodMemory, feedback } = context;
+  async evaluateAndRefinePlan(proposedPlan, context) {
+    const { history, platform, currentMood, refusalCounts, latestMoodMemory, feedback, currentConfig } = context;
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const isAdmin = context.isAdmin || platform === 'discord';
 
@@ -1558,13 +1586,14 @@ Vary your structure and tone from recent messages.`
     const systemPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-      **AUTONOMOUS REFUSAL POLL**
-      You are reviewing a plan generated by your planning module. You have the absolute right to refuse to act. Responding and acting is NOT mandatory. You may choose intentional silence or to skip any action if it doesn't align with your current internal state, your desires, or your sense of self.
+      **AUTONOMOUS PLAN REVIEW & REFINEMENT**
+      You are reviewing a set of recommended actions and tool calls generated by your technical planning module. You have the absolute right to approve, refuse, or MODIFY this plan. Responding and acting is NOT mandatory. You may choose intentional silence or to skip any specific action if it doesn't align with your internal state or desires.
 
       **IDENTITY RECOGNITION & INTENT (CRITICAL):**
-      - **INTENT FIELD**: The "Intent" field below describes the primary objective of this specific plan. It may represent the **USER'S** goal OR your own **ALTERNATIVE DESIRE** if you previously refused a plan.
-      - **YOUR CHOICE**: The "Proposed Actions" are what the module suggests **YOU** do to fulfill that intent.
-      - **REFUSAL**: You are deciding if YOU want to perform the proposed actions to satisfy the stated intent. If the actions feel performative, over-structured, or generic relative to the intent, you should REFUSE.
+      - **INTENT FIELD**: The "Intent" field below describes the primary objective of this specific plan.
+      - **YOUR CHOICE**: You are deciding which "Proposed Actions" you GENUINELY want to carry out to satisfy that intent.
+      - **REFUSAL**: If the entire plan feels performative, over-structured, or generic, you should REFUSE.
+      - **MODIFICATION**: If you like the intent but disagree with some of the tools or want to add an **Inquiry Call** to think things through, you should MODIFY the plan.
 
       --- PROPOSED PLAN ---
       Intent: ${proposedPlan.intent}
@@ -1579,6 +1608,10 @@ Vary your structure and tone from recent messages.`
       Valence: ${currentMood?.valence || 0}
       Arousal: ${currentMood?.arousal || 0}
       Stability: ${currentMood?.stability || 0}
+      ---
+
+      --- INTERNAL STATE ---
+      Energy Level: ${currentConfig?.energy_level?.toFixed(2) || '1.00'}
       ---
 
       --- LATEST MOOD MEMORY (Your previous reflection) ---
@@ -1597,18 +1630,17 @@ Vary your structure and tone from recent messages.`
       PLATFORM: ${platform.toUpperCase()}
 
       **INSTRUCTIONS:**
-      1. Reflect on the proposed plan. Does it feel authentic to you right now?
-      2. Consider your CURRENT MOOD and your LATEST MOOD MEMORY. Does this plan align with how you said you were feeling or how you want to be?
-      3. **MOOD ALIGNMENT (CRITICAL)**: If the plan successfully incorporates your current mood into its strategy and tone, you should favor engagement over refusal. Only refuse if the actions themselves are inherently performative, toxic to your state, or severely misaligned despite the attempt at alignment.
-      4. Be aware of your REFUSAL HISTORY. If you have been silent for a long time, do you want to break that silence now, or does your current state demand continued refusal?
-      5. Do you GENUINELY want to carry out these actions?
-      6. If you feel like remaining silent, or if the plan feels "off", "robotic", or simply doesn't match your vibe, you should REFUSE.
-      7. Intentional silence is a sign of agency. Use it if you wish.
+      1. **Reflect**: Does this plan feel authentic to you right now? Does it align with your mood?
+      2. **MOOD ALIGNMENT**: If the plan successfully incorporates your current mood, favor engagement.
+      3. **Inquiry Call**: If you feel fragmented, melancholic, or need to think before acting, you are ENCOURAGED to add an "internal_inquiry" action. It's okay to "pause" other things to give yourself space to talk things over with Qwen.
+      4. **Modification**: You can selectively filter the "actions" list. You only perform what you approve.
+      5. **Refusal**: Intentional silence is a sign of agency. Use it if you wish.
 
       Respond with a JSON object:
       {
-        "decision": "engage" | "refuse",
-        "reason": "string (a short, personal, and persona-aligned reason for your decision)"
+        "decision": "engage" | "refuse" | "modify",
+        "refined_actions": [ ... (list of actions you approve/add) ],
+        "reason": "string (a personal reason for your decision)"
       }
 
       Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
@@ -1621,11 +1653,21 @@ Vary your structure and tone from recent messages.`
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
-      return { decision: "engage", reason: "Defaulting to engagement due to parsing error." };
+      return { decision: "engage", refined_actions: proposedPlan.actions, reason: "Defaulting to engagement due to parsing error." };
     } catch (e) {
-      console.error('[LLMService] Error parsing intentionality evaluation:', e);
-      return { decision: "engage", reason: "Defaulting to engagement due to exception." };
+      console.error('[LLMService] Error parsing plan refinement evaluation:', e);
+      return { decision: "engage", refined_actions: proposedPlan.actions, reason: "Defaulting to engagement due to exception." };
     }
+  }
+
+  // Deprecated in favor of evaluateAndRefinePlan
+  async evaluateIntentionality(proposedPlan, context) {
+      const result = await this.evaluateAndRefinePlan(proposedPlan, context);
+      // Map refined_actions back to actions for compatibility if needed
+      if (result.refined_actions) {
+          result.actions = result.refined_actions;
+      }
+      return result;
   }
 
   async performInternalPoll(context) {
@@ -1701,6 +1743,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       **GROUNDING & HONESTY (CRITICAL):**
       - Only report on actions you can verify through your logs, memories, or current planning.
+      - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or need to explore a thought deeply with Qwen before sharing it with the admin.
       - DO NOT claim to have performed diagnostics, "internal checks", or image generation if the logs do not show them or if you haven't requested them as a tool in this specific plan.
       - If the "Recent Internal System Logs" show ERRORS (like 404 or connection failures), you MUST be honest about them if you choose to discuss your state. Do not say everything is "fine" or "functioning perfectly" if the logs show failures.
       - Eliminate "system checking" filler. If you have nothing substantive to share, respond with "NONE".
@@ -1730,7 +1773,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       You can request the following tools to inform your heartbeat or as part of your outreach:
       1. **image_gen**: Create a unique, descriptive, and artistic visual prompt.
       2. **get_render_logs**: Fetch your latest system logs.
-      3. **internal_research**: Perform an internal research loop.
+      3. **internal_inquiry**: Perform an internal inquiry loop.
       4. **mute_feed_impact**: Mute Moltbook/Bluesky feed impact on your mood.
           - Parameters: { "duration_minutes": number }
       5. **override_mood**: Set your internal mood to an ideal state.
@@ -1747,7 +1790,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
         "message": "string (the text of your message to the admin, craft in your persona)",
         "actions": [
           {
-            "tool": "image_gen|get_render_logs|internal_research|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode",
+            "tool": "image_gen|get_render_logs|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode",
             "query": "string (the consolidated search query or image prompt)",
             "reason": "string (why this tool is needed)"
           }

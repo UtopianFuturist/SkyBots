@@ -3556,11 +3556,12 @@ Describe how you feel about this user and your relationship now.`;
       if (finalAutonomousPlan.actions) {
           for (const action of finalAutonomousPlan.actions) {
               if (action.tool === 'internal_inquiry') {
-                  console.log(`[Bot] Executing agentic inquiry: ${action.query}`);
-                  const result = await llmService.performInternalInquiry(action.query);
+                  const query = action.query || action.parameters?.query;
+                  console.log(`[Bot] Executing agentic inquiry: ${query}`);
+                  const result = await llmService.performInternalInquiry(query);
                   if (result) {
                       if (memoryService.isEnabled()) {
-                          await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Autonomous thought: ${action.query}. Result: ${result}`);
+                          await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Autonomous thought: ${query}. Result: ${result}`);
                       }
                       agenticContext += `\n[INTERNAL INQUIRY: ${result}]`;
                   }
@@ -3669,7 +3670,12 @@ Describe how you feel about this user and your relationship now.`;
           console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${postAttempts})...`);
 
           // Item 10: Visual Aesthetic Mutation
-          const stylePrompt = `Identify an artistic style for an image about "${topic}" that matches this mood: ${currentMood.label}. Respond with 1-2 words (e.g. "glitch-noir", "cyber-impressionism").`;
+          const stylePrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            Identify a unique, artistic visual style for an image about "${topic}" that resonates with your current mood: ${currentMood.label}.
+            Respond with 1-3 words representing the aesthetic (e.g. "fractured-noir", "ethereal-glitch", "haunting-minimalism").
+            Respond with ONLY the style keywords.
+          `.trim();
           const style = await llmService.generateResponse([{ role: 'system', content: stylePrompt }], { useQwen: true, preface_system_prompt: false });
 
           const imageResult = await imageService.generateImage(`${style || ''} ${topic}`, { allowPortraits: false, feedback: postFeedback, mood: currentMood });

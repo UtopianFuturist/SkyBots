@@ -571,7 +571,8 @@ class DiscordService {
             }
             await this._send(message.channel, `Generating art for: "${prompt}"...`);
             try {
-                const result = await imageService.generateImage(prompt, { allowPortraits: true });
+                const currentMood = dataStore.getMood();
+                const result = await imageService.generateImage(prompt, { allowPortraits: true, mood: currentMood });
                 if (result && result.buffer) {
                     await this._send(message.channel, `Here is the art for: "${result.finalPrompt}"`, {
                         files: [{ attachment: result.buffer, name: 'art.jpg' }]
@@ -1023,7 +1024,7 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                          let embed = null;
                          if (prompt_for_image) {
                              console.log(`[DiscordService] Generating image for Bluesky post: "${prompt_for_image}"`);
-                             const imgResult = await imageService.generateImage(prompt_for_image, { allowPortraits: true });
+                             const imgResult = await imageService.generateImage(prompt_for_image, { allowPortraits: true, mood: currentMood });
                              if (imgResult && imgResult.buffer) {
                                  embed = { imageBuffer: imgResult.buffer, imageAltText: imgResult.finalPrompt };
                              }
@@ -1321,7 +1322,7 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                      if (action.tool === 'image_gen') {
                          const prompt = action.query || action.parameters?.prompt;
                          if (prompt) {
-                             const imgResult = await imageService.generateImage(prompt, { allowPortraits: true });
+                             const imgResult = await imageService.generateImage(prompt, { allowPortraits: true, mood: currentMood });
                              if (imgResult && imgResult.buffer) {
                                  await this._send(message.channel, `Generated image: "${imgResult.finalPrompt}"`, {
                                      files: [{ attachment: imgResult.buffer, name: 'art.jpg' }]

@@ -37,18 +37,20 @@ class ImageService {
         ${feedbackInstruction}
         ${moodInstruction}
 
-        If the input is an abstract concept (e.g., "vulnerability", "technology", "emotion"), you MUST convert it into a literal, tangible scene.
-        Think in terms of objects, landscapes, digital spaces, or environments.
-        Example: Instead of "The Intersection of Technology and Human Vulnerability", describe "A lone, rusted robotic hand gently holding a single, glowing blue flower in a dark, atmospheric cyberpunk alleyway."
+        EXPANSION MANDATE: Regardless of whether the input is a literal subject (e.g., "Mountains") or an abstract concept (e.g., "vulnerability"), you MUST expand it into a detailed, tangible, and evocative visual scene.
+        Think in terms of composition, lighting, textures, objects, and environment.
+        Example for "Mountains": "Jagged, snow-capped peaks piercing through a sea of thick, expressive clouds under a cold, crystalline sky. Dramatic shadows stretch across deep rocky ravines, captured in high-contrast cinematic realism."
 
-        CRITICAL: Your entire response MUST be under 270 characters to ensure it fits within social media limits.
+        CRITICAL: Your entire response MUST be under 270 characters.
+        CRITICAL: Do NOT simply repeat the input subject. You MUST generate a descriptive scene.
         IMPORTANT: Respond directly with the prompt. DO NOT include reasoning, <think> tags, or conversational filler.
-        STRICTLY NO MONOLOGUE: Do not explain your choices or describe the process of generating the prompt. Only output the final prompt text.
+        STRICTLY NO MONOLOGUE: Only output the finalized prompt text.
 
-        If you are unable to generate a prompt for any reason, do NOT respond with "null". Instead, provide a simple, safe visual description of the input subject.
+        If you are unable to generate a prompt for any reason, provide a safe, detailed visual description of the input subject. NEVER respond with "null" or the input word alone.
 
-        Adopt the following persona for your visual style and decision-making:
+        Adopt the following persona's aesthetic values and perspective for your scene description:
         "${config.TEXT_SYSTEM_PROMPT}"
+        (NOTE: While your persona values being "Concise", for this specific task you MUST prioritize descriptive depth and substance over brevity. "Concise" here means no meta-talk or filler, NOT a short prompt.)
       `.trim();
 
       const revisedPrompt = await llmService.generateResponse([

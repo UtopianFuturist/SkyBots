@@ -1386,6 +1386,9 @@ Vary your structure and tone from recent messages.`
       32. **Get Identity Knowledge**: Retrieve what you've learned from other agents on Moltbook.
       33. **Confirm Action**: Ask your core persona/main LLM for final confirmation before performing a sensitive action (like deleting a memory or preserving an inquiry).
           - Parameters: { "action": "string", "reason": "string" }
+      49. **Search Discord History**: Search for keywords in other Discord channels you have interacted in.
+          - Use this to maintain cross-thread context if a user mentions something you might have discussed elsewhere.
+          - Parameters: { "query": "string" }
       34. **Set Goal**: Set an autonomous daily goal for yourself.
           - Parameters: { "goal": "string", "description": "string" }
       35. **Divergent Brainstorm**: Generate three distinct thematic directions for a topic before committing to a plan.
@@ -1446,6 +1449,9 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "conflicting_points": ["point 1", "point 2"] }
       27. **Decompose Goal**: Break down a goal into sub-tasks.
           - Parameters: { "goal": "string" }
+      38. **Search Discord History**: Search for keywords in other Discord channels you have interacted in.
+          - Use this to maintain cross-thread context if a user mentions something you might have discussed elsewhere.
+          - Parameters: { "query": "string" }
       28. **Batch Image Gen**: Generate multiple visual prompts.
           - Parameters: { "subject": "string", "count": number }
       29. **Score Link Relevance**: Analyze URL relevance.

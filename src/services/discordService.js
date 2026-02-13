@@ -30,6 +30,8 @@ class DiscordService {
         this.lastLoginTime = 0;
         this._lastHeavyAdminSearch = 0;
         this._lastMessageFetch = {};
+        this._activeGenerations = new Map(); // channelId -> abortController
+        this._interrupted = new Set(); // channelId
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
     }
 
@@ -150,6 +152,10 @@ class DiscordService {
                 this.status = 'online';
                 this.lastLoginTime = Date.now();
                 this.isInitializing = false;
+
+                // Historical Vibe Recovery: Scan active channels on startup
+                setTimeout(() => this.recoverHistoricalVibes(), 10000);
+
                 return; // Successful login, exit init()
             } catch (error) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, error.message);
@@ -247,11 +253,13 @@ class DiscordService {
 
         this.client.on('shardError', (error) => {
             console.error('[DiscordService] Shard Error:', error);
+            this.sendDiagnosticAlert('Discord Shard Error', error.message).catch(() => {});
         });
 
         this.client.on('shardDisconnect', (event) => {
             console.warn('[DiscordService] Shard Disconnected:', event);
             this.status = 'offline';
+            this.sendDiagnosticAlert('Discord Shard Disconnected', `Code: ${event.code}, Reason: ${event.reason}`).catch(() => {});
         });
 
         this.client.on('shardReconnecting', (id) => {
@@ -302,6 +310,33 @@ class DiscordService {
     async handleMessage(message) {
         if (message.author.bot) return;
 
+        // Social Battery / Rate Limiting in public channels
+        if (message.channel.type !== ChannelType.DM) {
+            const now = Date.now();
+            this._recentChannelMessages = this._recentChannelMessages || {};
+            this._recentChannelMessages[message.channel.id] = (this._recentChannelMessages[message.channel.id] || []).filter(ts => now - ts < 300000);
+            this._recentChannelMessages[message.channel.id].push(now);
+
+            // If more than 20 messages in 5 mins, bot becomes "tired" and only replies to admin or explicit mentions
+            const isTired = this._recentChannelMessages[message.channel.id].length > 20;
+            const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+            const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
+
+            if (isTired && !isAdmin && !isMentioned) {
+                console.log(`[DiscordService] Social Battery Low in ${message.channel.id}. Skipping background orchestration.`);
+                return;
+            }
+        }
+
+        const normChannelId = this.getNormalizedChannelId(message);
+
+        // Interrupt Detection: If we are already generating for this channel, mark as interrupted
+        if (this._activeGenerations.has(normChannelId)) {
+            console.log(`[DiscordService] Interrupt detected in ${normChannelId}.`);
+            this._interrupted.add(normChannelId);
+            // Optionally we could abort the previous LLM call if we had a way to pass the controller down
+        }
+
         const isDM = message.channel.type === ChannelType.DM;
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
@@ -309,7 +344,21 @@ class DiscordService {
         console.log(`[DiscordService] Evaluating message from ${message.author.username}. isDM: ${isDM}, isAdmin: ${isAdmin}, isMentioned: ${isMentioned}`);
 
         if (!isDM && !isMentioned) {
-            return;
+            // Group Conversation Orchestration: Decision to join 3rd party discussion
+            const orchestrationPrompt = `
+                Analyze this 3rd party conversation in a Discord channel.
+                Latest Message from ${message.author.username}: "${message.content}"
+
+                Decide if the bot should interject based on high relevance to its persona or recent topics.
+                Persona: ${config.TEXT_SYSTEM_PROMPT}
+
+                Respond with ONLY "yes" or "no".
+            `;
+            const shouldJoin = await llmService.generateResponse([{ role: 'system', content: orchestrationPrompt }], { useQwen: true, preface_system_prompt: false });
+            if (!shouldJoin?.toLowerCase().includes('yes')) {
+                return;
+            }
+            console.log(`[DiscordService] Orchestration: Decided to join conversation in ${message.channel.id}`);
         }
 
         if (isAdmin && !this.adminId) {
@@ -323,8 +372,26 @@ class DiscordService {
             await dataStore.setDiscordLastReplied(true);
         }
 
-        const normChannelId = this.getNormalizedChannelId(message);
-        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content, {
+        // Intelligent Link Pre-fetching
+        const urlRegex = /(https?:\/\/[^\s]+)/g;
+        const urls = message.content.match(urlRegex);
+        let linkContext = '';
+        if (urls && urls.length > 0) {
+            console.log(`[DiscordService] Pre-fetching meta-data for ${urls.length} links...`);
+            const prefetchPromises = urls.slice(0, 3).map(async (url) => {
+                try {
+                    const res = await fetch(url, { method: 'HEAD', timeout: 5000 });
+                    const contentType = res.headers.get('content-type');
+                    return `[Link detected: ${url} (Type: ${contentType})]`;
+                } catch (e) {
+                    return `[Link detected: ${url} (Unreachable)]`;
+                }
+            });
+            const linkResults = await Promise.all(prefetchPromises);
+            linkContext = linkResults.join(' ');
+        }
+
+        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content + (linkContext ? ` ${linkContext}` : ''), {
             authorId: message.author.id,
             username: message.author.username
         });
@@ -333,6 +400,17 @@ class DiscordService {
         if (message.content.startsWith('/')) {
             await this.handleCommand(message);
             return;
+        }
+
+        // Natural Language Directive Capture
+        if (isAdmin && (message.content.toLowerCase().includes('from now on') || message.content.toLowerCase().includes('stop doing'))) {
+            const offerPrompt = `
+                The admin just gave a likely behavioral instruction: "${message.content}"
+                Respond in persona, acknowledging the instruction and asking if they want you to save this as a permanent directive.
+            `;
+            const offer = await llmService.generateResponse([{ role: 'system', content: offerPrompt }], { useQwen: true, preface_system_prompt: false });
+            await this._send(message.channel, offer || "I've noted that. Should I make that a permanent instruction for how I behave?");
+            // We continue to respond normally too
         }
 
         // Generate persona response
@@ -364,7 +442,9 @@ class DiscordService {
         }
 
         try {
-            const chunks = splitTextForDiscord(sanitized);
+            // Check if this message should be sent in bulk (e.g. emotional impact)
+            const isEmotional = /love|miss|pain|heart|ache|feel|fragile|vulnerable/i.test(sanitized) && sanitized.length < 1000;
+            const chunks = splitTextForDiscord(sanitized, { bulk: isEmotional });
             let firstSentMessage = null;
 
             for (let i = 0; i < chunks.length; i++) {
@@ -379,9 +459,11 @@ class DiscordService {
                 const sentMessage = await target.send(msgOptions);
                 if (!firstSentMessage) firstSentMessage = sentMessage;
 
-                // Small delay to ensure order if there are multiple chunks
+                // Multi-Message "Thought Cascading": Logical chunks with human-like delays
                 if (chunks.length > 1 && i < chunks.length - 1) {
-                    await new Promise(resolve => setTimeout(resolve, 800));
+                    // Simulate reading/typing time for next chunk: 1.5 - 3 seconds
+                    const delay = Math.floor(Math.random() * 1500) + 1500;
+                    await new Promise(resolve => setTimeout(resolve, delay));
                 }
             }
 
@@ -503,27 +585,91 @@ class DiscordService {
             }
             return;
         }
+
+        if (content.startsWith('/focus') && isAdmin) {
+            const enabled = !this._focusMode;
+            this._focusMode = enabled;
+            await this._send(message.channel, `Admin Focus Mode: **${enabled ? 'ON' : 'OFF'}**. ${enabled ? 'I will suppress spontaneous messages and tool-heavy musings for now.' : 'Resuming normal background activity.'}`);
+            return;
+        }
+
+        if (content.startsWith('/consult') && isAdmin) {
+            const enabled = !dataStore.db.data.discord_consult_mode;
+            dataStore.db.data.discord_consult_mode = enabled;
+            await dataStore.db.write();
+            await this._send(message.channel, `Pre-Post Consultation Mode: **${enabled ? 'ON' : 'OFF'}**. ${enabled ? 'I will share drafts of planned Bluesky posts here for your feedback before publishing.' : 'I will post to Bluesky autonomously.'}`);
+            return;
+        }
+
+        if (content.startsWith('/config') && isAdmin) {
+            const parts = message.content.split(' ');
+            if (parts.length < 2) {
+                const config = dataStore.getConfig();
+                await this._send(message.channel, `Current Configuration:\n\`\`\`json\n${JSON.stringify(config, null, 2)}\n\`\`\``);
+                return;
+            }
+            const key = parts[1];
+            let value = parts.slice(2).join(' ');
+            if (!value) {
+                await this._send(message.channel, `Usage: \`/config [key] [value]\``);
+                return;
+            }
+            // Simple type inference
+            if (value === 'true') value = true;
+            else if (value === 'false') value = false;
+            else if (!isNaN(value)) value = Number(value);
+
+            const success = await dataStore.updateConfig(key, value);
+            await this._send(message.channel, success ? `✅ Updated \`${key}\` to \`${value}\`.` : `❌ Failed to update \`${key}\`.`);
+            return;
+        }
+
+        if (content.startsWith('/goal') && isAdmin) {
+            const newGoal = message.content.slice(6).trim();
+            if (!newGoal) {
+                const currentGoal = dataStore.getCurrentGoal();
+                await this._send(message.channel, currentGoal ? `Current Daily Goal: "${currentGoal.goal}"\nDescription: ${currentGoal.description}` : "No active daily goal.");
+                return;
+            }
+            await dataStore.setCurrentGoal(newGoal, "Manually adjusted by admin via Discord.");
+            await this._send(message.channel, `✅ Goal updated to: "${newGoal}"`);
+            return;
+        }
     }
 
     async respond(message) {
         const normChannelId = this.getNormalizedChannelId(message);
         console.log(`[DiscordService] Generating response for channel: ${message.channel.id} (normalized: ${normChannelId})`);
 
+        // Register active generation
+        this._activeGenerations.set(normChannelId, true);
+        this._interrupted.delete(normChannelId);
+
+        // Adaptive Response Jitter: random 1-3s delay for simple non-admin replies
+        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        if (!isAdmin && !message.content.startsWith('/')) {
+            const jitter = Math.floor(Math.random() * 2000) + 1000;
+            await new Promise(resolve => setTimeout(resolve, jitter));
+        }
+
         let imageAnalysisResult = '';
         if (message.attachments.size > 0) {
-            console.log(`[DiscordService] Detected ${message.attachments.size} attachments. Starting vision analysis...`);
-            for (const [id, attachment] of message.attachments) {
-                if (attachment.contentType?.startsWith('image/')) {
-                    try {
-                        const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
-                        const analysis = await llmService.analyzeImage(attachment.url, null, { sensory: includeSensory });
-                        if (analysis) {
-                            imageAnalysisResult += `[Image attached by user: ${analysis}] `;
-                        }
-                    } catch (err) {
-                        console.error(`[DiscordService] Error analyzing Discord attachment:`, err);
-                    }
-                }
+            console.log(`[DiscordService] Detected ${message.attachments.size} attachments. Starting Parallel Vision Analysis...`);
+            const imageAttachments = Array.from(message.attachments.values()).filter(a => a.contentType?.startsWith('image/'));
+
+            if (imageAttachments.length > 0) {
+                const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+                const analysisPromises = imageAttachments.map(attachment =>
+                    llmService.analyzeImage(attachment.url, null, { sensory: includeSensory })
+                        .then(analysis => analysis ? `[Image attached by user: ${analysis}] ` : '')
+                        .catch(err => {
+                            console.error(`[DiscordService] Error analyzing Discord attachment:`, err);
+                            return '';
+                        })
+                );
+
+                const results = await Promise.all(analysisPromises);
+                imageAnalysisResult = results.join('');
             }
         }
 
@@ -583,7 +729,6 @@ class DiscordService {
 
         // (Interaction already saved in handleMessage)
 
-        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         const isAdminInThread = isAdmin || history.some(h => h.role === 'user' && (h.authorId === this.adminId || h.username === this.adminName));
         console.log(`[DiscordService] User is admin: ${isAdmin}, isAdminInThread: ${isAdminInThread}`);
 
@@ -602,6 +747,10 @@ class DiscordService {
         const blueskyDirectives = dataStore.getBlueskyInstructions();
         const personaUpdates = dataStore.getPersonaUpdates();
         const moltbookDirectives = moltbookService.getAdminInstructions();
+
+        // Memory & Context: User Fact Store & Channel Summary
+        const userFacts = dataStore.getDiscordUserFacts(message.author.id);
+        const channelSummary = dataStore.getDiscordChannelSummary(normChannelId);
 
         const systemPrompt = `
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
@@ -651,6 +800,14 @@ Treat these descriptions as if you are seeing them with your own eyes.
 NEVER claim you cannot see images.
 IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific message.'}
 
+--- CHANNEL CONTEXT ---
+${channelSummary ? `Last Summary: ${channelSummary.summary}\nLast Vibe: ${channelSummary.vibe}` : 'No previous channel summary.'}
+---
+
+--- USER FACTS ---
+${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific facts known about this user.'}
+---
+
 **VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
 **RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone.
 `.trim();
@@ -661,8 +818,19 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
         ];
 
         try {
-            console.log(`[DiscordService] Sending typing indicator...`);
-            await message.channel.sendTyping();
+            // Check for interruption before starting
+            if (this._interrupted.has(normChannelId)) {
+                console.log(`[DiscordService] Aborting response due to early interrupt in ${normChannelId}.`);
+                this._activeGenerations.delete(normChannelId);
+                return;
+            }
+
+            console.log(`[DiscordService] Starting variable typing latency...`);
+            // Continuous typing indicator loop
+            const typingInterval = setInterval(() => {
+                if (this.client?.isReady()) message.channel.sendTyping().catch(() => {});
+            }, 5000);
+            message.channel.sendTyping().catch(() => {});
 
             let responseText;
             if (isAdmin) {
@@ -680,7 +848,45 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  let planFeedback = '';
                  let plan = null;
 
+                 // Admin-Specific "Echo" Detection & Conflict Resolution
+                 const existingDirectives = dataStore.getBlueskyInstructions() + dataStore.getPersonaUpdates();
+                 const directiveCheckPrompt = `
+                    Admin's latest message: "${message.content}"
+                    Existing Directives:
+                    ${existingDirectives}
+
+                    1. Identify if the admin is giving a NEW instruction.
+                    2. If new, check if it CONTRADICTS an existing one.
+                    3. Check if it's redundant (ECHO) of an existing one.
+
+                    Respond with a JSON object:
+                    {
+                        "is_directive": boolean,
+                        "conflict": boolean,
+                        "redundant": boolean,
+                        "reason": "string (explanation)"
+                    }
+                 `;
+                 const directiveCheck = await llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false });
+                 try {
+                     const dRes = JSON.parse(directiveCheck.match(/\{[\s\S]*\}/)[0]);
+                     if (dRes.is_directive) {
+                         if (dRes.conflict) {
+                             messages.push({ role: 'system', content: `[ADMIN CONFLICT DETECTED]: ${dRes.reason}. Proactively ask for clarification or priority in your response.` });
+                         } else if (dRes.redundant) {
+                             messages.push({ role: 'system', content: `[ADMIN ECHO DETECTED]: This instruction is redundant. Acknowledge that you already remember this: ${dRes.reason}` });
+                         }
+                     }
+                 } catch (e) {}
+
                  while (planAttempts < MAX_PLAN_ATTEMPTS) {
+                     // Pivot Check: If interrupted during planning, restart with new history
+                     if (this._interrupted.has(normChannelId)) {
+                         console.log(`[DiscordService] Interrupt during planning in ${normChannelId}. Pivoting...`);
+                         this._interrupted.delete(normChannelId);
+                         return this.respond(message); // Recursive restart to catch new history
+                     }
+
                      planAttempts++;
                      console.log(`[DiscordService] Admin Planning Attempt ${planAttempts}/${MAX_PLAN_ATTEMPTS}`);
 
@@ -958,12 +1164,18 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          const limit = action.parameters?.limit || 100;
                          const query = action.query?.toLowerCase() || '';
                          let logs;
-                         if (query.includes('plan') || query.includes('agency') || query.includes('action') || query.includes('function')) {
+                         // Direct Render Log Natural Querying
+                         if (query && !['latest', 'all'].includes(query)) {
+                             console.log(`[DiscordService] Searching logs for: "${query}"`);
+                             const allLogs = await renderService.getLogs(500);
+                             const filtered = allLogs.split('\n').filter(line => line.toLowerCase().includes(query)).slice(-limit).join('\n');
+                             logs = filtered || `No log entries matching "${query}" found in the last 500 lines.`;
+                         } else if (query.includes('plan') || query.includes('agency') || query.includes('action') || query.includes('function')) {
                              logs = await renderService.getPlanningLogs(limit);
                          } else {
                              logs = await renderService.getLogs(limit);
                          }
-                         actionResults.push(`[Render Logs (Latest ${limit} lines):\n${logs}\n]`);
+                         actionResults.push(`[Render Logs matching "${query}" (Latest ${limit} lines):\n${logs}\n]`);
                      }
 
                      if (action.tool === 'get_social_history') {
@@ -1369,6 +1581,21 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                             actionResults.push(`[State restoration for "${label}": ${success ? 'SUCCESS' : 'FAILED'}]`);
                         }
                      }
+                     if (action.tool === 'search_discord_history') {
+                        const query = action.parameters?.query || action.query;
+                        if (query) {
+                            const allConversations = dataStore.db.data.discord_conversations || {};
+                            const searchResults = [];
+                            for (const [cid, conv] of Object.entries(allConversations)) {
+                                if (cid === normChannelId) continue;
+                                const matches = conv.filter(m => m.content.toLowerCase().includes(query.toLowerCase())).slice(-3);
+                                if (matches.length > 0) {
+                                    searchResults.push(`[Channel: ${cid}]\n${matches.map(m => `- ${m.role}: ${m.content}`).join('\n')}`);
+                                }
+                            }
+                            actionResults.push(`--- CROSS-THREAD SEARCH RESULTS FOR "${query}" ---\n${searchResults.join('\n\n') || 'No matches in other channels.'}\n---`);
+                        }
+                     }
                  }
 
                  if (actionResults.length > 0) {
@@ -1391,6 +1618,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  });
 
                  while (attempts < MAX_ATTEMPTS) {
+                     // Pivot Check: If interrupted during generation, restart
+                     if (this._interrupted.has(normChannelId)) {
+                         console.log(`[DiscordService] Interrupt during generation in ${normChannelId}. Pivoting...`);
+                         this._interrupted.delete(normChannelId);
+                         return this.respond(message);
+                     }
+
                      attempts++;
                      let candidates = [];
                      const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05); // max 0.85
@@ -1506,7 +1740,26 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
 
                      if (bestCandidate) {
-                         responseText = bestCandidate;
+                         // Multi-Draft Synthesis: Use the best 2 candidates to create a super-draft
+                         const topCandidates = candidates.filter(c => !isSlop(c)).slice(0, 2);
+                         if (topCandidates.length > 1) {
+                             console.log(`[DiscordService] Synthesizing top 2 candidates into a super-draft...`);
+                             const synthPrompt = `
+                                Synthesize the following two drafts into one final "super-draft".
+                                DRAFT 1: "${topCandidates[0]}"
+                                DRAFT 2: "${topCandidates[1]}"
+
+                                INSTRUCTIONS:
+                                1. Combine unique and substantive elements from both.
+                                2. Ensure the tone is consistent and matches the persona.
+                                3. STRICTLY avoid any clichés, repetitive metaphors, or "slop".
+                                4. Keep the response substantive and engaged.
+                             `;
+                             const superDraft = await llmService.generateResponse([{ role: 'system', content: synthPrompt }], { useQwen: true, preface_system_prompt: false });
+                             responseText = superDraft || bestCandidate;
+                         } else {
+                             responseText = bestCandidate;
+                         }
                          break;
                      } else {
                          feedback = `REJECTED: ${rejectionReason}`;
@@ -1529,12 +1782,38 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
 
             if (responseText) {
+                // Clear typing indicator
+                clearInterval(typingInterval);
+
+                // Final Interrupt Check before sending
+                if (this._interrupted.has(normChannelId)) {
+                    console.log(`[DiscordService] Interrupt just before sending in ${normChannelId}. Pivoting...`);
+                    this._interrupted.delete(normChannelId);
+                    this._activeGenerations.delete(normChannelId);
+                    return this.respond(message);
+                }
+
+                // Variable Typing Latency: Final wait based on response length before sending
+                // ~50ms per character, capped at 4 seconds
+                const typingWait = Math.min(responseText.length * 50, 4000);
+                await new Promise(resolve => setTimeout(resolve, typingWait));
+
+                // One last check after the typing wait
+                if (this._interrupted.has(normChannelId)) {
+                    this._activeGenerations.delete(normChannelId);
+                    return this.respond(message);
+                }
+
                 console.log(`[DiscordService] Sending response to Discord...`);
                 await this._send(message.channel, responseText);
 
                 if (isAdmin && responseText && !responseText.startsWith('[Varied]')) {
-                    // Update Interaction Heatmap (12)
-                    await dataStore.updateInteractionHeat(message.author.username, 0.2); // Higher boost for admin
+                    // Emotional Sentiment Weighting
+                    let warmthBoost = 0.1;
+                    if (currentMood.valence > 0.5) warmthBoost = 0.2;
+                    if (currentMood.valence < -0.5) warmthBoost = 0.05;
+
+                    await dataStore.updateInteractionHeat(message.author.username, warmthBoost);
 
                     // Extract theme and add to exhausted themes for admin interactions
                     try {
@@ -1544,13 +1823,44 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                             await dataStore.addDiscordExhaustedTheme(theme);
                             await dataStore.addExhaustedTheme(theme);
                         }
+
+                        // Memory & Context: Fact Extraction and Channel Summary Update
+                        const contextUpdatePrompt = `
+                            Analyze the latest interaction:
+                            User: "${message.content}"
+                            Assistant: "${responseText}"
+
+                            1. Extract ONE key fact about the user if shared (e.g., preference, location, status). If none, respond "NONE".
+                            2. Summarize the current thread's progress and vibe in 1 sentence.
+
+                            Format:
+                            FACT: [fact or NONE]
+                            SUMMARY: [summary]
+                            VIBE: [vibe]
+                        `;
+                        const contextUpdate = await llmService.generateResponse([{ role: 'system', content: contextUpdatePrompt }], { useQwen: true, preface_system_prompt: false });
+                        if (contextUpdate) {
+                            const factMatch = contextUpdate.match(/FACT:\s*(.*)/i);
+                            const sumMatch = contextUpdate.match(/SUMMARY:\s*(.*)/i);
+                            const vibeMatch = contextUpdate.match(/VIBE:\s*(.*)/i);
+
+                            if (factMatch && factMatch[1].trim().toUpperCase() !== 'NONE') {
+                                await dataStore.updateDiscordUserFact(message.author.id, factMatch[1].trim());
+                            }
+                            if (sumMatch && vibeMatch) {
+                                await dataStore.updateDiscordChannelSummary(normChannelId, sumMatch[1].trim(), vibeMatch[1].trim());
+                            }
+                        }
                     } catch (e) {
-                        console.error('[DiscordService] Error extracting theme for exhausted list:', e);
+                        console.error('[DiscordService] Error updating Discord context:', e);
                     }
                 }
             }
         } catch (error) {
             console.error('[DiscordService] Error responding to message:', error);
+        } finally {
+            this._activeGenerations.delete(normChannelId);
+            this._interrupted.delete(normChannelId);
         }
     }
 
@@ -1708,6 +2018,47 @@ INSTRUCTIONS:
         }
         console.log(`[DiscordService] Admin NOT found in any shared guild.`);
         return null;
+    }
+
+    async recoverHistoricalVibes() {
+        if (!this.client?.isReady()) return;
+
+        console.log('[DiscordService] Starting Historical Vibe Recovery...');
+        try {
+            // Get last 10 channels we interacted in
+            const conversations = dataStore.db.data.discord_conversations || {};
+            const recentChannelIds = Object.keys(conversations).slice(-10);
+
+            for (const cid of recentChannelIds) {
+                const channel = await this.client.channels.fetch(cid.replace('dm_', '')).catch(() => null);
+                if (channel && (channel.type === ChannelType.GuildText || channel.type === ChannelType.DM)) {
+                    console.log(`[DiscordService] Recovering vibe for channel: ${channel.id}`);
+                    const messages = await channel.messages.fetch({ limit: 10 });
+                    const historyText = messages.reverse().map(m => `${m.author.username}: ${m.content}`).join('\n');
+
+                    const vibePrompt = `
+                        Analyze the following recent Discord conversation history and provide a 1-sentence summary and a 1-word vibe label.
+                        History:
+                        ${historyText}
+
+                        Format:
+                        SUMMARY: [summary]
+                        VIBE: [vibe]
+                    `;
+                    const result = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { useQwen: true, preface_system_prompt: false });
+                    if (result) {
+                        const sumMatch = result.match(/SUMMARY:\s*(.*)/i);
+                        const vibeMatch = result.match(/VIBE:\s*(.*)/i);
+                        if (sumMatch && vibeMatch) {
+                            await dataStore.updateDiscordChannelSummary(cid, sumMatch[1].trim(), vibeMatch[1].trim());
+                        }
+                    }
+                }
+            }
+            console.log('[DiscordService] Historical Vibe Recovery complete.');
+        } catch (err) {
+            console.error('[DiscordService] Error during vibe recovery:', err);
+        }
     }
 }
 

@@ -45,6 +45,8 @@ class ImageService {
         IMPORTANT: Respond directly with the prompt. DO NOT include reasoning, <think> tags, or conversational filler.
         STRICTLY NO MONOLOGUE: Do not explain your choices or describe the process of generating the prompt. Only output the final prompt text.
 
+        If you are unable to generate a prompt for any reason, do NOT respond with "null". Instead, provide a simple, safe visual description of the input subject.
+
         Adopt the following persona for your visual style and decision-making:
         "${config.TEXT_SYSTEM_PROMPT}"
       `.trim();
@@ -52,7 +54,7 @@ class ImageService {
       const revisedPrompt = await llmService.generateResponse([
         { role: 'system', content: systemContent },
         { role: 'user', content: prompt }
-      ], { max_tokens: 500, preface_system_prompt: false });
+      ], { max_tokens: 500, preface_system_prompt: false, useQwen: true });
 
       console.log(`[ImageService] Revised prompt: "${revisedPrompt}"`);
 

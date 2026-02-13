@@ -51,37 +51,52 @@ export const splitText = (text, maxLength = 300, maxChunks = 10) => {
     return chunks;
 };
 
-export const splitTextForDiscord = (text, maxLength = 2000) => {
+/**
+ * Logical chunking for Discord: splits by paragraphs, lists, or forced limits.
+ */
+export const splitTextForDiscord = (text, options = {}) => {
+  const { maxLength = 2000, logicalOnly = false } = options;
   if (!text) return [];
-  if (text.length <= maxLength) return [text];
 
-  const chunks = [];
-  let remainingText = text;
+  // Try to split by double newlines first (paragraphs)
+  let initialChunks = text.split(/\n\s*\n/).filter(c => c.trim().length > 0);
 
-  while (remainingText.length > 0) {
-    if (remainingText.length <= maxLength) {
-      chunks.push(remainingText);
-      break;
-    }
-
-    // Try to split at the last newline before maxLength
-    let splitIndex = remainingText.lastIndexOf('\n', maxLength);
-
-    // If no newline or it's too far back (less than 80% of maxLength), try space
-    if (splitIndex === -1 || splitIndex < maxLength * 0.8) {
-      splitIndex = remainingText.lastIndexOf(' ', maxLength);
-    }
-
-    // If still no split point, just cut at maxLength
-    if (splitIndex === -1) {
-      splitIndex = maxLength;
-    }
-
-    chunks.push(remainingText.slice(0, splitIndex).trim());
-    remainingText = remainingText.slice(splitIndex).trim();
+  // If we only want one big block (bulk), we rejoin but respect maxLength
+  if (options.bulk) {
+      initialChunks = [text];
   }
 
-  return chunks;
+  const finalChunks = [];
+
+  for (let chunk of initialChunks) {
+      if (chunk.length <= maxLength) {
+          finalChunks.push(chunk.trim());
+      } else {
+          // Sub-split long paragraphs
+          let remaining = chunk;
+          while (remaining.length > 0) {
+              if (remaining.length <= maxLength) {
+                  finalChunks.push(remaining.trim());
+                  break;
+              }
+
+              // Try to split at newline or list item
+              let splitIndex = remaining.lastIndexOf('\n', maxLength);
+              if (splitIndex === -1 || splitIndex < maxLength * 0.7) {
+                  splitIndex = remaining.lastIndexOf('. ', maxLength); // Split at sentence
+              }
+              if (splitIndex === -1 || splitIndex < maxLength * 0.7) {
+                  splitIndex = remaining.lastIndexOf(' ', maxLength); // Fallback to space
+              }
+              if (splitIndex === -1) splitIndex = maxLength;
+
+              finalChunks.push(remaining.slice(0, splitIndex).trim());
+              remaining = remaining.slice(splitIndex).trim();
+          }
+      }
+  }
+
+  return finalChunks;
 };
 
 export const sanitizeThinkingTags = (text) => {

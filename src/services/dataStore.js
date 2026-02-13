@@ -32,6 +32,8 @@ const defaultData = {
   discord_scheduled_times: [], // [ "HH:mm" ]
   discord_quiet_hours: { start: 23, end: 8 }, // 24h format
   discord_pending_directives: [], // [ { type: 'directive|persona', platform, instruction, timestamp } ]
+  discord_user_facts: {}, // { userId: { facts: [], last_updated } }
+  discord_channel_summaries: {}, // { channelId: { summary, vibe, last_updated } }
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
   recent_thoughts: [], // [ { platform, content, timestamp } ]
   exhausted_themes: [], // [ { theme, timestamp } ]
@@ -871,6 +873,40 @@ class DataStore {
 
   getInteractionHeat(userId) {
     return this.db.data.interaction_heatmap[userId] || { warmth: 3 };
+  }
+
+  async updateDiscordUserFact(userId, fact) {
+    if (!this.db.data.discord_user_facts) this.db.data.discord_user_facts = {};
+    if (!this.db.data.discord_user_facts[userId]) {
+        this.db.data.discord_user_facts[userId] = { facts: [], last_updated: Date.now() };
+    }
+    if (!this.db.data.discord_user_facts[userId].facts.includes(fact)) {
+        this.db.data.discord_user_facts[userId].facts.push(fact);
+        // Keep last 10 facts
+        if (this.db.data.discord_user_facts[userId].facts.length > 10) {
+            this.db.data.discord_user_facts[userId].facts.shift();
+        }
+        this.db.data.discord_user_facts[userId].last_updated = Date.now();
+        await this.db.write();
+    }
+  }
+
+  getDiscordUserFacts(userId) {
+    return this.db.data.discord_user_facts?.[userId]?.facts || [];
+  }
+
+  async updateDiscordChannelSummary(channelId, summary, vibe) {
+    if (!this.db.data.discord_channel_summaries) this.db.data.discord_channel_summaries = {};
+    this.db.data.discord_channel_summaries[channelId] = {
+        summary,
+        vibe,
+        last_updated: Date.now()
+    };
+    await this.db.write();
+  }
+
+  getDiscordChannelSummary(channelId) {
+    return this.db.data.discord_channel_summaries?.[channelId] || null;
   }
 
   async setNuanceGradience(value) {

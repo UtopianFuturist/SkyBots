@@ -360,8 +360,15 @@ export class Bot {
     // Periodic timeline exploration (every 4 hours)
     setInterval(() => this.performTimelineExploration(), 14400000);
 
-    // Periodic maintenance tasks (every 15 minutes)
-    setInterval(() => this.checkMaintenanceTasks(), 900000);
+    // Periodic maintenance tasks (with Heartbeat Jitter: 10-20 mins)
+    const scheduleMaintenance = () => {
+        const jitter = Math.floor(Math.random() * 600000) + 600000; // 10-20 mins
+        setTimeout(async () => {
+            await this.checkMaintenanceTasks();
+            scheduleMaintenance();
+        }, jitter);
+    };
+    scheduleMaintenance();
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
@@ -3082,6 +3089,11 @@ Describe how you feel about this user and your relationship now.`;
         return;
     }
 
+    if (discordService._focusMode) {
+        console.log('[Bot] Admin Focus Mode active. Skipping autonomous post.');
+        return;
+    }
+
     if (await this._isDiscordConversationOngoing()) {
         console.log('[Bot] Autonomous post suppressed: Discord conversation is ongoing.');
         return;
@@ -3623,6 +3635,15 @@ Describe how you feel about this user and your relationship now.`;
 
           if (score >= 3) {
             console.log(`[Bot] Autonomous post passed coherence check (Score: ${score}/5). Performing post...`);
+
+            // Pre-Post Consultation Mode
+            if (dataStore.db.data.discord_consult_mode) {
+                console.log(`[Bot] Pre-Post Consultation active. Sending draft to Discord...`);
+                const draftMsg = `📝 **Planned Bluesky Post (${postType})**\n\nTopic: ${topic}\n\nContent:\n${postContent}\n\n${generationPrompt ? `Prompt: ${generationPrompt}` : ''}\n\nReply with "YES" to post, or provide feedback.`;
+                await discordService.sendSpontaneousMessage(draftMsg);
+                return;
+            }
+
             const result = await blueskyService.post(postContent, embed, { maxChunks: dConfig.max_thread_chunks });
 
             // Update persistent cooldown time immediately
@@ -3693,6 +3714,15 @@ Describe how you feel about this user and your relationship now.`;
             const { score } = await llmService.isAutonomousPostCoherent(topic, postContent, 'text');
             if (score >= 3) {
               console.log(`[Bot] Fallback text post passed coherence check. Performing post...`);
+
+              // Pre-Post Consultation Mode
+              if (dataStore.db.data.discord_consult_mode) {
+                  console.log(`[Bot] Pre-Post Consultation active. Sending draft to Discord...`);
+                  const draftMsg = `📝 **Planned Bluesky Post (Fallback Text)**\n\nTopic: ${topic}\n\nContent:\n${postContent}\n\nReply with "YES" to post, or provide feedback.`;
+                  await discordService.sendSpontaneousMessage(draftMsg);
+                  return;
+              }
+
               await blueskyService.post(postContent, null, { maxChunks: dConfig.max_thread_chunks });
 
               // Update persistent cooldown time immediately
@@ -4021,6 +4051,11 @@ Describe how you feel about this user and your relationship now.`;
 
     if (dataStore.isResting()) {
         console.log('[Moltbook] Agent is currently RESTING. Suppressing periodic tasks.');
+        return;
+    }
+
+    if (discordService._focusMode) {
+        console.log('[Bot] Admin Focus Mode active. Skipping background maintenance tasks.');
         return;
     }
 

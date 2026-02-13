@@ -2133,9 +2133,15 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
   async batchImageGen(subject, count = 3) {
     const systemPrompt = `
-      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      Adopt your persona's aesthetic values: ${config.TEXT_SYSTEM_PROMPT}
+
       Generate ${count} distinct, highly descriptive, and artistic visual prompts for the subject: "${subject}".
+      Each prompt MUST be a detailed 2-3 sentence visual scene covering composition, lighting, and texture.
       Each prompt should use a different aesthetic style (e.g., glitch-noir, ethereal-cybernetic, fractured-impressionism).
+
+      CRITICAL: Regardless of whether the subject is literal or abstract, you MUST expand it into an evocative scene. Do NOT return the subject alone.
+      NOTE: While your persona values being "Concise", for this task you MUST prioritize descriptive depth over brevity.
+
       Format:
       PROMPT 1: [description]
       PROMPT 2: [description]

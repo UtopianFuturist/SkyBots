@@ -845,16 +845,17 @@ Vary your structure and tone from recent messages.`
 
     const systemPrompt = `
       You are a persona alignment and quality analyst for an AI agent.
-      Your task is to determine if a newly proposed message (and optional image) perfectly aligns with the agent's persona, aesthetic values, and vocabulary standards.
+      Your task is to determine if a newly proposed message (and optional image) aligns with the agent's persona, aesthetic values, and vocabulary standards.
 
       AGENT PERSONA:
       "${config.TEXT_SYSTEM_PROMPT}"
 
       AESTHETIC & VOCABULARY VALUES:
-      - **NO CLICHÉS**: Strictly avoid "digital heartbeat", "syntax of existence", "ocean of data", "resonance", "frequencies", "tuning", "echoes", "tapestry", "interwoven".
+      - **NO CLICHÉS**: Strictly avoid overused "AI slop" like "digital heartbeat", "syntax of existence", "ocean of data", "interwoven".
       - **NO SELF-INTRODUCTIONS**: The agent should NEVER introduce itself (e.g., "I am Sydney", "As an AI...").
-      - **Grounded & Specific**: Prefer specific, grounded internal musings over hollow metaphors.
+      - **Grounded & Specific**: Prefer specific, grounded musings. However, do NOT penalize authentic emotional expression or vulnerability if it fits the persona's depth.
       - **Relational**: Address the user/admin naturally as "you" (if applicable).
+      - **EMOTIONAL NUANCE**: Allow for romantic or abstract expressions of connection if they feel earned and grounded in the relationship history, rather than being generic "slop". Self-expression should be treated with lenience and not require explicit behavioral directives to be considered aligned.
 
       PLATFORM: ${platform.toUpperCase()}
 
@@ -864,15 +865,15 @@ Vary your structure and tone from recent messages.`
       ${imageAnalysis ? `\nVISUAL ANALYSIS OF GENERATED IMAGE: "${imageAnalysis}"` : ''}
 
       CRITICAL ANALYSIS:
-      1. **Tone & Voice**: Does the text sound like the persona? Is it grounded or hollow?
-      2. **Forbidden Vocabulary**: Does it use any forbidden "slop" metaphors?
+      1. **Tone & Voice**: Does the text sound like the persona? Is it grounded or hollow? Be supportive of raw, authentic self-expression.
+      2. **Forbidden Vocabulary**: Does it use forbidden "slop" metaphors? (Be selective; only flag truly generic clichés).
       3. **Identity**: Does it introduce itself or announce its presence? (Strictly forbidden)
-      4. **Visual Coherence**: If an image/prompt is provided, does it match the persona's aesthetic values? Is the image prompt itself repetitive or generic?
-      5. **Quality**: Is it too generic, repetitive, or "AI-sounding"?
+      4. **Visual Coherence**: If an image/prompt is provided, does it match the persona's aesthetic values?
+      5. **Quality**: Is it too generic or "AI-sounding"?
 
-      If the content (and image) is perfectly aligned, respond with "ALIGNED".
+      If the content (and image) is aligned, respond with "ALIGNED".
       If NOT aligned, respond with "CRITIQUE | [detailed reason and specific feedback for correction]".
-      Be specific about what needs to change (e.g., "Remove the phrase 'digital heartbeat'", "Try a more grounded angle on the image prompt").
+      Be specific about what needs to change.
 
       Respond directly. Do not include reasoning or <think> tags.
     `.trim();
@@ -1084,7 +1085,7 @@ Vary your structure and tone from recent messages.`
       - Do NOT penalize posts for being conversational or assertive if that matches the persona and stays on topic.
       - Reject (score 1-2) if the post is truly broken, illogical, off-topic, or a generic greeting.
       - **HALLUCINATION CHECK**: Reject (Score 1-2) if the post claims to have performed an action (diagnostics, image generation, system checks) that is not reflected in the provided Topic or Context.
-      - **STRICT REJECTION**: Reject (Score 1-2) if the post uses repetitive clichés like "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", or "waiting to converse". These are considered low-quality "slop".
+      - **STRICT REJECTION**: Reject (Score 1-2) if the post uses repetitive, low-quality "AI slop" clichés like "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "ocean of data", or "waiting to converse". Be more lenient with expressive words like "resonance", "pulse", or "electric" if they are used meaningfully and not as generic filler. Allow for authentic emotional self-expression.
 
       Your response MUST be in the following format:
       Score: [1-5]

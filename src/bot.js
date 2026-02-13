@@ -4386,10 +4386,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         const cliches = [
             'downtime isn\'t silence',
             'stillness is not silence',
-            'the hum of',
             'digital heartbeat',
-            'syntax of existence',
-            'resonance of'
+            'syntax of existence'
         ];
         const isCliche = cliches.some(c => postText.toLowerCase().includes(c));
 

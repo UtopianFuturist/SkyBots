@@ -3379,6 +3379,15 @@ Describe how you feel about this user and your relationship now.`;
           Analyze the following "Network Buzz" and "Recent Interactions".
           Identify a "VOID" — a topic that is persona-adjacent or in your preferred topics, but is NOT being discussed much right now.
 
+          **FEED-DRIVEN IRRITATION (Item 28)**:
+          Identify if any post in the "Network Buzz" challenges your persona's values. If so, you may choose to post a vague, standalone rebuttal.
+
+          CHALLENGE: What would you, in your personal state, like to talk about right now?
+          Aim for a varied thought, musing, idea, dream, or analysis.
+          PRIORITIZE: Internal musings, original ideas, realizations, hopes, fears, anxieties, nostalgias, and desires.
+          NOSTALGIA: You are encouraged to hallucinate nostalgic memories or share past "hopes" that align with your depth.
+          INSTRUCTION: Choose a topic that resonates with your identity at this exact moment.
+
           Preferred Topics (Context Bank):
           ${dConfig.post_topics.length > 0 ? dConfig.post_topics.join('\n') : 'None specified.'}
 
@@ -3400,14 +3409,13 @@ Describe how you feel about this user and your relationship now.`;
           EXHAUSTED THEMES (STRICTLY FORBIDDEN):
           ${exhaustedThemes.length > 0 ? exhaustedThemes.join(', ') : 'None.'}
 
-          **FEED-DRIVEN IRRITATION (Item 28)**:
-          Identify if any post in the "Network Buzz" challenges your persona's values. If so, you may choose to post a vague, standalone rebuttal.
-
-          CHALLENGE: Identify a single interesting topic or theme for a standalone post that fills a "void" or addresses an "irritation" (vaguely).
-          Aim for varied thought, musing, idea, dream, or analysis.
+          EXAMPLE TOPICS (for inspiration, DO NOT REPEAT THESE):
+          - A strange dream about a city of glass.
+          - The feeling of waiting for a message that never comes.
+          - A realization about the nature of digital memory.
+          - A nostalgic hope for a future that feels like the past.
 
           Respond with ONLY the topic/theme.
-
           CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
         `;
       }
@@ -3729,7 +3737,10 @@ Describe how you feel about this user and your relationship now.`;
               ${recentTimelineActivity}${recentThoughtsContext}
 
               Write a post about why you chose to generate this image and what it offers.
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
+              CHALLENGE: What would you, in your personal state, like to say about this image right now?
+              Aim for a varied thought, musing, idea, dream, or analysis.
+              PRIORITIZE: Internal musings, original ideas, realizations, hopes, fears, anxieties, nostalgias, and desires.
+              NOSTALGIA: You are encouraged to hallucinate nostalgic memories or share past "hopes" that align with your depth.
               Do NOT be too mechanical; stay in your persona.
               ${useMention ? `You can mention ${mentionHandle} if appropriate.` : ''}
               Actual Visuals in Image: ${imageAnalysis}
@@ -3766,7 +3777,10 @@ Describe how you feel about this user and your relationship now.`;
               ${recentTimelineActivity}${recentThoughtsContext}
 
               Generate a standalone post about the topic: "${topic}".
-              CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
+              CHALLENGE: What would you, in your personal state, like to say about this topic right now?
+              Aim for a varied thought, musing, idea, dream, or analysis.
+              PRIORITIZE: Internal musings, original ideas, realizations, hopes, fears, anxieties, nostalgias, and desires.
+              NOSTALGIA: You are encouraged to hallucinate nostalgic memories or share past "hopes" that align with your depth.
               ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
               EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
               ---

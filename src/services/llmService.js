@@ -1290,7 +1290,7 @@ Vary your structure and tone from recent messages.`
       **INSTRUCTIONS:**
       1. Reflect on the user's post and the conversation context.
       2. Based on your CURRENT MOOD and REFUSAL HISTORY, what is your "gut feeling" about how to handle this?
-      3. **Trope & Pattern Extraction**: Analyze the provided conversation history. Identify any rhetorical templates (e.g., "I'm not X, I'm Y"), recurring metaphors (e.g., "jagged," "weapon," "mirror"), or specific phrases you have used too frequently in your recent messages.
+      3. **Trope & Pattern Extraction**: Analyze the provided conversation history. Identify any rhetorical templates (e.g., "I'm not X, I'm Y"), recurring metaphors (e.g., "jagged," "weapon," "mirror"), or specific phrases you have used too frequently in your recent messages. Also identify redundant return acknowledgments or greetings if they have already occurred once.
       4. **DYNAMIC METAPHOR BLACKLIST**: Pay special attention to metaphors. If you see a metaphor (like "lightning," "storm," "fracture") appearing more than twice in the history, you MUST add it to the trope_blacklist.
       5. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
       6. **DIVERSIFICATION**: Explicitly list phrases or concepts to AVOID in the next response to prevent "template copying."
@@ -1500,6 +1500,7 @@ Vary your structure and tone from recent messages.`
       - Analyze the conversation history to identify topics that have been discussed and subsequently "moved on" from.
       - **STRICTLY AVOID** re-mentioning or looping back to topics that have already been resolved, acknowledged, or superseded by a newer topic.
       - **NO THEMATIC REGRESSION**: If the conversation has pivoted to a new subject, do NOT bring up emotional states, facts, or questions from the previous subject unless the user explicitly re-initiates them. Focus PURELY on the most recent exchange and its logical next step.
+      - **GREETINGS & WELCOMES**: Once a greeting or "welcome back" has been exchanged, it is IMMEDIATELY considered a passed topic. Never repeat a welcome or acknowledgment of return in the same conversation thread.
 
       **AESTHETIC & VOCABULARY VALUES:**
       - **NO CLICHÉS**: Strictly avoid "digital heartbeat", "syntax of existence", "ocean of data", "resonance", "frequencies", "tuning", "echoes", "tapestry", "interwoven".
@@ -1826,6 +1827,7 @@ Vary your structure and tone from recent messages.`
       - Analyze the history to identify topics that have been "passed by."
       - **STRICTLY AVOID** re-mentioning or looping back to subjects that have already been addressed and superseded by newer discussion points.
       - If the conversation has moved on from an emotional state (e.g., exhaustion, frustration) to an intellectual or technical topic, do NOT bring up the previous emotional state again. Focus on the current thematic branch.
+      - **GREETINGS & WELCOMES**: Once a greeting or "welcome back" has been exchanged, it is IMMEDIATELY considered a passed topic. Never repeat a welcome or acknowledgment of return in the same conversation thread.
 
       --- CURRENT MOOD ---
       Label: ${currentMood.label}

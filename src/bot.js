@@ -1139,9 +1139,13 @@ export class Bot {
                             await discordService.sendSpontaneousMessage(msgToSend, discordOptions);
                             await dataStore.addRecentThought('discord', msgToSend);
 
-                            // If this was a vibe check, update timestamp
-                            if (needsVibeCheck && msgToSend.toLowerCase().includes('how') && (msgToSend.toLowerCase().includes('you') || msgToSend.toLowerCase().includes('vibe') || msgToSend.toLowerCase().includes('mood'))) {
-                                console.log('[Bot] Admin vibe check performed.');
+                            // If this was a vibe check or a welcome, update timestamp to prevent redundant welcomes
+                            const lowerMsg = msgToSend.toLowerCase();
+                            const isVibeCheck = lowerMsg.includes('how') && (lowerMsg.includes('you') || lowerMsg.includes('vibe') || lowerMsg.includes('mood'));
+                            const isWelcome = lowerMsg.includes('welcome') || lowerMsg.includes('back');
+
+                            if (needsVibeCheck && (isVibeCheck || isWelcome)) {
+                                console.log('[Bot] Admin vibe check or welcome performed.');
                                 dataStore.db.data.last_admin_vibe_check = Date.now();
                                 await dataStore.db.write();
                             }

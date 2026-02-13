@@ -879,6 +879,26 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                      }
                  } catch (e) {}
 
+                 // NEW: Passed Topic Detection to avoid looping back to old subjects
+                 const topicProgressionPrompt = `
+                    Analyze the following Discord conversation history.
+                    Identify 1-3 topics or emotional states that have already been discussed and subsequently "moved on" from.
+                    For example, if you were talking about "exhaustion" but are now talking about "AI ethics," "exhaustion" is a PASSED topic.
+
+                    Respond with ONLY a comma-separated list of the passed topics, or "NONE".
+
+                    History:
+                    ${history.slice(-15).map(h => `${h.role}: ${h.content}`).join('\n')}
+                 `;
+                 const passedTopicsRaw = await llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false });
+                 if (passedTopicsRaw && !passedTopicsRaw.toUpperCase().includes('NONE')) {
+                     const passedTopics = passedTopicsRaw.split(',').map(t => t.trim());
+                     console.log(`[DiscordService] Detected passed topics: ${passedTopics.join(', ')}`);
+                     for (const topic of passedTopics) {
+                         await dataStore.addDiscordExhaustedTheme(topic);
+                     }
+                 }
+
                  while (planAttempts < MAX_PLAN_ATTEMPTS) {
                      // Pivot Check: If interrupted during planning, restart with new history
                      if (this._interrupted.has(normChannelId)) {
@@ -1581,6 +1601,24 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                             actionResults.push(`[State restoration for "${label}": ${success ? 'SUCCESS' : 'FAILED'}]`);
                         }
                      }
+
+                     if (action.tool === 'continue_post') {
+                        const { uri, cid, text, type } = action.parameters || {};
+                        if (uri && text) {
+                            console.log(`[DiscordService] Plan Tool: continue_post (${type || 'thread'}) on ${uri}`);
+                            try {
+                                if (type === 'quote') {
+                                    await blueskyService.post(text, { quote: { uri, cid } });
+                                } else {
+                                    await blueskyService.postReply({ uri, cid, record: {} }, text);
+                                }
+                                actionResults.push(`[Successfully continued post ${uri}]`);
+                            } catch (e) {
+                                console.error('[DiscordService] Error in continue_post tool:', e);
+                                actionResults.push(`[Failed to continue post ${uri}: ${e.message}]`);
+                            }
+                        }
+                     }
                      if (action.tool === 'search_discord_history') {
                         const query = action.parameters?.query || action.query;
                         if (query) {
@@ -1753,7 +1791,8 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                                 1. Combine unique and substantive elements from both.
                                 2. Ensure the tone is consistent and matches the persona.
                                 3. STRICTLY avoid any clichés, repetitive metaphors, or "slop".
-                                4. Keep the response substantive and engaged.
+                                4. **TOPIC PROGRESSION**: Ensure you are NOT re-mentioning topics that have already been passed in the conversation history. Focus strictly on the latest development.
+                                5. Keep the response substantive and engaged.
                              `;
                              const superDraft = await llmService.generateResponse([{ role: 'system', content: synthPrompt }], { useQwen: true, preface_system_prompt: false });
                              responseText = superDraft || bestCandidate;

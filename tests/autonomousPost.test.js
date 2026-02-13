@@ -33,6 +33,9 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     shouldIncludeSensory: jest.fn().mockResolvedValue(false),
     performInternalResearch: jest.fn(),
     generateDrafts: jest.fn(),
+    selectBestResult: jest.fn(),
+    performInternalInquiry: jest.fn().mockResolvedValue('Some internal reflection.'),
+    isUrlSafe: jest.fn().mockResolvedValue({ safe: true }),
   },
 }));
 
@@ -47,6 +50,24 @@ jest.unstable_mockModule('../src/services/memoryService.js', () => ({
     getLatestMoodMemory: jest.fn().mockResolvedValue(null),
     formatMemoriesForPrompt: jest.fn().mockReturnValue('No recent memories.'),
     isEnabled: jest.fn().mockReturnValue(true),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/moltbookService.js', () => ({
+  moltbookService: {
+    getIdentityKnowledge: jest.fn().mockReturnValue('Some knowledge.'),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/googleSearchService.js', () => ({
+  googleSearchService: {
+    search: jest.fn().mockResolvedValue([]),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/webReaderService.js', () => ({
+  webReaderService: {
+    fetchContent: jest.fn().mockResolvedValue('Some web content.'),
   },
 }));
 
@@ -71,6 +92,12 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     isLurkerMode: jest.fn().mockReturnValue(false),
     getLastAutonomousPostTime: jest.fn().mockReturnValue(null),
     updateLastAutonomousPostTime: jest.fn(),
+    getNewsSearchesToday: jest.fn().mockReturnValue(0),
+    incrementNewsSearchCount: jest.fn(),
+    addPostContinuation: jest.fn(),
+    getPostContinuations: jest.fn().mockReturnValue([]),
+    removePostContinuation: jest.fn(),
+    updateCooldowns: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_daily_text_limit: 20,
       bluesky_daily_image_limit: 5,
@@ -80,8 +107,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
       discord_idle_threshold: 10,
       max_thread_chunks: 3,
       repetition_similarity_threshold: 0.4,
-      post_topics: [],
-      image_subjects: []
+      post_topics: ['Technology', 'Art'],
+      image_subjects: ['The Intersection of Technology and Human Vulnerability', 'Human Portraits in Art']
     }),
     updateConfig: jest.fn().mockResolvedValue(true),
     db: {
@@ -128,13 +155,15 @@ describe('Bot Autonomous Posting', () => {
     const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.1);
 
     // Mock topic identification with a preamble and bolding
-    llmService.generateResponse.mockResolvedValueOnce(`Based on the provided Network Buzz, here is a topic:
-
-**The Future of AI**`);
-
-    // Mock other calls to satisfy the flow
-    llmService.generateResponse.mockResolvedValue('none'); // mention check
-    llmService.generateResponse.mockResolvedValue('Post Content'); // post generation
+    llmService.generateResponse.mockImplementation((messages) => {
+        const content = messages.map(m => m.content).join(' ');
+        if (content.includes('Determine the overall valence and arousal')) return Promise.resolve('{ "valence": 0.5, "arousal": 0.5 }');
+        if (content.includes('TOPIC CLUSTERING')) return Promise.resolve(`Based on the provided Network Buzz, here is a topic:\n\n**The Future of AI**`);
+        if (content.includes('identify if any of the following users have had a meaningful persistent discussion')) return Promise.resolve('none');
+        if (content.includes('Generate a standalone post about the topic')) return Promise.resolve('Post Content');
+        if (content.includes('Generate a second part of this realization')) return Promise.resolve('NONE');
+        return Promise.resolve('none');
+    });
     llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
     blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
 
@@ -156,11 +185,15 @@ describe('Bot Autonomous Posting', () => {
 
     const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.1);
 
-    llmService.generateResponse.mockResolvedValueOnce(`I analyzed the feed and decided on:
-Decentralized Social Media`);
-
-    llmService.generateResponse.mockResolvedValue('none');
-    llmService.generateResponse.mockResolvedValue('Post Content');
+    llmService.generateResponse.mockImplementation((messages) => {
+        const content = messages.map(m => m.content).join(' ');
+        if (content.includes('Determine the overall valence and arousal')) return Promise.resolve('{ "valence": 0.5, "arousal": 0.5 }');
+        if (content.includes('TOPIC CLUSTERING')) return Promise.resolve(`I analyzed the feed and decided on:\nDecentralized Social Media`);
+        if (content.includes('identify if any of the following users have had a meaningful persistent discussion')) return Promise.resolve('none');
+        if (content.includes('Generate a standalone post about the topic')) return Promise.resolve('Post Content');
+        if (content.includes('Generate a second part of this realization')) return Promise.resolve('NONE');
+        return Promise.resolve('none');
+    });
     llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
     blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
 
@@ -185,14 +218,20 @@ Decentralized Social Media`);
     const postContent = 'Here is a thought about technology.';
     const altText = 'Accessible alt text';
 
-    // Mock Math.random to pick 'image' post (index 1 in [text, image])
-    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.75);
+    // Mock Math.random to pick 'image' post (index 1 in [text, image, news])
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4);
 
-    llmService.generateResponse
-      .mockResolvedValueOnce(topic) // Topic identification
-      .mockResolvedValueOnce('none') // mention check
-      .mockResolvedValueOnce(altText) // alt text generation
-      .mockResolvedValueOnce(postContent); // post content generation
+    llmService.generateResponse.mockImplementation((messages) => {
+        const content = messages.map(m => m.content).join(' ');
+        if (content.includes('Determine the overall valence and arousal')) return Promise.resolve('{ "valence": 0.5, "arousal": 0.5 }');
+        if (content.includes('identifying a subject for an autonomous post containing an image')) return Promise.resolve(topic);
+        if (content.includes('identify if any of the following users have had a meaningful persistent discussion')) return Promise.resolve('none');
+        if (content.includes('Identify an artistic style for an image')) return Promise.resolve('glitch-noir');
+        if (content.includes('Create a concise and accurate alt-text')) return Promise.resolve(altText);
+        if (content.includes('Write a post about why you chose to generate this image')) return Promise.resolve(postContent);
+        if (content.includes('Generate a second part of this realization')) return Promise.resolve('NONE');
+        return Promise.resolve('none');
+    });
 
     imageService.generateImage.mockResolvedValue({
       buffer: Buffer.from('fake-image'),
@@ -208,7 +247,10 @@ Decentralized Social Media`);
 
     await bot.performAutonomousPost();
 
-    expect(imageService.generateImage).toHaveBeenCalledWith(topic, expect.objectContaining({ allowPortraits: false, feedback: '' }));
+    expect(imageService.generateImage).toHaveBeenCalledWith(
+      expect.stringContaining(topic),
+      expect.objectContaining({ allowPortraits: false, feedback: '', mood: expect.any(Object) })
+    );
     expect(llmService.isImageCompliant).toHaveBeenCalled();
     expect(blueskyService.post).toHaveBeenCalledWith(
       'Here is a thought about technology.',
@@ -235,13 +277,19 @@ Decentralized Social Media`);
     const topic = 'Human Portraits in Art';
     const fallbackText = 'I decided to write about the history of portraiture instead.';
 
-    // Mock Math.random to pick 'image' post (index 1 in [text, image])
-    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.75);
+    // Mock Math.random to pick 'image' post (index 1 in [text, image, news])
+    const spyRandom = jest.spyOn(Math, 'random').mockReturnValue(0.4);
 
-    llmService.generateResponse
-      .mockResolvedValueOnce(topic) // Topic identification
-      .mockResolvedValueOnce('none') // mention check
-      .mockResolvedValueOnce(fallbackText); // fallback text generation (since image attempts will return null postContent if they fail)
+    llmService.generateResponse.mockImplementation((messages) => {
+        const content = messages[0].content;
+        if (content.includes('Determine the overall valence and arousal')) return Promise.resolve('{ "valence": 0.5, "arousal": 0.5 }');
+        if (content.includes('identifying a subject for an autonomous post containing an image')) return Promise.resolve(topic);
+        if (content.includes('identify if any of the following users have had a meaningful persistent discussion')) return Promise.resolve('none');
+        if (content.includes('Identify an artistic style for an image')) return Promise.resolve('glitch-noir');
+        if (content.includes('Generate a standalone post about the topic')) return Promise.resolve(fallbackText);
+        if (content.includes('Generate a second part of this realization')) return Promise.resolve('NONE');
+        return Promise.resolve('none');
+    });
 
     // Image generation succeeds but fails compliance
     imageService.generateImage.mockResolvedValue({

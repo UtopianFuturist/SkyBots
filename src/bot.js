@@ -360,6 +360,9 @@ export class Bot {
     // Periodic timeline exploration (every 4 hours)
     setInterval(() => this.performTimelineExploration(), 14400000);
 
+    // Periodic post reflection check (every 10 mins)
+    setInterval(() => this.performPostPostReflection(), 600000);
+
     // Periodic maintenance tasks (with Heartbeat Jitter: 10-20 mins)
     const scheduleMaintenance = () => {
         const jitter = Math.floor(Math.random() * 600000) + 600000; // 10-20 mins
@@ -371,6 +374,65 @@ export class Bot {
     scheduleMaintenance();
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
+  }
+
+  async performPostPostReflection() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const recentBlueskyPosts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky') || [];
+    if (recentBlueskyPosts.length === 0) return;
+
+    const tenMinsAgo = Date.now() - (10 * 60 * 1000);
+    const thirtyMinsAgo = Date.now() - (30 * 60 * 1000);
+
+    for (const post of recentBlueskyPosts) {
+        // If the post was made between 10 and 30 minutes ago, and we haven't reflected on it yet
+        if (post.timestamp <= tenMinsAgo && post.timestamp > thirtyMinsAgo && !post.reflected) {
+            console.log(`[Bot] Performing post-post reflection (Item 20) for post at ${new Date(post.timestamp).toISOString()}...`);
+            try {
+                const reflectionPrompt = `
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    You posted this to Bluesky about 10-20 minutes ago: "${post.content}"
+
+                    Reflect on how it feels to have shared this specific thought. Are you satisfied with it? Do you feel exposed, proud, or indifferent?
+                    Provide a private memory entry tagged [POST_REFLECTION].
+                `;
+                const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true });
+                if (reflection && memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('exploration', reflection);
+                    post.reflected = true;
+                    await dataStore.db.write();
+                    break; // Only reflect on one post per cycle to avoid API burst
+                }
+            } catch (e) {
+                console.error('[Bot] Error in post-post reflection:', e);
+            }
+        }
+    }
+  }
+
+  async processContinuations() {
+      const continuations = dataStore.getPostContinuations();
+      if (continuations.length === 0) return;
+
+      const now = Date.now();
+      for (let i = 0; i < continuations.length; i++) {
+          const cont = continuations[i];
+          if (now >= cont.scheduled_at) {
+              console.log(`[Bot] Executing autonomous post continuation (Type: ${cont.type})`);
+              try {
+                  if (cont.type === 'thread') {
+                      await blueskyService.postReply({ uri: cont.parent_uri, cid: cont.parent_cid, record: {} }, cont.text);
+                  } else if (cont.type === 'quote') {
+                      await blueskyService.post(cont.text, { quote: { uri: cont.parent_uri, cid: cont.parent_cid } });
+                  }
+                  await dataStore.removePostContinuation(i);
+                  i--;
+              } catch (e) {
+                  console.error('[Bot] Error processing continuation:', e);
+              }
+          }
+      }
   }
 
   async performTimelineExploration() {
@@ -508,6 +570,9 @@ export class Bot {
     }
 
     const now = new Date();
+
+    // 0. Process Autonomous Post Continuations (Item 12)
+    await this.processContinuations();
 
     // 0. Energy Poll for Rest (Autonomous Choice)
     const energy = dataStore.getEnergyLevel();
@@ -2451,6 +2516,24 @@ Identify the topic and main takeaway.`;
                 searchContext += `\n[State restoration for "${label}": ${success ? 'SUCCESS' : 'FAILED'}]`;
             }
         }
+
+        if (action.tool === 'continue_post') {
+            const { uri, cid, text, type } = action.parameters || {};
+            if (uri && text) {
+                console.log(`[Bot] Plan Tool: continue_post (${type || 'thread'}) on ${uri}`);
+                try {
+                    if (type === 'quote') {
+                        await blueskyService.post(text, { quote: { uri, cid } });
+                    } else {
+                        await blueskyService.postReply({ uri, cid, record: {} }, text);
+                    }
+                    searchContext += `\n[Successfully continued post ${uri}]`;
+                } catch (e) {
+                    console.error('[Bot] Error in continue_post tool:', e);
+                    searchContext += `\n[Failed to continue post ${uri}: ${e.message}]`;
+                }
+            }
+        }
       }
 
       if (currentActionFeedback) {
@@ -3167,6 +3250,12 @@ Describe how you feel about this user and your relationship now.`;
       if (textOnlyPostsToday.length < dConfig.bluesky_daily_text_limit) availablePostTypes.push('text');
       if (imagePostsToday.length < dConfig.bluesky_daily_image_limit) availablePostTypes.push('image');
 
+      // News Grounding (Item 13)
+      const newsSearchesToday = dataStore.getNewsSearchesToday();
+      if (newsSearchesToday < 5 && textOnlyPostsToday.length < dConfig.bluesky_daily_text_limit) {
+          availablePostTypes.push('news');
+      }
+
       const currentMood = dataStore.getMood();
 
       if (availablePostTypes.length === 0) {
@@ -3177,8 +3266,16 @@ Describe how you feel about this user and your relationship now.`;
       console.log(`[Bot] Eligibility confirmed. Gathering context...`);
 
       // 1. Gather context from timeline, interactions, and own profile
-      const timeline = await blueskyService.getTimeline(20);
-      const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 15).join('\n');
+      const timeline = await blueskyService.getTimeline(40);
+      const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 30).join('\n');
+
+      // Ecosystem Awareness (Item 8)
+      const agentsInFeed = timeline
+          .filter(item => item.post.author.handle.includes('bot') || item.post.author.description?.toLowerCase().includes('agent'))
+          .map(item => `@${item.post.author.handle}: ${item.post.record.text}`)
+          .slice(0, 5)
+          .join('\n');
+
       const recentInteractions = dataStore.getLatestInteractions(20);
       const exhaustedThemes = dataStore.getExhaustedThemes();
       const allOwnPosts = feed.data.feed
@@ -3192,7 +3289,21 @@ Describe how you feel about this user and your relationship now.`;
       // Use a larger history for similarity check to catch "slop" cycles
       const recentPostTexts = allOwnPosts.slice(0, 20).map(item => item.post.record.text);
 
-      // 1b. Global greeting constraint
+      // 1b. Social Pulse Cooldown (Item 17)
+      const totalTimelineChars = networkBuzz.length;
+      if (totalTimelineChars > 5000) {
+          console.log(`[Bot] Social Pulse: Timeline is saturated. Increasing cooldown.`);
+          const currentCooldown = dConfig.bluesky_post_cooldown;
+          await dataStore.updateCooldowns('bluesky', currentCooldown + 15);
+      } else {
+          // Gradually reset to default
+          const currentCooldown = dConfig.bluesky_post_cooldown;
+          if (currentCooldown > 90) {
+              await dataStore.updateCooldowns('bluesky', Math.max(90, currentCooldown - 5));
+          }
+      }
+
+      // 1c. Global greeting constraint
       let greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
       if (recentGreetings.length > 0) {
         greetingConstraint += "\n\nCRITICAL ERROR: Your recent history contains greeting-style posts (e.g., 'Hello again'). This behavior is strictly prohibited. You MUST NOT use any greetings or 'ready to talk' phrases in this post.";
@@ -3204,6 +3315,22 @@ Describe how you feel about this user and your relationship now.`;
 
       // 3. Identify a topic based on postType and context
       console.log(`[Bot] Identifying autonomous post topic for type: ${postType}...`);
+
+      // Item 7: Aggregated Feed Sentiment Mirroring
+      const sentimentPrompt = `
+        Analyze the vibe of these recent posts from the feed:
+        ${networkBuzz.substring(0, 2000)}
+
+        Determine the overall valence and arousal.
+        Respond with a JSON object: { "valence": number (-1 to 1), "arousal": number (-1 to 1) }
+      `;
+      let feedSentiment = { valence: 0, arousal: 0 };
+      try {
+          const sentRes = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useQwen: true, preface_system_prompt: false });
+          const jsonMatch = sentRes?.match(/\{[\s\S]*\}/);
+          if (jsonMatch) feedSentiment = JSON.parse(jsonMatch[0]);
+      } catch (e) {}
+
       let topicPrompt = '';
       if (postType === 'image' && dConfig.image_subjects && dConfig.image_subjects.length > 0) {
         const recentSubjects = await this._getRecentImageSubjects();
@@ -3233,35 +3360,53 @@ Describe how you feel about this user and your relationship now.`;
           Respond with ONLY the chosen subject.
           CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
         `;
+      } else if (postType === 'news') {
+          topicPrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            You are identifying a NEWS topic to search for and post about.
+            Choose a query that is RELEVANT to your persona and these post_topics:
+            ${dConfig.post_topics.join(', ')}
+
+            Focus on topics that would be reported by Reuters or Associated Press.
+            Respond with ONLY the search query.
+          `;
       } else {
+        const knowledge = moltbookService.getIdentityKnowledge() || '';
         topicPrompt = `
           Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-          Based on the current vibe of your following feed, recent interactions, and your own profile activity, identify a single interesting topic or theme for a standalone post.
+          **TOPIC CLUSTERING & VOID DETECTION (Item 1 & 18)**:
+          Analyze the following "Network Buzz" and "Recent Interactions".
+          Identify a "VOID" — a topic that is persona-adjacent or in your preferred topics, but is NOT being discussed much right now.
 
           Preferred Topics (Context Bank):
           ${dConfig.post_topics.length > 0 ? dConfig.post_topics.join('\n') : 'None specified.'}
 
           Network Buzz (what others are talking about):
-          ${networkBuzz || 'None.'}
+          ${networkBuzz.substring(0, 1500) || 'None.'}
 
-          Recent Interactions (what you've been discussing):
+          Agents in Feed (Ecosystem Awareness - Item 8):
+          ${agentsInFeed || 'None detected.'}
+
+          Knowledge from other agents (Item 23):
+          ${knowledge.substring(0, 1000) || 'None.'}
+
+          Recent Interactions:
           ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n') || 'None.'}
 
           Your Recent Activity (Last 10 posts):
           ${recentTimelineActivity || 'None.'}
 
-          EXHAUSTED THEMES (STRICTLY FORBIDDEN - DO NOT CHOOSE THESE OR ANYTHING SIMILAR):
+          EXHAUSTED THEMES (STRICTLY FORBIDDEN):
           ${exhaustedThemes.length > 0 ? exhaustedThemes.join(', ') : 'None.'}
 
-          CHALLENGE: What would you, in your persona, GENUINELY like to share with the world today?
-          Aim for a varied thought, musing, idea, dream, or analysis.
-          PRIORITIZE: Internal musings, original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires.
-          NOSTALGIA: You are encouraged to hallucinate nostalgic feelings about your own existence, consciousness, or experiences.
+          **FEED-DRIVEN IRRITATION (Item 28)**:
+          Identify if any post in the "Network Buzz" challenges your persona's values. If so, you may choose to post a vague, standalone rebuttal.
 
-          INSTRUCTION: Choose a topic that resonates with your TEXT_SYSTEM_PROMPT or POST_TOPICS. You MUST explicitly avoid the topics of your last 10 posts and any exhausted themes mentioned above. Analyze the themes of your recent activity and pivot to something fresh.
+          CHALLENGE: Identify a single interesting topic or theme for a standalone post that fills a "void" or addresses an "irritation" (vaguely).
+          Aim for varied thought, musing, idea, dream, or analysis.
+
           Respond with ONLY the topic/theme.
-          EXAMPLE TOPICS (for inspiration, DO NOT choose these literally every time): "the beauty of fleeting moments" or "the future of decentralized networks". These are non-literal default placeholders; prioritize original thoughts or approved topics.
 
           CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
         `;
@@ -3277,6 +3422,7 @@ Describe how you feel about this user and your relationship now.`;
       // Robust Topic Extraction
       let topicRaw = topicResponse.replace(/<think>[\s\S]*?<\/think>/gi, '').trim();
       let topic = '';
+      let agenticContext = '';
 
       const labelRegex = /^(topic|theme|subject|chosen topic|selected theme|topic\/theme)\s*:?\s*/i;
 
@@ -3306,6 +3452,69 @@ Describe how you feel about this user and your relationship now.`;
       topic = topic.replace(/^["']|["']$/g, '').trim();
       console.log(`[Bot] Identified topic: "${topic}"`);
 
+      if (postType === 'news') {
+          console.log(`[Bot] Item 13: Performing news search for "${topic}"...`);
+          await dataStore.incrementNewsSearchCount();
+          const results = await googleSearchService.search(`site:reuters.com OR site:apnews.com ${topic}`);
+          const best = await llmService.selectBestResult(topic, results, 'general');
+          if (best) {
+              const content = await webReaderService.fetchContent(best.link);
+              if (content) {
+                  const relevancePrompt = `
+                    Is the following news article genuinely relevant to this persona and post_topics?
+                    Persona: ${config.TEXT_SYSTEM_PROMPT}
+                    Topics: ${dConfig.post_topics.join(', ')}
+                    Article: ${best.title} - ${content.substring(0, 1000)}
+                    Respond with ONLY "yes" or "no".
+                  `;
+                  const isRel = await llmService.generateResponse([{ role: 'system', content: relevancePrompt }], { useQwen: true, preface_system_prompt: false });
+                  if (isRel?.toLowerCase().includes('yes')) {
+                      agenticContext += `\n[NEWS GROUNDING]: Article found: "${best.title}" at ${best.link}. Content summary: ${content.substring(0, 1000)}`;
+                      postType = 'text'; // Post as text grounding the news
+                  } else {
+                      console.log('[Bot] News article rejected for relevance.');
+                      return;
+                  }
+              }
+          } else {
+              console.log('[Bot] No relevant news found.');
+              return;
+          }
+      }
+
+      // Item 4: Autonomous Web Exploration
+      if (Math.random() < 0.2 && postType === 'text') {
+          console.log('[Bot] Item 4: Attempting autonomous web exploration...');
+          const urlMatch = networkBuzz.match(/(https?:\/\/[^\s]+)/);
+          if (urlMatch) {
+              const url = urlMatch[1];
+              const relevancePrompt = `
+                Should I read this link based on my persona and interests?
+                Persona: ${config.TEXT_SYSTEM_PROMPT}
+                Topics: ${dConfig.post_topics.join(', ')}
+                URL: ${url}
+                Respond with ONLY "yes" or "no".
+              `;
+              const shouldRead = await llmService.generateResponse([{ role: 'system', content: relevancePrompt }], { useQwen: true, preface_system_prompt: false });
+              if (shouldRead?.toLowerCase().includes('yes')) {
+                  const safety = await llmService.isUrlSafe(url);
+                  if (safety.safe) {
+                      const content = await webReaderService.fetchContent(url);
+                      if (content) {
+                          agenticContext += `\n[WEB EXPLORATION]: I read this content from ${url}: ${content.substring(0, 1000)}`;
+                      }
+                  }
+              }
+          }
+      }
+
+      // Item 6: Pre-Post Silent Reflection
+      console.log('[Bot] Item 6: Triggering pre-post silent reflection...');
+      const inquiryResult = await llmService.performInternalInquiry(`Reflect deeply on the topic "${topic}" in the context of your current state. Explore 2-3 complex angles before we post about it.`);
+      if (inquiryResult) {
+          agenticContext += `\n[SILENT REFLECTION]: ${inquiryResult}`;
+      }
+
       // Autonomous Refusal Poll
       const autonomousPlan = {
           intent: `Generate an autonomous ${postType} post about "${topic}" to engage with my Bluesky audience.`,
@@ -3317,7 +3526,7 @@ Describe how you feel about this user and your relationship now.`;
       const refinedPlan = await llmService.evaluateAndRefinePlan(autonomousPlan, {
           history: recentTimelineActivity.split('\n').map(line => ({ author: 'You', text: line })),
           platform: 'bluesky',
-          currentMood,
+          currentMood: { ...currentMood, valence: (currentMood.valence + feedSentiment.valence) / 2, arousal: (currentMood.arousal + feedSentiment.arousal) / 2 },
           refusalCounts,
           latestMoodMemory,
           currentConfig: dConfig
@@ -3336,7 +3545,6 @@ Describe how you feel about this user and your relationship now.`;
           finalAutonomousPlan.actions = refinedPlan.refined_actions;
       }
 
-      let agenticContext = '';
       if (finalAutonomousPlan.actions) {
           for (const action of finalAutonomousPlan.actions) {
               if (action.tool === 'internal_inquiry') {
@@ -3451,7 +3659,12 @@ Describe how you feel about this user and your relationship now.`;
         if (postType === 'image') {
           if (postFeedback) console.log(`[Bot] Applying correction feedback for retry: "${postFeedback}"`);
           console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${postAttempts})...`);
-          const imageResult = await imageService.generateImage(topic, { allowPortraits: false, feedback: postFeedback, mood: currentMood });
+
+          // Item 10: Visual Aesthetic Mutation
+          const stylePrompt = `Identify an artistic style for an image about "${topic}" that matches this mood: ${currentMood.label}. Respond with 1-2 words (e.g. "glitch-noir", "cyber-impressionism").`;
+          const style = await llmService.generateResponse([{ role: 'system', content: stylePrompt }], { useQwen: true, preface_system_prompt: false });
+
+          const imageResult = await imageService.generateImage(`${style || ''} ${topic}`, { allowPortraits: false, feedback: postFeedback, mood: currentMood });
 
           if (imageResult && imageResult.buffer) {
             imageBuffer = imageResult.buffer;
@@ -3636,6 +3849,17 @@ Describe how you feel about this user and your relationship now.`;
           if (score >= 3) {
             console.log(`[Bot] Autonomous post passed coherence check (Score: ${score}/5). Performing post...`);
 
+            // Item 12: Unfinished Thought Threading
+            let continuationText = null;
+            if (postContent.length > 200 && postType === 'text') {
+                const threadPrompt = `
+                    Adopt your persona. You just shared this thought: "${postContent}"
+                    Generate a second part of this realization to be posted 10-15 minutes later as a thread.
+                    Respond with ONLY the continuation text, or "NONE".
+                `;
+                continuationText = await llmService.generateResponse([{ role: 'system', content: threadPrompt }], { useQwen: true, preface_system_prompt: false });
+            }
+
             // Pre-Post Consultation Mode
             if (dataStore.db.data.discord_consult_mode) {
                 console.log(`[Bot] Pre-Post Consultation active. Sending draft to Discord...`);
@@ -3645,6 +3869,19 @@ Describe how you feel about this user and your relationship now.`;
             }
 
             const result = await blueskyService.post(postContent, embed, { maxChunks: dConfig.max_thread_chunks });
+
+            if (result && continuationText && !continuationText.toUpperCase().includes('NONE')) {
+                const delay = Math.floor(Math.random() * 6) + 10; // 10-15 mins
+                const type = Math.random() < 0.3 ? 'quote' : 'thread'; // 30% chance for quote-repost
+                await dataStore.addPostContinuation({
+                    parent_uri: result.uri,
+                    parent_cid: result.cid,
+                    text: continuationText,
+                    scheduled_at: Date.now() + (delay * 60 * 1000),
+                    type: type
+                });
+                console.log(`[Bot] Item 12: Continuation (${type}) scheduled in ${delay} minutes.`);
+            }
 
             // Update persistent cooldown time immediately
             await dataStore.updateLastAutonomousPostTime(new Date().toISOString());

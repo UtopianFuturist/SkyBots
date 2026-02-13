@@ -603,6 +603,14 @@ class BlueskyService {
           createdAt: new Date().toISOString(),
         };
 
+        // Handle quote reposts
+        if (i === 0 && finalOptions.quote) {
+            postData.embed = {
+                $type: 'app.bsky.embed.record',
+                record: finalOptions.quote
+            };
+        }
+
         // Only add the embed to the first post in the chain
         let finalEmbed = i === 0 ? explicitEmbed : null;
 

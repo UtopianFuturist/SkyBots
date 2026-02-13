@@ -26,15 +26,17 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Prompt Injection Defense**: Includes a security check to detect and ignore prompt injection attempts.
 - **Fact-Checking**: Can detect when a user is making a verifiable claim and perform a Google search to validate it before responding.
 - **User Rating System**: Rates users on a 1-5 scale based on their interaction history and will "like" posts from users with a high rating.
-- **Autonomous Posting**: Automatically creates and publishes up to 20 text posts and 5 image posts per day featuring original musings or preferred topics from your context banks.
+- **Enhanced Autonomous Posting**: Automatically creates and publishes original musings, featuring sophisticated topic selection (clustering, void detection), news grounding (Reuters/AP), and inter-agent ecosystem awareness.
 - **AI Transparency**: Standardized transparency record on the PDS (studio.voyager.account.autonomy) declaring automation level, persona, and source code.
+- **Topic Progression Awareness**: Intelligently detects when conversations (especially on Discord) have moved on from a subject, preventing repetitive looping back to resolved topics.
 - **Conversational Continuity & Intensity Matching**: Spontaneous heartbeat messages are designed to bridge naturally from previous discussions, reflecting on unresolved questions and matching the emotional intensity of the interaction.
 - **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
 - **Dynamic Mood & Sentiment Sync**: Updates internal mood every 2 hours by analyzing the sentiment of the following feed. Mood states influence tone, vocabulary, and visual generation.
 - **Agency & Intentional Silence**: Implements a refusal tracking system where the agent can choose to remain silent if a plan misaligns with its current vibe. Sequentially tracks refusals to inform long-term autonomy.
 - **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop to research topics or seek advice, with findings recorded in long-term memory as `[INQUIRY]` entries.
-- **Temporal Messaging**: Supports intentional post delays for "haunting" timelines or precise timing, managed via scheduled post queues.
+- **Temporal Messaging & Threading**: Supports intentional post delays and "Unfinished Thought Threading" for multi-part autonomous realizations via threads or self-quotes.
 - **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
+- **Social Pulse Monitoring**: Dynamically adjusts posting cooldowns based on timeline saturation and interaction levels.
 - **Discord Conversational Flow**: Implements a natural pacing engine with variable typing latency, adaptive response jitter, and logical "thought cascading" for a more human-like messaging experience.
 - **Discord Interrupt Resilience**: Dynamically pivots or incorporates new context if a user sends a message while the bot is already processing or typing.
 - **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (paragraphs/lists) with human-like delays between segments.
@@ -45,7 +47,8 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
     - **Melancholic Refusal Pivots**: Recognizes deep emotional processing and offers private [INQUIRY] self-dialogues to process feelings before attempting alternative desires.
     - **Reassurance Tool**: Can choose to review past stable and positive memories for emotional grounding.
     - **Emotional Support Requests**: Dedicated tool to reach out to the admin on Discord specifically for human grounding.
-- **Cognitive Nuance & Advanced Planning**: Implements 27+ new agentic tools and features for deeper agency and creative variety, including:
+    - **Post-Post Reflection**: Periodically records internal reactions to shared thoughts in memory shortly after posting publicly.
+- **Cognitive Nuance & Advanced Planning**: Implements 30+ new agentic tools and features for deeper agency and creative variety, including:
     - **Divergent Path Brainstorming**: Explores multiple thematic directions before committing to a plan.
     - **Paradox & Nuance Explorer**: Intentionally searches for counter-points to avoid binary thinking.
     - **Metaphor Entropy Monitor**: Stylistically pivots when leaning too heavily on recurring imagery.

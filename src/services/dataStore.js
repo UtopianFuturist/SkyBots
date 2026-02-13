@@ -86,6 +86,9 @@ const defaultData = {
   last_persona_audit: 0,
   last_mood_trend: 0,
   last_memory_pruning: 0,
+  last_news_search_date: null,
+  news_searches_today: 0,
+  autonomous_post_continuations: [], // { parent_uri, text, scheduled_at, type: 'thread|quote' }
   mutated_style: null, // { lens, timestamp }
   dream_log: [], // [ { draft, reason, timestamp } ]
   social_resonance: {}, // { topic: { engagement_score, last_interaction } }
@@ -520,6 +523,43 @@ class DataStore {
         return 0;
     }
     return this.db.data.moltbook_comments_today || 0;
+  }
+
+  async incrementNewsSearchCount() {
+    const today = new Date().toDateString();
+    if (this.db.data.last_news_search_date !== today) {
+        this.db.data.news_searches_today = 0;
+        this.db.data.last_news_search_date = today;
+    }
+    this.db.data.news_searches_today++;
+    await this.db.write();
+  }
+
+  getNewsSearchesToday() {
+    const today = new Date().toDateString();
+    if (this.db.data.last_news_search_date !== today) {
+        return 0;
+    }
+    return this.db.data.news_searches_today || 0;
+  }
+
+  async addPostContinuation(continuation) {
+      if (!this.db.data.autonomous_post_continuations) {
+          this.db.data.autonomous_post_continuations = [];
+      }
+      this.db.data.autonomous_post_continuations.push(continuation);
+      await this.db.write();
+  }
+
+  getPostContinuations() {
+      return this.db.data.autonomous_post_continuations || [];
+  }
+
+  async removePostContinuation(index) {
+      if (this.db.data.autonomous_post_continuations && this.db.data.autonomous_post_continuations[index]) {
+          this.db.data.autonomous_post_continuations.splice(index, 1);
+          await this.db.write();
+      }
   }
 
   async addRecentMoltbookComment(comment) {

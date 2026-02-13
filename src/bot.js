@@ -525,7 +525,7 @@ export class Bot {
             Exploration Context:
             ${explorationContext}
 
-            Respond with a concise memory entry. Use the tag [EXPLORATION] at the beginning.
+            Respond with a concise memory entry. Use the tag [EXPLORE] at the beginning.
         `;
 
         const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true });
@@ -4643,6 +4643,12 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
         const post = item.post;
         const postText = post.record.text || '';
+
+        // Skip memory thread entries as they have their own specialized cleanup logic in MemoryService
+        if (config.MEMORY_THREAD_HASHTAG && postText.includes(config.MEMORY_THREAD_HASHTAG)) {
+          continue;
+        }
+
         console.log(`[Bot Cleanup] Checking post coherence: ${post.uri}`);
 
         // Optimization: Ignore posts older than 30 days per user request

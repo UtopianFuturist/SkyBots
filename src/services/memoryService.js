@@ -118,7 +118,7 @@ class MemoryService {
           ${context}
 
           INSTRUCTIONS:
-          - Use the tag [EXPLORATION] at the beginning.
+          - Use the tag [EXPLORE] at the beginning.
           - Share your internal reaction, realization, or finding.
           - **STRICT LENGTH LIMIT**: Keep it under 250 characters.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
@@ -246,8 +246,8 @@ class MemoryService {
           Type: ${type}
 
           CRITICAL RULES:
-          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED], [MOOD], [INQUIRY], [MENTAL].
-          2. **VALID TAGS**: [MOLTFEED], [MOOD], [INQUIRY], and [MENTAL] are PRIMARY allowed tags. DO NOT reject entries for using them.
+          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED], [MOOD], [INQUIRY], [MENTAL], [GOAL], [EXPLORE].
+          2. **VALID TAGS**: [MOLTFEED], [MOOD], [INQUIRY], [MENTAL], [GOAL], and [EXPLORE] are PRIMARY allowed tags. DO NOT reject entries for using them.
           3. **Meaningful Substance**: Does this entry contain substance regarding the bot's functioning, memory, persona, or insights?
           4. **Coherence**: Is the entry logically sound and in-persona?
           5. **No Slop**: Does it avoid repetitive poetic "slop"?
@@ -367,7 +367,7 @@ class MemoryService {
 
         if (posts.length === 0) return;
 
-        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[INQUIRY]', '[MENTAL]', '[GOAL]', '[EXPLORATION]', '[LURKER]'];
+        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[INQUIRY]', '[MENTAL]', '[GOAL]', '[EXPLORE]'];
         let deletedCount = 0;
 
         for (const post of posts) {

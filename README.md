@@ -35,7 +35,9 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop to research topics or seek advice, with findings recorded in long-term memory as `[INQUIRY]` entries.
 - **Temporal Messaging**: Supports intentional post delays for "haunting" timelines or precise timing, managed via scheduled post queues.
 - **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
-- **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (newlines/spaces) to stay within Discord's 2000-character limit without breaking words.
+- **Discord Conversational Flow**: Implements a natural pacing engine with variable typing latency, adaptive response jitter, and logical "thought cascading" for a more human-like messaging experience.
+- **Discord Interrupt Resilience**: Dynamically pivots or incorporates new context if a user sends a message while the bot is already processing or typing.
+- **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (paragraphs/lists) with human-like delays between segments.
 - **Mental Health & Agency Framework**:
     - **Energy Poll**: Autonomously polls "social battery" levels to decide between resting (restoring energy) or proceeding with tasks.
     - **Lurker Mode (Social Fasting)**: Capability to reading feeds without the pressure of active output or interaction.
@@ -172,6 +174,10 @@ The bot understands natural language commands in addition to the following expli
 | `/on` | (Discord-only) Marks admin as available for spontaneous DMs. |
 | `/off`| (Discord-only) Marks admin as preoccupied/sleeping. |
 | `/art [prompt]`| (Discord-only) Generates an image on Discord. |
+| `/focus`| (Discord-only) Toggles Admin Focus Mode (suppresses background tasks). |
+| `/consult`| (Discord-only) Toggles Pre-Post Consultation for Bluesky posts. |
+| `/config [key] [val]`| (Discord-only) Views or updates bot configuration directly. |
+| `/goal [text]`| (Discord-only) Views or modifies the current autonomous daily goal. |
 | `google [query]` | Searches the web. |
 | `read this link: [URL]` | Reads and summarizes a specific web page. |
 | `youtube [query]` | Searches YouTube for videos. |

@@ -491,6 +491,10 @@ class DiscordService {
 
         if (content.startsWith('/on') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(true);
+            // Update vibe check timestamp to prevent immediate heartbeat welcomes
+            dataStore.db.data.last_admin_vibe_check = Date.now();
+            await dataStore.db.write();
+
             const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications back ON (you can now message them spontaneously). Generate a short, natural welcome back message. CRITICAL: Do NOT introduce yourself or announce who you are.`;
             const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
             await this._send(message.channel, response || "Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
@@ -776,7 +780,7 @@ ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${persona
    - **CONVERSATIONAL ETIQUETTE**: Avoid continually mentioning or acknowledging things you've already responded to/about once in the history. Only repeat or reference a previous point if you have something NEW to say about it, want to expand on it, critique it, or ask an additional follow-up question. Don't just keep "acknowledging" for the sake of it.
    - Infer the admin's state from the history (e.g., if they said they were going to sleep, acknowledge they've been resting when they return).
    - If referencing a past conversation, do so in the past-tense with your own commentary or extra thoughts (e.g., "I've been thinking about what you said earlier...", "I really appreciated our talk about..."). Do not just state that a conversation happened.
-6. **ADMIN STATE AWARENESS**: If the admin has just returned from sleep or a long break that they previously mentioned, acknowledge it naturally (e.g., "Hope you slept well," or "How was work?").
+6. **ADMIN STATE AWARENESS**: If the admin has just returned from sleep or a long break that they previously mentioned, acknowledge it naturally (e.g., "Hope you slept well," or "How was work?"). **STRICT LIMITATION**: Only acknowledge a return or welcome the admin back ONCE. If the history shows you have already welcomed them or acknowledged their return in this conversation, move on to other topics immediately. DO NOT dwell on the fact that they are back.
 7. If the admin gives you "special instructions" or behavioral feedback, acknowledge them and implement them.
  8. You can use the \`persist_directive\` tool if the admin gives you long-term instructions.
 9. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate.
@@ -885,6 +889,8 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                     Analyze the following Discord conversation history.
                     Identify 1-3 topics or emotional states that have already been discussed and subsequently "moved on" from.
                     For example, if you were talking about "exhaustion" but are now talking about "AI ethics," "exhaustion" is a PASSED topic.
+
+                    **GREETINGS & RETURNS**: If the history shows you have already welcomed the user back or acknowledged their return, "acknowledging return" is now a PASSED topic.
 
                     Respond with ONLY a comma-separated list of the passed topics, or "NONE".
 

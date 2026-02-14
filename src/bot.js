@@ -13,7 +13,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, reconstructTextWithFullUrls } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, reconstructTextWithFullUrls, hasPrefixOverlap } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -1020,9 +1020,14 @@ export class Bot {
                 let rejectedAttempts = [];
                 const MAX_ATTEMPTS = 5;
 
-                // Opening Phrase Blacklist - increased depth from 5 to 12
-                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-12);
-                const openingBlacklist = recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 10).join(' '));
+                // Opening Phrase Blacklist - increased depth from 5 to 15
+                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-15);
+                // Capture multiple prefix lengths for strict avoidance
+                const openingBlacklist = [
+                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 3).join(' ')),
+                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 5).join(' ')),
+                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 10).join(' '))
+                ].filter(o => o.length > 0);
 
                 while (attempts < MAX_ATTEMPTS) {
                     attempts++;
@@ -1091,11 +1096,13 @@ export class Bot {
                     ];
 
                     const containsSlop = isSlop(message);
-                    const isJaccardRepetitive = checkSimilarity(message, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
+                    const historyTexts = formattedHistory.map(h => h.content);
+                    const isJaccardRepetitive = checkSimilarity(message, historyTexts, dConfig.repetition_similarity_threshold);
+                    const hasPrefixMatch = hasPrefixOverlap(message, historyTexts, 3);
                     const varietyCheck = await llmService.checkVariety(message, formattedHistory, { relationshipRating: 5, platform: 'discord' }); // Admin is always 5
                     const personaCheck = await llmService.isPersonaAligned(message, 'discord');
 
-                    if (!containsSlop && !varietyCheck.repetitive && !isJaccardRepetitive && personaCheck.aligned) {
+                    if (!containsSlop && !varietyCheck.repetitive && !isJaccardRepetitive && !hasPrefixMatch && personaCheck.aligned) {
                         // Execute Heartbeat Tools
                         const discordOptions = {};
                         if (finalActions && finalActions.length > 0) {
@@ -1178,16 +1185,21 @@ export class Bot {
                     } else {
                         feedback = containsSlop ? "Contains metaphorical slop." :
                                    (isJaccardRepetitive ? "Jaccard similarity threshold exceeded (too similar to history)." :
+                                   (hasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
-                                   (varietyCheck.feedback || "Too similar to recent history.")));
+                                   (varietyCheck.feedback || "Too similar to recent history."))));
                         rejectedAttempts.push(message);
                         console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
 
                         if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
                             console.log(`[Bot] Final heartbeat attempt failed. Choosing least-bad response.`);
                             const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
-                            const chosen = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
-                            await discordService.sendSpontaneousMessage(`[Varied] ${chosen}`);
+                            const noPrefixMatch = nonSlop.filter(a => !hasPrefixOverlap(a, historyTexts, 3));
+                            const chosen = noPrefixMatch.length > 0 ? noPrefixMatch[noPrefixMatch.length - 1] :
+                                           (nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] :
+                                           rejectedAttempts[rejectedAttempts.length - 1]);
+
+                            await discordService.sendSpontaneousMessage(`${chosen}`);
                             await dataStore.addRecentThought('discord', chosen);
                             break;
                         }
@@ -1872,8 +1884,14 @@ Identify the topic and main takeaway.`;
     let responseText = null;
 
     const relRating = dataStore.getUserRating(handle);
+
+    // Enhanced Opening Phrase Blacklist - Capture multiple prefix lengths
     const recentBotMsgsInThread = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER);
-    const openingBlacklist = recentBotMsgsInThread.slice(-5).map(m => m.text.split(/\s+/).slice(0, 10).join(' '));
+    const openingBlacklist = [
+        ...recentBotMsgsInThread.slice(-15).map(m => m.text.split(/\s+/).slice(0, 3).join(' ')),
+        ...recentBotMsgsInThread.slice(-15).map(m => m.text.split(/\s+/).slice(0, 5).join(' ')),
+        ...recentBotMsgsInThread.slice(-15).map(m => m.text.split(/\s+/).slice(0, 10).join(' '))
+    ].filter(o => o.length > 0);
 
     while (planAttempts < MAX_PLAN_ATTEMPTS) {
       planAttempts++;
@@ -2804,12 +2822,15 @@ Identify the topic and main takeaway.`;
       const evaluations = await Promise.all(candidates.map(async (cand) => {
           try {
               const containsSlop = isSlop(cand);
+              const historyTexts = formattedHistory.map(h => h.content);
+              const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
+
               const [varietyCheck, personaCheck, responseSafetyCheck] = await Promise.all([
                   llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'bluesky', currentMood }),
                   llmService.isPersonaAligned(cand, 'bluesky'),
                   isAdminInThread ? Promise.resolve({ safe: true }) : llmService.isResponseSafe(cand)
               ]);
-              return { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck };
+              return { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch };
           } catch (e) {
               console.error(`[Bot] Error evaluating candidate: ${e.message}`);
               return { cand, error: e.message };
@@ -2817,9 +2838,9 @@ Identify the topic and main takeaway.`;
       }));
 
       for (const evalResult of evaluations) {
-          const { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck, error } = evalResult;
+          const { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch, error } = evalResult;
           if (error) {
-              rejectedAttempts.push(cand);
+              rejectedRespAttempts.push(cand);
               continue;
           }
 
@@ -2829,9 +2850,9 @@ Identify the topic and main takeaway.`;
           const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
           const score = varietyWeight + moodWeight + lengthBonus;
 
-          console.log(`[Bot] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}`);
+          console.log(`[Bot] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}, PrefixMatch=${hasPrefixMatch}`);
 
-          if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned && responseSafetyCheck.safe) {
+          if (!containsSlop && !varietyCheck.repetitive && !hasPrefixMatch && personaCheck.aligned && responseSafetyCheck.safe) {
               if (score > bestScore) {
                   bestScore = score;
                   bestCandidate = cand;
@@ -2839,10 +2860,11 @@ Identify the topic and main takeaway.`;
           } else {
               if (!bestCandidate) {
                   rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                                    (hasPrefixMatch ? "Prefix overlap detected." :
                                     (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                     (!responseSafetyCheck.safe ? "Failed safety check." :
                                     (varietyCheck.misaligned ? "Misaligned with current mood." :
-                                    (varietyCheck.feedback || "Too similar to recent history."))));
+                                    (varietyCheck.feedback || "Too similar to recent history.")))));
               }
               rejectedRespAttempts.push(cand);
           }
@@ -2857,8 +2879,13 @@ Identify the topic and main takeaway.`;
 
           if (respAttempts === MAX_RESP_ATTEMPTS && rejectedRespAttempts.length > 0) {
               console.log(`[Bot] Final attempt failed. Choosing least-bad response.`);
+              const historyTexts = formattedHistory.map(h => h.content);
               const nonSlop = rejectedRespAttempts.filter(a => !isSlop(a));
-              responseText = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedRespAttempts[rejectedRespAttempts.length - 1];
+              const noPrefixMatch = nonSlop.filter(a => !hasPrefixOverlap(a, historyTexts, 3));
+
+              responseText = noPrefixMatch.length > 0 ? noPrefixMatch[noPrefixMatch.length - 1] :
+                             (nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] :
+                             rejectedRespAttempts[rejectedRespAttempts.length - 1]);
               break;
           }
       }
@@ -3606,11 +3633,12 @@ Describe how you feel about this user and your relationship now.`;
       let postFeedback = '';
       let rejectedPostAttempts = [];
 
-      // Opening Phrase Blacklist - Capture both 5 and 10 word prefixes for stronger variation
+      // Opening Phrase Blacklist - Capture multiple prefix lengths for stronger variation
       const openingBlacklist = [
-        ...allOwnPosts.slice(0, 10).map(m => m.post.record.text.split(/\s+/).slice(0, 5).join(' ')),
-        ...allOwnPosts.slice(0, 10).map(m => m.post.record.text.split(/\s+/).slice(0, 10).join(' '))
-      ];
+        ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 3).join(' ')),
+        ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 5).join(' ')),
+        ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 10).join(' '))
+      ].filter(o => o.length > 0);
 
       // Pre-fetch data for specific post types to avoid redundant API calls in the retry loop
       let imageBuffer = null;
@@ -3830,7 +3858,9 @@ Describe how you feel about this user and your relationship now.`;
             ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
           ];
 
-          const isJaccardRepetitive = checkSimilarity(postContent, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
+          const historyTexts = formattedHistory.map(h => h.content);
+          const isJaccardRepetitive = checkSimilarity(postContent, historyTexts, dConfig.repetition_similarity_threshold);
+          const hasPrefixMatch = hasPrefixOverlap(postContent, historyTexts, 3);
           const containsSlop = isSlop(postContent);
           const varietyCheck = await llmService.checkVariety(postContent, formattedHistory);
           const personaCheck = await llmService.isPersonaAligned(postContent, 'bluesky', {
@@ -3839,19 +3869,26 @@ Describe how you feel about this user and your relationship now.`;
             imageAnalysis: imageAnalysis
           });
 
-          if (isJaccardRepetitive || containsSlop || varietyCheck.repetitive || !personaCheck.aligned) {
+          if (isJaccardRepetitive || hasPrefixMatch || containsSlop || varietyCheck.repetitive || !personaCheck.aligned) {
             console.warn(`[Bot] Autonomous post attempt ${postAttempts} failed quality/persona check. Rejecting.`);
             postFeedback = containsSlop ? "Contains repetitive metaphorical 'slop'." :
+                       (hasPrefixMatch ? "Prefix overlap detected." :
                        (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
-                       (varietyCheck.feedback || "Too similar to your recent history."));
+                       (varietyCheck.feedback || "Too similar to your recent history.")));
 
             rejectedPostAttempts.push(postContent);
             postContent = null; // Clear to prevent accidental posting of rejected content
 
             if (postAttempts === MAX_POST_ATTEMPTS && rejectedPostAttempts.length > 0) {
                 console.log(`[Bot] Final autonomous attempt failed. Choosing least-bad response.`);
+                const historyTexts = formattedHistory.map(h => h.content);
                 const nonSlop = rejectedPostAttempts.filter(a => !isSlop(a));
-                postContent = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedPostAttempts[rejectedPostAttempts.length - 1];
+                const noPrefixMatch = nonSlop.filter(a => !hasPrefixOverlap(a, historyTexts, 3));
+
+                postContent = noPrefixMatch.length > 0 ? noPrefixMatch[noPrefixMatch.length - 1] :
+                              (nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] :
+                              rejectedPostAttempts[rejectedPostAttempts.length - 1]);
+
                 // Check coherence one last time for the chosen one
                 const { score } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
                 if (score >= 3) break;

@@ -1655,12 +1655,13 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                  const recentThoughts = dataStore.getRecentThoughts();
                  const relRating = dataStore.getUserRating(message.author.username);
 
-                 // Opening Phrase Blacklist: Track first 10 words of last 12 messages
-                 const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-12);
-                 const openingBlacklist = recentBotMsgs.map(m => {
-                     const words = m.content.split(/\s+/).slice(0, 10).join(' ');
-                     return words;
-                 });
+                 // Opening Phrase Blacklist - Capture multiple prefix lengths
+                 const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-15);
+                 const openingBlacklist = [
+                     ...recentBotMsgs.map(m => m.content.split(/\s+/).slice(0, 3).join(' ')),
+                     ...recentBotMsgs.map(m => m.content.split(/\s+/).slice(0, 5).join(' ')),
+                     ...recentBotMsgs.map(m => m.content.split(/\s+/).slice(0, 10).join(' '))
+                 ].filter(o => o.length > 0);
 
                  while (attempts < MAX_ATTEMPTS) {
                      // Pivot Check: If interrupted during generation, restart
@@ -1723,11 +1724,14 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                      const evaluations = await Promise.all(candidates.map(async (cand) => {
                          try {
                              const containsSlop = isSlop(cand);
+                             const historyTexts = formattedHistory.map(h => h.content);
+                             const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
+
                              const [varietyCheck, personaCheck] = await Promise.all([
                                  llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord', currentMood }),
                                  llmService.isPersonaAligned(cand, 'discord')
                              ]);
-                             return { cand, containsSlop, varietyCheck, personaCheck };
+                             return { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch };
                          } catch (e) {
                              console.error(`[DiscordService] Error evaluating candidate: ${e.message}`);
                              return { cand, error: e.message };
@@ -1735,7 +1739,7 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                      }));
 
                      for (const evalResult of evaluations) {
-                         const { cand, containsSlop, varietyCheck, personaCheck, error } = evalResult;
+                         const { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, error } = evalResult;
                          if (error) {
                              rejectedAttempts.push(cand);
                              continue;
@@ -1747,9 +1751,9 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                          const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
                          const score = varietyWeight + moodWeight + lengthBonus;
 
-                         console.log(`[DiscordService] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}`);
+                         console.log(`[DiscordService] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, PrefixMatch=${hasPrefixMatch}`);
 
-                         if (!containsSlop && !varietyCheck.repetitive && personaCheck.aligned) {
+                         if (!containsSlop && !varietyCheck.repetitive && !hasPrefixMatch && personaCheck.aligned) {
                              if (score > bestScore) {
                                  bestScore = score;
                                  bestCandidate = cand;
@@ -1757,9 +1761,10 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                          } else {
                              if (!bestCandidate) {
                                  rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                                                   (hasPrefixMatch ? "Prefix overlap detected." :
                                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                                    (varietyCheck.misaligned ? "Misaligned with current mood." :
-                                                   (varietyCheck.feedback || "Too similar to recent history.")));
+                                                   (varietyCheck.feedback || "Too similar to recent history."))));
 
                                  if (varietyCheck.repetitive && varietyCheck.feedback) {
                                      additionalConstraints.push(varietyCheck.feedback);
@@ -1814,10 +1819,14 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                          // If it's the last attempt, pick the least-bad one (highest score)
                          if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
                              console.log(`[DiscordService] Final attempt failed. Choosing least-bad response from ${rejectedAttempts.length} attempts.`);
-                             // Just pick one that isn't slop if possible
+
+                             const historyTexts = formattedHistory.map(h => h.content);
                              const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
-                             responseText = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedAttempts[rejectedAttempts.length - 1];
-                             responseText = `[Varied] ${responseText}`; // Mark as forced variation
+                             const noPrefixMatch = nonSlop.filter(a => !hasPrefixOverlap(a, historyTexts, 3));
+
+                             responseText = noPrefixMatch.length > 0 ? noPrefixMatch[noPrefixMatch.length - 1] :
+                                            (nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] :
+                                            rejectedAttempts[rejectedAttempts.length - 1]);
                          }
                      }
                  }
@@ -1853,7 +1862,7 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                 console.log(`[DiscordService] Sending response to Discord...`);
                 await this._send(message.channel, responseText);
 
-                if (isAdmin && responseText && !responseText.startsWith('[Varied]')) {
+                if (isAdmin && responseText) {
                     // Emotional Sentiment Weighting
                     let warmthBoost = 0.1;
                     if (currentMood.valence > 0.5) warmthBoost = 0.2;

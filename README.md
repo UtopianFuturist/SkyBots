@@ -38,8 +38,12 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
 - **Social Pulse Monitoring**: Dynamically adjusts posting cooldowns based on timeline saturation and interaction levels.
 - **Discord Conversational Flow**: Implements a natural pacing engine with variable typing latency, adaptive response jitter, and logical "thought cascading" for a more human-like messaging experience.
+- **Discord Selective Engagement**: Can choose to remain silent or use **Reactive Emojis** to acknowledge low-substance messages from the admin.
 - **Discord Interrupt Resilience**: Dynamically pivots or incorporates new context if a user sends a message while the bot is already processing or typing.
-- **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (paragraphs/lists) with human-like delays between segments.
+- **Discord Presence Awareness**: Detects long gaps in conversation history to acknowledge returns naturally.
+- **Discord Self-Correction Cascade**: Occasionally sends spontaneous "second thoughts" or minor follow-up corrections to simulate human-like conversational flow.
+- **Discord Humility Mode**: Converts technical diagnostic alerts into grounded, persona-led conversational messages.
+- **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (paragraphs/lists) with native **Discord Reply/Quoting** support.
 - **Mental Health & Agency Framework**:
     - **Energy Poll**: Autonomously polls "social battery" levels to decide between resting (restoring energy) or proceeding with tasks.
     - **Lurker Mode (Social Fasting)**: Capability to reading feeds without the pressure of active output or interaction.

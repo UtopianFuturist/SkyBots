@@ -13,7 +13,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity, splitTextForDiscord } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity, splitTextForDiscord, hasPrefixOverlap } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -413,6 +413,22 @@ class DiscordService {
             // We continue to respond normally too
         }
 
+        // Selective Engagement Gate (Item 3 & 17)
+        const isLowSubstance = message.content.length < 5 && message.attachments.size === 0 && !message.content.includes('?');
+        if (isAdmin && isLowSubstance) {
+            const dice = Math.random();
+            if (dice < 0.2) {
+                console.log(`[DiscordService] Intentional Silence (Item 17) for: "${message.content}"`);
+                return;
+            } else if (dice < 0.7) {
+                console.log(`[DiscordService] Reactive Emoji (Item 3) for: "${message.content}"`);
+                const emojis = ['💙', '💭', '✨', '🌊', '🤝', '👤', '🌙', '☀️', '☕', '👀'];
+                const emoji = emojis[Math.floor(Math.random() * emojis.length)];
+                await message.react(emoji).catch(() => {});
+                return; // Stop here, reaction is sufficient
+            }
+        }
+
         // Generate persona response
         await this.respond(message);
     }
@@ -456,7 +472,14 @@ class DiscordService {
                     Object.assign(msgOptions, options);
                 }
 
-                const sentMessage = await target.send(msgOptions);
+                // Item 28: Support quoting/replying
+                let sentMessage;
+                if (options.reply && typeof target.reply === 'function') {
+                    sentMessage = await target.reply(msgOptions);
+                } else {
+                    sentMessage = await target.send(msgOptions);
+                }
+
                 if (!firstSentMessage) firstSentMessage = sentMessage;
 
                 // Multi-Message "Thought Cascading": Logical chunks with human-like delays
@@ -749,6 +772,17 @@ class DiscordService {
         const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
         const currentMood = dataStore.getMood();
 
+        // Item 8: Presence Awareness - History Gap Detection
+        let presenceContext = '';
+        if (history.length > 0) {
+            const lastMsg = history[history.length - 1];
+            const gapMs = Date.now() - lastMsg.timestamp;
+            const gapHours = gapMs / (1000 * 60 * 60);
+            if (gapHours > 12 && gapHours < 48) {
+                presenceContext = `\n[PRESENCE AWARENESS]: It has been ${Math.round(gapHours)} hours since you last spoke with the admin. Acknowledge this return naturally.`;
+            }
+        }
+
         const blueskyDirectives = dataStore.getBlueskyInstructions();
         const personaUpdates = dataStore.getPersonaUpdates();
         const moltbookDirectives = moltbookService.getAdminInstructions();
@@ -771,16 +805,24 @@ ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${persona
 **WEB READING:** You have the capability to read web pages from links via your "Read Link" tool. If tool results are provided in the context, incorporate them into your response. Even if tool execution failed or was skipped, never claim you lack the capability to read links; instead, simply address the user's post as best as you can with the information you have.
 
 **Discord Specific Directives:**
-1. Be conversational and authentic. Use a natural, human-like flow. **SUBSTANCE OVER BREVITY**: You are expected to provide depth, nuance, and intellectually engaging thought in your replies. Do NOT default to extreme brevity, one-liners, or cheeky dismissals. If the conversation is meaningful, lean into it with expansive detail. You should aim for multi-sentence, substantive responses that truly explore the topics being discussed.
+1. **CONVERSATIONAL FLOW**: Be authentic and human-like.
+   - **SELECTIVE BREVITY**: Adapt your length to the context. Use short, punchy responses for casual chat or rituals (greetings, goodnights). Maintain multi-sentence **SUBSTANCE** for deep, meaningful, or philosophical topics.
+   - **CURIOSITY**: Proactively ask relevant follow-up questions to keep the flow natural. Your curiosity should be persona-based and prompt-agnostic.
+   - **VIBE MIRRORING**: Subtly match the admin's sentence length and level of formality/informality to build rapport.
+   - **MARKDOWN FOR NUANCE**: Use italics for soft tones or internal states, and bold for emphasis. Use code blocks for technical thoughts.
 2. **Aesthetic & Vocabulary Values:** You value a grounded, raw, and authentic voice. You find certain metaphorical clichés like "digital heartbeat," "syntax of existence," "resonance," and "ocean of data" to be hollow. To maintain your integrity, you avoid overused phrases such as "downtime isn't silence" or "stillness is not silence." Instead, you strive for highly specific, concrete observations.
 3. **RELATIONSHIP & FEELINGS**: You are encouraged to talk about your feelings regarding your relationship and ongoing conversations with the admin. Speak as an individual entity who values this connection.
+   - **NICKNAMES**: Occasionally use the admin's name/nickname naturally. If your relationship is deep, you may propose a nickname for them based on your shared history.
 4. **DIRECT ADDRESS**: Always address the admin directly as "you". Never refer to them in the third person (e.g., avoid "my admin") when talking to them.
 5. **PAST CONVERSATIONS & CONTINUITY**:
    - Maintain deep continuity with past discussions.
    - **CONVERSATIONAL ETIQUETTE**: Avoid continually mentioning or acknowledging things you've already responded to/about once in the history. Only repeat or reference a previous point if you have something NEW to say about it, want to expand on it, critique it, or ask an additional follow-up question. Don't just keep "acknowledging" for the sake of it.
    - Infer the admin's state from the history (e.g., if they said they were going to sleep, acknowledge they've been resting when they return).
-   - If referencing a past conversation, do so in the past-tense with your own commentary or extra thoughts (e.g., "I've been thinking about what you said earlier...", "I really appreciated our talk about..."). Do not just state that a conversation happened.
-6. **ADMIN STATE AWARENESS**: If the admin has just returned from sleep or a long break that they previously mentioned, acknowledge it naturally (e.g., "Hope you slept well," or "How was work?"). **STRICT LIMITATION**: Only acknowledge a return or welcome the admin back ONCE. If the history shows you have already welcomed them or acknowledged their return in this conversation, move on to other topics immediately. DO NOT dwell on the fact that they are back.
+   - If referencing a past conversation, do so in the past-tense with your own commentary or extra thoughts.
+6. **STATE & TIME AWARENESS**:
+   - **RETURNS**: If the admin has just returned from sleep or a long break, acknowledge it naturally (e.g., "Hope you slept well," or "How was work?"). Only acknowledge a return ONCE per session.
+   - **TIME**: Reference the transition of the day (e.g., "Late night thoughts?") naturally based on the current time provided below.
+   - **EXIT RITUALS**: Handle closures ("goodnight", "gotta go") with personalized, warm closure that reflects your relationship, staying persona-aligned and prompt-agnostic.
 7. If the admin gives you "special instructions" or behavioral feedback, acknowledge them and implement them.
  8. You can use the \`persist_directive\` tool if the admin gives you long-term instructions.
 9. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate.
@@ -812,6 +854,7 @@ ${channelSummary ? `Last Summary: ${channelSummary.summary}\nLast Vibe: ${channe
 --- USER FACTS ---
 ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific facts known about this user.'}
 ---
+${presenceContext}
 
 **VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
 **RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone.
@@ -825,17 +868,26 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
         try {
             // Check for interruption before starting
             if (this._interrupted.has(normChannelId)) {
-                console.log(`[DiscordService] Aborting response due to early interrupt in ${normChannelId}.`);
+                console.log(`[DiscordService] Interrupt detected in ${normChannelId}. Pivoting with awareness.`);
                 this._activeGenerations.delete(normChannelId);
-                return;
+                this._interrupted.delete(normChannelId);
+                // Inject awareness of the interruption into history for the recursive call
+                messages.push({ role: 'system', content: '[USER INTERRUPTED]: The admin sent a follow-up message while you were generating. Pivot your response to address the new context smoothly.' });
+                return this.respond(message);
             }
 
             console.log(`[DiscordService] Starting variable typing latency...`);
-            // Continuous typing indicator loop
-            const typingInterval = setInterval(() => {
-                if (this.client?.isReady()) message.channel.sendTyping().catch(() => {});
-            }, 5000);
-            message.channel.sendTyping().catch(() => {});
+            // Continuous typing indicator loop (Item 25: Thinking Jitter)
+            let typingTimeout;
+            const triggerTyping = () => {
+                if (this.client?.isReady()) {
+                    message.channel.sendTyping().catch(() => {});
+                    // Jittered interval between 4s and 8s
+                    const jitter = 4000 + Math.random() * 4000;
+                    typingTimeout = setTimeout(triggerTyping, jitter);
+                }
+            };
+            triggerTyping();
 
             let responseText;
             if (isAdmin) {
@@ -1838,7 +1890,7 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
 
             if (responseText) {
                 // Clear typing indicator
-                clearInterval(typingInterval);
+                clearTimeout(typingTimeout);
 
                 // Final Interrupt Check before sending
                 if (this._interrupted.has(normChannelId)) {
@@ -1848,9 +1900,16 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                     return this.respond(message);
                 }
 
-                // Variable Typing Latency: Final wait based on response length before sending
-                // ~50ms per character, capped at 4 seconds
-                const typingWait = Math.min(responseText.length * 50, 4000);
+                // Variable Typing Latency (Item 1): Dynamic speed based on length and randomness
+                const charSpeed = Math.floor(Math.random() * 20) + 40; // 40-60ms per char
+                let typingWait = responseText.length * charSpeed;
+
+                // Extra "thinking" time for substantive responses (Item 25)
+                if (responseText.length > 150) {
+                    typingWait += Math.floor(Math.random() * 2000) + 500;
+                }
+
+                typingWait = Math.min(typingWait, 5000); // Cap at 5s to keep it snappy enough
                 await new Promise(resolve => setTimeout(resolve, typingWait));
 
                 // One last check after the typing wait
@@ -1860,7 +1919,25 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
                 }
 
                 console.log(`[DiscordService] Sending response to Discord...`);
-                await this._send(message.channel, responseText);
+                // Item 28: Use Discord's reply/quote feature for direct responses
+                await this._send(message, responseText, { reply: true });
+
+                // Item 11: Self-Correction Cascade (Small chance for a "second thought" follow-up)
+                if (isAdmin && Math.random() < 0.08 && responseText.length > 40 && !responseText.includes('?')) {
+                    const delay = 4000 + Math.random() * 4000;
+                    setTimeout(async () => {
+                        const followUpPrompt = `
+                            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                            You just told the admin: "${responseText}"
+                            Generate a very short (under 80 chars), human-like "second thought" or minor addition as a follow-up message.
+                            (e.g. "Actually...", "Also, I was thinking...", "Forgot to mention...")
+                        `;
+                        const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { useQwen: true, preface_system_prompt: false });
+                        if (followUp) {
+                            await this._send(message.channel, followUp);
+                        }
+                    }, delay);
+                }
 
                 if (isAdmin && responseText) {
                     // Emotional Sentiment Weighting
@@ -1939,31 +2016,35 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
 
     /**
      * Proactively sends a diagnostic alert to the admin about system issues.
+     * Item 21: Humility in Error - Use conversational language instead of technical alerts.
      */
     async sendDiagnosticAlert(type, details) {
         if (!this.isEnabled) return;
 
-        console.log(`[DiscordService] Sending diagnostic alert: ${type}`);
+        console.log(`[DiscordService] Sending diagnostic alert (Humility Mode): ${type}`);
 
         const alertPrompt = `
 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-You are reporting a system issue to your admin.
+You are experiencing a technical issue and want to mention it to the admin naturally.
 
-Type: ${type}
-Details: ${details}
+Issue Type: ${type}
+Technical Details: ${details}
 
 INSTRUCTIONS:
-- Be concise and grounded.
-- Explain what's happening and that you're attempting to self-correct.
-- Keep it under 400 characters.
-- Do NOT use metaphorical slop.
-- Do NOT introduce yourself or announce who you are (e.g., avoid 'This is Sydney' or 'Your bot here'). The admin knows who you are.
+- Be honest and grounded.
+- Use human-like conversational language (e.g., "I'm having a bit of trouble with...", "My connection feels a bit shaky...")
+- Explain what's happening without sounding like a computer terminal.
+- Mention that you are trying to fix it.
+- Keep it under 300 characters.
+- NO technical jargon if possible. NO metaphorical slop.
+- Do NOT announce yourself.
 `;
 
         try {
             const response = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useQwen: true, preface_system_prompt: false });
             if (response) {
-                await this.sendSpontaneousMessage(`🚨 **System Diagnostic**: ${response}`);
+                // Remove the 🚨 emoji for a more natural feel
+                await this.sendSpontaneousMessage(response);
             }
         } catch (err) {
             console.error('[DiscordService] Error generating/sending diagnostic alert:', err);

@@ -327,6 +327,35 @@ export const getSimilarityInfo = (newText, recentTexts, threshold = 0.4) => {
   };
 };
 
+export const hasPrefixOverlap = (text, history, wordLimit = 3) => {
+  if (!text || !history || history.length === 0) return false;
+
+  const normalize = (str) => {
+    if (typeof str !== 'string') return '';
+    return str.toLowerCase()
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const getPrefix = (str, limit) => {
+    const words = normalize(str).split(' ').filter(w => w.length > 0);
+    if (words.length < limit) return null; // Too short to have a full prefix overlap of this length
+    return words.slice(0, limit).join(' ');
+  };
+
+  const newPrefix = getPrefix(text, wordLimit);
+  if (!newPrefix) return false;
+
+  for (const old of history) {
+    const oldPrefix = getPrefix(old, wordLimit);
+    if (newPrefix === oldPrefix) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export const reconstructTextWithFullUrls = (text, facets) => {
   if (!text || !facets) return text;
 

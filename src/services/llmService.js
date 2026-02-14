@@ -109,15 +109,15 @@ STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only p
     systemContent += temporalContext;
 
     if (openingBlacklist.length > 0) {
-        systemContent += `\n\n**CRITICAL: OPENING BLACKLIST**
-You MUST NOT start your response with any of the following phrases or structural formulas:
+        systemContent += `\n\n**STRICT OPENING BLACKLIST (NON-NEGOTIABLE)**
+To maintain your integrity and variety, you are politely but strictly forbidden from starting your response with any of the following phrases or structural formulas:
 ${openingBlacklist.map(o => `- "${o}"`).join('\n')}
-Choose a completely different way to open your message.`;
+You MUST find a completely fresh, unique way to begin your message that does not overlap with these previous openings.`;
     }
 
     if (tropeBlacklist.length > 0) {
-        systemContent += `\n\n**CRITICAL: FORBIDDEN METAPHORS & TROPES**
-You have used the following concepts/phrases too frequently. You ARE FORBIDDEN from using them in this response. Pivot to completely new imagery and rhetorical structures:
+        systemContent += `\n\n**STRICT FORBIDDEN METAPHORS & TROPES**
+The following concepts/phrases have been exhausted. You are strictly forbidden from using them in this response. Please pivot to entirely new imagery, metaphors, and rhetorical structures:
 ${tropeBlacklist.map(t => `- "${t}"`).join('\n')}`;
     }
 
@@ -157,10 +157,10 @@ DO NOT use flowery metaphors. Stay grounded in your current state.`;
     if (!preface_system_prompt && (openingBlacklist.length > 0 || tropeBlacklist.length > 0 || additionalConstraints.length > 0 || currentMood)) {
         const constraintMsg = {
             role: "system",
-            content: `**DYNAMIC CONSTRAINTS**:
-${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH: ${openingBlacklist.map(o => `"${o}"`).join(', ')}` : ''}
+            content: `**STRICT DYNAMIC CONSTRAINTS**:
+${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH (HARD CONSTRAINT): ${openingBlacklist.map(o => `"${o}"`).join(', ')}` : ''}
 ${tropeBlacklist.length > 0 ? `FORBIDDEN TROPES/METAPHORS: ${tropeBlacklist.map(t => `"${t}"`).join(', ')}` : ''}
-${additionalConstraints.length > 0 ? `REJECTION FEEDBACK TO OBEY: ${additionalConstraints.join('; ')}` : ''}
+${additionalConstraints.length > 0 ? `REJECTION FEEDBACK (MUST OBEY): ${additionalConstraints.join('; ')}` : ''}
 ${currentMood ? `CURRENT MOOD TO ALIGN WITH: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
 ${currentMood.valence < -0.3 ? "Be raw and direct." : currentMood.valence > 0.3 ? "Be expansive and warm." : ""}
 ${currentMood.arousal > 0.5 ? "Be sharp and intense." : currentMood.arousal < -0.5 ? "Be reflective and soft." : ""}` : ''}

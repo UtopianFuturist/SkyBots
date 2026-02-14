@@ -1,4 +1,4 @@
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters } from '../src/utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap } from '../src/utils/textUtils.js';
 
 describe('textUtils - sanitizeCjkCharacters', () => {
   it('should remove Chinese characters', () => {
@@ -130,5 +130,42 @@ describe('textUtils - isSlop', () => {
   it('should return false for clean text', () => {
     expect(isSlop('I am a robot.')).toBe(false);
     expect(isSlop('The weather is nice.')).toBe(false);
+  });
+});
+
+describe('textUtils - hasPrefixOverlap', () => {
+  const history = [
+    "The quick brown fox",
+    "I love coding in javascript",
+    "Testing prefix overlap logic"
+  ];
+
+  it('should return true for a 3-word prefix overlap', () => {
+    expect(hasPrefixOverlap("The quick brown dog", history, 3)).toBe(true);
+  });
+
+  it('should return true for a 3-word prefix overlap with different casing/punctuation', () => {
+    expect(hasPrefixOverlap("THE QUICK BROWN! something", history, 3)).toBe(true);
+  });
+
+  it('should return false if prefix does not overlap', () => {
+    expect(hasPrefixOverlap("The quick red fox", history, 3)).toBe(false);
+  });
+
+  it('should return false for very short text', () => {
+    expect(hasPrefixOverlap("The quick", history, 3)).toBe(false);
+  });
+
+  it('should return false for empty history', () => {
+    expect(hasPrefixOverlap("The quick brown fox", [], 3)).toBe(false);
+  });
+
+  it('should handle different word limits', () => {
+    expect(hasPrefixOverlap("The quick brown dog", history, 2)).toBe(true);
+    expect(hasPrefixOverlap("The quick dog", history, 3)).toBe(false);
+  });
+
+  it('should return true if prefix match is in the middle of history list', () => {
+    expect(hasPrefixOverlap("I love coding and coffee", history, 3)).toBe(true);
   });
 });

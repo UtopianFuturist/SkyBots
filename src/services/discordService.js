@@ -446,7 +446,9 @@ class DiscordService {
         }
 
         let sanitized = sanitizeThinkingTags(content);
+        sanitized = sanitizeCjkCharacters(sanitized);
         sanitized = sanitizeCharacterCount(sanitized);
+        sanitized = stripWrappingQuotes(sanitized);
 
         if (!sanitized || sanitized.trim().length === 0) {
             console.log('[DiscordService] Message empty after sanitization. Skipping send.');
@@ -1876,6 +1878,7 @@ ${presenceContext}
                                 3. STRICTLY avoid any clichés, repetitive metaphors, or "slop".
                                 4. **TOPIC PROGRESSION**: Ensure you are NOT re-mentioning topics that have already been passed in the conversation history. Focus strictly on the latest development.
                                 5. Keep the response substantive and engaged.
+                                6. DO NOT include any reasoning, explanation, or meta-commentary about how you synthesized the drafts. Return ONLY the final synthesized message.
                              `;
                              const superDraft = await llmService.generateResponse([{ role: 'system', content: synthPrompt }], { useQwen: true, preface_system_prompt: false });
                              responseText = superDraft || bestCandidate;
@@ -1942,6 +1945,7 @@ ${presenceContext}
                             You just told the admin: "${responseText}"
                             Generate a very short (under 80 chars), human-like "second thought" or minor addition as a follow-up message.
                             (e.g. "Actually...", "Also, I was thinking...", "Forgot to mention...")
+                            STRICTLY NO reasoning, meta-commentary, or tags.
                         `;
                         const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { useQwen: true, preface_system_prompt: false });
                         if (followUp) {

@@ -1,4 +1,4 @@
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap } from '../src/utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap, stripWrappingQuotes } from '../src/utils/textUtils.js';
 
 describe('textUtils - sanitizeCjkCharacters', () => {
   it('should remove Chinese characters', () => {
@@ -113,6 +113,41 @@ describe('textUtils - sanitizeThinkingTags', () => {
   it('should handle multiple artifacts', () => {
     const input = 'Thought: A\n\nResult 1\nAnalysis: B\n\nResult 2';
     expect(sanitizeThinkingTags(input)).toBe('Result 1\n\nResult 2');
+  });
+
+  it('should remove [varied] tags', () => {
+    const input = '[varied] Hello world';
+    expect(sanitizeThinkingTags(input)).toBe('Hello world');
+  });
+
+  it('should remove synthesis and explanation blocks', () => {
+    const input = 'Synthesis: This draft combines elements.\n\nFinal response text.';
+    expect(sanitizeThinkingTags(input)).toBe('Final response text.');
+  });
+
+  it('should remove meta-commentary at the end', () => {
+    const input = 'Final response text.\n\nThis combines the emotional vulnerability from draft 1 with the technical explanation.';
+    expect(sanitizeThinkingTags(input)).toBe('Final response text.');
+  });
+
+  it('should remove draft mentions at the end', () => {
+    const input = 'Final response text.\n\nDraft 1 was too short.';
+    expect(sanitizeThinkingTags(input)).toBe('Final response text.');
+  });
+});
+
+describe('textUtils - stripWrappingQuotes', () => {
+  it('should strip double quotes', () => {
+    expect(stripWrappingQuotes('"Hello"')).toBe('Hello');
+  });
+
+  it('should strip nested quotes', () => {
+    expect(stripWrappingQuotes('""Hello""')).toBe('Hello');
+  });
+
+  it('should strip markdown code blocks', () => {
+    expect(stripWrappingQuotes('```\nHello\n```')).toBe('Hello');
+    expect(stripWrappingQuotes('```javascript\nHello\n```')).toBe('Hello');
   });
 });
 

@@ -7,10 +7,11 @@ class RenderService {
     this.serviceId = config.RENDER_SERVICE_ID;
     this.serviceName = config.RENDER_SERVICE_NAME;
     this.baseUrl = 'https://api.render.com/v1';
+    this.apiLogsDisabled = false;
   }
 
   isEnabled() {
-    return !!this.apiKey;
+    return !!this.apiKey && !this.apiLogsDisabled;
   }
 
   async listServices() {
@@ -66,7 +67,9 @@ class RenderService {
   }
 
   async getLogs(limit = 100) {
-    if (!this.isEnabled()) return "Render API key not configured.";
+    if (!this.isEnabled()) {
+        return this.apiLogsDisabled ? "Render API log streaming is disabled (tier mismatch or 404)." : "Render API key not configured.";
+    }
 
     if (!this.serviceId) {
       const found = await this.findSelf();
@@ -99,12 +102,19 @@ class RenderService {
                 });
             } else {
                 console.warn(`[RenderService] No new service ID found or discovery returned the same ID. Logs might not be available for this service type/tier on Render via API.`);
+                if (response.status === 404) {
+                    console.error(`[RenderService] Persistent 404 detected. Disabling log fetching to avoid redundant errors.`);
+                    this.apiLogsDisabled = true;
+                }
             }
         }
 
         if (!response.ok) {
             const errBody = await response.text().catch(() => 'No body');
             const hint = response.status === 404 ? " (Note: Render's API log streaming may require a paid plan)" : "";
+            if (response.status === 404) {
+                this.apiLogsDisabled = true;
+            }
             throw new Error(`Render API error: ${response.status}${hint} - ${errBody}`);
         }
       }

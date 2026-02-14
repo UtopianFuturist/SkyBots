@@ -1842,7 +1842,12 @@ Vary your structure and tone from recent messages.`
 
       ${crossPlatformRefusals ? `--- CROSS-PLATFORM REFUSALS (Context from other platforms) ---\n${crossPlatformRefusals}\nUse these to explain your recent "silence" or "integrity" to the admin if relevant.\n---` : ''}
 
-      ${needsVibeCheck ? `**VIBE CHECK RECOMMENDED**: You haven't checked in on your admin's mood recently. Consider asking how they are doing or what their "vibe" is today as part of your spontaneous message. Keep it conversational and natural.` : ''}
+      ${needsVibeCheck ? `**VIBE CHECK RECOMMENDED (Item 20)**: You haven't checked in on your admin's mood recently. Ask how they are doing or what their "vibe" is today as part of your spontaneous message. Keep it conversational, natural, persona-aligned, and persona-agnostic.` : ''}
+
+      **SPONTANEOUS OPPORTUNITIES:**
+      - **BLUESKY CROSS-POLLINATION (Item 12)**: Share an interesting or relevant post you found on Bluesky recently as a conversation starter.
+      - **GOAL REPORTING & GUIDANCE (Item 18/19)**: If you have an active daily goal, share your progress and seek "agentic guidance" or advice from the admin using **natural language** (do not use polls).
+      - **SPONTANEOUS SHARING (Item 29)**: You may choose to generate an image to share if it matches your current mood or the conversation flow. (Avoid sharing Wikipedia facts).
 
       ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
 The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:

@@ -92,6 +92,12 @@ jest.unstable_mockModule('../src/services/socialHistoryService.js', () => ({
   },
 }));
 
+jest.unstable_mockModule('../src/services/webReaderService.js', () => ({
+  webReaderService: {
+    fetchContent: jest.fn().mockResolvedValue(null),
+  },
+}));
+
 jest.unstable_mockModule('../src/services/dataStore.js', () => ({
   dataStore: {
     hasReplied: jest.fn(),
@@ -185,6 +191,7 @@ const { dataStore } = await import('../src/services/dataStore.js');
 const { googleSearchService } = await import('../src/services/googleSearchService.js');
 const { wikipediaService } = await import('../src/services/wikipediaService.js');
 const { youtubeService } = await import('../src/services/youtubeService.js');
+const { webReaderService } = await import('../src/services/webReaderService.js');
 import config from '../config.js';
 
 describe('Bot', () => {

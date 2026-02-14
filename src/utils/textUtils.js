@@ -187,11 +187,11 @@ export const isGreeting = (text) => {
 
   // Common greetings at the start of the post
   const greetingStarts = [
-    'hello', 'hi ', 'hi!', 'hi...', 'greetings', 'gm ', 'good morning', 'good afternoon', 'good evening',
-    'hey ', 'hey!', 'hey...', 'welcome'
+    'hello', 'hi', 'greetings', 'gm', 'good morning', 'good afternoon', 'good evening',
+    'hey', 'welcome'
   ];
 
-  if (greetingStarts.some(start => cleaned.startsWith(start))) {
+  if (greetingStarts.some(start => cleaned === start || cleaned.startsWith(start + ' ') || cleaned.startsWith(start + '!') || cleaned.startsWith(start + '.') || cleaned.startsWith(start + '?'))) {
     return true;
   }
 

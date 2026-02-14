@@ -53,7 +53,7 @@ class LLMService {
       DRAFT 2: [content]
       ...
 
-      Do not include reasoning or <think> tags.
+      Do not include reasoning, explanations, or <think> tags. Return ONLY the drafts.
     `;
 
     const draftMessages = [
@@ -69,7 +69,9 @@ class LLMService {
         const regex = new RegExp(`DRAFT ${i}:\\s*([\\s\\S]*?)(?=DRAFT ${i + 1}:|$)`, 'i');
         const match = response.match(regex);
         if (match && match[1].trim()) {
-            drafts.push(match[1].trim());
+            let draftText = match[1].trim();
+            draftText = stripWrappingQuotes(draftText);
+            drafts.push(draftText);
         }
     }
 
@@ -96,7 +98,8 @@ ${GROUNDED_LANGUAGE_DIRECTIVES}
 CRITICAL: Respond directly with the requested information. YOU MUST ELIMINATE ALL REPETITIVE METAPHORICAL "SLOP" (e.g., "digital heartbeat", "downtime isn't silence").
 SUBSTANCE OVER BREVITY: You are encouraged to provide depth, nuance, and substantive thought in your replies. Do NOT default to extreme brevity or one-liners unless the context explicitly demands a short answer. You MUST keep your entire thought under 1500 characters total. On Bluesky, aim for single-post impact (300 chars), but use threading (up to 3 posts) if the thought requires more space. On Discord, you are expected to be more detailed, expansive, and intellectually engaging in your responses.
 DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
-STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.`;
+STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.
+NO META-COMMENTARY: Do not include any explanations, reasoning, or meta-talk about your response or how you arrived at it. Return ONLY the final message text.`;
 
     if (this.memoryProvider && this.memoryProvider.isEnabled()) {
         const memories = this.memoryProvider.formatMemoriesForPrompt();

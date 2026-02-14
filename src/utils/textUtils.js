@@ -106,8 +106,6 @@ export const sanitizeThinkingTags = (text) => {
   let sanitized = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
 
   // 2. Handle unclosed <think> tags.
-  // If an unclosed <think> tag remains, we discard EVERYTHING after the first instance.
-  // This is the most aggressive way to prevent reasoning leakage.
   if (sanitized.toLowerCase().includes('<think>')) {
     console.log('[TextUtils] Unclosed <think> tag detected. Truncating response to prevent leakage.');
     sanitized = sanitized.split(/<think>/i)[0];
@@ -117,14 +115,16 @@ export const sanitizeThinkingTags = (text) => {
   sanitized = sanitized.replace(/<think>/gi, '');
   sanitized = sanitized.replace(/<\/think>/gi, '');
 
-  // 4. Aggressively remove entire blocks starting with common reasoning labels
-  // We look for the label and any text following it up to a double newline.
-  // We avoid the $ anchor at the end to prevent accidental deletion of the entire response
-  // unless there's a clear separation.
+  // 4. Remove [varied] tags
+  sanitized = sanitized.replace(/\[varied\]/gi, '');
+
+  // 5. Aggressively remove entire blocks starting with common reasoning labels
+  // Added more patterns for synthesis and draft explanations
   const artifacts = [
-      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy)\s*:\s*[\s\S]*?\n\n/i,
-      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy)\s*:\s*[\s\S]*?\n\n/i,
-      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy)\s*:\s*/i
+      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation)\s*:\s*[\s\S]*?\n\n/i,
+      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation)\s*:\s*[\s\S]*?\n\n/i,
+      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation)\s*:\s*/i,
+      /\n\s*(this combines|this draft|draft 1|draft 2|here is|i have synthesized)[\s\S]*$/i
   ];
   for (const pattern of artifacts) {
       sanitized = sanitized.replace(pattern, '\n\n');
@@ -218,6 +218,12 @@ export const isGreeting = (text) => {
 export const stripWrappingQuotes = (text) => {
   if (!text) return text;
   let trimmed = text.trim();
+
+  // Handle markdown code blocks that might wrap the whole response
+  if (trimmed.startsWith('```') && trimmed.endsWith('```')) {
+    trimmed = trimmed.replace(/^```[a-z]*\n?|```$/gi, '').trim();
+  }
+
   while (
     (trimmed.length >= 2) &&
     ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||

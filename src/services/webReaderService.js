@@ -11,12 +11,48 @@ class WebReaderService {
     }
 
     console.log(`[WebReaderService] STEP 1: Starting fetch for: ${targetUrl}`);
+
+    // Primary method: markdown.new
+    const markdownNewUrl = `https://markdown.new/${targetUrl}`;
+    console.log(`[WebReaderService] Attempting primary fetch via: ${markdownNewUrl}`);
+
     try {
       const controller = new AbortController();
       const timeout = setTimeout(() => {
-        console.log(`[WebReaderService] STEP 2: Fetch timeout for ${targetUrl} after 15s`);
+        console.log(`[WebReaderService] Primary fetch timeout for ${targetUrl} after 15s`);
         controller.abort();
-      }, 15000); // 15s timeout
+      }, 15000);
+
+      const response = await fetch(markdownNewUrl, {
+        signal: controller.signal,
+        headers: {
+          'Accept': 'text/markdown, text/plain',
+          'User-Agent': 'SkyBots/3.0 (AI Agent)'
+        }
+      });
+
+      clearTimeout(timeout);
+
+      if (response.ok) {
+        const markdown = await response.text();
+        if (markdown && markdown.length > 100) {
+            console.log(`[WebReaderService] SUCCESS: Retrieved Markdown from markdown.new. Length: ${markdown.length}`);
+            return markdown.substring(0, 50000);
+        }
+      }
+      console.warn(`[WebReaderService] markdown.new failed or returned insufficient content. Status: ${response.status}`);
+    } catch (error) {
+      console.warn(`[WebReaderService] Error during primary fetch from markdown.new:`, error.message);
+    }
+
+    // Fallback method: Direct fetch and regex extraction
+    console.log(`[WebReaderService] Attempting fallback fetch for: ${targetUrl}`);
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => {
+        console.log(`[WebReaderService] Fallback fetch timeout for ${targetUrl} after 15s`);
+        controller.abort();
+      }, 15000);
 
       const response = await fetch(targetUrl, {
         signal: controller.signal,
@@ -26,19 +62,18 @@ class WebReaderService {
       });
 
       clearTimeout(timeout);
-      console.log(`[WebReaderService] STEP 3: Response received for ${targetUrl}. Status: ${response.status} ${response.statusText}`);
+      console.log(`[WebReaderService] Fallback response received. Status: ${response.status} ${response.statusText}`);
 
       if (!response.ok) {
-        throw new Error(`Failed to fetch content: ${response.statusText}`);
+        throw new Error(`Failed to fetch content directly: ${response.statusText}`);
       }
 
       const html = await response.text();
-      console.log(`[WebReaderService] STEP 4: HTML retrieved for ${targetUrl}. Length: ${html.length} chars.`);
       const text = this.extractText(html);
-      console.log(`[WebReaderService] STEP 5: Text extracted for ${targetUrl}. Clean length: ${text.length} chars.`);
+      console.log(`[WebReaderService] Text extracted via fallback. Clean length: ${text.length} chars.`);
       return text;
     } catch (error) {
-      console.error(`[WebReaderService] Error fetching content from ${targetUrl}:`, error.message);
+      console.error(`[WebReaderService] Error during fallback fetch from ${targetUrl}:`, error.message);
       return null;
     }
   }

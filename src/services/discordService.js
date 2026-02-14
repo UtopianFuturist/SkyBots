@@ -13,7 +13,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity, splitTextForDiscord, hasPrefixOverlap } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -414,7 +414,8 @@ class DiscordService {
         }
 
         // Selective Engagement Gate (Item 3 & 17)
-        const isLowSubstance = message.content.length < 5 && message.attachments.size === 0 && !message.content.includes('?');
+        // Exempt greetings from being silenced, even if they are short.
+        const isLowSubstance = message.content.length < 5 && message.attachments.size === 0 && !message.content.includes('?') && !isGreeting(message.content);
         if (isAdmin && isLowSubstance) {
             const dice = Math.random();
             if (dice < 0.2) {

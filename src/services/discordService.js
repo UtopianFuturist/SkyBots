@@ -2066,12 +2066,59 @@ INSTRUCTIONS:
         return null;
     }
 
+    async fetchAdminHistory(limit = 20) {
+        if (!this.client?.isReady()) return null;
+
+        try {
+            const admin = await this.getAdminUser();
+            if (!admin) {
+                console.log('[DiscordService] fetchAdminHistory: Admin user not found.');
+                return null;
+            }
+
+            const dmChannel = await admin.createDM();
+            const fetchedMessages = await dmChannel.messages.fetch({ limit });
+            const normChannelId = `dm_${admin.id}`;
+
+            console.log(`[DiscordService] fetchAdminHistory: Fetched ${fetchedMessages.size} messages from admin DM.`);
+
+            // We need to clear existing local history for this channel to avoid duplicates if we're doing a full refresh,
+            // or we could merge them. For simplicity and to fix the "empty history after redeploy" issue,
+            // let's replace the local history with the fetched one.
+            const history = fetchedMessages
+                .reverse()
+                .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
+                .map(m => ({
+                    role: m.author.id === this.client.user.id ? 'assistant' : 'user',
+                    content: m.content,
+                    timestamp: m.createdTimestamp,
+                    attachments: m.attachments,
+                    authorId: m.author.id,
+                    username: m.author.username
+                }));
+
+            if (history.length > 0) {
+                // Wipe and replace local history for this channel
+                dataStore.db.data.discord_conversations[normChannelId] = history;
+                await dataStore.db.write();
+                return history;
+            }
+            return [];
+        } catch (err) {
+            console.error('[DiscordService] Error fetching admin history:', err);
+            return null;
+        }
+    }
+
     async recoverHistoricalVibes() {
         if (!this.client?.isReady()) return;
 
         console.log('[DiscordService] Starting Historical Vibe Recovery...');
         try {
-            // Get last 10 channels we interacted in
+            // 1. Proactively fetch admin history first
+            await this.fetchAdminHistory(20);
+
+            // 2. Get last 10 channels we interacted in
             const conversations = dataStore.db.data.discord_conversations || {};
             const recentChannelIds = Object.keys(conversations).slice(-10);
 

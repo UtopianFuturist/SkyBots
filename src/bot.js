@@ -886,7 +886,17 @@ export class Bot {
         const admin = await discordService.getAdminUser();
         if (admin) {
             const normChannelId = `dm_${admin.id}`;
-            const history = dataStore.getDiscordConversation(normChannelId);
+            let history = dataStore.getDiscordConversation(normChannelId);
+
+            // Item 29 FIX: Refresh history from Discord if local is empty or indicates >24h absence
+            // This prevents false "absent for >24h" suppression after redeploys or if local state is wiped.
+            const localQuietMins = history.length > 0 ? (Date.now() - history[history.length - 1].timestamp) / (1000 * 60) : Infinity;
+            if (history.length === 0 || localQuietMins > 24 * 60) {
+                console.log(`[Bot] Discord history for admin is empty or old (${Math.round(localQuietMins)}m). Refreshing from API to verify presence...`);
+                const refreshed = await discordService.fetchAdminHistory(20);
+                if (refreshed) history = refreshed;
+            }
+
             const lastInteraction = history.length > 0 ? history[history.length - 1] : null;
             const lastInteractionTime = lastInteraction ? lastInteraction.timestamp : 0;
             const quietMins = (Date.now() - lastInteractionTime) / (1000 * 60);

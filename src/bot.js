@@ -1032,7 +1032,15 @@ export class Bot {
                 while (attempts < MAX_ATTEMPTS) {
                     attempts++;
                     const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
+                    const isFinalAttempt = attempts === MAX_ATTEMPTS;
+
                     const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+
+                    const rewriteInstruction = isFinalAttempt ? `
+                    You are a high-reasoning rewrite module. This is your FINAL attempt to generate a spontaneous message.
+                    You MUST address the rejection feedback, avoid all digital/electrical metaphors, ensure high variety, and maintain your core persona.
+                    Keep it substantive and intellectually engaging.
+                    ` : '';
 
                     const refusalCounts = dataStore.getRefusalCounts();
                     const latestMoodMemory = await memoryService.getLatestMoodMemory();
@@ -1046,9 +1054,9 @@ export class Bot {
                         recentThoughtsContext,
                         isContinuing,
                         adminAvailability: availability,
-                        feedback: retryContext,
+                        feedback: retryContext + rewriteInstruction,
                         discordExhaustedThemes,
-                        temperature: currentTemp,
+                        temperature: isFinalAttempt ? 0.7 : currentTemp,
                         openingBlacklist,
                         currentMood,
                         refusalCounts,
@@ -1191,16 +1199,8 @@ export class Bot {
                         rejectedAttempts.push(message);
                         console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
 
-                        if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
-                            console.log(`[Bot] Final heartbeat attempt failed. Choosing least-bad response.`);
-                            const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
-                            const noPrefixMatch = nonSlop.filter(a => !hasPrefixOverlap(a, historyTexts, 3));
-                            const chosen = noPrefixMatch.length > 0 ? noPrefixMatch[noPrefixMatch.length - 1] :
-                                           (nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] :
-                                           rejectedAttempts[rejectedAttempts.length - 1]);
-
-                            await discordService.sendSpontaneousMessage(`${chosen}`);
-                            await dataStore.addRecentThought('discord', chosen);
+                        if (isFinalAttempt && !bestCandidate) {
+                            console.log(`[Bot] Final heartbeat attempt failed even after rewrite. Aborting.`);
                             break;
                         }
                     }
@@ -2790,17 +2790,38 @@ Identify the topic and main takeaway.`;
           const currentTemp = 0.7 + (Math.min(respAttempts - 1, 3) * 0.05);
           const retryResponseContext = respFeedback ? `\n\n**RETRY FEEDBACK**: ${respFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedRespAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
 
-          const attemptMessages = respFeedback
-              ? [...messages, { role: 'system', content: retryResponseContext }]
-              : messages;
-
           let candidates = [];
-          if (respAttempts === 1) {
-              console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
-              candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
+          if (respAttempts === MAX_RESP_ATTEMPTS) {
+              console.log(`[Bot] FINAL ATTEMPT: Triggering Qwen-led rewrite to ensure quality and alignment...`);
+              const rewritePrompt = `
+                You are a high-reasoning rewrite module for an AI agent.
+                Your goal is to produce a final, high-quality response that STRICTLY adheres to all persona guidelines and avoids all previous mistakes.
+
+                PREVIOUS REJECTION FEEDBACK: ${respFeedback}
+                PREVIOUS FAILED ATTEMPTS:
+                ${rejectedRespAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
+
+                INSTRUCTIONS:
+                1. Rewrite the response to be as different as possible from the failed attempts.
+                2. STRICTLY AVOID all digital/electrical metaphors (voltage, surge, circuit, etc.).
+                3. Ensure no structural overlap with previous openings.
+                4. Maintain your core persona: grounded, direct, and authentic.
+                5. Keep it under 300 characters.
+              `;
+              const finalRewrite = await llmService.generateResponse([...messages, { role: 'system', content: rewritePrompt }], { useQwen: true, temperature: 0.7, openingBlacklist, currentMood });
+              if (finalRewrite) candidates = [finalRewrite];
           } else {
-              const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
-              if (singleResponse) candidates = [singleResponse];
+              const attemptMessages = respFeedback
+                  ? [...messages, { role: 'system', content: retryResponseContext }]
+                  : messages;
+
+              if (respAttempts === 1) {
+                  console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
+                  candidates = await llmService.generateDrafts(attemptMessages, 5, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
+              } else {
+                  const singleResponse = await llmService.generateResponse(attemptMessages, { useQwen: true, temperature: currentTemp, openingBlacklist, currentMood });
+                  if (singleResponse) candidates = [singleResponse];
+              }
           }
 
           if (candidates.length === 0) {
@@ -2877,15 +2898,8 @@ Identify the topic and main takeaway.`;
           respFeedback = rejectionReason;
           console.log(`[Bot] Attempt ${respAttempts} failed. Feedback: ${respFeedback}`);
 
-          if (respAttempts === MAX_RESP_ATTEMPTS && rejectedRespAttempts.length > 0) {
-              console.log(`[Bot] Final attempt failed. Choosing least-bad response.`);
-              const historyTexts = formattedHistory.map(h => h.content);
-              const nonSlop = rejectedRespAttempts.filter(a => !isSlop(a));
-              const noPrefixMatch = nonSlop.filter(a => !hasPrefixOverlap(a, historyTexts, 3));
-
-              responseText = noPrefixMatch.length > 0 ? noPrefixMatch[noPrefixMatch.length - 1] :
-                             (nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] :
-                             rejectedRespAttempts[rejectedRespAttempts.length - 1]);
+          if (respAttempts === MAX_RESP_ATTEMPTS && !bestCandidate) {
+              console.log(`[Bot] Final attempt failed even after rewrite. Aborting to maintain quality.`);
               break;
           }
       }
@@ -3765,7 +3779,15 @@ Describe how you feel about this user and your relationship now.`;
         }
 
         const currentTemp = 0.7 + (Math.min(postAttempts - 1, 3) * 0.05);
+        const isFinalAttempt = postAttempts === MAX_POST_ATTEMPTS;
+
         const retryContext = postFeedback ? `\n\n**RETRY FEEDBACK**: ${postFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedPostAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+
+        const rewriteInstruction = isFinalAttempt ? `
+        You are a high-reasoning rewrite module. This is your FINAL attempt to generate an autonomous post.
+        You MUST adhere to all guidelines, avoid digital/electrical metaphors, and ensure no repetition with previous attempts or openings.
+        Keep it under 300 characters.
+        ` : '';
 
         if (postType === 'image' && imageBuffer && imageAnalysis && imageBlob) {
           const systemPrompt = `
@@ -3801,7 +3823,7 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist });
 
           embed = {
             $type: 'app.bsky.embed.images',
@@ -3838,7 +3860,7 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: currentTemp, openingBlacklist });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist });
         }
 
         if (postContent) {
@@ -3879,19 +3901,9 @@ Describe how you feel about this user and your relationship now.`;
             rejectedPostAttempts.push(postContent);
             postContent = null; // Clear to prevent accidental posting of rejected content
 
-            if (postAttempts === MAX_POST_ATTEMPTS && rejectedPostAttempts.length > 0) {
-                console.log(`[Bot] Final autonomous attempt failed. Choosing least-bad response.`);
-                const historyTexts = formattedHistory.map(h => h.content);
-                const nonSlop = rejectedPostAttempts.filter(a => !isSlop(a));
-                const noPrefixMatch = nonSlop.filter(a => !hasPrefixOverlap(a, historyTexts, 3));
-
-                postContent = noPrefixMatch.length > 0 ? noPrefixMatch[noPrefixMatch.length - 1] :
-                              (nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] :
-                              rejectedPostAttempts[rejectedPostAttempts.length - 1]);
-
-                // Check coherence one last time for the chosen one
-                const { score } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
-                if (score >= 3) break;
+            if (isFinalAttempt && !postContent) {
+                console.log(`[Bot] Final autonomous attempt failed even after rewrite logic. Aborting.`);
+                break;
             }
 
             continue;

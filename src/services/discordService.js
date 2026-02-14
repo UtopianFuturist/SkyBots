@@ -1726,16 +1726,34 @@ ${presenceContext}
                      attempts++;
                      let candidates = [];
                      const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05); // max 0.85
+                     const isFinalAttempt = attempts === MAX_ATTEMPTS;
 
                      console.log(`[DiscordService] Response Attempt ${attempts}/${MAX_ATTEMPTS} (Temp: ${currentTemp.toFixed(2)})`);
 
                      const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
 
-                     const finalMessages = feedback
-                        ? [...messages, { role: 'system', content: retryContext }]
+                     const rewriteInstruction = isFinalAttempt ? `
+                     You are a high-reasoning rewrite module. This is your FINAL attempt to generate a response.
+                     You MUST adhere to all persona guidelines, avoid digital/electrical metaphors, and ensure high variety from failed attempts.
+                     Keep it substantive and authentic.
+                     ` : '';
+
+                     const finalMessages = (feedback || isFinalAttempt)
+                        ? [...messages, { role: 'system', content: retryContext + rewriteInstruction }]
                         : messages;
 
-                     if (attempts === 1) {
+                     if (isFinalAttempt) {
+                         console.log(`[DiscordService] FINAL ATTEMPT: Triggering Qwen-led rewrite...`);
+                         const finalRewrite = await llmService.generateResponse(finalMessages, {
+                             useQwen: true,
+                             temperature: 0.7,
+                             openingBlacklist,
+                             tropeBlacklist: prePlanning?.trope_blacklist || [],
+                             additionalConstraints,
+                             currentMood
+                         });
+                         if (finalRewrite) candidates = [finalRewrite];
+                     } else if (attempts === 1) {
                          console.log(`[DiscordService] Generating 5 diverse drafts for initial attempt...`);
                          candidates = await llmService.generateDrafts(finalMessages, 5, {
                              useQwen: true,
@@ -1868,17 +1886,9 @@ ${presenceContext}
                          feedback = `REJECTED: ${rejectionReason}`;
                          console.log(`[DiscordService] Attempt ${attempts} failed. Feedback: ${feedback}`);
 
-                         // If it's the last attempt, pick the least-bad one (highest score)
-                         if (attempts === MAX_ATTEMPTS && rejectedAttempts.length > 0) {
-                             console.log(`[DiscordService] Final attempt failed. Choosing least-bad response from ${rejectedAttempts.length} attempts.`);
-
-                             const historyTexts = formattedHistory.map(h => h.content);
-                             const nonSlop = rejectedAttempts.filter(a => !isSlop(a));
-                             const noPrefixMatch = nonSlop.filter(a => !hasPrefixOverlap(a, historyTexts, 3));
-
-                             responseText = noPrefixMatch.length > 0 ? noPrefixMatch[noPrefixMatch.length - 1] :
-                                            (nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] :
-                                            rejectedAttempts[rejectedAttempts.length - 1]);
+                         if (isFinalAttempt && !bestCandidate) {
+                             console.log(`[DiscordService] Final attempt failed even after rewrite. Aborting.`);
+                             break;
                          }
                      }
                  }

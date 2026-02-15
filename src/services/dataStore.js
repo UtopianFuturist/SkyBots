@@ -30,10 +30,14 @@ const defaultData = {
   discord_pending_mirror: null, // { content, topic, timestamp }
   discord_relationship_mode: 'friend', // partner, friend, coworker
   discord_scheduled_times: [], // [ "HH:mm" ]
-  discord_quiet_hours: { start: 23, end: 8 }, // 24h format
+  discord_quiet_hours: { start: 21, end: 5 }, // 24h format
   discord_pending_directives: [], // [ { type: 'directive|persona', platform, instruction, timestamp } ]
   discord_user_facts: {}, // { userId: { facts: [], last_updated } }
   discord_channel_summaries: {}, // { channelId: { summary, vibe, last_updated } }
+  admin_exhaustion_score: 0.0,
+  admin_last_emotional_states: [], // [ "string" ]
+  admin_sleep_mentioned_at: 0,
+  last_exhaustion_update: 0,
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
   recent_thoughts: [], // [ { platform, content, timestamp } ]
   exhausted_themes: [], // [ { theme, timestamp } ]
@@ -86,6 +90,7 @@ const defaultData = {
   last_persona_audit: 0,
   last_mood_trend: 0,
   last_memory_pruning: 0,
+  last_rejection_reason: null,
   last_news_search_date: null,
   news_searches_today: 0,
   autonomous_post_continuations: [], // { parent_uri, text, scheduled_at, type: 'thread|quote' }
@@ -137,8 +142,13 @@ class DataStore {
         this.db.data.moltbook_post_cooldown = 60;
         migrationChanged = true;
     }
+    // Update default quiet hours if still at old default (23-8)
+    if (this.db.data.discord_quiet_hours?.start === 23 && this.db.data.discord_quiet_hours?.end === 8) {
+        this.db.data.discord_quiet_hours = { start: 21, end: 5 };
+        migrationChanged = true;
+    }
     if (migrationChanged) {
-        console.log(`[DataStore] Migrated cooldown defaults to new values (90m/60m).`);
+        console.log(`[DataStore] Migrated defaults to new values.`);
         await this.db.write();
     }
 
@@ -635,8 +645,10 @@ class DataStore {
       post_topics: this.db.data.post_topics || [],
       image_subjects: this.db.data.image_subjects || [],
       discord_relationship_mode: this.db.data.discord_relationship_mode || 'friend',
-      discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 23, end: 8 },
-      discord_admin_available: this.db.data.discord_admin_available ?? true
+      discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 21, end: 5 },
+      discord_admin_available: this.db.data.discord_admin_available ?? true,
+      admin_exhaustion_score: this.db.data.admin_exhaustion_score || 0.0,
+      admin_last_emotional_states: this.db.data.admin_last_emotional_states || []
     };
   }
 
@@ -977,6 +989,70 @@ class DataStore {
         return true;
     }
     return false;
+  }
+
+  async getAdminExhaustion() {
+    await this.decayAdminExhaustion();
+    return this.db.data.admin_exhaustion_score || 0.0;
+  }
+
+  async updateAdminExhaustion(change) {
+    this.db.data.admin_exhaustion_score = Math.max(0, Math.min(1.0, (this.db.data.admin_exhaustion_score || 0.0) + change));
+    this.db.data.last_exhaustion_update = Date.now();
+    await this.db.write();
+  }
+
+  async decayAdminExhaustion() {
+    const lastUpdate = this.db.data.last_exhaustion_update || 0;
+    if (lastUpdate === 0) return;
+
+    const now = Date.now();
+    const elapsedHours = (now - lastUpdate) / (1000 * 60 * 60);
+
+    if (elapsedHours > 0.5) { // Decay every 30 mins
+        // Full decay over 6 hours
+        const decayAmount = elapsedHours / 6;
+        const newScore = Math.max(0, (this.db.data.admin_exhaustion_score || 0.0) - decayAmount);
+
+        if (newScore !== this.db.data.admin_exhaustion_score) {
+            this.db.data.admin_exhaustion_score = newScore;
+            this.db.data.last_exhaustion_update = now;
+            await this.db.write();
+        }
+    }
+  }
+
+  getAdminLastEmotionalStates() {
+    return this.db.data.admin_last_emotional_states || [];
+  }
+
+  async addAdminEmotionalState(state) {
+    if (!this.db.data.admin_last_emotional_states) {
+        this.db.data.admin_last_emotional_states = [];
+    }
+    this.db.data.admin_last_emotional_states.push(state);
+    if (this.db.data.admin_last_emotional_states.length > 3) {
+        this.db.data.admin_last_emotional_states.shift();
+    }
+    await this.db.write();
+  }
+
+  async setAdminSleepMentionedAt(timestamp) {
+    this.db.data.admin_sleep_mentioned_at = timestamp;
+    await this.db.write();
+  }
+
+  getAdminSleepMentionedAt() {
+    return this.db.data.admin_sleep_mentioned_at || 0;
+  }
+
+  async setLastRejectionReason(reason) {
+    this.db.data.last_rejection_reason = reason;
+    await this.db.write();
+  }
+
+  getLastRejectionReason() {
+    return this.db.data.last_rejection_reason;
   }
 }
 

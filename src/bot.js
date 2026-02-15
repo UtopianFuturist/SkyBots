@@ -438,6 +438,12 @@ export class Bot {
   async performTimelineExploration() {
     if (this.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
 
+    // Item 31: Prioritize admin Discord requests
+    if (discordService.isProcessingAdminRequest) {
+        console.log('[Bot] Timeline exploration suppressed: Discord admin request is being processed.');
+        return;
+    }
+
     console.log('[Bot] Starting autonomous timeline exploration...');
     try {
         const timeline = await blueskyService.getTimeline(20);
@@ -882,7 +888,7 @@ export class Bot {
     }
 
     // 3. Discord Heartbeat (Every 15 minutes - Spontaneous DM check)
-    if (discordService.status === 'online' && dataStore.getDiscordAdminAvailability()) {
+    if (discordService.status === 'online' && dataStore.getDiscordAdminAvailability() && !discordService.isProcessingAdminRequest) {
         const admin = await discordService.getAdminUser();
         if (admin) {
             const normChannelId = `dm_${admin.id}`;
@@ -908,10 +914,13 @@ export class Bot {
             const nowTimeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
 
             // Thresholds for relationship modes (continuation vs new branch)
+            const adminExhaustion = dataStore.getAdminExhaustion();
+            const multiplier = adminExhaustion >= 0.5 ? 2 : 1;
+
             const modeThresholds = {
-                'partner': { continue: 10, new: 20 },
-                'friend': { continue: 30, new: 60 },
-                'coworker': { continue: 120, new: 240 }
+                'partner': { continue: 10 * multiplier, new: 20 * multiplier },
+                'friend': { continue: 30 * multiplier, new: 60 * multiplier },
+                'coworker': { continue: 120 * multiplier, new: 240 * multiplier }
             };
             const thresholds = modeThresholds[relationshipMode] || modeThresholds['friend'];
 
@@ -963,6 +972,14 @@ export class Bot {
                 } else {
                     pollReason += '_QUIET_HOURS_OVERRIDE';
                 }
+            }
+
+            const sleepMentionedAt = dataStore.getAdminSleepMentionedAt();
+            const minsSinceSleepMention = (Date.now() - sleepMentionedAt) / (1000 * 60);
+            let likelyAsleep = false;
+            if (quietMins > 40) {
+                if (sleepMentionedAt > 0 && minsSinceSleepMention < 180) likelyAsleep = true; // Mentioned sleep in last 3 hours
+                if (inQuietHours) likelyAsleep = true;
             }
 
             if (shouldPoll) {
@@ -1061,7 +1078,10 @@ export class Bot {
                         currentMood,
                         refusalCounts,
                         latestMoodMemory,
-                        needsVibeCheck
+                        needsVibeCheck,
+                        adminExhaustion,
+                        likelyAsleep,
+                        inQuietHours
                     });
 
                     if (!pollResult || pollResult.decision === 'none') break;
@@ -3222,6 +3242,12 @@ Describe how you feel about this user and your relationship now.`;
   async performAutonomousPost() {
     if (this.paused) return;
 
+    // Item 31: Prioritize admin Discord requests
+    if (discordService.isProcessingAdminRequest) {
+        console.log('[Bot] Autonomous post suppressed: Discord admin request is being processed.');
+        return;
+    }
+
     if (dataStore.isResting()) {
         console.log('[Bot] Agent is currently RESTING. Skipping autonomous post.');
         return;
@@ -4072,6 +4098,12 @@ Describe how you feel about this user and your relationship now.`;
   }
 
   async performMoltbookTasks() {
+    // Item 31: Prioritize admin Discord requests
+    if (discordService.isProcessingAdminRequest) {
+        console.log('[Moltbook] Periodic tasks suppressed: Discord admin request is being processed.');
+        return;
+    }
+
     if (await this._isDiscordConversationOngoing()) {
         console.log('[Moltbook] Periodic tasks suppressed: Discord conversation is ongoing.');
         return;

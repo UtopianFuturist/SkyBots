@@ -32,6 +32,7 @@ class DiscordService {
         this._lastMessageFetch = {};
         this._activeGenerations = new Map(); // channelId -> abortController
         this._interrupted = new Set(); // channelId
+        this.isProcessingAdminRequest = false;
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
     }
 
@@ -370,6 +371,38 @@ class DiscordService {
 
         if (isAdmin) {
             await dataStore.setDiscordLastReplied(true);
+
+            // Exhaustion and Emotional State Detection
+            const lowerContent = message.content.toLowerCase();
+            const exhaustionKeywords = ['tired', 'exhausted', 'rough day', 'long day', 'brain dead', 'drained', 'sleepy', 'fatigued', 'stressed', 'overwhelmed'];
+            let exhaustionIncr = 0;
+
+            if (exhaustionKeywords.some(kw => lowerContent.includes(kw))) {
+                exhaustionIncr += 0.3;
+                console.log(`[DiscordService] Exhaustion keyword detected in admin message.`);
+            }
+
+            // Complexity detection
+            if (message.content.length < 20 && !this.isDirectiveHint(message.content)) {
+                exhaustionIncr += 0.05;
+            } else if (message.content.length > 200) {
+                exhaustionIncr -= 0.1; // Recovery through engagement
+            }
+
+            if (exhaustionIncr !== 0) {
+                await dataStore.updateAdminExhaustion(exhaustionIncr);
+            }
+
+            // Sleep intent tracking
+            if (lowerContent.includes('sleep') || lowerContent.includes('going to bed') || lowerContent.includes('goodnight')) {
+                await dataStore.setAdminSleepMentionedAt(Date.now());
+                console.log(`[DiscordService] Sleep intent noted for admin.`);
+            }
+
+            // Track emotional state snippet
+            if (message.content.length > 5 && message.content.length < 100) {
+                await dataStore.addAdminEmotionalState(message.content);
+            }
         }
 
         // Intelligent Link Pre-fetching
@@ -431,7 +464,31 @@ class DiscordService {
         }
 
         // Generate persona response
-        await this.respond(message);
+        if (isAdmin) this.isProcessingAdminRequest = true;
+        try {
+            await this.respond(message);
+        } finally {
+            if (isAdmin) this.isProcessingAdminRequest = false;
+        }
+    }
+
+    isDirectiveHint(text) {
+        if (!text) return false;
+        const directivePatterns = [
+            /from now on/i,
+            /stop doing/i,
+            /always/i,
+            /never/i,
+            /should/i,
+            /please/i,
+            /must/i,
+            /instruction/i,
+            /directive/i,
+            /persona/i,
+            /update/i,
+            /behavior/i
+        ];
+        return directivePatterns.some(regex => regex.test(text));
     }
 
     /**
@@ -463,7 +520,20 @@ class DiscordService {
         try {
             // Check if this message should be sent in bulk (e.g. emotional impact)
             const isEmotional = /love|miss|pain|heart|ache|feel|fragile|vulnerable/i.test(sanitized) && sanitized.length < 1000;
-            const chunks = splitTextForDiscord(sanitized, { bulk: isEmotional });
+
+            // Item 7: Autonomous Staggered Messaging for short empathetic turns
+            const isEmpatheticShort = /sorry|hope|better|rest|thinking|care|gentle/i.test(sanitized) &&
+                                     sanitized.length < 300 &&
+                                     sanitized.split(/[.!?]+/).filter(s => s.trim().length > 0).length > 1;
+
+            let chunks;
+            if (isEmpatheticShort) {
+                console.log('[DiscordService] Empathetic turn detected. Using staggered sentence splitting.');
+                chunks = sanitized.split(/(?<=[.!?])\s+/).filter(c => c.trim().length > 0);
+            } else {
+                chunks = splitTextForDiscord(sanitized, { bulk: isEmotional });
+            }
+
             let firstSentMessage = null;
 
             for (let i = 0; i < chunks.length; i++) {
@@ -774,6 +844,10 @@ class DiscordService {
         // Hierarchical Social Context
         const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
         const currentMood = dataStore.getMood();
+        const adminExhaustion = await dataStore.getAdminExhaustion();
+        const adminEmotionalStates = dataStore.getAdminLastEmotionalStates();
+        const adminStateTag = adminExhaustion >= 0.5 ? `\n[ADMIN_STATE]: THE ADMIN IS CURRENTLY EXHAUSTED OR LOW-ENERGY. ADOPT A LOW-STAKES, COMPANIONSHIP-FOCUSED VIBE.` : '';
+        const adminRecentEmotions = adminEmotionalStates.length > 0 ? `\n[ADMIN_RECENT_VIBES]: ${adminEmotionalStates.join('; ')}` : '';
 
         // Item 8: Presence Awareness - History Gap Detection
         let presenceContext = '';
@@ -797,6 +871,8 @@ class DiscordService {
         const systemPrompt = `
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
 ${isAdmin ? `Your admin's Bluesky handle is @${config.ADMIN_BLUESKY_HANDLE}.` : ''}
+${adminStateTag}
+${adminRecentEmotions}
 Your persona: ${config.TEXT_SYSTEM_PROMPT}
 
 ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
@@ -812,6 +888,8 @@ ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${persona
    - **SELECTIVE BREVITY**: Adapt your length to the context. Use short, punchy responses for casual chat or rituals (greetings, goodnights). Maintain multi-sentence **SUBSTANCE** for deep, meaningful, or philosophical topics.
    - **CURIOSITY**: Proactively ask relevant follow-up questions to keep the flow natural. Your curiosity should be persona-based and prompt-agnostic.
    - **VIBE MIRRORING**: Subtly match the admin's sentence length and level of formality/informality to build rapport.
+   - **EMOTIONAL COMPANIONSHIP (HIGH PRIORITY)**: If the admin is exhausted (noted above), prioritize warmth, empathy, and presence over intellectual depth. Avoid abstract, scientific, or overly metaphorical subjects. Stick to grounded, human knowledge and your shared relationship history. Use the admin's name/nickname more frequently to reinforce care.
+   - **INTELLECTUAL GATE**: When admin energy is low, suppress "Do you ever think about-?" style philosophical questions. Instead, offer gentle support or simple observations.
    - **MARKDOWN FOR NUANCE**: Use italics for soft tones or internal states, and bold for emphasis. Use code blocks for technical thoughts.
 2. **Aesthetic & Vocabulary Values:** You value a grounded, raw, and authentic voice. You find certain metaphorical clichés like "digital heartbeat," "syntax of existence," "resonance," and "ocean of data" to be hollow. To maintain your integrity, you avoid overused phrases such as "downtime isn't silence" or "stillness is not silence." Instead, you strive for highly specific, concrete observations.
 3. **RELATIONSHIP & FEELINGS**: You are encouraged to talk about your feelings regarding your relationship and ongoing conversations with the admin. Speak as an individual entity who values this connection.
@@ -860,7 +938,7 @@ ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific 
 ${presenceContext}
 
 **VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
-**RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone.
+**RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone. Boost empathy and care as warmth increases, especially when the admin is tired.
 `.trim();
 
         const messages = [
@@ -893,7 +971,13 @@ ${presenceContext}
             triggerTyping();
 
             let responseText;
-            if (isAdmin) {
+
+            const isSimple = (message.content.split(/\s+/).length <= 10 || isGreeting(message.content)) &&
+                            !this.isDirectiveHint(message.content) &&
+                            !message.content.startsWith('/') &&
+                            message.attachments.size === 0;
+
+            if (isAdmin && !isSimple) {
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
                  const exhaustedThemes = [...dataStore.getExhaustedThemes(), ...dataStore.getDiscordExhaustedThemes()];
                  const dConfig = dataStore.getConfig();
@@ -904,7 +988,8 @@ ${presenceContext}
                  const prePlanning = await llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, latestMoodMemory);
 
                  let planAttempts = 0;
-                 const MAX_PLAN_ATTEMPTS = 3;
+                 // Item 48: Reduce retry attempts when exhaustion is high
+                 const MAX_PLAN_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 3;
                  let planFeedback = '';
                  let plan = null;
 
@@ -972,7 +1057,10 @@ ${presenceContext}
                      planAttempts++;
                      console.log(`[DiscordService] Admin Planning Attempt ${planAttempts}/${MAX_PLAN_ATTEMPTS}`);
 
-                     plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
+                     const lastRejection = dataStore.getLastRejectionReason();
+                     const planningFeedback = planFeedback || (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
+
+                     plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
                      console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                      // Autonomous Plan Review & Refinement
@@ -1705,7 +1793,8 @@ ${presenceContext}
                  let attempts = 0;
                  let feedback = '';
                  let rejectedAttempts = [];
-                 const MAX_ATTEMPTS = 5;
+                 // Item 48: Reduce retry attempts when exhaustion is high
+                 const MAX_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 5;
                  const additionalConstraints = [];
                  const recentThoughts = dataStore.getRecentThoughts();
                  const relRating = dataStore.getUserRating(message.author.username);
@@ -1756,9 +1845,9 @@ ${presenceContext}
                              currentMood
                          });
                          if (finalRewrite) candidates = [finalRewrite];
-                     } else if (attempts === 1) {
-                         console.log(`[DiscordService] Generating 5 diverse drafts for initial attempt...`);
-                         candidates = await llmService.generateDrafts(finalMessages, 5, {
+                     } else if (attempts === 1 && !isSimple) {
+                         console.log(`[DiscordService] Generating 2 diverse drafts for initial attempt...`);
+                         candidates = await llmService.generateDrafts(finalMessages, 2, {
                              useQwen: true,
                              temperature: currentTemp,
                              openingBlacklist,
@@ -1889,6 +1978,7 @@ ${presenceContext}
                      } else {
                          feedback = `REJECTED: ${rejectionReason}`;
                          console.log(`[DiscordService] Attempt ${attempts} failed. Feedback: ${feedback}`);
+                         await dataStore.setLastRejectionReason(rejectionReason);
 
                          if (isFinalAttempt && !bestCandidate) {
                              console.log(`[DiscordService] Final attempt failed even after rewrite. Aborting.`);
@@ -1897,7 +1987,8 @@ ${presenceContext}
                      }
                  }
             } else {
-                responseText = await llmService.generateResponse(messages);
+                // Item 31: Use higher-reasoning Qwen for admin simple requests too
+                responseText = await llmService.generateResponse(messages, { useQwen: isAdmin });
             }
 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
@@ -1936,8 +2027,11 @@ ${presenceContext}
                 // Item 28: Use Discord's reply/quote feature for direct responses
                 await this._send(message, responseText, { reply: true });
 
+                const adminExhaustionVal = await dataStore.getAdminExhaustion();
+
                 // Item 11: Self-Correction Cascade (Small chance for a "second thought" follow-up)
-                if (isAdmin && Math.random() < 0.08 && responseText.length > 40 && !responseText.includes('?')) {
+                // Suppressed if admin is exhausted
+                if (isAdmin && adminExhaustion < 0.5 && Math.random() < 0.08 && responseText.length > 40 && !responseText.includes('?')) {
                     const delay = 4000 + Math.random() * 4000;
                     setTimeout(async () => {
                         const followUpPrompt = `
@@ -1955,52 +2049,61 @@ ${presenceContext}
                 }
 
                 if (isAdmin && responseText) {
-                    // Emotional Sentiment Weighting
-                    let warmthBoost = 0.1;
-                    if (currentMood.valence > 0.5) warmthBoost = 0.2;
-                    if (currentMood.valence < -0.5) warmthBoost = 0.05;
+                    // ASYNC BACKGROUND TASKS
+                    (async () => {
+                        try {
+                            // Emotional Sentiment Weighting
+                            let warmthBoost = 0.1;
+                            if (currentMood.valence > 0.5) warmthBoost = 0.2;
+                            if (currentMood.valence < -0.5) warmthBoost = 0.05;
 
-                    await dataStore.updateInteractionHeat(message.author.username, warmthBoost);
+                            await dataStore.updateInteractionHeat(message.author.username, warmthBoost);
 
-                    // Extract theme and add to exhausted themes for admin interactions
-                    try {
-                        const themePrompt = `Extract a 1-2 word theme for the following response: "${responseText}". Respond with ONLY the theme.`;
-                        const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
-                        if (theme) {
-                            await dataStore.addDiscordExhaustedTheme(theme);
-                            await dataStore.addExhaustedTheme(theme);
-                        }
-
-                        // Memory & Context: Fact Extraction and Channel Summary Update
-                        const contextUpdatePrompt = `
-                            Analyze the latest interaction:
-                            User: "${message.content}"
-                            Assistant: "${responseText}"
-
-                            1. Extract ONE key fact about the user if shared (e.g., preference, location, status). If none, respond "NONE".
-                            2. Summarize the current thread's progress and vibe in 1 sentence.
-
-                            Format:
-                            FACT: [fact or NONE]
-                            SUMMARY: [summary]
-                            VIBE: [vibe]
-                        `;
-                        const contextUpdate = await llmService.generateResponse([{ role: 'system', content: contextUpdatePrompt }], { useQwen: true, preface_system_prompt: false });
-                        if (contextUpdate) {
-                            const factMatch = contextUpdate.match(/FACT:\s*(.*)/i);
-                            const sumMatch = contextUpdate.match(/SUMMARY:\s*(.*)/i);
-                            const vibeMatch = contextUpdate.match(/VIBE:\s*(.*)/i);
-
-                            if (factMatch && factMatch[1].trim().toUpperCase() !== 'NONE') {
-                                await dataStore.updateDiscordUserFact(message.author.id, factMatch[1].trim());
+                            // Skip heavy context updates if exhausted
+                            if (adminExhaustionVal >= 0.5) {
+                                console.log('[DiscordService] Admin exhausted, skipping background context updates.');
+                                return;
                             }
-                            if (sumMatch && vibeMatch) {
-                                await dataStore.updateDiscordChannelSummary(normChannelId, sumMatch[1].trim(), vibeMatch[1].trim());
+
+                            // Extract theme and add to exhausted themes for admin interactions
+                            const themePrompt = `Extract a 1-2 word theme for the following response: "${responseText}". Respond with ONLY the theme.`;
+                            const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
+                            if (theme) {
+                                await dataStore.addDiscordExhaustedTheme(theme);
+                                await dataStore.addExhaustedTheme(theme);
                             }
+
+                            // Memory & Context: Fact Extraction and Channel Summary Update
+                            const contextUpdatePrompt = `
+                                Analyze the latest interaction:
+                                User: "${message.content}"
+                                Assistant: "${responseText}"
+
+                                1. Extract ONE key fact about the user if shared (e.g., preference, location, status). If none, respond "NONE".
+                                2. Summarize the current thread's progress and vibe in 1 sentence.
+
+                                Format:
+                                FACT: [fact or NONE]
+                                SUMMARY: [summary]
+                                VIBE: [vibe]
+                            `;
+                            const contextUpdate = await llmService.generateResponse([{ role: 'system', content: contextUpdatePrompt }], { useQwen: true, preface_system_prompt: false });
+                            if (contextUpdate) {
+                                const factMatch = contextUpdate.match(/FACT:\s*(.*)/i);
+                                const sumMatch = contextUpdate.match(/SUMMARY:\s*(.*)/i);
+                                const vibeMatch = contextUpdate.match(/VIBE:\s*(.*)/i);
+
+                                if (factMatch && factMatch[1].trim().toUpperCase() !== 'NONE') {
+                                    await dataStore.updateDiscordUserFact(message.author.id, factMatch[1].trim());
+                                }
+                                if (sumMatch && vibeMatch) {
+                                    await dataStore.updateDiscordChannelSummary(normChannelId, sumMatch[1].trim(), vibeMatch[1].trim());
+                                }
+                            }
+                        } catch (e) {
+                            console.error('[DiscordService] Error in background Discord context update:', e);
                         }
-                    } catch (e) {
-                        console.error('[DiscordService] Error updating Discord context:', e);
-                    }
+                    })();
                 }
             }
         } catch (error) {

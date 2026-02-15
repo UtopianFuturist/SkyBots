@@ -13,7 +13,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting, sanitizeCjkCharacters, stripWrappingQuotes } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {

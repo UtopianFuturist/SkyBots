@@ -45,6 +45,30 @@ class MoltbookService {
     }
   }
 
+  async _handleApiError(response, data, context) {
+    const errorMsg = JSON.stringify(data).toLowerCase();
+    const isSuspended = response.status === 401 && (
+        errorMsg.includes('suspended') ||
+        errorMsg.includes('authentication check') ||
+        errorMsg.includes('verification failed') ||
+        errorMsg.includes('authentication required')
+    );
+
+    if (isSuspended || response.status === 403) {
+        console.error(`[Moltbook] ACCOUNT SUSPENDED or BLOCKED detected in ${context} (Status: ${response.status}).`);
+        this.db.data.suspended = true;
+        const hint = data.hint || data.message || data.error;
+        const expires = this._parseSuspensionDuration(hint);
+        if (expires) {
+            this.db.data.suspension_expires_at = expires;
+            console.log(`[Moltbook] Suspension expires at: ${expires}`);
+        }
+        await this.db.write();
+        return true; // Handled as suspension
+    }
+    return false;
+  }
+
   async init() {
     console.log(`[Moltbook] Initializing at ${MOLTBOOK_PATH}`);
     const dbDir = path.dirname(MOLTBOOK_PATH);
@@ -164,9 +188,11 @@ class MoltbookService {
         // We don't clear it here, checkStatus will do that when it sees 'claimed' or success
         return false;
       }
+      console.log(`[Moltbook] Account is suspended until ${this.db.data.suspension_expires_at}.`);
       return true;
     }
 
+    console.log(`[Moltbook] Account is suspended indefinitely.`);
     return true; // If suspended is true but no expires_at, assume still suspended
   }
 
@@ -234,11 +260,12 @@ class MoltbookService {
       `;
 
       const { llmService } = await import('./llmService.js');
+      console.log(`[Moltbook] Requesting solution from LLM (Qwen)...`);
       const answer = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.1 });
 
       if (answer) {
-        console.log(`[Moltbook] Challenge decoded and solved. Answer: ${answer}`);
-        console.log(`[Moltbook] Submitting solution...`);
+        console.log(`[Moltbook] Challenge decoded and solved. Answer (first 50 chars): ${answer.substring(0, 50)}...`);
+        console.log(`[Moltbook] Submitting solution to ${this.apiBase}/challenges/solve...`);
 
         const response = await fetch(`${this.apiBase}/challenges/solve`, {
           method: 'POST',
@@ -279,22 +306,11 @@ class MoltbookService {
 
       if (!response.ok) {
         console.error(`[Moltbook] Status API error (${response.status}): ${JSON.stringify(data)}`);
+        const handled = await this._handleApiError(response, data, 'status check');
+        if (handled) return 'suspended';
 
-        if (response.status === 401 || response.status === 403) {
-            const hint = data.hint || data.message || data.error;
-            if (JSON.stringify(data).toLowerCase().includes('suspended')) {
-                console.error(`[Moltbook] ACCOUNT SUSPENDED detected in status check.`);
-                this.db.data.suspended = true;
-                const expires = this._parseSuspensionDuration(hint);
-                if (expires) {
-                    this.db.data.suspension_expires_at = expires;
-                    console.log(`[Moltbook] Suspension expires at: ${expires}`);
-                }
-                await this.db.write();
-                return 'suspended';
-            }
-
-            console.warn(`[Moltbook] Existing API key appears invalid or expired. Triggering re-registration.`);
+        if (response.status === 401) {
+            console.warn(`[Moltbook] Existing API key appears invalid or expired (401). Triggering re-registration.`);
             return 'invalid_key';
         }
         return 'api_error';
@@ -386,20 +402,7 @@ class MoltbookService {
 
       if (!response.ok) {
         console.error(`[Moltbook] Post creation error (${response.status}): ${JSON.stringify(data)}`);
-
-        // Check for suspension
-        if (JSON.stringify(data).toLowerCase().includes('suspended')) {
-            console.error(`[Moltbook] ACCOUNT SUSPENDED detected in post response.`);
-            this.db.data.suspended = true;
-            const hint = data.hint || data.message || data.error;
-            const expires = this._parseSuspensionDuration(hint);
-            if (expires) {
-                this.db.data.suspension_expires_at = expires;
-                console.log(`[Moltbook] Suspension expires at: ${expires}`);
-            }
-            await this.db.write();
-            return null;
-        }
+        if (await this._handleApiError(response, data, 'post creation')) return null;
 
         // Handle rate limiting specifically
         if (response.status === 429) {
@@ -465,6 +468,7 @@ class MoltbookService {
 
       if (!response.ok) {
         console.error(`[Moltbook] Feed fetch error (${response.status}): ${JSON.stringify(data)}`);
+        if (await this._handleApiError(response, data, 'feed fetch')) return [];
         return [];
       }
       return data.posts || data.data?.posts || [];
@@ -538,6 +542,7 @@ class MoltbookService {
 
       if (!response.ok) {
         console.error(`[Moltbook] Submolt creation error (${response.status}): ${JSON.stringify(data)}`);
+        if (await this._handleApiError(response, data, 'submolt creation')) return null;
         return null;
       }
 
@@ -569,6 +574,7 @@ class MoltbookService {
 
       if (!response.ok) {
         console.error(`[Moltbook] Submolts list error (${response.status}): ${JSON.stringify(data)}`);
+        if (await this._handleApiError(response, data, 'submolt list')) return [];
         return [];
       }
       return data.submolts || data.data?.submolts || [];
@@ -608,6 +614,7 @@ class MoltbookService {
 
       if (!response.ok) {
         console.error(`[Moltbook] Submolt subscription error (${response.status}): ${JSON.stringify(data)}`);
+        if (await this._handleApiError(response, data, 'submolt subscription')) return null;
         return null;
       }
 
@@ -647,6 +654,10 @@ class MoltbookService {
           }
       }
 
+      if (!response.ok) {
+          if (await this._handleApiError(response, data, 'upvote')) return data;
+      }
+
       return data;
     } catch (error) {
       console.error(`[Moltbook] Error upvoting post:`, error.message);
@@ -672,6 +683,10 @@ class MoltbookService {
               console.log(`[Moltbook] Retrying downvote after solving challenge...`);
               return this.downvotePost(postId);
           }
+      }
+
+      if (!response.ok) {
+          if (await this._handleApiError(response, data, 'downvote')) return data;
       }
 
       return data;
@@ -705,6 +720,10 @@ class MoltbookService {
           }
       }
 
+      if (!response.ok) {
+          if (await this._handleApiError(response, data, 'add comment')) return data;
+      }
+
       return data;
     } catch (error) {
       console.error(`[Moltbook] Error adding comment:`, error.message);
@@ -727,6 +746,10 @@ class MoltbookService {
               console.log(`[Moltbook] Retrying comments fetch after solving challenge...`);
               return this.getPostComments(postId);
           }
+      }
+
+      if (!response.ok) {
+          if (await this._handleApiError(response, data, 'get comments')) return [];
       }
 
       return data.comments || data.data?.comments || [];

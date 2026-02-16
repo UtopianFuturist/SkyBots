@@ -1053,6 +1053,8 @@ export class Bot {
                 let feedback = '';
                 let rejectedAttempts = [];
                 const MAX_ATTEMPTS = 5;
+                let responseText = null;
+                let bestCandidate = null;
 
                 // Opening Phrase Blacklist - increased depth from 5 to 15
                 const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-15);
@@ -1106,6 +1108,21 @@ export class Bot {
                     const { message, actions } = pollResult;
                     if (!message) break;
 
+                    let candidates = [];
+                    if (attempts === 1) {
+                        console.log(`[Bot] Generating 5 diverse drafts for heartbeat message...`);
+                        const draftMessages = [
+                            { role: 'system', content: `Relationship Mode: ${relationshipMode}\nAdmin Availability: ${availability}\nMode: ${isContinuing ? 'CONTINUATION' : 'NEW BRANCH'}` },
+                            { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
+                        ];
+                        // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
+                        candidates = await llmService.generateDrafts(draftMessages, 5, { useQwen: true, temperature: 0.8, openingBlacklist, currentMood });
+                        // Also include the original message from the poll
+                        if (!candidates.includes(message)) candidates.unshift(message);
+                    } else {
+                        candidates = [message];
+                    }
+
                     // Autonomous Plan Review & Refinement
                     const proposedActions = [...(actions || [])];
                     if (message && !proposedActions.some(a => a.tool === 'discord_message')) {
@@ -1140,14 +1157,59 @@ export class Bot {
                         ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
                     ];
 
-                    const containsSlop = isSlop(message);
-                    const historyTexts = formattedHistory.map(h => h.content);
-                    const isJaccardRepetitive = checkSimilarity(message, historyTexts, dConfig.repetition_similarity_threshold);
-                    const hasPrefixMatch = hasPrefixOverlap(message, historyTexts, 3);
-                    const varietyCheck = await llmService.checkVariety(message, formattedHistory, { relationshipRating: 5, platform: 'discord' }); // Admin is always 5
-                    const personaCheck = await llmService.isPersonaAligned(message, 'discord');
+                    let bestScore = -1;
+                    let rejectionReason = '';
 
-                    if (!containsSlop && !varietyCheck.repetitive && !isJaccardRepetitive && !hasPrefixMatch && personaCheck.aligned) {
+                    const evaluations = await Promise.all(candidates.map(async (cand) => {
+                        try {
+                            const containsSlop = isSlop(cand);
+                            const historyTexts = formattedHistory.map(h => h.content);
+                            const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
+                            const [varietyCheck, personaCheck] = await Promise.all([
+                                llmService.checkVariety(cand, formattedHistory, { relationshipRating: 5, platform: 'discord', currentMood }),
+                                llmService.isPersonaAligned(cand, 'discord')
+                            ]);
+                            return { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch };
+                        } catch (e) {
+                            console.error(`[Bot] Error evaluating heartbeat candidate: ${e.message}`);
+                            return { cand, error: e.message };
+                        }
+                    }));
+
+                    for (const evalResult of evaluations) {
+                        const { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, error } = evalResult;
+                        if (error) {
+                            rejectedAttempts.push(cand);
+                            continue;
+                        }
+
+                        // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
+                        const lengthBonus = Math.min(cand.length / 500, 0.2);
+                        const varietyWeight = (varietyCheck.variety_score ?? varietyCheck.score ?? 0) * 0.5;
+                        const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
+                        const score = varietyWeight + moodWeight + lengthBonus;
+
+                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, PrefixMatch=${hasPrefixMatch}`);
+
+                        if (!containsSlop && !varietyCheck.repetitive && !hasPrefixMatch && personaCheck.aligned) {
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestCandidate = cand;
+                            }
+                        } else {
+                            if (!bestCandidate) {
+                                rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                                               (hasPrefixMatch ? "Prefix overlap detected." :
+                                               (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                                               (varietyCheck.misaligned ? "Misaligned with current mood." :
+                                               (varietyCheck.feedback || "Too similar to recent history."))));
+                            }
+                            rejectedAttempts.push(cand);
+                        }
+                    }
+
+                    if (bestCandidate) {
+                        responseText = bestCandidate;
                         // Execute Heartbeat Tools
                         const discordOptions = {};
                         if (finalActions && finalActions.length > 0) {
@@ -1195,7 +1257,7 @@ export class Bot {
 
                         // Check if discord_message was approved/retained
                         const messageAction = finalActions.find(a => a.tool === 'discord_message');
-                        const msgToSend = messageAction ? (messageAction.parameters?.message || message) : message;
+                        const msgToSend = messageAction ? (messageAction.parameters?.message || responseText) : responseText;
 
                         if (messageAction) {
                             await discordService.sendSpontaneousMessage(msgToSend, discordOptions);

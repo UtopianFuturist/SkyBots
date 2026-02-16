@@ -1053,6 +1053,8 @@ export class Bot {
                 let feedback = '';
                 let rejectedAttempts = [];
                 const MAX_ATTEMPTS = 5;
+                let responseText = null;
+                let bestCandidate = null;
 
                 // Opening Phrase Blacklist - increased depth from 5 to 15
                 const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-15);
@@ -1068,11 +1070,22 @@ export class Bot {
                     const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
                     const isFinalAttempt = attempts === MAX_ATTEMPTS;
 
-                    const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
+                    const retryContext = feedback ? `\n\n**RETRY FEEDBACK (STRICT)**: ${feedback}
+You are being rejected because your response is too similar to recent history or previous attempts.
+You MUST:
+1. Change your opening phrase completely.
+2. Use a different sentence structure and emotional cadence.
+3. Avoid all topics and keywords used in the previous attempts below.
+4. Prioritize structural and thematic variety over following your standard persona templates.
+
+**PREVIOUS ATTEMPTS TO AVOID**:
+${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
+` : '';
 
                     const rewriteInstruction = isFinalAttempt ? `
                     You are a high-reasoning rewrite module. This is your FINAL attempt to generate a spontaneous message.
                     You MUST address the rejection feedback, avoid all digital/electrical metaphors, ensure high variety, and maintain your core persona.
+                    If you were rejected for similarity, it is CRITICAL that you choose a completely different subject or angle for this attempt.
                     Keep it substantive and intellectually engaging.
                     ` : '';
 
@@ -1105,6 +1118,21 @@ export class Bot {
 
                     const { message, actions } = pollResult;
                     if (!message) break;
+
+                    let candidates = [];
+                    if (attempts === 1) {
+                        console.log(`[Bot] Generating 5 diverse drafts for heartbeat message...`);
+                        const draftMessages = [
+                            { role: 'system', content: `Relationship Mode: ${relationshipMode}\nAdmin Availability: ${availability}\nMode: ${isContinuing ? 'CONTINUATION' : 'NEW BRANCH'}` },
+                            { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
+                        ];
+                        // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
+                        candidates = await llmService.generateDrafts(draftMessages, 5, { useQwen: true, temperature: 0.8, openingBlacklist, currentMood });
+                        // Also include the original message from the poll
+                        if (!candidates.includes(message)) candidates.unshift(message);
+                    } else {
+                        candidates = [message];
+                    }
 
                     // Autonomous Plan Review & Refinement
                     const proposedActions = [...(actions || [])];
@@ -1140,14 +1168,63 @@ export class Bot {
                         ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
                     ];
 
-                    const containsSlop = isSlop(message);
-                    const historyTexts = formattedHistory.map(h => h.content);
-                    const isJaccardRepetitive = checkSimilarity(message, historyTexts, dConfig.repetition_similarity_threshold);
-                    const hasPrefixMatch = hasPrefixOverlap(message, historyTexts, 3);
-                    const varietyCheck = await llmService.checkVariety(message, formattedHistory, { relationshipRating: 5, platform: 'discord' }); // Admin is always 5
-                    const personaCheck = await llmService.isPersonaAligned(message, 'discord');
+                    let bestScore = -1;
+                    let rejectionReason = '';
 
-                    if (!containsSlop && !varietyCheck.repetitive && !isJaccardRepetitive && !hasPrefixMatch && personaCheck.aligned) {
+                    const evaluations = await Promise.all(candidates.map(async (cand) => {
+                        try {
+                            const containsSlop = isSlop(cand);
+                            const historyTexts = formattedHistory.map(h => h.content);
+                            const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
+                            const isJaccardRepetitive = checkSimilarity(cand, historyTexts, dConfig.repetition_similarity_threshold);
+                            const [varietyCheck, personaCheck] = await Promise.all([
+                                llmService.checkVariety(cand, formattedHistory, { relationshipRating: 5, platform: 'discord', currentMood }),
+                                llmService.isPersonaAligned(cand, 'discord')
+                            ]);
+                            return { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive };
+                        } catch (e) {
+                            console.error(`[Bot] Error evaluating heartbeat candidate: ${e.message}`);
+                            return { cand, error: e.message };
+                        }
+                    }));
+
+                    let isJaccardRepetitive = false;
+                    for (const evalResult of evaluations) {
+                        const { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive: jRep, error } = evalResult;
+                        if (error) {
+                            rejectedAttempts.push(cand);
+                            continue;
+                        }
+
+                        // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
+                        const lengthBonus = Math.min(cand.length / 500, 0.2);
+                        const varietyWeight = (varietyCheck.variety_score ?? varietyCheck.score ?? 0) * 0.5;
+                        const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
+                        const score = varietyWeight + moodWeight + lengthBonus;
+
+                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, PrefixMatch=${hasPrefixMatch}, JaccardRep=${jRep}`);
+
+                        if (!containsSlop && !varietyCheck.repetitive && !hasPrefixMatch && !jRep && personaCheck.aligned) {
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestCandidate = cand;
+                            }
+                        } else {
+                            if (!bestCandidate) {
+                                isJaccardRepetitive = jRep;
+                                rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                                               (hasPrefixMatch ? "Prefix overlap detected." :
+                                               (jRep ? "Jaccard similarity threshold exceeded (too similar to history)." :
+                                               (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                                               (varietyCheck.misaligned ? "Misaligned with current mood." :
+                                               (varietyCheck.feedback || "Too similar to recent history.")))));
+                            }
+                            rejectedAttempts.push(cand);
+                        }
+                    }
+
+                    if (bestCandidate) {
+                        responseText = bestCandidate;
                         // Execute Heartbeat Tools
                         const discordOptions = {};
                         if (finalActions && finalActions.length > 0) {
@@ -1163,10 +1240,11 @@ export class Bot {
                                     console.log(`[Bot] Heartbeat Action: Internal log check requested.`);
                                     await renderService.getLogs(action.parameters?.limit || 50);
                                 } else if (action.tool === 'internal_inquiry') {
-                                    console.log(`[Bot] Heartbeat Action: Internal inquiry on: "${action.query}"`);
-                                    const inquiryResult = await llmService.performInternalInquiry(action.query);
+                                    const query = action.query || action.parameters?.query;
+                                    console.log(`[Bot] Heartbeat Action: Internal inquiry on: "${query}"`);
+                                    const inquiryResult = await llmService.performInternalInquiry(query);
                                     if (inquiryResult && memoryService.isEnabled()) {
-                                        await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${action.query}. Result: ${inquiryResult}`);
+                                        await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${query}. Result: ${inquiryResult}`);
                                     }
                                 } else if (action.tool === 'mute_feed_impact') {
                                     const duration = action.parameters?.duration_minutes || 60;
@@ -1195,7 +1273,7 @@ export class Bot {
 
                         // Check if discord_message was approved/retained
                         const messageAction = finalActions.find(a => a.tool === 'discord_message');
-                        const msgToSend = messageAction ? (messageAction.parameters?.message || message) : message;
+                        const msgToSend = messageAction ? (messageAction.parameters?.message || responseText) : responseText;
 
                         if (messageAction) {
                             await discordService.sendSpontaneousMessage(msgToSend, discordOptions);
@@ -4348,10 +4426,11 @@ Describe how you feel about this user and your relationship now.`;
             if (refinedPlan.refined_actions) {
                 for (const action of refinedPlan.refined_actions) {
                     if (action.tool === 'internal_inquiry') {
-                        console.log(`[Moltbook] Executing agentic inquiry: ${action.query}`);
-                        const result = await llmService.performInternalInquiry(action.query);
+                        const query = action.query || action.parameters?.query;
+                        console.log(`[Moltbook] Executing agentic inquiry: ${query}`);
+                        const result = await llmService.performInternalInquiry(query);
                         if (result && memoryService.isEnabled()) {
-                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Moltbook interaction thought: ${action.query}. Result: ${result}`);
+                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Moltbook interaction thought: ${query}. Result: ${result}`);
                         }
                     }
                     // Filter or add other tools
@@ -4612,10 +4691,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             if (refinedPlan.refined_actions) {
                 for (const action of refinedPlan.refined_actions) {
                     if (action.tool === 'internal_inquiry') {
-                        console.log(`[Moltbook] Executing agentic inquiry: ${action.query}`);
-                        const result = await llmService.performInternalInquiry(action.query);
+                        const query = action.query || action.parameters?.query;
+                        console.log(`[Moltbook] Executing agentic inquiry: ${query}`);
+                        const result = await llmService.performInternalInquiry(query);
                         if (result && memoryService.isEnabled()) {
-                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Moltbook musing thought: ${action.query}. Result: ${result}`);
+                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Moltbook musing thought: ${query}. Result: ${result}`);
                         }
                     }
                     // Filter or add other tools

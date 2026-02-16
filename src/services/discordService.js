@@ -1834,6 +1834,8 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      MAX_ATTEMPTS = Math.max(1, MAX_ATTEMPTS - 1);
                  }
                  const additionalConstraints = [];
+                 let bestCandidate = null;
+                 let rejectionReason = '';
                  const recentThoughts = dataStore.getRecentThoughts();
                  const relRating = dataStore.getUserRating(message.author.username);
 
@@ -1883,7 +1885,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                              currentMood
                          });
                          if (finalRewrite) candidates = [finalRewrite];
-                     } else if (attempts === 1 && !isSimple) {
+                     } else if (attempts === 1 && !isSimple && !(isDM && isAdmin)) {
                          console.log(`[DiscordService] Generating 2 diverse drafts for initial attempt...`);
                          candidates = await llmService.generateDrafts(finalMessages, 2, {
                              useQwen: true,
@@ -1916,9 +1918,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
                      ];
 
-                     let bestCandidate = null;
                      let bestScore = -1;
-                     let rejectionReason = '';
 
                      // Parallelize evaluation to avoid sequential slowness
                      // Proposal 17: Skip Variety Checks for DMs, use robust prompt instructions instead.
@@ -1967,7 +1967,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                          console.log(`[DiscordService] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, PrefixMatch=${hasPrefixMatch}`);
 
-                         if (!containsSlop && !varietyCheck.repetitive && !hasPrefixMatch && personaCheck.aligned) {
+                         if (!containsSlop && (skipVariety || (!varietyCheck.repetitive && !hasPrefixMatch)) && personaCheck.aligned) {
                              if (score > bestScore) {
                                  bestScore = score;
                                  bestCandidate = cand;

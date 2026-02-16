@@ -1,5 +1,6 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
+import { dataStore } from './dataStore.js';
 
 class RenderService {
   constructor() {
@@ -34,6 +35,19 @@ class RenderService {
 
   async findSelf() {
     if (!this.isEnabled()) return null;
+
+    // Check dataStore first for persisted ID
+    const persistedId = dataStore.getRenderServiceId();
+    if (persistedId) {
+        console.log(`[RenderService] Using persisted service ID: ${persistedId}`);
+        this.serviceId = persistedId;
+        const persistedName = dataStore.getRenderServiceName();
+        if (persistedName) this.serviceName = persistedName;
+        // Verify it still exists/is valid by doing a quick fetch later, or just return it.
+        // For now, we'll assume it's valid if persisted.
+        return { id: persistedId, name: persistedName };
+    }
+
     console.log(`[RenderService] Attempting to autodiscover service ID...`);
     const services = await this.listServices();
     if (services.length === 0) return null;
@@ -57,6 +71,11 @@ class RenderService {
             this.serviceId = self.service.id;
             this.serviceName = self.service.name; // Update to the actual name found
             console.log(`[RenderService] Found self service ID: ${this.serviceId} (Name: ${this.serviceName})`);
+
+            // Persist to dataStore
+            await dataStore.setRenderServiceId(this.serviceId);
+            await dataStore.setRenderServiceName(this.serviceName);
+
             return self.service;
         }
     }

@@ -33,6 +33,7 @@ class DiscordService {
         this._activeGenerations = new Map(); // channelId -> abortController
         this._interrupted = new Set(); // channelId
         this.isProcessingAdminRequest = false;
+        this._lastIntuition = new Map(); // channelId -> { intuition, timestamp }
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
     }
 
@@ -785,7 +786,7 @@ class DiscordService {
                 this._lastMessageFetch[normChannelId] = now;
                 try {
                     console.log(`[DiscordService] Local history empty, fetching from Discord...`);
-                    const fetchedMessages = await message.channel.messages.fetch({ limit: 20 });
+                    const fetchedMessages = await message.channel.messages.fetch({ limit: 15 });
                 history = fetchedMessages
                     .reverse()
                     .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
@@ -946,11 +947,14 @@ ${presenceContext}
 
 **VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
 **RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone. Boost empathy and care as warmth increases, especially when the admin is tired.
+
+${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a private DM with your admin. Maintain the absolute highest standard of variety and authenticity. STRICTLY avoid any "AI slop," repetitive structural templates, or formulaic conversational patterns. Every message should feel like a fresh, unique moment in your relationship. If you catch yourself using a common metaphor or structural lead-in, pivot immediately to something more grounded and specific.` : ''}
 `.trim();
 
+        // Proposal 6 & 21: Dynamic Context Trimming. Max 15 messages in memory, others from thread.
         const messages = [
             { role: 'system', content: systemPrompt },
-            ...history.slice(-20).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: `${h.role === 'assistant' ? 'Assistant (Self)' : 'User (Admin)'}: ${h.content}` }))
+            ...history.slice(-12).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: `${h.role === 'assistant' ? 'Assistant (Self)' : 'User (Admin)'}: ${h.content}` }))
         ];
 
         try {
@@ -989,37 +993,26 @@ ${presenceContext}
                  const exhaustedThemes = [...dataStore.getExhaustedThemes(), ...dataStore.getDiscordExhaustedThemes()];
                  const dConfig = dataStore.getConfig();
                  const refusalCounts = dataStore.getRefusalCounts();
-                 const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
-                 // NEW: Pre-Planning Loop
-                 const prePlanning = await llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, latestMoodMemory);
-
-                 let planAttempts = 0;
-                 // Item 48: Reduce retry attempts when exhaustion is high
-                 const MAX_PLAN_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 3;
-                 let planFeedback = '';
-                 let plan = null;
-
-                 // Admin-Specific "Echo" Detection & Conflict Resolution
+                 // Proposal 4 & 29: Parallel Pre-Planning, Directive Check, and Topic Progression
+                 const lastIntuitionData = this._lastIntuition.get(normChannelId);
                  const existingDirectives = dataStore.getBlueskyInstructions() + dataStore.getPersonaUpdates();
-                 const directiveCheckPrompt = `
-                    Admin's latest message: "${message.content}"
-                    Existing Directives:
-                    ${existingDirectives}
+                 const directiveCheckPrompt = `Admin's latest message: "${message.content}"\nExisting Directives:\n${existingDirectives}\n1. Identify if the admin is giving a NEW instruction.\n2. If new, check if it CONTRADICTS an existing one.\n3. Check if it's redundant (ECHO) of an existing one.\nRespond with a JSON object: {"is_directive": boolean, "conflict": boolean, "redundant": boolean, "reason": "string"}`;
+                 const topicProgressionPrompt = `Analyze the Discord history. Identify 1-3 topics/emotional states already discussed and "moved on" from. For GREETINGS/RETURNS: if already welcomed back, it is a PASSED topic. Respond with ONLY comma-separated list or "NONE".\nHistory:\n${history.slice(-15).map(h => `${h.role}: ${h.content}`).join('\n')}`;
 
-                    1. Identify if the admin is giving a NEW instruction.
-                    2. If new, check if it CONTRADICTS an existing one.
-                    3. Check if it's redundant (ECHO) of an existing one.
+                 const [latestMoodMemory, directiveCheck, passedTopicsRaw, prePlanning] = await Promise.all([
+                     memoryService.getLatestMoodMemory(),
+                     llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 }),
+                     llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 }),
+                     (lastIntuitionData && (Date.now() - lastIntuitionData.timestamp < 120000))
+                        ? Promise.resolve(lastIntuitionData.intuition)
+                        : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null)
+                 ]);
 
-                    Respond with a JSON object:
-                    {
-                        "is_directive": boolean,
-                        "conflict": boolean,
-                        "redundant": boolean,
-                        "reason": "string (explanation)"
-                    }
-                 `;
-                 const directiveCheck = await llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false });
+                 if (!lastIntuitionData || (Date.now() - lastIntuitionData.timestamp >= 120000)) {
+                     this._lastIntuition.set(normChannelId, { intuition: prePlanning, timestamp: Date.now() });
+                 }
+
                  try {
                      const dRes = JSON.parse(directiveCheck.match(/\{[\s\S]*\}/)[0]);
                      if (dRes.is_directive) {
@@ -1031,20 +1024,6 @@ ${presenceContext}
                      }
                  } catch (e) {}
 
-                 // NEW: Passed Topic Detection to avoid looping back to old subjects
-                 const topicProgressionPrompt = `
-                    Analyze the following Discord conversation history.
-                    Identify 1-3 topics or emotional states that have already been discussed and subsequently "moved on" from.
-                    For example, if you were talking about "exhaustion" but are now talking about "AI ethics," "exhaustion" is a PASSED topic.
-
-                    **GREETINGS & RETURNS**: If the history shows you have already welcomed the user back or acknowledged their return, "acknowledging return" is now a PASSED topic.
-
-                    Respond with ONLY a comma-separated list of the passed topics, or "NONE".
-
-                    History:
-                    ${history.slice(-15).map(h => `${h.role}: ${h.content}`).join('\n')}
-                 `;
-                 const passedTopicsRaw = await llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false });
                  if (passedTopicsRaw && !passedTopicsRaw.toUpperCase().includes('NONE')) {
                      const passedTopics = passedTopicsRaw.split(',').map(t => t.trim());
                      console.log(`[DiscordService] Detected passed topics: ${passedTopics.join(', ')}`);
@@ -1052,6 +1031,15 @@ ${presenceContext}
                          await dataStore.addDiscordExhaustedTheme(topic);
                      }
                  }
+
+                 let planAttempts = 0;
+                 // Proposal 14: Lower retry limits for active conversations
+                 let MAX_PLAN_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 3;
+                 if (history.length > 5 && (Date.now() - history[history.length - 1].timestamp < 60000)) {
+                    MAX_PLAN_ATTEMPTS = Math.max(1, MAX_PLAN_ATTEMPTS - 1);
+                 }
+                 let planFeedback = '';
+                 let plan = null;
 
                  while (planAttempts < MAX_PLAN_ATTEMPTS) {
                      // Pivot Check: If interrupted during planning, restart with new history
@@ -1157,7 +1145,7 @@ ${presenceContext}
 
                  const actionResults = [];
 
-                 for (const action of plan.actions) {
+                 const toolPromises = plan.actions.map(async (action) => {
                      if (action.tool === 'persist_directive') {
                          const { platform, instruction } = action.parameters || {};
                          await dataStore.addPendingDirective('directive', platform || 'bluesky', instruction);
@@ -1244,10 +1232,10 @@ ${presenceContext}
                          }
 
                          const validUrls = Array.isArray(urls) ? urls.slice(0, 4) : [];
-                         console.log(`[DiscordService] READ_LINK TOOL: Processing ${validUrls.length} URLs: ${validUrls.join(', ')}`);
+                         console.log(`[DiscordService] READ_LINK TOOL: Processing ${validUrls.length} URLs in parallel: ${validUrls.join(', ')}`);
 
-                         for (let url of validUrls) {
-                             if (typeof url !== 'string') continue;
+                         const linkPromises = validUrls.map(async (url) => {
+                             if (typeof url !== 'string') return;
                              url = url.trim();
 
                              console.log(`[DiscordService] READ_LINK TOOL: STEP 1 - Checking safety of URL: ${url} (isAdminInThread: ${isAdminInThread})`);
@@ -1263,19 +1251,24 @@ ${presenceContext}
                                      const summary = await llmService.summarizeWebPage(url, content);
                                      if (summary) {
                                          console.log(`[DiscordService] READ_LINK TOOL: STEP 4 - Summary generated for ${url}. Adding to context.`);
-                                         actionResults.push(`--- CONTENT FROM URL: ${url} ---\n${summary}\n---`);
+                                         return `--- CONTENT FROM URL: ${url} ---\n${summary}\n---`;
                                      } else {
                                          console.warn(`[DiscordService] READ_LINK TOOL: STEP 4 (FAILED) - Failed to summarize content from ${url}`);
-                                         actionResults.push(`[Failed to summarize content from ${url}]`);
+                                         return `[Failed to summarize content from ${url}]`;
                                      }
                                  } else {
                                      console.warn(`[DiscordService] READ_LINK TOOL: STEP 3 (FAILED) - Failed to read content from ${url}`);
-                                     actionResults.push(`[Failed to read content from ${url}]`);
+                                     return `[Failed to read content from ${url}]`;
                                  }
                              } else {
                                  console.warn(`[DiscordService] READ_LINK TOOL: STEP 2 (BLOCKED) - URL safety check failed for ${url}. Reason: ${safety.reason}`);
-                                 actionResults.push(`[URL Blocked for safety: ${url}. Reason: ${safety.reason}]`);
+                                 return `[URL Blocked for safety: ${url}. Reason: ${safety.reason}]`;
                              }
+                         });
+
+                         const linkResults = await Promise.all(linkPromises);
+                         for (const res of linkResults) {
+                             if (res) actionResults.push(res);
                          }
                          console.log(`[DiscordService] READ_LINK TOOL: Finished processing all URLs.`);
                      }
@@ -1791,7 +1784,9 @@ ${presenceContext}
                             actionResults.push(`--- CROSS-THREAD SEARCH RESULTS FOR "${query}" ---\n${searchResults.join('\n\n') || 'No matches in other channels.'}\n---`);
                         }
                      }
-                 }
+                 });
+
+                 await Promise.all(toolPromises);
 
                  if (actionResults.length > 0) {
                      messages.push({ role: 'system', content: `TOOL EXECUTION RESULTS (Acknowledge naturally):\n${actionResults.join('\n')}` });
@@ -1800,8 +1795,12 @@ ${presenceContext}
                  let attempts = 0;
                  let feedback = '';
                  let rejectedAttempts = [];
-                 // Item 48: Reduce retry attempts when exhaustion is high
-                 const MAX_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 5;
+                 // Item 48: Reduce retry attempts when exhaustion is high.
+                 // Proposal 14: Lower retry limits for active conversations.
+                 let MAX_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 5;
+                 if (history.length > 5 && (Date.now() - history[history.length - 1].timestamp < 60000)) {
+                     MAX_ATTEMPTS = Math.max(1, MAX_ATTEMPTS - 1);
+                 }
                  const additionalConstraints = [];
                  const recentThoughts = dataStore.getRecentThoughts();
                  const relRating = dataStore.getUserRating(message.author.username);
@@ -1890,17 +1889,31 @@ ${presenceContext}
                      let rejectionReason = '';
 
                      // Parallelize evaluation to avoid sequential slowness
+                     // Proposal 17: Skip Variety Checks for DMs, use robust prompt instructions instead.
+                     const skipVariety = isDM && isAdmin;
+
                      const evaluations = await Promise.all(candidates.map(async (cand) => {
                          try {
-                             const containsSlop = isSlop(cand);
+                             const slopInfo = getSlopInfo(cand);
+                             const containsSlop = slopInfo.isSlop;
                              const historyTexts = formattedHistory.map(h => h.content);
                              const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
 
-                             const [varietyCheck, personaCheck] = await Promise.all([
-                                 llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord', currentMood }),
-                                 llmService.isPersonaAligned(cand, 'discord')
-                             ]);
-                             return { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch };
+                             const checks = [llmService.isPersonaAligned(cand, 'discord')];
+                             if (!skipVariety) {
+                                 checks.push(llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord', currentMood }));
+                             }
+
+                             const [personaCheck, varietyCheck] = await Promise.all(checks);
+
+                             return {
+                                 cand,
+                                 containsSlop,
+                                 slopReason: slopInfo.reason,
+                                 varietyCheck: varietyCheck || { repetitive: false, score: 1.0, variety_score: 1.0, mood_alignment_score: 1.0 },
+                                 personaCheck,
+                                 hasPrefixMatch
+                             };
                          } catch (e) {
                              console.error(`[DiscordService] Error evaluating candidate: ${e.message}`);
                              return { cand, error: e.message };
@@ -1929,7 +1942,7 @@ ${presenceContext}
                              }
                          } else {
                              if (!bestCandidate) {
-                                 rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                                 rejectionReason = containsSlop ? `Contains metaphorical slop: ${slopReason}` :
                                                    (hasPrefixMatch ? "Prefix overlap detected." :
                                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                                    (varietyCheck.misaligned ? "Misaligned with current mood." :
@@ -1994,20 +2007,22 @@ ${presenceContext}
                      }
                  }
             } else {
-                // Item 31: Use higher-reasoning Qwen for admin simple requests too
+                // Fast-Path for Simple DMs (Proposal 3): Use the faster model (step-3.5-flash)
+                // Use useQwen: false to force the faster model
                 let simpleAttempts = 0;
                 const MAX_SIMPLE_ATTEMPTS = 3;
                 let simpleFeedback = '';
 
                 while (simpleAttempts < MAX_SIMPLE_ATTEMPTS) {
                     simpleAttempts++;
-                    console.log(`[DiscordService] Simple Response Attempt ${simpleAttempts}/${MAX_SIMPLE_ATTEMPTS}`);
+                    console.log(`[DiscordService] Simple Response Attempt ${simpleAttempts}/${MAX_SIMPLE_ATTEMPTS} (Fast Path)`);
 
                     const finalMessages = simpleFeedback
                         ? [...messages, { role: 'system', content: `RETRY FEEDBACK: ${simpleFeedback}. Generate a completely different response that avoids this.` }]
                         : messages;
 
-                    responseText = await llmService.generateResponse(finalMessages, { useQwen: isAdmin });
+                    // isAdmin simple messages now use the fast model as approved
+                    responseText = await llmService.generateResponse(finalMessages, { useQwen: false });
                     if (!responseText) break;
 
                     const slopCheck = getSlopInfo(responseText);
@@ -2304,7 +2319,7 @@ INSTRUCTIONS:
         return null;
     }
 
-    async fetchAdminHistory(limit = 20) {
+    async fetchAdminHistory(limit = 15) {
         if (!this.client?.isReady()) return null;
 
         try {

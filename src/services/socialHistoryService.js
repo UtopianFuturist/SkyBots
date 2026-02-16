@@ -3,7 +3,19 @@ import { dataStore } from './dataStore.js';
 import config from '../../config.js';
 
 class SocialHistoryService {
+  constructor() {
+    this._contextCache = null;
+    this._lastFetch = 0;
+    this._cacheTTL = 300000; // 5 minutes
+  }
+
   async getRecentSocialContext(limit = 15) {
+    // Proposal 10: Social Context Caching
+    if (this._contextCache && (Date.now() - this._lastFetch < this._cacheTTL)) {
+        console.log(`[SocialHistoryService] Returning cached social context.`);
+        return this._contextCache;
+    }
+
     console.log(`[SocialHistoryService] Gathering social context (limit: ${limit})...`);
 
     // 1. Get local interactions
@@ -40,6 +52,9 @@ class SocialHistoryService {
 
         consolidated.push(interaction);
     }
+
+    this._contextCache = consolidated;
+    this._lastFetch = Date.now();
 
     return consolidated;
   }

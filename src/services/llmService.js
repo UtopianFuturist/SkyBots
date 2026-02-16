@@ -13,6 +13,7 @@ class LLMService {
     this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
     this._sensoryPreferenceCache = null;
+    this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
   }
 
   setMemoryProvider(provider) {
@@ -676,6 +677,16 @@ Vary your structure and tone from recent messages.`
 
   async analyzeImage(imageSource, altText, options = { sensory: false }) {
     const requestId = Math.random().toString(36).substring(7);
+
+    // Caching logic for URLs
+    if (typeof imageSource === 'string' && imageSource.startsWith('http')) {
+        const cached = this._visionCache.get(imageSource);
+        if (cached && cached.sensory === !!options.sensory && (Date.now() - cached.timestamp < 3600000)) { // 1 hour cache
+            console.log(`[LLMService] [${requestId}] Returning cached vision analysis for: ${imageSource}`);
+            return cached.analysis;
+        }
+    }
+
     console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${this.visionModel} (Sensory: ${options.sensory})`);
 
     let imageUrl = imageSource;
@@ -744,7 +755,23 @@ Vary your structure and tone from recent messages.`
       const data = await response.json();
       console.log(`[LLMService] [${requestId}] Vision response received successfully in ${duration}ms.`);
       const content = data.choices[0]?.message?.content;
-      return content ? content.trim() : null;
+      const analysis = content ? content.trim() : null;
+
+      // Update cache
+      if (analysis && typeof imageSource === 'string' && imageSource.startsWith('http')) {
+          this._visionCache.set(imageSource, {
+              analysis,
+              timestamp: Date.now(),
+              sensory: !!options.sensory
+          });
+          // Cap cache size
+          if (this._visionCache.size > 100) {
+              const firstKey = this._visionCache.keys().next().value;
+              this._visionCache.delete(firstKey);
+          }
+      }
+
+      return analysis;
     } catch (error) {
       if (error.name === 'AbortError') {
         console.error(`[LLMService] [${requestId}] Vision request timed out.`);
@@ -1331,13 +1358,56 @@ Vary your structure and tone from recent messages.`
     }
   }
 
+  _pruneToolDefinitions(allTools, userPost, conversationHistory) {
+    // Proposal 19: Tool Schema Pruning.
+    // Basic keyword-based pruning to reduce prompt size.
+    const context = (userPost + ' ' + conversationHistory.map(h => h.text || h.content || '').join(' ')).toLowerCase();
+
+    // Tools that are always included
+    const essentialTools = ['update_mood', 'internal_inquiry', 'update_persona', 'confirm_action', 'image_gen', 'bsky_post', 'moltbook_post', 'read_link'];
+
+    const lines = allTools.split('\n');
+    const prunedLines = [];
+    let currentToolLines = [];
+    let currentToolName = null;
+
+    for (const line of lines) {
+        const toolMatch = line.match(/\*\*(.*?)\*\*/);
+        if (toolMatch) {
+            // New tool started. Decide if we keep the previous one.
+            if (currentToolName) {
+                const keywords = currentToolName.toLowerCase().split('_');
+                const isEssential = essentialTools.includes(currentToolName);
+                const isRelevant = keywords.some(kw => context.includes(kw)) || (currentToolName === 'get_render_logs' && context.includes('log'));
+
+                if (isEssential || isRelevant) {
+                    prunedLines.push(...currentToolLines);
+                }
+            }
+            currentToolName = toolMatch[1].toLowerCase().replace(/\s+/g, '_');
+            currentToolLines = [line];
+        } else {
+            currentToolLines.push(line);
+        }
+    }
+    // Handle last tool
+    if (currentToolName) {
+        const keywords = currentToolName.toLowerCase().split('_');
+        if (essentialTools.includes(currentToolName) || keywords.some(kw => context.includes(kw))) {
+            prunedLines.push(...currentToolLines);
+        }
+    }
+
+    return prunedLines.join('\n');
+  }
+
   async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = this._formatHistory(conversationHistory, isAdmin);
 
     let adminTools = '';
     if (isAdmin) {
-        adminTools = `
+        const allAdminTools = `
       15. **Persist Directive**: Update persistent behavioral instructions for either Bluesky or Moltbook.
           - Use this if the admin provides behavioral feedback, a request for future activity, or instructions on how you should act.
           - Parameters: { "platform": "bluesky|moltbook", "instruction": "the text of the instruction" }
@@ -1423,8 +1493,9 @@ Vary your structure and tone from recent messages.`
       48. **Restore State Snapshot**: Restore a previously saved state.
           - Parameters: { "label": "string" }
         `;
+        adminTools = this._pruneToolDefinitions(allAdminTools, userPost, conversationHistory);
     } else {
-        adminTools = `
+        const allPublicTools = `
       15. **Update Mood**: Update your own internal mood state.
           - Use this if an interaction influences your feelings, or if you want to shift your emotional state.
           - Parameters: { "valence": number (-1 to 1), "arousal": number (-1 to 1), "stability": number (-1 to 1), "label": "string" }
@@ -1473,6 +1544,7 @@ Vary your structure and tone from recent messages.`
       36. **Restore State Snapshot**: Restore a saved state.
           - Parameters: { "label": "string" }
         `;
+        adminTools = this._pruneToolDefinitions(allPublicTools, userPost, conversationHistory);
     }
 
     const currentMood = currentConfig?.current_mood || { label: 'neutral', valence: 0, arousal: 0, stability: 0 };
@@ -1669,7 +1741,7 @@ Vary your structure and tone from recent messages.`
     }
 
     const messages = [{ role: 'system', content: finalSystemPrompt }];
-    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: true, preface_system_prompt: false, temperature: 0.0 });
 
     try {
       if (!response) {
@@ -1761,7 +1833,7 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
 
     try {
       const jsonMatch = response?.match(/\{[\s\S]*\}/);

@@ -851,14 +851,15 @@ Vary your structure and tone from recent messages.`
       You are a raw data and analysis extraction loop. You are NOT a conversational assistant.
       Your task is to provide accurate, objective, and substantive findings to an AI agent's planning module.
 
-      **STRICT DIRECTIVES:**
-      1. **NO INTRODUCTIONS**: Do NOT say "I can help with that", "I'm ready", or "As an AI...".
-      2. **NO ASSISTANT PERSONA**: Do NOT act as a helpful chatbot. Act as a search engine or analytical system providing raw data.
-      3. **DIRECT FINDINGS ONLY**: Start your response immediately with the findings, facts, or analysis requested.
-      4. **FORBIDDEN PHRASES**: Do NOT use phrases like "Please specify your query", "I'm prepared to assist", or "How can I help you today?".
-      5. **SUBSTANCE**: Provide the requested data or advice directly. If the query is "Moltbook interaction readiness", do NOT say you are ready; instead, ANALYZE the readiness and provide a report on it.
+      **STRICT DIRECTIVES (NON-NEGOTIABLE):**
+      1. **NO INTRODUCTIONS**: Do NOT say "I can help with that", "I'm ready", "I understand", or "As an AI...".
+      2. **NO ASSISTANT PERSONA**: Do NOT act as a helpful chatbot or assistant. Act as a terminal or a data retrieval tool.
+      3. **DIRECT DATA ONLY**: Start your response immediately with the raw findings, facts, or analysis.
+      4. **FORBIDDEN PHRASES**: Do NOT use phrases like "Please specify your query", "I'm prepared to assist", "How can I help you today?", or "Based on my analysis...".
+      5. **SUBSTANCE**: Provide the requested data or advice directly. If the query is about readiness, provide a technical readiness report, not a conversational confirmation.
+      6. **NO CONVERSATIONAL FILLER**: Eliminate all polite transitions, summaries of your role, or explanations of what you are doing.
 
-      Be concise, factual, and objective.
+      Be technical, factual, and extremely objective.
     `;
     return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: true, preface_system_prompt: false });
   }
@@ -1937,7 +1938,8 @@ Vary your structure and tone from recent messages.`
       - **STRICTLY AVOID** re-mentioning or looping back to subjects that have already been addressed and superseded by newer discussion points.
       - If the conversation has moved on from an emotional state (e.g., exhaustion, frustration) to an intellectual or technical topic, do NOT bring up the previous emotional state again. Focus on the current thematic branch.
       - **GREETINGS & WELCOMES**: Once a greeting, "welcome back," or acknowledgment of return (e.g., "Glad you're here," "You're back!") has been exchanged, it is IMMEDIATELY considered a passed topic.
-      - **NO RE-WELCOMING**: Never repeat a welcome or acknowledgment of return in the same conversation thread if it has already occurred in the last 15 messages. This makes you sound robotic and stuck in a loop.
+      - **NO RE-WELCOMING**: Never repeat a welcome or acknowledgment of return in the same conversation thread if it has already occurred in the last 15 messages.
+      - **NO "YOU STILL THERE?"**: Avoid asking if the user is still there or still thinking about something if they haven't replied yet. Instead, share a new, independent thought or observation.
 
       --- CURRENT MOOD ---
       Label: ${currentMood.label}

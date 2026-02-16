@@ -360,6 +360,15 @@ export class Bot {
     // Periodic timeline exploration (every 4 hours)
     setInterval(() => this.performTimelineExploration(), 14400000);
 
+    // Periodic social/discord context pre-fetch (Proposal 15) (every 5 minutes)
+    setInterval(() => {
+        console.log('[Bot] Pre-fetching social/discord context (Proposal 15)...');
+        socialHistoryService.getRecentSocialContext(15, true).catch(err => console.error('[Bot] Social pre-fetch failed:', err));
+        if (discordService.status === 'online') {
+            discordService.fetchAdminHistory(15).catch(err => console.error('[Bot] Discord pre-fetch failed:', err));
+        }
+    }, 300000);
+
     // Periodic post reflection check (every 10 mins)
     setInterval(() => this.performPostPostReflection(), 600000);
 

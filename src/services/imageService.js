@@ -1,6 +1,6 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
-import { llmService } from './llmService.js';
+import { llmService, persistentAgent } from './llmService.js';
 
 class ImageService {
   constructor() {
@@ -90,6 +90,7 @@ class ImageService {
           'Accept': 'application/json',
         },
         body: JSON.stringify(payload),
+        agent: persistentAgent
       });
 
       if (!response.ok) {
@@ -113,7 +114,7 @@ class ImageService {
 
       let buffer;
       if (typeof imageAsset === 'string' && imageAsset.startsWith('http')) {
-        const imageResponse = await fetch(imageAsset);
+        const imageResponse = await fetch(imageAsset, { agent: persistentAgent });
         if (!imageResponse.ok) {
           throw new Error(`Failed to fetch image from URL: ${imageResponse.statusText}`);
         }

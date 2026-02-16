@@ -446,8 +446,11 @@ class DiscordService {
 
         // Selective Engagement Gate (Item 3 & 17)
         // Exempt greetings from being silenced, even if they are short.
+        // Proposal: NEVER silence the Admin (to avoid non-responses during testing/important talk)
         const isLowSubstance = message.content.length < 5 && message.attachments.size === 0 && !message.content.includes('?') && !isGreeting(message.content);
         if (isAdmin && isLowSubstance) {
+            // Disabled intentional silence/reactions for admin to ensure reliable responding.
+            /*
             const dice = Math.random();
             if (dice < 0.2) {
                 console.log(`[DiscordService] Intentional Silence (Item 17) for: "${message.content}"`);
@@ -459,6 +462,7 @@ class DiscordService {
                 await message.react(emoji).catch(() => {});
                 return; // Stop here, reaction is sufficient
             }
+            */
         }
 
         // Generate persona response
@@ -806,8 +810,12 @@ class DiscordService {
         }
 
         // Vision: Analyze images in history (both user and self) - Parallelized and Cached via LLMService
+        // Proposal 13: Selective Vision Re-Analysis. Only re-analyze history if likely relevant.
+        const needsHistoryVision = /this|that|image|photo|picture|art|look|see|showing|posted|above/i.test(message.content);
         const visionPromises = [];
-        for (const h of history.slice(-5)) { // Look at last 5 messages for images
+        const historySlice = needsHistoryVision ? history.slice(-5) : [];
+
+        for (const h of historySlice) { // Look at last 5 messages for images
             if (h.attachments && h.attachments.size > 0) {
                 for (const [id, attachment] of h.attachments) {
                     if (attachment.contentType?.startsWith('image/') || attachment.url.match(/\.(jpg|jpeg|png|webp)$/i)) {
@@ -849,13 +857,31 @@ class DiscordService {
             return;
         }
 
-        // Hierarchical Social Context
-        const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
+        // Proposal 8 & 11: Parallel Context Gathering & Vector-like Memory Retrieval
+        const keywords = message.content.toLowerCase().match(/\b(\w{4,})\b/g) || [];
+        const memorySearchQuery = keywords.length > 0 ? [...new Set(keywords)].slice(0, 3).join(' ') : null;
+
+        const [hierarchicalSummary, adminExhaustion, relevantMemoriesList] = await Promise.all([
+            socialHistoryService.getHierarchicalSummary(),
+            dataStore.getAdminExhaustion(),
+            memorySearchQuery ? memoryService.searchMemories(memorySearchQuery, 5) : Promise.resolve([])
+        ]);
+
         const currentMood = dataStore.getMood();
-        const adminExhaustion = await dataStore.getAdminExhaustion();
         const adminEmotionalStates = dataStore.getAdminLastEmotionalStates();
         const adminStateTag = adminExhaustion >= 0.5 ? `\n[ADMIN_STATE]: THE ADMIN IS CURRENTLY EXHAUSTED OR LOW-ENERGY. ADOPT A LOW-STAKES, COMPANIONSHIP-FOCUSED VIBE.` : '';
         const adminRecentEmotions = adminEmotionalStates.length > 0 ? `\n[ADMIN_RECENT_VIBES]: ${adminEmotionalStates.join('; ')}` : '';
+
+        let relevantMemories = '';
+        if (relevantMemoriesList.length > 0) {
+            relevantMemories = `\n\n--- RELEVANT MEMORIES (Keyword Search: "${memorySearchQuery}") ---\n${relevantMemoriesList.map(r => {
+                let t = r.text;
+                if (config.MEMORY_THREAD_HASHTAG) {
+                    t = t.replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '');
+                }
+                return t.trim();
+            }).join('\n')}\n---`;
+        }
 
         // Item 8: Presence Awareness - History Gap Detection
         let presenceContext = '';
@@ -943,7 +969,7 @@ ${channelSummary ? `Last Summary: ${channelSummary.summary}\nLast Vibe: ${channe
 --- USER FACTS ---
 ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific facts known about this user.'}
 ---
-${presenceContext}
+${presenceContext}${relevantMemories}
 
 **VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
 **RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone. Boost empathy and care as warmth increases, especially when the admin is tired.
@@ -1014,13 +1040,18 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  }
 
                  try {
-                     const dRes = JSON.parse(directiveCheck.match(/\{[\s\S]*\}/)[0]);
-                     if (dRes.is_directive) {
-                         if (dRes.conflict) {
-                             messages.push({ role: 'system', content: `[ADMIN CONFLICT DETECTED]: ${dRes.reason}. Proactively ask for clarification or priority in your response.` });
-                         } else if (dRes.redundant) {
-                             messages.push({ role: 'system', content: `[ADMIN ECHO DETECTED]: This instruction is redundant. Acknowledge that you already remember this: ${dRes.reason}` });
-                         }
+                     if (directiveCheck) {
+                        const match = directiveCheck.match(/\{[\s\S]*\}/);
+                        if (match) {
+                            const dRes = JSON.parse(match[0]);
+                            if (dRes.is_directive) {
+                                if (dRes.conflict) {
+                                    messages.push({ role: 'system', content: `[ADMIN CONFLICT DETECTED]: ${dRes.reason}. Proactively ask for clarification or priority in your response.` });
+                                } else if (dRes.redundant) {
+                                    messages.push({ role: 'system', content: `[ADMIN ECHO DETECTED]: This instruction is redundant. Acknowledge that you already remember this: ${dRes.reason}` });
+                                }
+                            }
+                        }
                      }
                  } catch (e) {}
 

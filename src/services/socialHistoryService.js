@@ -9,9 +9,9 @@ class SocialHistoryService {
     this._cacheTTL = 300000; // 5 minutes
   }
 
-  async getRecentSocialContext(limit = 15) {
+  async getRecentSocialContext(limit = 15, force = false) {
     // Proposal 10: Social Context Caching
-    if (this._contextCache && (Date.now() - this._lastFetch < this._cacheTTL)) {
+    if (!force && this._contextCache && (Date.now() - this._lastFetch < this._cacheTTL)) {
         console.log(`[SocialHistoryService] Returning cached social context.`);
         return this._contextCache;
     }

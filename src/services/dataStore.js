@@ -93,6 +93,8 @@ const defaultData = {
   last_rejection_reason: null,
   last_news_search_date: null,
   news_searches_today: 0,
+  render_service_id: null,
+  render_service_name: null,
   autonomous_post_continuations: [], // { parent_uri, text, scheduled_at, type: 'thread|quote' }
   mutated_style: null, // { lens, timestamp }
   dream_log: [], // [ { draft, reason, timestamp } ]
@@ -1053,6 +1055,24 @@ class DataStore {
 
   getLastRejectionReason() {
     return this.db.data.last_rejection_reason;
+  }
+
+  async setRenderServiceId(id) {
+    this.db.data.render_service_id = id;
+    await this.db.write();
+  }
+
+  getRenderServiceId() {
+    return this.db.data.render_service_id;
+  }
+
+  async setRenderServiceName(name) {
+    this.db.data.render_service_name = name;
+    await this.db.write();
+  }
+
+  getRenderServiceName() {
+    return this.db.data.render_service_name;
   }
 }
 

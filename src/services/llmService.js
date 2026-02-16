@@ -1,7 +1,14 @@
 import fetch from 'node-fetch';
+import https from 'https';
 import config from '../../config.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
 import { moltbookService } from './moltbookService.js';
+
+export const persistentAgent = new https.Agent({
+    keepAlive: true,
+    maxSockets: 100,
+    keepAliveMsecs: 1000
+});
 
 class LLMService {
   constructor() {
@@ -216,7 +223,8 @@ Vary your structure and tone from recent messages.`
           'Authorization': `Bearer ${this.apiKey}`
         },
         body: JSON.stringify(payload),
-        signal: controller.signal
+        signal: controller.signal,
+        agent: persistentAgent
       });
 
       const duration = Date.now() - startTime;
@@ -696,7 +704,7 @@ Vary your structure and tone from recent messages.`
     } else {
       console.log(`[LLMService] [${requestId}] Image provided as URL: ${imageSource}. Fetching and converting to base64...`);
       try {
-        const response = await fetch(imageSource);
+        const response = await fetch(imageSource, { agent: persistentAgent });
         if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
         const arrayBuffer = await response.arrayBuffer();
         const buffer = Buffer.from(arrayBuffer);
@@ -742,7 +750,8 @@ Vary your structure and tone from recent messages.`
           'Authorization': `Bearer ${this.apiKey}`
         },
         body: JSON.stringify(payload),
-        signal: controller.signal
+        signal: controller.signal,
+        agent: persistentAgent
       });
 
       const duration = Date.now() - startTime;
@@ -932,7 +941,8 @@ Vary your structure and tone from recent messages.`
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${this.apiKey}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        agent: persistentAgent
       });
 
       if (!response.ok) throw new Error(`API error: ${response.status}`);
@@ -1055,7 +1065,8 @@ Vary your structure and tone from recent messages.`
           'Authorization': `Bearer ${this.apiKey}`
         },
         body: JSON.stringify(payload),
-        signal: controller.signal
+        signal: controller.signal,
+        agent: persistentAgent
       });
 
       if (!response.ok) {
@@ -1344,7 +1355,7 @@ Vary your structure and tone from recent messages.`
         { role: 'user', content: `User Post: "${userPost}"\n\nContext (Last 15 interactions):\n${this._formatHistory(conversationHistory.slice(-15), isAdmin)}` }
     ];
 
-    const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
 
     try {
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -2032,7 +2043,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], {
         useQwen: true,
         preface_system_prompt: false,
-        temperature,
+        temperature: 0.0,
         openingBlacklist
     });
 

@@ -363,6 +363,14 @@ export class Bot {
     // Periodic post reflection check (every 10 mins)
     setInterval(() => this.performPostPostReflection(), 600000);
 
+    // Discord Watchdog (every 15 minutes)
+    setInterval(() => {
+        if (discordService.isEnabled && discordService.status !== 'online' && !discordService.isInitializing) {
+            console.log('[Bot] Discord Watchdog: Service is offline or blocked and not initializing. Triggering re-initialization.');
+            discordService.init().catch(err => console.error('[Bot] Discord Watchdog: init() failed:', err));
+        }
+    }, 900000);
+
     // Periodic maintenance tasks (with Heartbeat Jitter: 10-20 mins)
     const scheduleMaintenance = () => {
         const jitter = Math.floor(Math.random() * 600000) + 600000; // 10-20 mins

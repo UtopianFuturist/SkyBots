@@ -13,7 +13,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting, sanitizeCjkCharacters, stripWrappingQuotes } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, getSlopInfo, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting, sanitizeCjkCharacters, stripWrappingQuotes } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -509,8 +509,9 @@ class DiscordService {
             return null;
         }
 
-        if (isSlop(sanitized)) {
-            console.log('[DiscordService] Message contained forbidden slop. Skipping send.');
+        const slopInfo = getSlopInfo(sanitized);
+        if (slopInfo.isSlop) {
+            console.log(`[DiscordService] Message contained forbidden slop: ${slopInfo.reason}. Skipping send.`);
             return null;
         }
 
@@ -803,24 +804,33 @@ class DiscordService {
             }
         }
 
-        // Vision: Analyze images in history (both user and self)
+        // Vision: Analyze images in history (both user and self) - Parallelized and Cached via LLMService
+        const visionPromises = [];
         for (const h of history.slice(-5)) { // Look at last 5 messages for images
             if (h.attachments && h.attachments.size > 0) {
                 for (const [id, attachment] of h.attachments) {
                     if (attachment.contentType?.startsWith('image/') || attachment.url.match(/\.(jpg|jpeg|png|webp)$/i)) {
-                        try {
-                            const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
-                            const analysis = await llmService.analyzeImage(attachment.url, null, { sensory: includeSensory });
-                            if (analysis) {
-                                const author = h.role === 'assistant' ? 'you' : 'the user';
-                                if (!imageAnalysisResult.includes(analysis)) {
-                                    imageAnalysisResult += `[Image previously posted by ${author}: ${analysis}] `;
-                                }
-                            }
-                        } catch (err) {
-                            console.error(`[DiscordService] Error analyzing history attachment:`, err);
-                        }
+                        const author = h.role === 'assistant' ? 'you' : 'the user';
+                        visionPromises.push(
+                            llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT)
+                                .then(includeSensory => llmService.analyzeImage(attachment.url, null, { sensory: includeSensory }))
+                                .then(analysis => analysis ? { author, analysis } : null)
+                                .catch(err => {
+                                    console.error(`[DiscordService] Error analyzing history attachment ${id}:`, err);
+                                    return null;
+                                })
+                        );
                     }
+                }
+            }
+        }
+
+        if (visionPromises.length > 0) {
+            console.log(`[DiscordService] Analyzing ${visionPromises.length} historical images in parallel...`);
+            const results = await Promise.all(visionPromises);
+            for (const res of results) {
+                if (res && res.analysis && !imageAnalysisResult.includes(res.analysis)) {
+                    imageAnalysisResult += `[Image previously posted by ${res.author}: ${res.analysis}] `;
                 }
             }
         }
@@ -1985,7 +1995,30 @@ ${presenceContext}
                  }
             } else {
                 // Item 31: Use higher-reasoning Qwen for admin simple requests too
-                responseText = await llmService.generateResponse(messages, { useQwen: isAdmin });
+                let simpleAttempts = 0;
+                const MAX_SIMPLE_ATTEMPTS = 3;
+                let simpleFeedback = '';
+
+                while (simpleAttempts < MAX_SIMPLE_ATTEMPTS) {
+                    simpleAttempts++;
+                    console.log(`[DiscordService] Simple Response Attempt ${simpleAttempts}/${MAX_SIMPLE_ATTEMPTS}`);
+
+                    const finalMessages = simpleFeedback
+                        ? [...messages, { role: 'system', content: `RETRY FEEDBACK: ${simpleFeedback}. Generate a completely different response that avoids this.` }]
+                        : messages;
+
+                    responseText = await llmService.generateResponse(finalMessages, { useQwen: isAdmin });
+                    if (!responseText) break;
+
+                    const slopCheck = getSlopInfo(responseText);
+                    if (!slopCheck.isSlop) {
+                        break;
+                    } else {
+                        console.log(`[DiscordService] Simple path attempt ${simpleAttempts} rejected: ${slopCheck.reason}`);
+                        simpleFeedback = slopCheck.reason;
+                        responseText = null;
+                    }
+                }
             }
 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);

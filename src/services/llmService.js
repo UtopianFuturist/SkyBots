@@ -13,6 +13,7 @@ class LLMService {
     this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
     this._sensoryPreferenceCache = null;
+    this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
   }
 
   setMemoryProvider(provider) {
@@ -676,6 +677,16 @@ Vary your structure and tone from recent messages.`
 
   async analyzeImage(imageSource, altText, options = { sensory: false }) {
     const requestId = Math.random().toString(36).substring(7);
+
+    // Caching logic for URLs
+    if (typeof imageSource === 'string' && imageSource.startsWith('http')) {
+        const cached = this._visionCache.get(imageSource);
+        if (cached && cached.sensory === !!options.sensory && (Date.now() - cached.timestamp < 3600000)) { // 1 hour cache
+            console.log(`[LLMService] [${requestId}] Returning cached vision analysis for: ${imageSource}`);
+            return cached.analysis;
+        }
+    }
+
     console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${this.visionModel} (Sensory: ${options.sensory})`);
 
     let imageUrl = imageSource;
@@ -744,7 +755,23 @@ Vary your structure and tone from recent messages.`
       const data = await response.json();
       console.log(`[LLMService] [${requestId}] Vision response received successfully in ${duration}ms.`);
       const content = data.choices[0]?.message?.content;
-      return content ? content.trim() : null;
+      const analysis = content ? content.trim() : null;
+
+      // Update cache
+      if (analysis && typeof imageSource === 'string' && imageSource.startsWith('http')) {
+          this._visionCache.set(imageSource, {
+              analysis,
+              timestamp: Date.now(),
+              sensory: !!options.sensory
+          });
+          // Cap cache size
+          if (this._visionCache.size > 100) {
+              const firstKey = this._visionCache.keys().next().value;
+              this._visionCache.delete(firstKey);
+          }
+      }
+
+      return analysis;
     } catch (error) {
       if (error.name === 'AbortError') {
         console.error(`[LLMService] [${requestId}] Vision request timed out.`);

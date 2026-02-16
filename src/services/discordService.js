@@ -63,7 +63,7 @@ class DiscordService {
 
         let attempts = 0;
         const maxAttempts = Infinity;
-        let retryDelay = 60000; // Start with 1 minute
+        const retryDelay = 900000; // Exactly 15 minutes
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -186,11 +186,8 @@ class DiscordService {
                 }
 
                 if (attempts < maxAttempts) {
-                    // Exponential backoff capped at 3 hours
-                    const nextDelay = Math.min(retryDelay * 2, 10800000);
-                    console.log(`[DiscordService] Retrying in ${retryDelay / 1000}s (Next delay: ${nextDelay / 1000}s)...`);
+                    console.log(`[DiscordService] Retrying in ${retryDelay / 1000}s...`);
                     await new Promise(resolve => setTimeout(resolve, retryDelay));
-                    retryDelay = nextDelay;
                 } else {
                     console.error('[DiscordService] FATAL: All Discord login attempts failed.');
                     this.isEnabled = false;

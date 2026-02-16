@@ -743,7 +743,8 @@ class DiscordService {
 
     async respond(message) {
         const normChannelId = this.getNormalizedChannelId(message);
-        console.log(`[DiscordService] Generating response for channel: ${message.channel.id} (normalized: ${normChannelId})`);
+        const isDM = message.channel.type === ChannelType.DM;
+        console.log(`[DiscordService] Generating response for channel: ${message.channel.id} (normalized: ${normChannelId}), isDM: ${isDM}`);
 
         // Register active generation
         this._activeGenerations.set(normChannelId, true);

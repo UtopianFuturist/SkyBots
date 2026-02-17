@@ -3704,6 +3704,13 @@ Describe how you feel about this user and your relationship now.`;
           }
       }
 
+      // Information Summary Injection (Material Intelligence Boost)
+      console.log(`[Bot] Triggering material knowledge inquiry for topic: "${topic}"...`);
+      const infoSummary = await llmService.performInternalInquiry(`Provide a concise, objective, and material information summary about the topic: "${topic}". Focus on facts, core concepts, and substantive knowledge that would be useful for generating a deep and informed post.`);
+      if (infoSummary) {
+          agenticContext += `\n[MATERIAL KNOWLEDGE SUMMARY]: ${infoSummary}`;
+      }
+
       // Item 6: Pre-Post Silent Reflection
       console.log('[Bot] Item 6: Triggering pre-post silent reflection...');
       const inquiryResult = await llmService.performInternalInquiry(`Reflect deeply on the topic "${topic}" in the context of your current state. Explore 2-3 complex angles before we post about it.`);

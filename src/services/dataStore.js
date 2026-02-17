@@ -93,6 +93,9 @@ const defaultData = {
   last_rejection_reason: null,
   last_news_search_date: null,
   news_searches_today: 0,
+  last_core_value_discovery: 0,
+  last_existential_reflection: 0,
+  interaction_count_since_audit: 0,
   render_service_id: null,
   render_service_name: null,
   autonomous_post_continuations: [], // { parent_uri, text, scheduled_at, type: 'thread|quote' }
@@ -281,6 +284,10 @@ class DataStore {
     if (this.db.data.interactions.length > 500) {
       this.db.data.interactions.shift();
     }
+
+    // Increment audit count
+    this.db.data.interaction_count_since_audit = (this.db.data.interaction_count_since_audit || 0) + 1;
+
     await this.db.write();
   }
 
@@ -312,6 +319,19 @@ class DataStore {
 
   getUserSummary(handle) {
     return this.db.data.userSummaries[handle] || null;
+  }
+
+  async checkPfpChange(handle, currentPfpCid) {
+    if (!this.db.data.userProfiles[handle]) {
+        this.db.data.userProfiles[handle] = {};
+    }
+    const previous = this.db.data.userProfiles[handle].last_seen_pfp;
+    if (currentPfpCid && previous !== currentPfpCid) {
+        this.db.data.userProfiles[handle].last_seen_pfp = currentPfpCid;
+        await this.db.write();
+        return { changed: true, previous };
+    }
+    return { changed: false };
   }
 
   async addBlueskyInstruction(instruction) {
@@ -385,17 +405,65 @@ class DataStore {
     if (!this.db.data.discord_conversations[channelId]) {
       this.db.data.discord_conversations[channelId] = [];
     }
-    this.db.data.discord_conversations[channelId].push({
-      role,
-      content,
-      timestamp: Date.now(),
-      ...metadata
-    });
-    // Keep last 50 per channel
-    if (this.db.data.discord_conversations[channelId].length > 50) {
-      this.db.data.discord_conversations[channelId].shift();
+
+    // Check for duplicates before adding
+    const conversation = this.db.data.discord_conversations[channelId];
+    const isDuplicate = conversation.some(m =>
+      m.content === content &&
+      m.role === role &&
+      Math.abs(m.timestamp - (metadata.timestamp || Date.now())) < 5000
+    );
+
+    if (!isDuplicate) {
+      this.db.data.discord_conversations[channelId].push({
+        role,
+        content,
+        timestamp: metadata.timestamp || Date.now(),
+        ...metadata
+      });
+      // Keep last 100 per channel for better variety checking
+      if (this.db.data.discord_conversations[channelId].length > 100) {
+        this.db.data.discord_conversations[channelId].shift();
+      }
+
+      // Increment audit count for assistant responses
+      if (role === 'assistant') {
+          this.db.data.interaction_count_since_audit = (this.db.data.interaction_count_since_audit || 0) + 1;
+      }
+
+      await this.db.write();
     }
-    await this.db.write();
+  }
+
+  async mergeDiscordHistory(channelId, newHistory) {
+    if (!this.db.data.discord_conversations[channelId]) {
+      this.db.data.discord_conversations[channelId] = [];
+    }
+
+    const existing = this.db.data.discord_conversations[channelId];
+    let mergedCount = 0;
+
+    for (const msg of newHistory) {
+      const isDuplicate = existing.some(m =>
+        (m.id && msg.id && m.id === msg.id) ||
+        (m.content === msg.content && m.role === msg.role && Math.abs(m.timestamp - msg.timestamp) < 5000)
+      );
+
+      if (!isDuplicate) {
+        existing.push(msg);
+        mergedCount++;
+      }
+    }
+
+    if (mergedCount > 0) {
+      existing.sort((a, b) => a.timestamp - b.timestamp);
+      // Keep last 100
+      if (existing.length > 100) {
+        this.db.data.discord_conversations[channelId] = existing.slice(-100);
+      }
+      await this.db.write();
+    }
+    return this.db.data.discord_conversations[channelId];
   }
 
   getDiscordConversation(channelId) {

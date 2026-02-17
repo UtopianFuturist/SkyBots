@@ -53,6 +53,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     scoreSubstance: jest.fn().mockResolvedValue({ score: 1.0, reason: 'Good' }),
     auditStrategy: jest.fn().mockResolvedValue('Audit report'),
     performInternalInquiry: jest.fn().mockResolvedValue('Inquiry result'),
+    performPrePlanning: jest.fn().mockResolvedValue({ intuition: 'test', trope_blacklist: [] }),
     evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'engage', reason: 'Engaging for test' }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
@@ -115,7 +116,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getConversationLength: jest.fn(),
     updateConversationLength: jest.fn(),
     saveInteraction: jest.fn(),
-    getInteractionsByUser: jest.fn(),
+    getInteractionsByUser: jest.fn().mockReturnValue([]),
+    getRecentInteractions: jest.fn().mockReturnValue([]),
     getLatestInteractions: jest.fn().mockReturnValue([]),
     getRecentThoughts: jest.fn().mockReturnValue([]),
     addRecentThought: jest.fn(),
@@ -123,6 +125,7 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getUserRating: jest.fn().mockReturnValue(3),
     updateUserSummary: jest.fn(),
     getUserSummary: jest.fn(),
+    checkPfpChange: jest.fn().mockResolvedValue({ changed: false }),
     getBlueskyInstructions: jest.fn().mockReturnValue(''),
     getPersonaUpdates: jest.fn().mockReturnValue(''),
     getExhaustedThemes: jest.fn().mockReturnValue([]),
@@ -163,7 +166,10 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
         last_submolt_void_check: 0,
         last_strategy_audit: 0,
         last_agency_reflection: 0,
-        last_tool_discovery: 0
+        last_tool_discovery: 0,
+        last_core_value_discovery: 0,
+        last_existential_reflection: 0,
+        interaction_count_since_audit: 0
       },
       write: jest.fn().mockResolvedValue(true)
     }

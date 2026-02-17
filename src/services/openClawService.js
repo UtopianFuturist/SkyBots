@@ -92,19 +92,20 @@ class OpenClawService {
 
         console.log(`[OpenClawService] Executing skill: ${name} with params:`, parameters);
 
-        // OpenClaw skills typically execute a command or script.
-        // We'll look for a 'command' or 'bin' in metadata or instructions.
-        // For simplicity in this bridge, we'll try to find an executable script in the skill directory.
-
-        const executablePath = path.join(skill.baseDir, 'run.sh'); // Common convention
+        const executablePath = path.join(skill.baseDir, 'run.sh');
 
         try {
             await fs.access(executablePath);
-            return await this.runCommand(executablePath, parameters, skill.baseDir);
+            // Ensure jq is available for parameter parsing in shell scripts
+            try {
+                const result = await this.runCommand(executablePath, parameters, skill.baseDir);
+                return result;
+            } catch (cmdError) {
+                console.error(`[OpenClawService] Command execution failed for ${name}:`, cmdError);
+                return `Error executing skill ${name}: ${cmdError.message}`;
+            }
         } catch (e) {
-            // If no run.sh, we might need a more complex dispatcher based on OpenClaw specs.
-            // For now, we'll return a descriptive error or look for other patterns.
-            return `Skill ${name} does not have a standard entry point (run.sh). Integration pending for this skill type.`;
+            return `Skill ${name} does not have a standard entry point (run.sh). Available skills: ${Array.from(this.skills.keys()).join(', ')}`;
         }
     }
 

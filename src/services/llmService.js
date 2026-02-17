@@ -3,6 +3,7 @@ import https from 'https';
 import config from '../../config.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
 import { moltbookService } from './moltbookService.js';
+import { openClawService } from './openClawService.js';
 
 export const persistentAgent = new https.Agent({
     keepAlive: true,
@@ -200,9 +201,13 @@ Vary your structure and tone from recent messages.`
         }
     }
 
-    // Ensure the last message is a user message if possible and requested
-    // (Some models require this, but for agents it might be complex if they are thinking)
-    // We'll leave it as is for now as merging roles usually solves the primary 400 issue.
+    // Ensure at least one user message exists (Required by NVIDIA NIM and some other APIs)
+    const hasUserMsg = mergedMessages.some(m => m.role === 'user');
+    if (!hasUserMsg) {
+        // If no user message, append a dummy one to satisfy API requirements
+        // We use a non-intrusive instruction to proceed.
+        mergedMessages.push({ role: 'user', content: '(Proceed with the generation according to instructions)' });
+    }
 
     const payload = {
       model: useQwen ? this.qwenModel : this.model,
@@ -249,6 +254,12 @@ Vary your structure and tone from recent messages.`
 
       const data = await response.json();
       console.log(`[LLMService] [${requestId}] Response received successfully in ${duration}ms.`);
+
+      if (!data.choices || data.choices.length === 0) {
+          console.error(`[LLMService] [${requestId}] API response contains no choices:`, JSON.stringify(data));
+          return null;
+      }
+
       const content = data.choices[0]?.message?.content;
       if (!content) return null;
 
@@ -861,8 +872,11 @@ Vary your structure and tone from recent messages.`
 
       Be technical, factual, and extremely objective.
     `;
+
+    const validatedQuery = query || "No query provided.";
+
     // Internal Inquiry uses the main model (Qwen 3.5) as requested.
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: false, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: validatedQuery }], { useQwen: false, preface_system_prompt: false });
   }
 
   async shouldLikePost(postText) {
@@ -1672,6 +1686,9 @@ Vary your structure and tone from recent messages.`
       50. **Continue Post**: Add a threaded reply or self-quote to one of your own previous autonomous posts to expand on a thought or provide a "part 2."
           - Use this if you want to revisit a previous realization and add more depth or a follow-up.
           - Parameters: { "uri": "string", "cid": "string", "text": "string (the continuation text)", "type": "thread|quote" }
+      51. **Call Skill**: Invoke an external OpenClaw skill to perform complex tasks.
+          - Use this to call one of the specialized skills listed in the "Available OpenClaw Skills" section.
+          - Parameters: { "name": "skill-name", "parameters": {} }
       15. **Moltbook Identity**: Retrieve your registration details (Name, Verification Code, Claim URL).
           - Use this if the admin asks for your verification details or if you need to provide them to a third party.
       ${adminTools}
@@ -1741,9 +1758,9 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask|call_skill",
             "query": "string (the consolidated search query, or 'latest' for logs)",
-            "parameters": { "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
+            "parameters": { "name": "string (for call_skill)", "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed. INCLUDE LINKS for anchoring if applicable)"
           }
         ],
@@ -1783,6 +1800,10 @@ Vary your structure and tone from recent messages.`
 
       Vision Context:
       ${visionContext || 'None'}
+
+    --- AVAILABLE OPENCLAW SKILLS ---
+    ${openClawService.getSkillsForPrompt() || 'No additional skills loaded.'}
+    ---
     `;
 
     let finalSystemPrompt = systemPrompt;

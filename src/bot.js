@@ -9,6 +9,7 @@ import { webReaderService } from './services/webReaderService.js';
 import { moltbookService } from './services/moltbookService.js';
 import { memoryService } from './services/memoryService.js';
 import { renderService } from './services/renderService.js';
+import { openClawService } from './services/openClawService.js';
 import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
@@ -56,6 +57,9 @@ export class Bot {
 
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
+
+    await openClawService.init();
+    console.log('[Bot] OpenClawService initialized.');
 
     console.log('[Bot] Starting DiscordService initialization in background...');
     discordService.setBotInstance(this);
@@ -2799,6 +2803,20 @@ Identify the topic and main takeaway.`;
                 }
             }
         }
+
+        if (action.tool === 'call_skill') {
+            const { name, parameters } = action.parameters || {};
+            if (name) {
+                console.log(`[Bot] Plan Tool: call_skill (${name})`);
+                try {
+                    const result = await openClawService.executeSkill(name, parameters);
+                    searchContext += `\n[Skill Result for "${name}": ${result}]`;
+                } catch (e) {
+                    console.error(`[Bot] Error calling skill ${name}:`, e);
+                    searchContext += `\n[Failed to call skill ${name}: ${e.message}]`;
+                }
+            }
+        }
       }
 
       if (currentActionFeedback) {
@@ -3883,7 +3901,7 @@ Describe how you feel about this user and your relationship now.`;
       if (finalAutonomousPlan.actions) {
           for (const action of finalAutonomousPlan.actions) {
               if (action.tool === 'internal_inquiry') {
-                  const query = action.query || action.parameters?.query;
+                  const query = action.query || action.parameters?.query || "No query provided by planning module.";
                   console.log(`[Bot] Executing agentic inquiry: ${query}`);
                   const result = await llmService.performInternalInquiry(query);
                   if (result) {
@@ -4586,7 +4604,7 @@ Describe how you feel about this user and your relationship now.`;
             if (refinedPlan.refined_actions) {
                 for (const action of refinedPlan.refined_actions) {
                     if (action.tool === 'internal_inquiry') {
-                        const query = action.query || action.parameters?.query;
+                        const query = action.query || action.parameters?.query || "No query provided by planning module.";
                         console.log(`[Moltbook] Executing agentic inquiry: ${query}`);
                         const result = await llmService.performInternalInquiry(query);
                         if (result && memoryService.isEnabled()) {
@@ -4851,7 +4869,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             if (refinedPlan.refined_actions) {
                 for (const action of refinedPlan.refined_actions) {
                     if (action.tool === 'internal_inquiry') {
-                        const query = action.query || action.parameters?.query;
+                        const query = action.query || action.parameters?.query || "No query provided by planning module.";
                         console.log(`[Moltbook] Executing agentic inquiry: ${query}`);
                         const result = await llmService.performInternalInquiry(query);
                         if (result && memoryService.isEnabled()) {

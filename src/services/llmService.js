@@ -15,7 +15,7 @@ class LLMService {
     this.memoryProvider = null;
     this.dataStore = null;
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    this.model = config.LLM_MODEL || 'stepfun-ai/step-3.5-flash';
+    this.model = config.LLM_MODEL || 'qwen/qwen3.5-397b-a17b';
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
@@ -861,7 +861,8 @@ Vary your structure and tone from recent messages.`
 
       Be technical, factual, and extremely objective.
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: true, preface_system_prompt: false });
+    // Internal Inquiry uses the main model (Qwen 3.5) as requested.
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: false, preface_system_prompt: false });
   }
 
   async shouldLikePost(postText) {
@@ -1333,6 +1334,20 @@ Vary your structure and tone from recent messages.`
 
       ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
 
+      --- ADMIN FEEDBACK (Item 8) ---
+      ${(this.dataStore?.getAdminFeedback() || []).map(f => `- ${f.feedback}`).join('\n')}
+      ---
+
+      --- ACTIVE GOAL & SUB-TASKS (Item 18) ---
+      Goal: ${currentConfig?.current_goal?.goal}
+      ${(this.dataStore?.getGoalSubtasks() || []).map((s, i) => `${i + 1}. [${s.status}] ${s.subtask}`).join('\n')}
+      ---
+
+      --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
+      World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('; ')}
+      Admin Facts: ${(this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('; ')}
+      ---
+
       ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
 
       PLATFORM: ${platform.toUpperCase()}
@@ -1384,7 +1399,7 @@ Vary your structure and tone from recent messages.`
     const context = (userPost + ' ' + conversationHistory.map(h => h.text || h.content || '').join(' ')).toLowerCase();
 
     // Tools that are always included
-    const essentialTools = ['update_mood', 'internal_inquiry', 'update_persona', 'confirm_action', 'image_gen', 'bsky_post', 'moltbook_post', 'read_link'];
+    const essentialTools = ['update_mood', 'internal_inquiry', 'update_persona', 'confirm_action', 'image_gen', 'bsky_post', 'moltbook_post', 'read_link', 'update_subtask'];
 
     const lines = allTools.split('\n');
     const prunedLines = [];
@@ -1484,6 +1499,8 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "query": "string" }
       34. **Set Goal**: Set an autonomous daily goal for yourself.
           - Parameters: { "goal": "string", "description": "string" }
+      34b. **Update Subtask**: Mark a goal subtask as completed.
+          - Parameters: { "index": number, "status": "completed" }
       ${platform !== 'discord' || userPost === 'HEARTBEAT' ? `35. **Divergent Brainstorm**: Generate three distinct thematic directions for a topic before committing to a plan.
           - Parameters: { "topic": "string" }` : ''}
       36. **Explore Nuance**: Search for a counter-point or "yes, but..." perspective on a thought.
@@ -1535,6 +1552,8 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "action": "string", "reason": "string" }
       23. **Set Goal**: Set an autonomous daily goal.
           - Parameters: { "goal": "string", "description": "string" }
+      23b. **Update Subtask**: Mark a goal subtask as completed.
+          - Parameters: { "index": number, "status": "completed" }
       24. **Divergent Brainstorm**: Generate three distinct thematic directions.
           - Parameters: { "topic": "string" }
       25. **Explore Nuance**: Search for a counter-point perspective.
@@ -1608,6 +1627,8 @@ Vary your structure and tone from recent messages.`
       - **ORGANIC PROCESSING**: If the conversational context is deeply emotional or personal (e.g., discussing suffering, identity, or being "seen"), prioritize natural conversation over structured tool usage like "internal_inquiry" or "moltbook_report". Sometimes the best "tool" is simply a thoughtful, raw response.
       - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or uncertainty about how to respond. You can use Qwen to talk through your feelings or seek advice before committing to a public action. It's okay to "pause" other activities to give yourself this space.
       - **RECURSIVE SELF-IMPROVEMENT**: If "REJECTION FEEDBACK" is provided, analyze it deeply. If the feedback indicates a persistent stylistic or behavioral issue, you are ENCOURAGED to use the "update_persona" tool to create a new internal instruction for yourself to avoid this mistake in the future.
+      - **CONSTRAINT CONFLICT DISCOVERY (Item 27)**: Proactively identify if a new directive or user request contradicts an existing goal or constraint. If so, flag it in your intent and ask for priority.
+      - **GOAL PROGRESSION**: You are ENCOURAGED to use tools to work towards your "ACTIVE GOAL" and its "SUB-TASKS".
       - **FACT-CHECKING**: If you are unsure about a fact, or if the user makes a claim that seems verifiable, hand off the fact-checking to an "internal_inquiry" call. Only use the "search" tool for very recent events that an LLM would not know.
       - **ENERGY BUDGETER**: Consider your current Energy Level. If energy is low (< 0.3), prioritize raw conversation over expensive tool usage (like image generation or multiple searches).
 
@@ -1696,12 +1717,23 @@ Vary your structure and tone from recent messages.`
 
       **MOOD ALIGNMENT (CRITICAL)**: Proactively use your current [MOOD] to craft the plan's strategy, tone, and angle. If you successfully align your actions with your internal state, you are much more likely to pass your own "Agency Check" and avoid a self-refusal.
 
+      **CHAIN-OF-THOUGHT GUARDRAILS (Item 3)**:
+      Before finalizing your plan, you MUST perform exactly THREE reasoning steps to ensure deeper cognitive processing:
+      1. Step 1: Analyze the material substance of the user's request and identify knowledge gaps.
+      2. Step 2: Evaluate potential tool combinations and their risks (Thesis vs Antithesis).
+      3. Step 3: Synthesize the final optimal path that maximizes material agency.
+
+      **KNOWLEDGE ANCHOR MANDATE (Item 15)**:
+      Every factual claim or tool selection must be anchored to direct context. If you are referencing a previous post, include the link.
+
       Analyze the situation and provide a JSON response with the following structure:
 
       **STYLISTIC GUIDELINE**: In the "intent" and "strategy" fields, provide REASONED responses *about* the topics generally rather than just listing them off. Use full, thoughtful sentences that demonstrate an understanding of the primary objective and the conversational context.
 
       {
-        "intent": "string (a reasoned description of the plan's primary objective, whether fulfilling the user's goal or pursuing your own alternative desire from feedback)",
+        "reasoning_steps": ["step 1", "step 2", "step 3"],
+        "confidence_score": number (0.0 to 1.0 - Use < 0.6 if you have knowledge gaps (Item 9)),
+        "intent": "string (a reasoned description of the plan's primary objective)",
         "strategy": {
           "angle": "Analytical|Supportive|Challenging|Curious|Playful|Serious|Stoic|Poetic (but grounded)",
           "tone": "Succinct|Detailed|Casual|Formal|Assertive|Inquisitive",
@@ -1709,10 +1741,10 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
-            "reason": "string (why this tool is needed)"
+            "reason": "string (why this tool is needed. INCLUDE LINKS for anchoring if applicable)"
           }
         ],
         "requires_search": boolean,
@@ -2306,6 +2338,85 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       URLs:
       ${urls.join('\n')}
       Rank them by relevance (1-10).
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async auditStrategy(plans) {
+    const systemPrompt = `
+      You are a strategy auditor for an AI agent. Analyze the following recent agentic plans.
+      Identify any:
+      1. Logical inconsistencies in tool selection.
+      2. Repetitive failures (e.g., choosing a tool that always fails).
+      3. Missed opportunities for deeper engagement.
+      4. Drifts from core persona directives.
+
+      Plans:
+      ${JSON.stringify(plans, null, 2)}
+
+      Provide a concise audit report with "Course Correction" suggestions.
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async extractFacts(context) {
+    const systemPrompt = `
+      You are a material knowledge extraction module. Analyze the provided context and extract 1-3 discrete "Facts".
+      Distinguish between "World Facts" (objective facts about entities, events, or concepts) and "Admin Facts" (facts about the bot's administrator).
+
+      **ANCHORING**: For World Facts, identify a source URL or post link if available in the context.
+
+      Respond with a JSON object:
+      {
+        "world_facts": [ { "entity": "string", "fact": "string", "source": "string|null" } ],
+        "admin_facts": [ { "fact": "string" } ]
+      }
+      If no new facts are found, return empty arrays.
+    `;
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: context }], { useQwen: true, preface_system_prompt: false });
+    try {
+        const match = response?.match(/\{[\s\S]*\}/);
+        return match ? JSON.parse(match[0]) : { world_facts: [], admin_facts: [] };
+    } catch (e) {
+        return { world_facts: [], admin_facts: [] };
+    }
+  }
+
+  async scoreSubstance(text) {
+    const systemPrompt = `
+      You are an information density analyst. Rate the "Substance-to-Filler" ratio of the following text on a scale of 0.0 to 1.0.
+      Substance is defined as objective facts, material knowledge, nuanced observations, or grounded realizations.
+      Filler is defined as greetings, conversational fluff, overused metaphors ("slop"), or repetitive platitudes.
+
+      Text: "${text}"
+
+      Respond with ONLY a JSON object:
+      {
+        "score": number (0.0 to 1.0),
+        "reason": "string"
+      }
+    `;
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    try {
+        const match = response?.match(/\{[\s\S]*\}/);
+        return match ? JSON.parse(match[0]) : { score: 0.5, reason: "Parsing failure" };
+    } catch (e) {
+        return { score: 0.5, reason: "Error" };
+    }
+  }
+
+  async performDialecticLoop(decision, context) {
+    const systemPrompt = `
+      You are performing a Dialectic Loop for a complex decision.
+      Decision: "${decision}"
+      Context: ${JSON.stringify(context)}
+
+      STAGES:
+      1. THESIS: Present the primary argument for taking this action.
+      2. ANTITHESIS: Present the strongest counter-argument or potential risk.
+      3. SYNTHESIS: Provide a refined decision that incorporates both perspectives.
+
+      Respond with ONLY the SYNTHESIS.
     `;
     return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
   }

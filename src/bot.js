@@ -754,16 +754,18 @@ export class Bot {
             console.error('[Bot] Error in autonomous goal setting:', e);
         }
     } else if (goalDiff >= 4) {
-        // Goal Progress Update (Every 4 hours)
-        console.log('[Bot] Triggering autonomous goal progress reflection...');
-        const progressPrompt = `
+        // 1cc. Sub-Cognitive Goal Reflection (Every 4 hours - Item 13)
+        console.log('[Bot] Triggering Sub-Cognitive Goal Reflection...');
+        const subtasks = dataStore.getGoalSubtasks();
+        const reflectionPrompt = `
             Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
             Reflect on your progress towards your current daily goal: "${currentGoal.goal}".
-            What have you observed or achieved so far? How do you feel about it?
+            Active Sub-tasks: ${JSON.stringify(subtasks, null, 2)}
 
-            Respond with a concise progress update for your memory thread.
+            Identify if you need to pivot your internal plan or decompose the goal further into new sub-tasks.
+            Respond with a concise update. Use the tag [GOAL_REFLECT] at the beginning.
         `;
-        const progress = await llmService.generateResponse([{ role: 'system', content: progressPrompt }], { useQwen: true });
+        const progress = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true });
         if (progress && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('goal', `[GOAL] Progress Update on "${currentGoal.goal}": ${progress}`);
             // Update timestamp to avoid frequent updates
@@ -873,6 +875,68 @@ export class Bot {
         }
     }
 
+    // 1g. Recursive Strategy Audit (Every 24 hours - Item 1)
+    const lastAuditStrategy = dataStore.db.data.last_strategy_audit || 0;
+    if (now.getTime() - lastAuditStrategy >= 24 * 60 * 60 * 1000) {
+        console.log('[Bot] Triggering Recursive Strategy Audit...');
+        const plans = dataStore.getAgencyLogs().slice(-10);
+        if (plans.length > 0) {
+            const audit = await llmService.auditStrategy(plans);
+            if (audit) {
+                await dataStore.addStrategyAudit(audit);
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('audit', `[AUDIT] Strategy reflection: ${audit}`);
+                }
+            }
+        }
+        dataStore.db.data.last_strategy_audit = now.getTime();
+        await dataStore.db.write();
+    }
+
+    // 1h. Agentic Reflection on Choice (Every 24 hours - Item 30)
+    const lastAgencyReflection = dataStore.db.data.last_agency_reflection || 0;
+    if (now.getTime() - lastAgencyReflection >= 24 * 60 * 60 * 1000) {
+        console.log('[Bot] Triggering Agentic Reflection on Choice...');
+        const logs = dataStore.getAgencyLogs();
+        const reflectionPrompt = `
+            Analyze your agency logs from the last 24 hours.
+            Logs: ${JSON.stringify(logs, null, 2)}
+            Summarize how many times you exercised agency (refusals, modifications, dialectic loops) and how it affected your sense of self-governance.
+            Use the tag [AGENCY] at the beginning.
+        `;
+        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true });
+        if (reflection && memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('mental', reflection);
+        }
+        dataStore.db.data.last_agency_reflection = now.getTime();
+        await dataStore.db.write();
+    }
+
+    // 1i. Tool Capability Self-Discovery (Every 24 hours - Item 4)
+    const lastToolDiscovery = dataStore.db.data.last_tool_discovery || 0;
+    if (now.getTime() - lastToolDiscovery >= 24 * 60 * 60 * 1000) {
+        console.log('[Bot] Triggering Tool Capability Self-Discovery...');
+        try {
+            const skills = await fs.readFile('skills.md', 'utf-8');
+            const discoveryPrompt = `
+                Analyze the following manifest of your capabilities (skills.md).
+                Manifest: ${skills}
+                Identify 1-2 novel combinations of these tools or a specific "Material Agency" boost you could perform for the admin.
+                Respond with a JSON object: { "capability": "string", "combination": "string" }
+            `;
+            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { useQwen: true, preface_system_prompt: false });
+            const jsonMatch = discoveryRes?.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const disc = JSON.parse(jsonMatch[0]);
+                await dataStore.addDiscoveredCapability(disc.capability, disc.combination);
+            }
+        } catch (e) {
+            console.error('[Bot] Error in tool discovery:', e);
+        }
+        dataStore.db.data.last_tool_discovery = now.getTime();
+        await dataStore.db.write();
+    }
+
     // 1g. Memory Pruning Service (Every 24 hours)
     const lastPruning = dataStore.db.data.last_memory_pruning || 0;
     if (now.getTime() - lastPruning >= 24 * 60 * 60 * 1000) {
@@ -896,11 +960,21 @@ export class Bot {
         this.lastMoodSyncTime = now.getTime();
     }
 
-    // 2. Idle downtime check
+    // 2. Idle downtime check - Autonomous "Dreaming" Cycle (Item 26)
     const idleMins = (Date.now() - this.lastActivityTime) / (1000 * 60);
     if (idleMins >= dConfig.discord_idle_threshold) {
-      console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes.`);
-      // No longer posting idle musings to memory thread per user request.
+      console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes. Triggering "Dreaming" cycle...`);
+
+      const topics = dConfig.post_topics || [];
+      if (topics.length > 0) {
+          const randomTopic = topics[Math.floor(Math.random() * topics.length)];
+          console.log(`[Bot] Dreaming about: ${randomTopic}`);
+          const inquiryResult = await llmService.performInternalInquiry(`Perform random, deep research on the topic: "${randomTopic}". Identify unique material facts or conceptual breakthroughs.`);
+          if (inquiryResult && memoryService.isEnabled()) {
+              await memoryService.createMemoryEntry('inquiry', `[DREAM] Research on ${randomTopic}: ${inquiryResult}`);
+          }
+      }
+
       this.updateActivity(); // Reset idle timer
     }
 
@@ -2032,6 +2106,16 @@ Identify the topic and main takeaway.`;
       plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory);
       console.log(`[Bot] Agentic Plan (Attempt ${planAttempts}): ${JSON.stringify(plan)}`);
 
+      // Confidence Check (Item 9)
+      if (plan.confidence_score < 0.6) {
+          console.log(`[Bot] Low planning confidence (${plan.confidence_score}). Triggering Dialectic Loop...`);
+          const dialecticSynthesis = await llmService.performDialecticLoop(plan.intent, { handle, text, thread: threadContext.slice(-5) });
+          if (dialecticSynthesis) {
+              plan.intent = dialecticSynthesis;
+              searchContext += `\n[DIALECTIC SYNTHESIS]: ${dialecticSynthesis}`;
+          }
+      }
+
       // Autonomous Plan Review & Refinement
       const refinedPlan = await llmService.evaluateAndRefinePlan(plan, {
           history: threadContext,
@@ -2041,6 +2125,9 @@ Identify the topic and main takeaway.`;
           latestMoodMemory,
           currentConfig: dConfig
       });
+
+      // Log Agency (Item 30)
+      await dataStore.logAgencyAction(plan.intent, refinedPlan.decision, refinedPlan.reason);
 
       if (refinedPlan.decision === 'refuse') {
           console.log(`[Bot] AGENT REFUSED TO ACT ON NOTIFICATION: ${refinedPlan.reason}`);
@@ -2535,11 +2622,22 @@ Identify the topic and main takeaway.`;
             const { goal, description } = action.parameters || {};
             if (goal) {
                 console.log(`[Bot] Setting autonomous goal: ${goal}`);
-                // I'll implement the actual setGoal logic in Bot or DataStore later, for now just note it
-                searchContext += `\n[Daily goal set: "${goal}"]`;
+                await dataStore.setCurrentGoal(goal, description);
                 if (memoryService.isEnabled()) {
                     await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${goal} | Description: ${description || goal}`);
                 }
+
+                // Autonomous Goal Decomposition (Item 18)
+                console.log(`[Bot] Decomposing goal into sub-tasks...`);
+                const tasksRaw = await llmService.decomposeGoal(goal);
+                if (tasksRaw) {
+                    const tasks = tasksRaw.split('\n').map(t => t.replace(/^\d+\.\s*/, '').trim()).filter(t => t);
+                    if (tasks.length > 0) {
+                        await dataStore.setGoalSubtasks(tasks);
+                        searchContext += `\n[Goal decomposed into ${tasks.length} sub-tasks]`;
+                    }
+                }
+                searchContext += `\n[Daily goal set: "${goal}"]`;
             }
         }
 
@@ -2665,6 +2763,14 @@ Identify the topic and main takeaway.`;
             console.log(`[Bot] Plan Tool: save_state_snapshot (${label})`);
             await dataStore.saveStateSnapshot(label);
             searchContext += `\n[State snapshot "${label}" saved]`;
+        }
+
+        if (action.tool === 'update_subtask') {
+            const { index, status } = action.parameters || {};
+            if (index !== undefined) {
+                await dataStore.updateSubtaskStatus(index, status || 'completed');
+                searchContext += `\n[Sub-task ${index} marked as ${status || 'completed'}]`;
+            }
         }
 
         if (action.tool === 'restore_state_snapshot') {
@@ -3042,6 +3148,29 @@ Identify the topic and main takeaway.`;
 
     if (responseText) {
       this.consecutiveRejections = 0; // Reset on success
+
+      // Material Knowledge Extraction (Item 2 & 29)
+      (async () => {
+          console.log(`[Bot] Extracting material facts from interaction with @${handle}...`);
+          const facts = await llmService.extractFacts(`User: "${text}"\nBot: "${responseText}"`);
+          if (facts.world_facts.length > 0) {
+              for (const f of facts.world_facts) {
+                  await dataStore.addWorldFact(f.entity, f.fact, f.source);
+                  if (memoryService.isEnabled()) {
+                      await memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Bluesky'}`);
+                  }
+              }
+          }
+          if (facts.admin_facts.length > 0) {
+              for (const f of facts.admin_facts) {
+                  await dataStore.addAdminFact(f.fact);
+                  if (memoryService.isEnabled()) {
+                      await memoryService.createMemoryEntry('admin_fact', f.fact);
+                  }
+              }
+          }
+      })();
+
       // Remove thinking tags and any leftover fragments
       responseText = sanitizeThinkingTags(responseText);
       
@@ -3704,6 +3833,13 @@ Describe how you feel about this user and your relationship now.`;
           }
       }
 
+      // Information Summary Injection (Material Intelligence Boost)
+      console.log(`[Bot] Triggering material knowledge inquiry for topic: "${topic}"...`);
+      const infoSummary = await llmService.performInternalInquiry(`Provide a concise, objective, and material information summary about the topic: "${topic}". Focus on facts, core concepts, and substantive knowledge that would be useful for generating a deep and informed post.`);
+      if (infoSummary) {
+          agenticContext += `\n[MATERIAL KNOWLEDGE SUMMARY]: ${infoSummary}`;
+      }
+
       // Item 6: Pre-Post Silent Reflection
       console.log('[Bot] Item 6: Triggering pre-post silent reflection...');
       const inquiryResult = await llmService.performInternalInquiry(`Reflect deeply on the topic "${topic}" in the context of your current state. Explore 2-3 complex angles before we post about it.`);
@@ -3727,6 +3863,9 @@ Describe how you feel about this user and your relationship now.`;
           latestMoodMemory,
           currentConfig: dConfig
       });
+
+      // Log Agency (Item 30)
+      await dataStore.logAgencyAction(autonomousPlan.intent, refinedPlan.decision, refinedPlan.reason);
 
       if (refinedPlan.decision === 'refuse') {
           console.log(`[Bot] AGENT REFUSED AUTONOMOUS POST: ${refinedPlan.reason}`);
@@ -4063,7 +4202,16 @@ Describe how you feel about this user and your relationship now.`;
           const { score, reason } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
 
           if (score >= 3) {
-            console.log(`[Bot] Autonomous post passed coherence check (Score: ${score}/5). Performing post...`);
+            // Information Density Filter (Item 6)
+            const substance = await llmService.scoreSubstance(postContent);
+            if (substance.score < 0.4) {
+                console.log(`[Bot] Low substance score (${substance.score}). Rejecting autonomous post.`);
+                postFeedback = `REJECTED: Low material substance. Reason: ${substance.reason}`;
+                rejectedPostAttempts.push(postContent);
+                continue;
+            }
+
+            console.log(`[Bot] Autonomous post passed coherence and substance checks. Performing post...`);
 
             // Item 12: Unfinished Thought Threading
             let continuationText = null;
@@ -4905,9 +5053,24 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             continue;
           }
 
-          const reason = 'incoherent';
+          const reason = isCliche ? 'cliche' : 'incoherent';
 
           console.warn(`[Bot Cleanup] Deleting own post (${reason}). URI: ${post.uri}. Content: "${postText}"`);
+
+          // Post-Deletion Root Cause Analysis (Item 21)
+          const analysisPrompt = `
+            You just deleted your own post for being ${reason}.
+            Post Content: "${postText}"
+            Thread Parent: "${parentText}"
+
+            Autonomously analyze the failure. Why did you generate this? How can you avoid this logical error or repetitive pattern in the future?
+            Respond with a concise memory entry tagged [CLEANUP_ANALYSIS].
+          `;
+          const analysis = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { useQwen: true });
+          if (analysis && memoryService.isEnabled()) {
+              await memoryService.createMemoryEntry('audit', analysis);
+          }
+
           await blueskyService.deletePost(post.uri);
           deletedCount++;
           await new Promise(resolve => setTimeout(resolve, 2000)); // Rate limit deletions

@@ -401,6 +401,15 @@ class DiscordService {
             if (message.content.length > 5 && message.content.length < 100) {
                 await dataStore.addAdminEmotionalState(message.content);
             }
+
+        // Admin Feedback Capture (Proposal 8)
+        if (message.content.toLowerCase().includes('good job') ||
+            message.content.toLowerCase().includes('bad job') ||
+            message.content.toLowerCase().includes('i liked that') ||
+            message.content.toLowerCase().includes('don\'t do that')) {
+            console.log(`[DiscordService] Capturing admin feedback...`);
+            await dataStore.addAdminFeedback(message.content);
+        }
         }
 
         // Intelligent Link Pre-fetching
@@ -1064,94 +1073,63 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      }
                  }
 
-                 let planAttempts = 0;
-                 // Proposal 14: Lower retry limits for active conversations
-                 let MAX_PLAN_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 3;
-                 if (history.length > 5 && (Date.now() - history[history.length - 1].timestamp < 60000)) {
-                    MAX_PLAN_ATTEMPTS = Math.max(1, MAX_PLAN_ATTEMPTS - 1);
+                 // Fast-Path Agentic Planning & Refinement (Material Agency Boost)
+                 // Pivot Check: If interrupted during planning, restart with new history
+                 if (this._interrupted.has(normChannelId)) {
+                     console.log(`[DiscordService] Interrupt during planning in ${normChannelId}. Pivoting...`);
+                     this._interrupted.delete(normChannelId);
+                     return this.respond(message); // Recursive restart to catch new history
                  }
-                 let planFeedback = '';
-                 let plan = null;
 
-                 while (planAttempts < MAX_PLAN_ATTEMPTS) {
-                     // Pivot Check: If interrupted during planning, restart with new history
-                     if (this._interrupted.has(normChannelId)) {
-                         console.log(`[DiscordService] Interrupt during planning in ${normChannelId}. Pivoting...`);
-                         this._interrupted.delete(normChannelId);
-                         return this.respond(message); // Recursive restart to catch new history
+                 const lastRejection = dataStore.getLastRejectionReason();
+                 const planningFeedback = (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
+
+                 let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
+                 console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
+
+                 // Confidence Check (Item 9)
+                 if (plan.confidence_score < 0.6) {
+                     console.log(`[DiscordService] Low planning confidence (${plan.confidence_score}). Triggering Dialectic Loop...`);
+                     const dialecticSynthesis = await llmService.performDialecticLoop(plan.intent, { userPost: message.content, history: history.slice(-5) });
+                     if (dialecticSynthesis) {
+                         plan.intent = dialecticSynthesis;
+                         messages.push({ role: 'system', content: `[DIALECTIC SYNTHESIS]: ${dialecticSynthesis}` });
                      }
-
-                     planAttempts++;
-                     console.log(`[DiscordService] Admin Planning Attempt ${planAttempts}/${MAX_PLAN_ATTEMPTS}`);
-
-                     const lastRejection = dataStore.getLastRejectionReason();
-                     const planningFeedback = planFeedback || (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
-
-                     plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
-                     console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
-
-                     // Autonomous Plan Review & Refinement
-                     const refinedPlan = await llmService.evaluateAndRefinePlan(plan, {
-                         history: history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })),
-                         platform: 'discord',
-                         currentMood,
-                         refusalCounts,
-                         latestMoodMemory,
-                         feedback: planFeedback,
-                         currentConfig: dConfig
-                     });
-
-                     if (refinedPlan.decision === 'refuse') {
-                         console.log(`[DiscordService] AGENT REFUSED TO ACT: ${refinedPlan.reason}`);
-                         await dataStore.incrementRefusalCount('discord');
-
-                         // Option to generate alternative action
-                         const alternative = await llmService.generateAlternativeAction(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
-                         if (alternative && alternative.toUpperCase() !== 'NONE' && planAttempts < MAX_PLAN_ATTEMPTS) {
-                             console.log(`[DiscordService] Alternative action proposed: "${alternative}". Re-planning...`);
-
-                             // Melancholic Refusal [INQUIRY] pivot:
-                             const isMelancholic = refinedPlan.reason.toLowerCase().includes('melancholy') ||
-                                                 refinedPlan.reason.toLowerCase().includes('sad') ||
-                                                 refinedPlan.reason.toLowerCase().includes('fragmented') ||
-                                                 currentMood.label.toLowerCase().includes('melancholy');
-
-                             if (isMelancholic) {
-                                 const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Inquiry Call) before continuing? Respond with ONLY "yes" or "no".`;
-                                 const wantToTalk = await llmService.generateResponse([{ role: 'system', content: askTalk }], { useQwen: true, preface_system_prompt: false });
-                                 if (wantToTalk?.toLowerCase().includes('yes')) {
-                                     console.log(`[DiscordService] Triggering melancholic self-dialogue Inquiry call.`);
-                                     const dialogue = await llmService.performInternalInquiry(`Reflect on these melancholic feelings: ${refinedPlan.reason}. Explore why you chose the alternative: ${alternative}.`);
-                                     if (dialogue && memoryService.isEnabled()) {
-                                         await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Melancholic reflection: ${dialogue}`);
-                                     }
-                                     planFeedback = `Your previous plan was refused due to melancholy: ${refinedPlan.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
-                                     continue;
-                                 }
-                             }
-
-                             planFeedback = `Your previous plan was refused: ${refinedPlan.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
-                             continue;
-                         }
-
-                         // Option to explain refusal / Negotiation
-                         const shouldExplain = await llmService.shouldExplainRefusal(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
-                         if (shouldExplain) {
-                             const explanation = await llmService.generateRefusalExplanation(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
-                             if (explanation) {
-                                 console.log(`[DiscordService] Explaining refusal to admin: "${explanation}"`);
-                                 await this._send(message.channel, explanation);
-                             }
-                         }
-                         return; // End engagement if refused and no alternative or max attempts reached
-                     }
-
-                     // If we reached here, plan was accepted
-                     if (refinedPlan.refined_actions) {
-                         plan.actions = refinedPlan.refined_actions;
-                     }
-                     break;
                  }
+
+                 // Autonomous Plan Review & Refinement
+                 const refinedPlan = await llmService.evaluateAndRefinePlan(plan, {
+                     history: history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })),
+                     platform: 'discord',
+                     currentMood,
+                     refusalCounts,
+                     latestMoodMemory,
+                     currentConfig: dConfig
+                 });
+
+                 if (refinedPlan.decision === 'refuse') {
+                     console.log(`[DiscordService] AGENT REFUSED TO ACT: ${refinedPlan.reason}`);
+                     await dataStore.incrementRefusalCount('discord');
+
+                     // Option to explain refusal / Negotiation
+                     const shouldExplain = await llmService.shouldExplainRefusal(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
+                     if (shouldExplain) {
+                         const explanation = await llmService.generateRefusalExplanation(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
+                         if (explanation) {
+                             console.log(`[DiscordService] Explaining refusal to admin: "${explanation}"`);
+                             await this._send(message.channel, explanation);
+                         }
+                     }
+                     return; // End engagement if refused
+                 }
+
+                 // If we reached here, plan was accepted
+                 if (refinedPlan.refined_actions) {
+                     plan.actions = refinedPlan.refined_actions;
+                 }
+
+                 // Log Agency (Item 30)
+                 await dataStore.logAgencyAction(plan.intent, refinedPlan.decision, refinedPlan.reason);
 
                  await dataStore.resetRefusalCount('discord');
 
@@ -1776,6 +1754,14 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                         actionResults.push(`[State snapshot "${label}" saved]`);
                      }
 
+                     if (action.tool === 'update_subtask') {
+                        const { index, status } = action.parameters || {};
+                        if (index !== undefined) {
+                            await dataStore.updateSubtaskStatus(index, status || 'completed');
+                            actionResults.push(`[Sub-task ${index} marked as ${status || 'completed'}]`);
+                        }
+                     }
+
                      if (action.tool === 'restore_state_snapshot') {
                         const label = action.parameters?.label || action.query;
                         if (label) {
@@ -1824,248 +1810,44 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      messages.push({ role: 'system', content: `TOOL EXECUTION RESULTS (Acknowledge naturally):\n${actionResults.join('\n')}` });
                  }
 
-                 let attempts = 0;
-                 let feedback = '';
-                 let rejectedAttempts = [];
-                 // Item 48: Reduce retry attempts when exhaustion is high.
-                 // Proposal 14: Lower retry limits for active conversations.
-                 let MAX_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 5;
-                 if (history.length > 5 && (Date.now() - history[history.length - 1].timestamp < 60000)) {
-                     MAX_ATTEMPTS = Math.max(1, MAX_ATTEMPTS - 1);
+                 // Fast-Path Conversational Flow (Material Agency Boost)
+                 // Skip drafting and retry loops for direct Discord Admin conversation to maximize speed
+                 console.log(`[DiscordService] Generating single fast-path response for admin conversation...`);
+
+                 // Pivot Check: If interrupted just before generation, restart
+                 if (this._interrupted.has(normChannelId)) {
+                     console.log(`[DiscordService] Interrupt before fast-path generation in ${normChannelId}. Pivoting...`);
+                     this._interrupted.delete(normChannelId);
+                     return this.respond(message);
                  }
-                 const additionalConstraints = [];
-                 let bestCandidate = null;
-                 let rejectionReason = '';
-                 const recentThoughts = dataStore.getRecentThoughts();
-                 const relRating = dataStore.getUserRating(message.author.username);
 
-                 // Opening Phrase Blacklist - Capture multiple prefix lengths
-                 const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-15);
-                 const openingBlacklist = [
-                     ...recentBotMsgs.map(m => m.content.split(/\s+/).slice(0, 3).join(' ')),
-                     ...recentBotMsgs.map(m => m.content.split(/\s+/).slice(0, 5).join(' ')),
-                     ...recentBotMsgs.map(m => m.content.split(/\s+/).slice(0, 10).join(' '))
-                 ].filter(o => o.length > 0);
+                 responseText = await llmService.generateResponse(messages, {
+                     useQwen: true,
+                     temperature: 0.7,
+                     tropeBlacklist: prePlanning?.trope_blacklist || [],
+                     currentMood
+                 });
 
-                 while (attempts < MAX_ATTEMPTS) {
-                     // Pivot Check: If interrupted during generation, restart
-                     if (this._interrupted.has(normChannelId)) {
-                         console.log(`[DiscordService] Interrupt during generation in ${normChannelId}. Pivoting...`);
-                         this._interrupted.delete(normChannelId);
-                         return this.respond(message);
-                     }
-
-                     attempts++;
-                     let candidates = [];
-                     const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05); // max 0.85
-                     const isFinalAttempt = attempts === MAX_ATTEMPTS;
-
-                     console.log(`[DiscordService] Response Attempt ${attempts}/${MAX_ATTEMPTS} (Temp: ${currentTemp.toFixed(2)})`);
-
-                     const retryContext = feedback ? `\n\n**RETRY FEEDBACK**: ${feedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
-
-                     const rewriteInstruction = isFinalAttempt ? `
-                     You are a high-reasoning rewrite module. This is your FINAL attempt to generate a response.
-                     You MUST adhere to all persona guidelines, avoid digital/electrical metaphors, and ensure high variety from failed attempts.
-                     Keep it substantive and authentic.
-                     ` : '';
-
-                     const finalMessages = (feedback || isFinalAttempt)
-                        ? [...messages, { role: 'system', content: retryContext + rewriteInstruction }]
-                        : messages;
-
-                     if (isFinalAttempt) {
-                         console.log(`[DiscordService] FINAL ATTEMPT: Triggering Qwen-led rewrite...`);
-                         const finalRewrite = await llmService.generateResponse(finalMessages, {
-                             useQwen: true,
-                             temperature: 0.7,
-                             openingBlacklist,
-                             tropeBlacklist: prePlanning?.trope_blacklist || [],
-                             additionalConstraints,
-                             currentMood
-                         });
-                         if (finalRewrite) candidates = [finalRewrite];
-                     } else if (attempts === 1 && !isSimple && !(isDM && isAdmin)) {
-                         console.log(`[DiscordService] Generating 2 diverse drafts for initial attempt...`);
-                         candidates = await llmService.generateDrafts(finalMessages, 2, {
-                             useQwen: true,
-                             temperature: currentTemp,
-                             openingBlacklist,
-                             tropeBlacklist: prePlanning?.trope_blacklist || [],
-                             additionalConstraints,
-                             currentMood
-                         });
-                     } else {
-                         const singleResponse = await llmService.generateResponse(finalMessages, {
-                             useQwen: true,
-                             temperature: currentTemp,
-                             openingBlacklist,
-                             tropeBlacklist: prePlanning?.trope_blacklist || [],
-                             additionalConstraints,
-                             currentMood
-                         });
-                         if (singleResponse) candidates = [singleResponse];
-                     }
-
-                     if (candidates.length === 0) {
-                         console.warn(`[DiscordService] No candidates generated on attempt ${attempts}.`);
-                         continue;
-                     }
-
-                     // Variety & Repetition Check for candidates
-                     const formattedHistory = [
-                         ...recentBotMsgs.map(m => ({ platform: 'discord', content: m.content })),
-                         ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
-                     ];
-
-                     let bestScore = -1;
-
-                     // Parallelize evaluation to avoid sequential slowness
-                     // Proposal 17: Skip Variety Checks for DMs, use robust prompt instructions instead.
-                     const skipVariety = isDM && isAdmin;
-
-                     const evaluations = await Promise.all(candidates.map(async (cand) => {
-                         try {
-                             const slopInfo = getSlopInfo(cand);
-                             const containsSlop = slopInfo.isSlop;
-                             const historyTexts = formattedHistory.map(h => h.content);
-                             const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
-
-                             const checks = [llmService.isPersonaAligned(cand, 'discord')];
-                             if (!skipVariety) {
-                                 checks.push(llmService.checkVariety(cand, formattedHistory, { relationshipRating: relRating, platform: 'discord', currentMood }));
-                             }
-
-                             const [personaCheck, varietyCheck] = await Promise.all(checks);
-
-                             return {
-                                 cand,
-                                 containsSlop,
-                                 slopReason: slopInfo.reason,
-                                 varietyCheck: varietyCheck || { repetitive: false, score: 1.0, variety_score: 1.0, mood_alignment_score: 1.0 },
-                                 personaCheck,
-                                 hasPrefixMatch
-                             };
-                         } catch (e) {
-                             console.error(`[DiscordService] Error evaluating candidate: ${e.message}`);
-                             return { cand, error: e.message };
-                         }
-                     }));
-
-                     for (const evalResult of evaluations) {
-                         const { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, error } = evalResult;
-                         if (error) {
-                             rejectedAttempts.push(cand);
-                             continue;
-                         }
-
-                         // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
-                         const lengthBonus = Math.min(cand.length / 500, 0.2); // Up to 0.2 bonus for 500+ chars
-                         const varietyWeight = (varietyCheck.variety_score ?? varietyCheck.score ?? 0) * 0.5;
-                         const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
-                         const score = varietyWeight + moodWeight + lengthBonus;
-
-                         console.log(`[DiscordService] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, PrefixMatch=${hasPrefixMatch}`);
-
-                         if (!containsSlop && (skipVariety || (!varietyCheck.repetitive && !hasPrefixMatch)) && personaCheck.aligned) {
-                             if (score > bestScore) {
-                                 bestScore = score;
-                                 bestCandidate = cand;
-                             }
-                         } else {
-                             if (!bestCandidate) {
-                                 rejectionReason = containsSlop ? `Contains metaphorical slop: ${slopReason}` :
-                                                   (hasPrefixMatch ? "Prefix overlap detected." :
-                                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
-                                                   (varietyCheck.misaligned ? "Misaligned with current mood." :
-                                                   (varietyCheck.feedback || "Too similar to recent history."))));
-
-                                 if (varietyCheck.repetitive && varietyCheck.feedback) {
-                                     additionalConstraints.push(varietyCheck.feedback);
-
-                                     // Automated Trope Exhaustion
-                                     if (additionalConstraints.length >= 3) {
-                                         try {
-                                             const themePrompt = `Identify the core concept or metaphor being repeated in this feedback: "${varietyCheck.feedback}". Respond with ONLY a 1-2 word theme to blacklist.`;
-                                             const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
-                                             if (theme) {
-                                                 console.log(`[DiscordService] Automated Trope Exhaustion: Adding "${theme}" to exhausted themes.`);
-                                                 await dataStore.addDiscordExhaustedTheme(theme);
-                                                 await dataStore.addExhaustedTheme(theme);
-                                             }
-                                         } catch (e) {
-                                             console.error('[DiscordService] Error in automated trope exhaustion:', e);
-                                         }
-                                     }
-                                 }
-                             }
-                             rejectedAttempts.push(cand);
+                 // Information Density Filter (Item 6)
+                 if (responseText) {
+                     const substance = await llmService.scoreSubstance(responseText);
+                     if (substance.score < 0.3) {
+                         console.log(`[DiscordService] Low substance score (${substance.score}). Requesting material injection...`);
+                         const injection = await llmService.performInternalInquiry(`Provide material substance to improve this response: "${responseText}"`);
+                         if (injection) {
+                             const improvedMessages = [...messages, { role: 'system', content: `[MATERIAL INJECTION]: ${injection}. Rewrite the response to be more substantive.` }];
+                             responseText = await llmService.generateResponse(improvedMessages, { useQwen: true, currentMood });
                          }
                      }
+                 }
 
-                     if (bestCandidate) {
-                         // Multi-Draft Synthesis: Use the best 2 candidates to create a super-draft
-                         const topCandidates = candidates.filter(c => !isSlop(c)).slice(0, 2);
-                         if (topCandidates.length > 1) {
-                             console.log(`[DiscordService] Synthesizing top 2 candidates into a super-draft...`);
-                             const synthPrompt = `
-                                Synthesize the following two drafts into one final "super-draft".
-                                DRAFT 1: "${topCandidates[0]}"
-                                DRAFT 2: "${topCandidates[1]}"
-
-                                INSTRUCTIONS:
-                                1. Combine unique and substantive elements from both.
-                                2. Ensure the tone is consistent and matches the persona.
-                                3. STRICTLY avoid any clichés, repetitive metaphors, or "slop".
-                                4. **TOPIC PROGRESSION**: Ensure you are NOT re-mentioning topics that have already been passed in the conversation history. Focus strictly on the latest development.
-                                5. Keep the response substantive and engaged.
-                                6. DO NOT include any reasoning, explanation, or meta-commentary about how you synthesized the drafts. Return ONLY the final synthesized message.
-                             `;
-                             const superDraft = await llmService.generateResponse([{ role: 'system', content: synthPrompt }], { useQwen: true, preface_system_prompt: false });
-                             responseText = superDraft || bestCandidate;
-                         } else {
-                             responseText = bestCandidate;
-                         }
-                         break;
-                     } else {
-                         feedback = `REJECTED: ${rejectionReason}`;
-                         console.log(`[DiscordService] Attempt ${attempts} failed. Feedback: ${feedback}`);
-                         await dataStore.setLastRejectionReason(rejectionReason);
-
-                         if (isFinalAttempt && !bestCandidate) {
-                             console.log(`[DiscordService] Final attempt failed even after rewrite. Aborting.`);
-                             break;
-                         }
-                     }
+                 if (!responseText) {
+                    console.warn(`[DiscordService] Fast-path generation failed.`);
                  }
             } else {
-                // Fast-Path for Simple DMs (Proposal 3): Use the faster model (step-3.5-flash)
-                // Use useQwen: false to force the faster model
-                let simpleAttempts = 0;
-                const MAX_SIMPLE_ATTEMPTS = 3;
-                let simpleFeedback = '';
-
-                while (simpleAttempts < MAX_SIMPLE_ATTEMPTS) {
-                    simpleAttempts++;
-                    console.log(`[DiscordService] Simple Response Attempt ${simpleAttempts}/${MAX_SIMPLE_ATTEMPTS} (Fast Path)`);
-
-                    const finalMessages = simpleFeedback
-                        ? [...messages, { role: 'system', content: `RETRY FEEDBACK: ${simpleFeedback}. Generate a completely different response that avoids this.` }]
-                        : messages;
-
-                    // isAdmin simple messages now use the fast model as approved
-                    responseText = await llmService.generateResponse(finalMessages, { useQwen: false });
-                    if (!responseText) break;
-
-                    const slopCheck = getSlopInfo(responseText);
-                    if (!slopCheck.isSlop) {
-                        break;
-                    } else {
-                        console.log(`[DiscordService] Simple path attempt ${simpleAttempts} rejected: ${slopCheck.reason}`);
-                        simpleFeedback = slopCheck.reason;
-                        responseText = null;
-                    }
-                }
+                // Fast-Path for Simple DMs: Direct response
+                console.log(`[DiscordService] Simple path: Generating single response.`);
+                responseText = await llmService.generateResponse(messages, { useQwen: false });
             }
 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
@@ -2150,6 +1932,26 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 await dataStore.addExhaustedTheme(theme);
                             }
 
+                            // Material Knowledge Extraction (Item 2 & 29)
+                            console.log(`[DiscordService] Extracting material facts...`);
+                            const facts = await llmService.extractFacts(`User: "${message.content}"\nBot: "${responseText}"`);
+                            if (facts.world_facts.length > 0) {
+                                for (const f of facts.world_facts) {
+                                    await dataStore.addWorldFact(f.entity, f.fact, f.source);
+                                    if (memoryService.isEnabled()) {
+                                        await memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Conversation'}`);
+                                    }
+                                }
+                            }
+                            if (facts.admin_facts.length > 0) {
+                                for (const f of facts.admin_facts) {
+                                    await dataStore.addAdminFact(f.fact);
+                                    if (memoryService.isEnabled()) {
+                                        await memoryService.createMemoryEntry('admin_fact', f.fact);
+                                    }
+                                }
+                            }
+
                             // Memory & Context: Fact Extraction and Channel Summary Update
                             const contextUpdatePrompt = `
                                 Analyze the latest interaction:
@@ -2157,7 +1959,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 Assistant: "${responseText}"
 
                                 1. Extract ONE key fact about the user if shared (e.g., preference, location, status). If none, respond "NONE".
-                                2. Summarize the current thread's progress and vibe in 1 sentence.
+                                2. Summarize the current thread's progress and vibe in 1 sentence. (Item 20: Narrative Continuity)
 
                                 Format:
                                 FACT: [fact or NONE]

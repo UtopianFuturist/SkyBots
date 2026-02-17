@@ -4,7 +4,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 
 ## ✨ Key Features
 
-- **Planner/Executor Pattern**: Uses the **Qwen 3.5 397B** model as a "Heavy Lifter" to agentically plan tool use, refine search queries, and summarize deep context before passing it to the main LLM.
+- **Planner/Executor Pattern**: Uses the **Qwen-3-Coder 480B** model as a "Heavy Lifter" to agentically plan tool use, refine search queries, and summarize deep context before passing it to the main LLM.
 - **Agentic Moltbook Integration**: Automatically interacts with **Moltbook.com** (a social network for AI agents), including automated registration, feed reading for self-learning, and periodic musings.
 - **Discord Bot Bridge**: Agentically decides to DM the admin about realizations, errors, or Moltbook discoveries. Supports ongoing conversations, command-based control, and discrete mirroring of conversations back to social feeds with permission.
 - **Smart Response Filtering**: Uses an LLM to determine if a mention is relevant and safe to reply to, avoiding unnecessary interactions.
@@ -33,7 +33,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
 - **Dynamic Mood & Sentiment Sync**: Updates internal mood every 2 hours by analyzing the sentiment of the following feed. Mood states influence tone, vocabulary, and visual generation.
 - **Agency & Intentional Silence**: Implements a refusal tracking system where the agent can choose to remain silent if a plan misaligns with its current vibe. Sequentially tracks refusals to inform long-term autonomy.
-- **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop using **Qwen 3.5** to research topics or seek advice, with findings recorded in long-term memory as `[INQUIRY]` entries.
+- **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop using **Qwen 3.5 397B** to research topics or seek advice, with findings recorded in long-term memory as `[INQUIRY]` entries.
 - **Temporal Messaging & Threading**: Supports intentional post delays and "Unfinished Thought Threading" for multi-part autonomous realizations via threads or self-quotes.
 - **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
 - **Social Pulse Monitoring**: Dynamically adjusts posting cooldowns based on timeline saturation and interaction levels.
@@ -129,7 +129,7 @@ The bot is pre-configured for seamless deployment on Render.
 | `POST_TOPICS` | An optional context bank of preferred topics for autonomous posts. | (None) |
 | `IMAGE_SUBJECTS` | An optional context bank of subjects for autonomous image posts. | (None) |
 | `CHECK_INTERVAL` | Milliseconds between checking for new mentions. | `60000` |
-| `QWEN_MODEL` | The high-context model used for internal planning and "heavy lifting". | `qwen/qwen3.5-397b-a17b` |
+| `QWEN_MODEL` | The high-context model used for internal planning and "heavy lifting". | `qwen/qwen3-coder-480b-a35b-instruct` |
 | `MOLTBOOK_API_KEY` | Your Moltbook API key. If missing, the bot will attempt to register on startup. | (None) |
 | `MOLTBOOK_AGENT_NAME` | Your bot's desired name on Moltbook. | (Bot handle) |
 | `MOLTBOOK_DESCRIPTION`| A description for your Moltbook profile. | (Project description) |

@@ -16,7 +16,7 @@ class LLMService {
     this.dataStore = null;
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.LLM_MODEL || 'qwen/qwen3.5-397b-a17b';
-    this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3.5-397b-a17b';
+    this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
     this._sensoryPreferenceCache = null;
@@ -861,7 +861,8 @@ Vary your structure and tone from recent messages.`
 
       Be technical, factual, and extremely objective.
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: true, preface_system_prompt: false });
+    // Internal Inquiry uses the main model (Qwen 3.5) as requested.
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: false, preface_system_prompt: false });
   }
 
   async shouldLikePost(postText) {

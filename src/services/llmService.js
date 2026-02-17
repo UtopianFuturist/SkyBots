@@ -2038,6 +2038,10 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       7. **review_positive_memories**: Review stable past experiences.
       8. **set_lurker_mode**: Enable/disable social fasting.
           - Parameters: { "enabled": boolean }
+      9. **search_discord_history**: Search for keywords in other Discord channels to maintain cross-thread context.
+          - Parameters: { "query": "string" }
+      10. **resolve_dissonance**: Synthesize conflicting points or feelings into a single realization.
+          - Parameters: { "conflicting_points": ["point 1", "point 2"] }
 
       Analyze the situation and provide a JSON response:
       {

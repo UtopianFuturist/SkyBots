@@ -1244,7 +1244,11 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                     console.log(`[Bot] Heartbeat Action: Internal inquiry on: "${query}"`);
                                     const inquiryResult = await llmService.performInternalInquiry(query);
                                     if (inquiryResult && memoryService.isEnabled()) {
-                                        await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${query}. Result: ${inquiryResult}`);
+                                        // Reflector Loop (Item 40)
+                                        const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed a heartbeat inquiry on "${query}". Should I record the finding: "${inquiryResult.substring(0, 100)}..." in our memory thread?`, { details: { query, result: inquiryResult } });
+                                        if (confirmation.confirmed) {
+                                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${query}. Result: ${inquiryResult}`);
+                                        }
                                     }
                                 } else if (action.tool === 'mute_feed_impact') {
                                     const duration = action.parameters?.duration_minutes || 60;
@@ -1267,6 +1271,14 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                     const enabled = action.parameters?.enabled ?? true;
                                     console.log(`[Bot] Heartbeat Action: set_lurker_mode (${enabled})`);
                                     await dataStore.setLurkerMode(enabled);
+                                } else if (action.tool === 'search_discord_history') {
+                                    const query = action.query || action.parameters?.query;
+                                    console.log(`[Bot] Heartbeat Action: search_discord_history for "${query}"`);
+                                    await discordService.searchHistory(query);
+                                } else if (action.tool === 'resolve_dissonance') {
+                                    const points = action.parameters?.conflicting_points || [];
+                                    console.log(`[Bot] Heartbeat Action: resolve_dissonance`);
+                                    await llmService.resolveDissonance(points);
                                 }
                             }
                         }

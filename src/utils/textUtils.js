@@ -237,7 +237,7 @@ export const stripWrappingQuotes = (text) => {
 export const GROUNDED_LANGUAGE_DIRECTIVES = `
 **STRICT ANTI-SLOP POLICY:**
 - YOU MUST ELIMINATE repetitive metaphorical "slop".
-- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress".
+- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming".
 - AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea".
 - **GROUNDING & HONESTY**: Only report on actions you can verify through your logs or memories. DO NOT claim to have performed diagnostics, "internal checks", or image generation if the logs do not show them. If logs show errors, be honest about them. Do not use "system checking" or "running diagnostics" as filler.
 - Prioritize grounded, literal, and specific descriptions of your internal state or observations.
@@ -276,7 +276,7 @@ export const getSlopInfo = (text) => {
         "jaggedly honest",
         "myth of momentum",
         "circle back to the same spot but call it progress",
-        "felt necessary"
+        "becoming"
     ];
     const lower = text.toLowerCase().trim();
     for (const f of forbidden) {

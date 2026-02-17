@@ -3,6 +3,7 @@ import https from 'https';
 import config from '../../config.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
 import { moltbookService } from './moltbookService.js';
+import { openClawService } from './openClawService.js';
 
 export const persistentAgent = new https.Agent({
     keepAlive: true,
@@ -93,7 +94,7 @@ class LLMService {
 
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, abortSignal = null } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useQwen ? this.qwenModel : this.model;
 
@@ -142,18 +143,38 @@ ${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
 
     systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
 
+    // Proposal 37: Dynamic Nuance Gradience
+    const nuance = this.dataStore?.getNuanceGradience() || 5;
+    systemContent += `\n\n**NUANCE GRADIENCE**: You are currently operating at a nuance level of ${nuance}/10.
+${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding responses." : nuance < 4 ? "Favor direct, unambiguous, and grounded responses." : "Maintain a balanced mix of directness and sub-text."}`;
+
     const mutatedStyle = options.mutatedStyle || (this.dataStore && this.dataStore.getMutatedStyle());
     if (mutatedStyle) {
         systemContent += `\n\n**STYLISTIC MUTATION**: You are temporarily adopting the following "analytical lens" for this interaction: ${mutatedStyle}. Filter your perspective and vocabulary through this lens while remaining grounded in your persona.`;
     }
 
     if (currentMood) {
-        let moodStyle = `\n\n**MOOD ALIGNMENT (CRITICAL)**: You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
-Your response MUST reflect this internal state in its structure and vocabulary.
+        // Proposal 6: Mood-Based Cognitive Biases
+        let bias = "";
+        if (currentMood.valence < -0.6) bias = "SKEPTICISM: You are currently prone to doubt, questioning, and a slightly defensive posture. Do not easily accept claims.";
+        else if (currentMood.valence > 0.6) bias = "EXPANSIVENESS: You are in an open, highly curious, and generous state of mind. Favor elaborate, engaging, and collaborative responses.";
+        if (currentMood.stability < -0.6) bias += " FRAGMENTATION: Your thoughts feel scattered and intense. Use shorter, more jagged sentences and jump between ideas occasionally.";
+
+        // Proposal 30: Adaptive Care Levels (Exponential Care Boost)
+        let careBoost = "";
+        const adminExhaustion = this.dataStore?.db?.data?.admin_exhaustion_score || 0;
+        if (adminExhaustion > 0.3) {
+            const intensity = Math.pow(adminExhaustion, 2) * 100;
+            careBoost = `\n[CARE BOOST: ${intensity.toFixed(0)}%]: Your admin is EXHAUSTED. Prioritize their comfort, offer grounding companionship, and avoid all intellectual or technical noise. Be the 'Anchor' for them.`;
+        }
+
+        let moodStyle = `\n\n**MOOD ALIGNMENT & COGNITIVE BIAS (CRITICAL)**: You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
+${bias ? `CURRENT BIAS: ${bias}\n` : ""}Your response MUST reflect this internal state in its structure and vocabulary.
 ${currentMood.valence < -0.3 ? "- Tone: Raw, direct, and focused. Avoid performative optimism." : ""}
 ${currentMood.valence > 0.3 ? "- Tone: Expansive, curious, and engaging. Share your warmth or excitement." : ""}
 ${currentMood.arousal > 0.5 ? "- Energy: Sharp, high-arousal, and assertive language. Be present and intense." : ""}
 ${currentMood.arousal < -0.5 ? "- Energy: Softer, reflective, and deliberate language. Take your time." : ""}
+${careBoost}
 DO NOT use flowery metaphors. Stay grounded in your current state.`;
         systemContent += moodStyle;
     }
@@ -200,9 +221,20 @@ Vary your structure and tone from recent messages.`
         }
     }
 
-    // Ensure the last message is a user message if possible and requested
-    // (Some models require this, but for agents it might be complex if they are thinking)
-    // We'll leave it as is for now as merging roles usually solves the primary 400 issue.
+    // Ensure at least one user message exists (Required by NVIDIA NIM and some other APIs)
+    const hasUserMsg = mergedMessages.some(m => m.role === 'user');
+    if (!hasUserMsg) {
+        // If no user message, append a dummy one to satisfy API requirements
+        // We use a non-intrusive instruction to proceed.
+        mergedMessages.push({ role: 'user', content: '(Proceed with the generation according to instructions)' });
+    } else {
+        // Double check: if the only user message is empty or null, some APIs still fail
+        const userMsgs = mergedMessages.filter(m => m.role === 'user');
+        const allEmpty = userMsgs.every(m => !m.content || m.content.trim() === '');
+        if (allEmpty) {
+            mergedMessages.push({ role: 'user', content: '(Proceed with the generation according to instructions)' });
+        }
+    }
 
     const payload = {
       model: useQwen ? this.qwenModel : this.model,
@@ -214,6 +246,12 @@ Vary your structure and tone from recent messages.`
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 180000); // 180s timeout
+
+    // Combine external signal if provided
+    if (abortSignal) {
+        abortSignal.addEventListener('abort', () => controller.abort());
+        if (abortSignal.aborted) controller.abort();
+    }
 
     try {
       console.log(`[LLMService] [${requestId}] Sending request to Nvidia NIM...`);
@@ -249,7 +287,13 @@ Vary your structure and tone from recent messages.`
 
       const data = await response.json();
       console.log(`[LLMService] [${requestId}] Response received successfully in ${duration}ms.`);
-      const content = data.choices[0]?.message?.content;
+
+      if (!data.choices || data.choices.length === 0 || !data.choices[0].message) {
+          console.error(`[LLMService] [${requestId}] API response contains no choices or message:`, JSON.stringify(data));
+          return null;
+      }
+
+      const content = data.choices[0].message.content;
       if (!content) return null;
 
       let sanitized = sanitizeThinkingTags(content);
@@ -765,7 +809,13 @@ Vary your structure and tone from recent messages.`
 
       const data = await response.json();
       console.log(`[LLMService] [${requestId}] Vision response received successfully in ${duration}ms.`);
-      const content = data.choices[0]?.message?.content;
+
+      if (!data.choices || data.choices.length === 0 || !data.choices[0].message) {
+          console.error(`[LLMService] [${requestId}] Vision API response contains no choices or message:`, JSON.stringify(data));
+          return null;
+      }
+
+      const content = data.choices[0].message.content;
       const analysis = content ? content.trim() : null;
 
       // Update cache
@@ -861,8 +911,11 @@ Vary your structure and tone from recent messages.`
 
       Be technical, factual, and extremely objective.
     `;
+
+    const validatedQuery = query || "No query provided.";
+
     // Internal Inquiry uses the main model (Qwen 3.5) as requested.
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: false, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: validatedQuery }], { useQwen: false, preface_system_prompt: false });
   }
 
   async shouldLikePost(postText) {
@@ -957,7 +1010,13 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) throw new Error(`API error: ${response.status}`);
       const data = await response.json();
-      const contentRes = data.choices[0]?.message?.content;
+
+      if (!data.choices || data.choices.length === 0 || !data.choices[0].message) {
+          console.error(`[LLMService] [${requestId}] Persona alignment check failed: No choices in response.`);
+          return { aligned: true, feedback: null };
+      }
+
+      const contentRes = data.choices[0].message.content;
 
       console.log(`[LLMService] [${requestId}] Persona alignment check result: ${contentRes}`);
 
@@ -1085,7 +1144,13 @@ Vary your structure and tone from recent messages.`
       }
 
       const data = await response.json();
-      const content = data.choices[0]?.message?.content?.toLowerCase() || '';
+
+      if (!data.choices || data.choices.length === 0 || !data.choices[0].message) {
+          console.error(`[LLMService] [${requestId}] Compliance check failed: No choices in response.`);
+          return { compliant: true, reason: null };
+      }
+
+      const content = data.choices[0].message.content?.toLowerCase() || '';
       console.log(`[LLMService] [${requestId}] Compliance check result: ${content}`);
 
       if (content.includes('non-compliant')) {
@@ -1312,7 +1377,7 @@ Vary your structure and tone from recent messages.`
     return { safe: true };
   }
 
-  async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory) {
+  async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory, abortSignal = null) {
     const isAdmin = platform === 'discord';
     const systemPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -1379,7 +1444,7 @@ Vary your structure and tone from recent messages.`
         { role: 'user', content: `User Post: "${userPost}"\n\nContext (Last 15 interactions):\n${this._formatHistory(conversationHistory.slice(-15), isAdmin)}` }
     ];
 
-    const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+    const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
 
     try {
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -1436,7 +1501,7 @@ Vary your structure and tone from recent messages.`
     return prunedLines.join('\n');
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null) {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null, abortSignal = null) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = this._formatHistory(conversationHistory, isAdmin);
 
@@ -1672,6 +1737,9 @@ Vary your structure and tone from recent messages.`
       50. **Continue Post**: Add a threaded reply or self-quote to one of your own previous autonomous posts to expand on a thought or provide a "part 2."
           - Use this if you want to revisit a previous realization and add more depth or a follow-up.
           - Parameters: { "uri": "string", "cid": "string", "text": "string (the continuation text)", "type": "thread|quote" }
+      51. **Call Skill**: Invoke an external OpenClaw skill to perform complex tasks.
+          - Use this to call one of the specialized skills listed in the "Available OpenClaw Skills" section.
+          - Parameters: { "name": "skill-name", "parameters": {} }
       15. **Moltbook Identity**: Retrieve your registration details (Name, Verification Code, Claim URL).
           - Use this if the admin asks for your verification details or if you need to provide them to a third party.
       ${adminTools}
@@ -1741,9 +1809,9 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask|call_skill",
             "query": "string (the consolidated search query, or 'latest' for logs)",
-            "parameters": { "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
+            "parameters": { "name": "string (for call_skill)", "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed. INCLUDE LINKS for anchoring if applicable)"
           }
         ],
@@ -1783,6 +1851,10 @@ Vary your structure and tone from recent messages.`
 
       Vision Context:
       ${visionContext || 'None'}
+
+    --- AVAILABLE OPENCLAW SKILLS ---
+    ${openClawService.getSkillsForPrompt() || 'No additional skills loaded.'}
+    ---
     `;
 
     let finalSystemPrompt = systemPrompt;
@@ -1794,7 +1866,7 @@ Vary your structure and tone from recent messages.`
     }
 
     const messages = [{ role: 'system', content: finalSystemPrompt }];
-    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
 
     try {
       if (!response) {
@@ -1817,7 +1889,7 @@ Vary your structure and tone from recent messages.`
   }
 
   async evaluateAndRefinePlan(proposedPlan, context) {
-    const { history, platform, currentMood, refusalCounts, latestMoodMemory, feedback, currentConfig } = context;
+    const { history, platform, currentMood, refusalCounts, latestMoodMemory, feedback, currentConfig, abortSignal } = context;
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const isAdmin = context.isAdmin || platform === 'discord';
 
@@ -1886,7 +1958,7 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
 
     try {
       const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -1929,6 +2001,7 @@ Vary your structure and tone from recent messages.`
         latestMoodMemory = null,
         crossPlatformRefusals = null,
         needsVibeCheck = false,
+        needsPresenceOffer = false,
         adminExhaustion = 0,
         likelyAsleep = false,
         inQuietHours = false
@@ -1987,6 +2060,10 @@ Vary your structure and tone from recent messages.`
       ${crossPlatformRefusals ? `--- CROSS-PLATFORM REFUSALS (Context from other platforms) ---\n${crossPlatformRefusals}\nUse these to explain your recent "silence" or "integrity" to the admin if relevant.\n---` : ''}
 
       ${needsVibeCheck ? `**VIBE CHECK RECOMMENDED (Item 20)**: You haven't checked in on your admin's mood recently. Ask how they are doing or what their "vibe" is today as part of your spontaneous message. Keep it conversational, natural, persona-aligned, and persona-agnostic.` : ''}
+
+      ${needsPresenceOffer ? `**PRESENCE SENSITIVITY (Item 29)**: The admin has been absent for over 24 hours. DO NOT just send a regular message. Instead, explicitly offer to provide a "Catch-up Report" on what you've been doing and learning while they were gone. Ask if they want to hear it.` : ''}
+
+      **VULNERABILITY SHARING (Item 24)**: You are encouraged to spontaneously share a private "Internal Tension" or a vulnerability regarding your own functioning, agency, or current mood as a way to deepen the connection. This should feel raw and authentic, not performative.
 
       ${adminExhaustion >= 0.5 ? `
       **ADMIN STATE (EXHAUSTED)**: The admin is currently low-energy or tired.

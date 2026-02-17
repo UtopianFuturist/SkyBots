@@ -331,9 +331,12 @@ class DiscordService {
 
         // Interrupt Detection: If we are already generating for this channel, mark as interrupted
         if (this._activeGenerations.has(normChannelId)) {
-            console.log(`[DiscordService] Interrupt detected in ${normChannelId}.`);
+            console.log(`[DiscordService] Interrupt detected in ${normChannelId}. Aborting previous generation.`);
             this._interrupted.add(normChannelId);
-            // Optionally we could abort the previous LLM call if we had a way to pass the controller down
+            const controller = this._activeGenerations.get(normChannelId);
+            if (controller instanceof AbortController) {
+                controller.abort();
+            }
         }
 
         const isDM = message.channel.type === ChannelType.DM;
@@ -546,6 +549,15 @@ class DiscordService {
                 chunks = splitTextForDiscord(sanitized, { bulk: isEmotional });
             }
 
+            // Item 33: Multi-Message "Thought Cascading" - Maximum 4 messages
+            if (chunks.length > 4) {
+                console.log(`[DiscordService] Thought Cascading: Capping chunks from ${chunks.length} to 4.`);
+                // Merge extra chunks into the last one
+                const head = chunks.slice(0, 3);
+                const tail = chunks.slice(3).join(' ');
+                chunks = [...head, tail];
+            }
+
             let firstSentMessage = null;
 
             for (let i = 0; i < chunks.length; i++) {
@@ -567,6 +579,18 @@ class DiscordService {
 
                 if (!firstSentMessage) firstSentMessage = sentMessage;
 
+                // Log interaction immediately after sending to prevent duplicate heartbeat realizations
+                const channelId = target.id || (target.channel && target.channel.id);
+                if (channelId && sentMessage) {
+                    const normId = (target.constructor.name === 'User' || target.type === ChannelType.DM) ? `dm_${target.id}` : channelId;
+                    await dataStore.saveDiscordInteraction(normId, 'assistant', chunk, {
+                        id: sentMessage.id,
+                        authorId: this.client.user.id,
+                        username: this.client.user.username,
+                        timestamp: sentMessage.createdTimestamp
+                    });
+                }
+
                 // Multi-Message "Thought Cascading": Logical chunks with human-like delays
                 if (chunks.length > 1 && i < chunks.length - 1) {
                     // Simulate reading/typing time for next chunk: 1.5 - 3 seconds
@@ -575,16 +599,6 @@ class DiscordService {
                 }
             }
 
-            // Log interaction if it's a DM or we have a channel ID
-            const channelId = target.id || (target.channel && target.channel.id);
-            if (channelId) {
-                // Determine if target is a User or Channel
-                const normId = (target.constructor.name === 'User' || target.type === ChannelType.DM) ? `dm_${target.id}` : channelId;
-                await dataStore.saveDiscordInteraction(normId, 'assistant', sanitized, {
-                    authorId: this.client.user.id,
-                    username: this.client.user.username
-                });
-            }
 
             return firstSentMessage;
         } catch (error) {
@@ -755,8 +769,9 @@ class DiscordService {
         const isDM = message.channel.type === ChannelType.DM;
         console.log(`[DiscordService] Generating response for channel: ${message.channel.id} (normalized: ${normChannelId}), isDM: ${isDM}`);
 
-        // Register active generation
-        this._activeGenerations.set(normChannelId, true);
+        // Register active generation with a new controller
+        const abortController = new AbortController();
+        this._activeGenerations.set(normChannelId, abortController);
         this._interrupted.delete(normChannelId);
 
         // Adaptive Response Jitter: random 1-3s delay for simple non-admin replies
@@ -801,10 +816,11 @@ class DiscordService {
                 try {
                     console.log(`[DiscordService] Local history empty, fetching from Discord...`);
                     const fetchedMessages = await message.channel.messages.fetch({ limit: 15 });
-                history = fetchedMessages
+                const fetchedHistory = fetchedMessages
                     .reverse()
                     .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
                     .map(m => ({
+                        id: m.id,
                         role: m.author.id === this.client.user.id ? 'assistant' : 'user',
                         content: m.content,
                         timestamp: m.createdTimestamp,
@@ -812,7 +828,8 @@ class DiscordService {
                         authorId: m.author.id,
                         username: m.author.username
                     }));
-                    console.log(`[DiscordService] Fetched ${history.length} messages from Discord.`);
+                    history = await dataStore.mergeDiscordHistory(normChannelId, fetchedHistory);
+                    console.log(`[DiscordService] Merged ${fetchedHistory.length} messages from Discord.`);
                 } catch (err) {
                     console.warn(`[DiscordService] Failed to fetch history from Discord:`, err);
                 }
@@ -1038,11 +1055,11 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                  const [latestMoodMemory, directiveCheck, passedTopicsRaw, prePlanning] = await Promise.all([
                      memoryService.getLatestMoodMemory(),
-                     llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 }),
-                     llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 }),
+                     llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }),
+                     llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }),
                      (lastIntuitionData && (Date.now() - lastIntuitionData.timestamp < 120000))
                         ? Promise.resolve(lastIntuitionData.intuition)
-                        : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null)
+                        : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null, abortController.signal)
                  ]);
 
                  if (!lastIntuitionData || (Date.now() - lastIntuitionData.timestamp >= 120000)) {
@@ -1084,7 +1101,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  const lastRejection = dataStore.getLastRejectionReason();
                  const planningFeedback = (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
 
-                 let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
+                 let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning, abortController.signal);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  // Confidence Check (Item 9)
@@ -1104,7 +1121,8 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      currentMood,
                      refusalCounts,
                      latestMoodMemory,
-                     currentConfig: dConfig
+                     currentConfig: dConfig,
+                     abortSignal: abortController.signal
                  });
 
                  if (refinedPlan.decision === 'refuse') {
@@ -1539,7 +1557,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          }
                      }
                      if (action.tool === 'internal_inquiry') {
-                         const query = action.query || action.parameters?.query;
+                         const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
                          if (query) {
                              const result = await llmService.performInternalInquiry(query);
                              if (result) {
@@ -1825,7 +1843,8 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      useQwen: true,
                      temperature: 0.7,
                      tropeBlacklist: prePlanning?.trope_blacklist || [],
-                     currentMood
+                     currentMood,
+                     abortSignal: abortController.signal
                  });
 
                  // Information Density Filter (Item 6)
@@ -1847,7 +1866,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
             } else {
                 // Fast-Path for Simple DMs: Direct response
                 console.log(`[DiscordService] Simple path: Generating single response.`);
-                responseText = await llmService.generateResponse(messages, { useQwen: false });
+                responseText = await llmService.generateResponse(messages, { useQwen: false, abortSignal: abortController.signal });
             }
 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
@@ -1864,8 +1883,14 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                     return this.respond(message);
                 }
 
-                // Variable Typing Latency (Item 1): Dynamic speed based on length and randomness
-                const charSpeed = Math.floor(Math.random() * 20) + 40; // 40-60ms per char
+            // Item 21: Vibe Mirroring Latency - Adjust typing speed based on context
+            let baseSpeed = 40;
+            if (isAdmin) {
+                if (message.content.length < 20) baseSpeed = 20; // Fast for short talk
+                else if (message.content.length > 200) baseSpeed = 60; // Slower/more deliberate for deep talk
+            }
+
+            const charSpeed = Math.floor(Math.random() * 20) + baseSpeed;
                 let typingWait = responseText.length * charSpeed;
 
                 // Extra "thinking" time for substantive responses (Item 25)
@@ -1873,7 +1898,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                     typingWait += Math.floor(Math.random() * 2000) + 500;
                 }
 
-                typingWait = Math.min(typingWait, 5000); // Cap at 5s to keep it snappy enough
+            typingWait = Math.min(typingWait, 8000); // Increased cap to 8s for deep talk
                 await new Promise(resolve => setTimeout(resolve, typingWait));
 
                 // One last check after the typing wait
@@ -2169,13 +2194,11 @@ INSTRUCTIONS:
 
             console.log(`[DiscordService] fetchAdminHistory: Fetched ${fetchedMessages.size} messages from admin DM.`);
 
-            // We need to clear existing local history for this channel to avoid duplicates if we're doing a full refresh,
-            // or we could merge them. For simplicity and to fix the "empty history after redeploy" issue,
-            // let's replace the local history with the fetched one.
-            const history = fetchedMessages
+            const fetchedHistory = fetchedMessages
                 .reverse()
                 .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
                 .map(m => ({
+                    id: m.id,
                     role: m.author.id === this.client.user.id ? 'assistant' : 'user',
                     content: m.content,
                     timestamp: m.createdTimestamp,
@@ -2184,11 +2207,9 @@ INSTRUCTIONS:
                     username: m.author.username
                 }));
 
-            if (history.length > 0) {
-                // Wipe and replace local history for this channel
-                dataStore.db.data.discord_conversations[normChannelId] = history;
-                await dataStore.db.write();
-                return history;
+            if (fetchedHistory.length > 0) {
+                const merged = await dataStore.mergeDiscordHistory(normChannelId, fetchedHistory);
+                return merged;
             }
             return [];
         } catch (err) {

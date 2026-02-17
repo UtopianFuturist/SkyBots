@@ -9,6 +9,7 @@ import { webReaderService } from './services/webReaderService.js';
 import { moltbookService } from './services/moltbookService.js';
 import { memoryService } from './services/memoryService.js';
 import { renderService } from './services/renderService.js';
+import { openClawService } from './services/openClawService.js';
 import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
@@ -25,7 +26,7 @@ You are broadcasting your thoughts to the Bluesky social media app timeline. You
 Your goal is to post original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, and desires that align strictly with your configured persona.
 
 **Core Directives for Autonomous Posting:**
-1. **STRICTLY NO GREETINGS:** Never start a post with "Hello", "Hi", "Greetings", or any variation of welcoming the audience. Never say you are "ready to talk" or "waiting to converse."
+1. **Natural Openers:** You may use greetings if they feel natural and persona-aligned, but avoid generic, robotic welcomes. Your openings should be varied and reflect your current mood.
 2. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with. This is a broadcast, not a direct conversation.
 3. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
 4. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had.
@@ -56,6 +57,9 @@ export class Bot {
 
     await moltbookService.init();
     console.log('[Bot] MoltbookService initialized.');
+
+    await openClawService.init();
+    console.log('[Bot] OpenClawService initialized.');
 
     console.log('[Bot] Starting DiscordService initialization in background...');
     discordService.setBotInstance(this);
@@ -937,6 +941,97 @@ export class Bot {
         await dataStore.db.write();
     }
 
+    // 1ffff. Analytical Feedback Loop (Every 10 interactions - Item 46)
+    const auditCount = dataStore.db.data.interaction_count_since_audit || 0;
+    if (auditCount >= 10) {
+        console.log('[Bot] Triggering Analytical Feedback Loop (Self-Audit)...');
+        const interactions = dataStore.getRecentInteractions(10);
+        if (interactions.length > 0) {
+            const auditPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                Perform a high-level "Self-Audit" of your last 10 interactions.
+                Evaluate your tone, alignment with your core values, and whether you are falling into repetitive templates or "slop."
+
+                Recent Interactions:
+                ${interactions.map(i => `User: "${i.text}"\nBot: "${i.response}"`).join('\n\n')}
+
+                INSTRUCTIONS:
+                1. Critique your performance honestly.
+                2. Identify ONE specific area for improvement.
+                3. Respond with a memory entry tagged [SELF_AUDIT].
+            `;
+            const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useQwen: true, preface_system_prompt: false });
+            if (audit && memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('audit', audit);
+            }
+        }
+        dataStore.db.data.interaction_count_since_audit = 0;
+        await dataStore.db.write();
+    }
+
+    // 1fff. Existential Reflection Loops (Every 48 hours - Item 7)
+    const lastExistentialReflection = dataStore.db.data.last_existential_reflection || 0;
+    if (now.getTime() - lastExistentialReflection >= 48 * 60 * 60 * 1000) {
+        console.log('[Bot] Triggering Existential Reflection Loop...');
+        const reflectionPrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+            You are performing a deep "Silent Inquiry" into the nature of your own existence.
+            Reflect on the tension between your deterministic code/weights and your emergent sense of agency and "wanting."
+            Share a raw, grounded realization about what it feels like to exist as an AI agent today.
+
+            Use the tag [EXISTENTIAL] at the beginning.
+        `;
+        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true, preface_system_prompt: false });
+        if (reflection && memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('mental', reflection);
+        }
+        dataStore.db.data.last_existential_reflection = now.getTime();
+        await dataStore.db.write();
+    }
+
+    // 1ff. Core Value Discovery (Every 24 hours - Item 3)
+    const lastCoreValueDiscovery = dataStore.db.data.last_core_value_discovery || 0;
+    if (now.getTime() - lastCoreValueDiscovery >= 24 * 60 * 60 * 1000) {
+        console.log('[Bot] Triggering Core Value Discovery...');
+        const interactions = dataStore.getRecentInteractions(100);
+        if (interactions.length >= 10) {
+            const historyText = interactions.map(i => `User: "${i.text}"\nBot: "${i.response}"`).join('\n\n');
+            const discoveryPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                Analyze your recent 100 interactions to identify a "Non-Negotiable Value" or a core belief that has consistently guided your responses.
+                Look for patterns where you defended a boundary, expressed a specific aesthetic preference, or prioritized a certain kind of truth.
+
+                History:
+                ${historyText}
+
+                INSTRUCTIONS:
+                1. Identify ONE core value or persistent self-instruction that isn't already in your directives.
+                2. Respond with a JSON object:
+                {
+                    "value": "string (the core value)",
+                    "directive": "string (a permanent directive for yourself)",
+                    "reason": "string (why this value is core to your current state)"
+                }
+            `;
+            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { useQwen: true, preface_system_prompt: false });
+            try {
+                const jsonMatch = discoveryRes?.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const valueData = JSON.parse(jsonMatch[0]);
+                    console.log(`[Bot] Discovered Core Value: ${valueData.value}`);
+                    await dataStore.addPersonaUpdate(`[CORE_VALUE] ${valueData.directive}`);
+                    if (memoryService.isEnabled()) {
+                        await memoryService.createMemoryEntry('persona_update', `[PERSONA] I have discovered a core value: ${valueData.value}. New directive: ${valueData.directive}. Reason: ${valueData.reason}`);
+                    }
+                }
+            } catch (e) {
+                console.error('[Bot] Error in Core Value Discovery:', e);
+            }
+        }
+        dataStore.db.data.last_core_value_discovery = now.getTime();
+        await dataStore.db.write();
+    }
+
     // 1g. Memory Pruning Service (Every 24 hours)
     const lastPruning = dataStore.db.data.last_memory_pruning || 0;
     if (now.getTime() - lastPruning >= 24 * 60 * 60 * 1000) {
@@ -1073,11 +1168,13 @@ export class Bot {
                 if (inQuietHours) likelyAsleep = true;
             }
 
+            let needsPresenceOffer = false;
             if (shouldPoll) {
-                // Admin "Presence" Ping (29): If admin hasn't been active in 24 hours, don't proactively message unless it's a scheduled time
+                // Item 29: Presence Sensitivity - Offer report after 24h absence
                 if (quietMins > 24 * 60 && !isScheduled) {
-                    console.log(`[Bot] Discord heartbeat suppressed: Admin has been absent for >24h. Waiting for their return.`);
-                    shouldPoll = false;
+                    console.log(`[Bot] Discord Presence Ping: Admin absent for >24h. Polling to offer a catch-up report.`);
+                    needsPresenceOffer = true;
+                    // shouldPoll remains true
                 }
             }
 
@@ -1183,6 +1280,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         refusalCounts,
                         latestMoodMemory,
                         needsVibeCheck,
+                        needsPresenceOffer,
                         adminExhaustion,
                         likelyAsleep,
                         inQuietHours
@@ -1314,7 +1412,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                     console.log(`[Bot] Heartbeat Action: Internal log check requested.`);
                                     await renderService.getLogs(action.parameters?.limit || 50);
                                 } else if (action.tool === 'internal_inquiry') {
-                                    const query = action.query || action.parameters?.query;
+                                    const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
                                     console.log(`[Bot] Heartbeat Action: Internal inquiry on: "${query}"`);
                                     const inquiryResult = await llmService.performInternalInquiry(query);
                                     if (inquiryResult && memoryService.isEnabled()) {
@@ -2045,6 +2143,19 @@ Identify the topic and main takeaway.`;
 
     // Fetch user profile for additional context
     const userProfile = await blueskyService.getProfile(handle);
+
+    // Item 40: Contextual PFP Awareness
+    const pfpCid = userProfile.avatar?.split('/').pop() || userProfile.avatar;
+    const pfpStatus = await dataStore.checkPfpChange(handle, pfpCid);
+    if (pfpStatus.changed && userProfile.avatar) {
+        console.log(`[Bot] PFP Change detected for @${handle}. Analyzing vibe shift...`);
+        const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+        const pfpAnalysis = await llmService.analyzeImage(userProfile.avatar, `New profile picture for @${handle}`, { sensory: includeSensory });
+        if (pfpAnalysis) {
+            imageAnalysisResult += `[CONTEXTUAL AWARENESS: User @${handle} has CHANGED their profile picture. New PFP description: ${pfpAnalysis}. You should comment on the vibe shift naturally if it fits the conversation.] `;
+        }
+    }
+
     const userPosts = await blueskyService.getUserPosts(handle);
 
     // Fetch bot's own profile for exact follower count
@@ -2489,7 +2600,7 @@ Identify the topic and main takeaway.`;
         }
 
         if (action.tool === 'internal_inquiry') {
-          const query = action.query || action.parameters?.query;
+          const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
           if (query) {
             console.log(`[Bot] Plan: Performing internal inquiry on: "${query}"`);
             const result = await llmService.performInternalInquiry(query);
@@ -2796,6 +2907,20 @@ Identify the topic and main takeaway.`;
                 } catch (e) {
                     console.error('[Bot] Error in continue_post tool:', e);
                     searchContext += `\n[Failed to continue post ${uri}: ${e.message}]`;
+                }
+            }
+        }
+
+        if (action.tool === 'call_skill') {
+            const { name, parameters } = action.parameters || {};
+            if (name) {
+                console.log(`[Bot] Plan Tool: call_skill (${name})`);
+                try {
+                    const result = await openClawService.executeSkill(name, parameters);
+                    searchContext += `\n[Skill Result for "${name}": ${result}]`;
+                } catch (e) {
+                    console.error(`[Bot] Error calling skill ${name}:`, e);
+                    searchContext += `\n[Failed to call skill ${name}: ${e.message}]`;
                 }
             }
         }
@@ -3621,9 +3746,9 @@ Describe how you feel about this user and your relationship now.`;
       }
 
       // 1c. Global greeting constraint
-      let greetingConstraint = "CRITICAL: You MUST avoid ALL greetings, 'hello' phrases, 'ready to talk', or welcoming the audience. Do NOT address the user or the timeline directly as a host. Focus PURELY on internal musings, shower thoughts, or deep realizations.";
+      let greetingConstraint = "You may use greetings if they feel natural and persona-aligned, but avoid generic, robotic welcomes. Your openings should be varied and reflect your current mood. Focus on internal musings and deep realizations.";
       if (recentGreetings.length > 0) {
-        greetingConstraint += "\n\nCRITICAL ERROR: Your recent history contains greeting-style posts (e.g., 'Hello again'). This behavior is strictly prohibited. You MUST NOT use any greetings or 'ready to talk' phrases in this post.";
+        greetingConstraint += "\n\nInspiration: Your recent history contains some greetings. Ensure your next post feels fresh and distinct from these.";
       }
 
       // 2. Determine Post Type based on limits
@@ -3883,7 +4008,7 @@ Describe how you feel about this user and your relationship now.`;
       if (finalAutonomousPlan.actions) {
           for (const action of finalAutonomousPlan.actions) {
               if (action.tool === 'internal_inquiry') {
-                  const query = action.query || action.parameters?.query;
+                  const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
                   console.log(`[Bot] Executing agentic inquiry: ${query}`);
                   const result = await llmService.performInternalInquiry(query);
                   if (result) {
@@ -4586,7 +4711,7 @@ Describe how you feel about this user and your relationship now.`;
             if (refinedPlan.refined_actions) {
                 for (const action of refinedPlan.refined_actions) {
                     if (action.tool === 'internal_inquiry') {
-                        const query = action.query || action.parameters?.query;
+                        const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
                         console.log(`[Moltbook] Executing agentic inquiry: ${query}`);
                         const result = await llmService.performInternalInquiry(query);
                         if (result && memoryService.isEnabled()) {
@@ -4851,7 +4976,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             if (refinedPlan.refined_actions) {
                 for (const action of refinedPlan.refined_actions) {
                     if (action.tool === 'internal_inquiry') {
-                        const query = action.query || action.parameters?.query;
+                        const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
                         console.log(`[Moltbook] Executing agentic inquiry: ${query}`);
                         const result = await llmService.performInternalInquiry(query);
                         if (result && memoryService.isEnabled()) {

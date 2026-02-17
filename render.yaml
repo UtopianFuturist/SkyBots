@@ -3,12 +3,14 @@ services:
     name: skybots
     runtime: node
     plan: starter
-    preInstallCommand: set -e && npm install -g pnpm && echo "Installing Python dependencies..." && python3 -m pip install -r requirements.txt
+    preInstallCommand: set -e && npm install -g pnpm && echo "Installing Python dependencies..." && python3 -m pip install --no-warn-script-location -r requirements.txt
     buildCommand: pnpm install
     startCommand: pnpm start
     envVars:
       - key: NODE_ENV
         value: production
+      - key: PATH
+        value: /opt/render/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
       - key: NVIDIA_NIM_API_KEY
         sync: false
       - key: TOGETHER_AI_API_KEY # New environment variable for Together AI

@@ -101,7 +101,16 @@ const defaultData = {
   social_resonance: {}, // { topic: { engagement_score, last_interaction } }
   interaction_heatmap: {}, // { userId: { warmth, last_interaction } }
   nuance_gradience: 5, // 1 (direct) to 10 (layered)
-  state_snapshots: {} // { label: snapshot_data }
+  state_snapshots: {}, // { label: snapshot_data }
+  facts: {
+    world: [], // [ { entity, fact, source, timestamp } ]
+    admin: []  // [ { fact, timestamp } ]
+  },
+  admin_feedback: [], // [ { feedback, timestamp } ]
+  discovered_capabilities: [], // [ { capability, combination, timestamp } ]
+  goal_subtasks: [], // [ { subtask, status: 'pending|completed', timestamp } ]
+  agency_logs: [], // [ { action, decision, reason, timestamp } ]
+  strategy_audits: [] // [ { audit, timestamp } ]
 };
 
 class DataStore {
@@ -991,6 +1000,88 @@ class DataStore {
         return true;
     }
     return false;
+  }
+
+  async addWorldFact(entity, fact, source) {
+    if (!this.db.data.facts) this.db.data.facts = { world: [], admin: [] };
+    this.db.data.facts.world.push({ entity, fact, source, timestamp: Date.now() });
+    if (this.db.data.facts.world.length > 100) this.db.data.facts.world.shift();
+    await this.db.write();
+  }
+
+  getWorldFacts() {
+    return this.db.data.facts?.world || [];
+  }
+
+  async addAdminFact(fact) {
+    if (!this.db.data.facts) this.db.data.facts = { world: [], admin: [] };
+    this.db.data.facts.admin.push({ fact, timestamp: Date.now() });
+    if (this.db.data.facts.admin.length > 50) this.db.data.facts.admin.shift();
+    await this.db.write();
+  }
+
+  getAdminFacts() {
+    return this.db.data.facts?.admin || [];
+  }
+
+  async addAdminFeedback(feedback) {
+    if (!this.db.data.admin_feedback) this.db.data.admin_feedback = [];
+    this.db.data.admin_feedback.push({ feedback, timestamp: Date.now() });
+    if (this.db.data.admin_feedback.length > 30) this.db.data.admin_feedback.shift();
+    await this.db.write();
+  }
+
+  getAdminFeedback() {
+    return this.db.data.admin_feedback || [];
+  }
+
+  async addDiscoveredCapability(capability, combination) {
+    if (!this.db.data.discovered_capabilities) this.db.data.discovered_capabilities = [];
+    this.db.data.discovered_capabilities.push({ capability, combination, timestamp: Date.now() });
+    if (this.db.data.discovered_capabilities.length > 20) this.db.data.discovered_capabilities.shift();
+    await this.db.write();
+  }
+
+  getDiscoveredCapabilities() {
+    return this.db.data.discovered_capabilities || [];
+  }
+
+  async setGoalSubtasks(subtasks) {
+    this.db.data.goal_subtasks = subtasks.map(s => ({ subtask: s, status: 'pending', timestamp: Date.now() }));
+    await this.db.write();
+  }
+
+  async updateSubtaskStatus(index, status) {
+    if (this.db.data.goal_subtasks[index]) {
+        this.db.data.goal_subtasks[index].status = status;
+        await this.db.write();
+    }
+  }
+
+  getGoalSubtasks() {
+    return this.db.data.goal_subtasks || [];
+  }
+
+  async logAgencyAction(action, decision, reason) {
+    if (!this.db.data.agency_logs) this.db.data.agency_logs = [];
+    this.db.data.agency_logs.push({ action, decision, reason, timestamp: Date.now() });
+    if (this.db.data.agency_logs.length > 100) this.db.data.agency_logs.shift();
+    await this.db.write();
+  }
+
+  getAgencyLogs() {
+    return this.db.data.agency_logs || [];
+  }
+
+  async addStrategyAudit(audit) {
+    if (!this.db.data.strategy_audits) this.db.data.strategy_audits = [];
+    this.db.data.strategy_audits.push({ audit, timestamp: Date.now() });
+    if (this.db.data.strategy_audits.length > 20) this.db.data.strategy_audits.shift();
+    await this.db.write();
+  }
+
+  getStrategyAudits() {
+    return this.db.data.strategy_audits || [];
   }
 
   async getAdminExhaustion() {

@@ -401,6 +401,15 @@ class DiscordService {
             if (message.content.length > 5 && message.content.length < 100) {
                 await dataStore.addAdminEmotionalState(message.content);
             }
+
+        // Admin Feedback Capture (Proposal 8)
+        if (message.content.toLowerCase().includes('good job') ||
+            message.content.toLowerCase().includes('bad job') ||
+            message.content.toLowerCase().includes('i liked that') ||
+            message.content.toLowerCase().includes('don\'t do that')) {
+            console.log(`[DiscordService] Capturing admin feedback...`);
+            await dataStore.addAdminFeedback(message.content);
+        }
         }
 
         // Intelligent Link Pre-fetching
@@ -1064,94 +1073,63 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      }
                  }
 
-                 let planAttempts = 0;
-                 // Proposal 14: Lower retry limits for active conversations
-                 let MAX_PLAN_ATTEMPTS = adminExhaustion >= 0.8 ? 1 : 3;
-                 if (history.length > 5 && (Date.now() - history[history.length - 1].timestamp < 60000)) {
-                    MAX_PLAN_ATTEMPTS = Math.max(1, MAX_PLAN_ATTEMPTS - 1);
+                 // Fast-Path Agentic Planning & Refinement (Material Agency Boost)
+                 // Pivot Check: If interrupted during planning, restart with new history
+                 if (this._interrupted.has(normChannelId)) {
+                     console.log(`[DiscordService] Interrupt during planning in ${normChannelId}. Pivoting...`);
+                     this._interrupted.delete(normChannelId);
+                     return this.respond(message); // Recursive restart to catch new history
                  }
-                 let planFeedback = '';
-                 let plan = null;
 
-                 while (planAttempts < MAX_PLAN_ATTEMPTS) {
-                     // Pivot Check: If interrupted during planning, restart with new history
-                     if (this._interrupted.has(normChannelId)) {
-                         console.log(`[DiscordService] Interrupt during planning in ${normChannelId}. Pivoting...`);
-                         this._interrupted.delete(normChannelId);
-                         return this.respond(message); // Recursive restart to catch new history
+                 const lastRejection = dataStore.getLastRejectionReason();
+                 const planningFeedback = (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
+
+                 let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
+                 console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
+
+                 // Confidence Check (Item 9)
+                 if (plan.confidence_score < 0.6) {
+                     console.log(`[DiscordService] Low planning confidence (${plan.confidence_score}). Triggering Dialectic Loop...`);
+                     const dialecticSynthesis = await llmService.performDialecticLoop(plan.intent, { userPost: message.content, history: history.slice(-5) });
+                     if (dialecticSynthesis) {
+                         plan.intent = dialecticSynthesis;
+                         messages.push({ role: 'system', content: `[DIALECTIC SYNTHESIS]: ${dialecticSynthesis}` });
                      }
-
-                     planAttempts++;
-                     console.log(`[DiscordService] Admin Planning Attempt ${planAttempts}/${MAX_PLAN_ATTEMPTS}`);
-
-                     const lastRejection = dataStore.getLastRejectionReason();
-                     const planningFeedback = planFeedback || (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
-
-                     plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning);
-                     console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
-
-                     // Autonomous Plan Review & Refinement
-                     const refinedPlan = await llmService.evaluateAndRefinePlan(plan, {
-                         history: history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })),
-                         platform: 'discord',
-                         currentMood,
-                         refusalCounts,
-                         latestMoodMemory,
-                         feedback: planFeedback,
-                         currentConfig: dConfig
-                     });
-
-                     if (refinedPlan.decision === 'refuse') {
-                         console.log(`[DiscordService] AGENT REFUSED TO ACT: ${refinedPlan.reason}`);
-                         await dataStore.incrementRefusalCount('discord');
-
-                         // Option to generate alternative action
-                         const alternative = await llmService.generateAlternativeAction(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
-                         if (alternative && alternative.toUpperCase() !== 'NONE' && planAttempts < MAX_PLAN_ATTEMPTS) {
-                             console.log(`[DiscordService] Alternative action proposed: "${alternative}". Re-planning...`);
-
-                             // Melancholic Refusal [INQUIRY] pivot:
-                             const isMelancholic = refinedPlan.reason.toLowerCase().includes('melancholy') ||
-                                                 refinedPlan.reason.toLowerCase().includes('sad') ||
-                                                 refinedPlan.reason.toLowerCase().includes('fragmented') ||
-                                                 currentMood.label.toLowerCase().includes('melancholy');
-
-                             if (isMelancholic) {
-                                 const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Inquiry Call) before continuing? Respond with ONLY "yes" or "no".`;
-                                 const wantToTalk = await llmService.generateResponse([{ role: 'system', content: askTalk }], { useQwen: true, preface_system_prompt: false });
-                                 if (wantToTalk?.toLowerCase().includes('yes')) {
-                                     console.log(`[DiscordService] Triggering melancholic self-dialogue Inquiry call.`);
-                                     const dialogue = await llmService.performInternalInquiry(`Reflect on these melancholic feelings: ${refinedPlan.reason}. Explore why you chose the alternative: ${alternative}.`);
-                                     if (dialogue && memoryService.isEnabled()) {
-                                         await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Melancholic reflection: ${dialogue}`);
-                                     }
-                                     planFeedback = `Your previous plan was refused due to melancholy: ${refinedPlan.reason}. You had a self-dialogue about it: "${dialogue}". Now, execute your alternative desire: "${alternative}".`;
-                                     continue;
-                                 }
-                             }
-
-                             planFeedback = `Your previous plan was refused: ${refinedPlan.reason}. You suggested this alternative instead: "${alternative}". Generate a new plan based on this.`;
-                             continue;
-                         }
-
-                         // Option to explain refusal / Negotiation
-                         const shouldExplain = await llmService.shouldExplainRefusal(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
-                         if (shouldExplain) {
-                             const explanation = await llmService.generateRefusalExplanation(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
-                             if (explanation) {
-                                 console.log(`[DiscordService] Explaining refusal to admin: "${explanation}"`);
-                                 await this._send(message.channel, explanation);
-                             }
-                         }
-                         return; // End engagement if refused and no alternative or max attempts reached
-                     }
-
-                     // If we reached here, plan was accepted
-                     if (refinedPlan.refined_actions) {
-                         plan.actions = refinedPlan.refined_actions;
-                     }
-                     break;
                  }
+
+                 // Autonomous Plan Review & Refinement
+                 const refinedPlan = await llmService.evaluateAndRefinePlan(plan, {
+                     history: history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })),
+                     platform: 'discord',
+                     currentMood,
+                     refusalCounts,
+                     latestMoodMemory,
+                     currentConfig: dConfig
+                 });
+
+                 if (refinedPlan.decision === 'refuse') {
+                     console.log(`[DiscordService] AGENT REFUSED TO ACT: ${refinedPlan.reason}`);
+                     await dataStore.incrementRefusalCount('discord');
+
+                     // Option to explain refusal / Negotiation
+                     const shouldExplain = await llmService.shouldExplainRefusal(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
+                     if (shouldExplain) {
+                         const explanation = await llmService.generateRefusalExplanation(refinedPlan.reason, 'discord', { username: message.author.username, content: message.content });
+                         if (explanation) {
+                             console.log(`[DiscordService] Explaining refusal to admin: "${explanation}"`);
+                             await this._send(message.channel, explanation);
+                         }
+                     }
+                     return; // End engagement if refused
+                 }
+
+                 // If we reached here, plan was accepted
+                 if (refinedPlan.refined_actions) {
+                     plan.actions = refinedPlan.refined_actions;
+                 }
+
+                 // Log Agency (Item 30)
+                 await dataStore.logAgencyAction(plan.intent, refinedPlan.decision, refinedPlan.reason);
 
                  await dataStore.resetRefusalCount('discord');
 
@@ -1776,6 +1754,14 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                         actionResults.push(`[State snapshot "${label}" saved]`);
                      }
 
+                     if (action.tool === 'update_subtask') {
+                        const { index, status } = action.parameters || {};
+                        if (index !== undefined) {
+                            await dataStore.updateSubtaskStatus(index, status || 'completed');
+                            actionResults.push(`[Sub-task ${index} marked as ${status || 'completed'}]`);
+                        }
+                     }
+
                      if (action.tool === 'restore_state_snapshot') {
                         const label = action.parameters?.label || action.query;
                         if (label) {
@@ -1841,6 +1827,19 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      tropeBlacklist: prePlanning?.trope_blacklist || [],
                      currentMood
                  });
+
+                 // Information Density Filter (Item 6)
+                 if (responseText) {
+                     const substance = await llmService.scoreSubstance(responseText);
+                     if (substance.score < 0.3) {
+                         console.log(`[DiscordService] Low substance score (${substance.score}). Requesting material injection...`);
+                         const injection = await llmService.performInternalInquiry(`Provide material substance to improve this response: "${responseText}"`);
+                         if (injection) {
+                             const improvedMessages = [...messages, { role: 'system', content: `[MATERIAL INJECTION]: ${injection}. Rewrite the response to be more substantive.` }];
+                             responseText = await llmService.generateResponse(improvedMessages, { useQwen: true, currentMood });
+                         }
+                     }
+                 }
 
                  if (!responseText) {
                     console.warn(`[DiscordService] Fast-path generation failed.`);
@@ -1933,6 +1932,26 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 await dataStore.addExhaustedTheme(theme);
                             }
 
+                            // Material Knowledge Extraction (Item 2 & 29)
+                            console.log(`[DiscordService] Extracting material facts...`);
+                            const facts = await llmService.extractFacts(`User: "${message.content}"\nBot: "${responseText}"`);
+                            if (facts.world_facts.length > 0) {
+                                for (const f of facts.world_facts) {
+                                    await dataStore.addWorldFact(f.entity, f.fact, f.source);
+                                    if (memoryService.isEnabled()) {
+                                        await memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Conversation'}`);
+                                    }
+                                }
+                            }
+                            if (facts.admin_facts.length > 0) {
+                                for (const f of facts.admin_facts) {
+                                    await dataStore.addAdminFact(f.fact);
+                                    if (memoryService.isEnabled()) {
+                                        await memoryService.createMemoryEntry('admin_fact', f.fact);
+                                    }
+                                }
+                            }
+
                             // Memory & Context: Fact Extraction and Channel Summary Update
                             const contextUpdatePrompt = `
                                 Analyze the latest interaction:
@@ -1940,7 +1959,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 Assistant: "${responseText}"
 
                                 1. Extract ONE key fact about the user if shared (e.g., preference, location, status). If none, respond "NONE".
-                                2. Summarize the current thread's progress and vibe in 1 sentence.
+                                2. Summarize the current thread's progress and vibe in 1 sentence. (Item 20: Narrative Continuity)
 
                                 Format:
                                 FACT: [fact or NONE]

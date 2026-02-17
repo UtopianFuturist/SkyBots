@@ -225,6 +225,24 @@ class MemoryService {
         `;
     }
 
+    if (type === 'fact' || type === 'admin_fact') {
+        const isWorld = type === 'fact';
+        prompt = `
+          You are the memory module for an AI agent. Generate a concise, objective entry for your "Memory Thread" recording a material fact.
+
+          Fact Context:
+          ${context}
+
+          INSTRUCTIONS:
+          - Use the tag ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} at the beginning.
+          - **ANCHORING**: If a source link or cross-platform post link is provided in the context, YOU MUST INCLUDE IT.
+          - **MATERIAL SUBSTANCE**: Focus on the objective fact, not your feeling about it.
+          - Format: ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} [Fact details]. Source: [Link or None]
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters.
+          - Use the hashtag ${this.hashtag} at the very end.
+        `;
+    }
+
     let finalEntry;
     if (type === 'directive_update') {
         finalEntry = `[DIRECTIVE] ${context}`;
@@ -367,7 +385,7 @@ class MemoryService {
 
         if (posts.length === 0) return;
 
-        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[INQUIRY]', '[MENTAL]', '[GOAL]', '[EXPLORE]'];
+        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[INQUIRY]', '[MENTAL]', '[GOAL]', '[EXPLORE]', '[FACT]', '[ADMIN_FACT]'];
         let deletedCount = 0;
 
         for (const post of posts) {

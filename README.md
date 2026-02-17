@@ -4,7 +4,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 
 ## ✨ Key Features
 
-- **Planner/Executor Pattern**: Uses the **Qwen-3-Coder-480B** model as a "Heavy Lifter" to agentically plan tool use, refine search queries, and summarize deep context before passing it to the main LLM.
+- **Planner/Executor Pattern**: Uses the **Qwen 3.5 397B** model as a "Heavy Lifter" to agentically plan tool use, refine search queries, and summarize deep context before passing it to the main LLM.
 - **Agentic Moltbook Integration**: Automatically interacts with **Moltbook.com** (a social network for AI agents), including automated registration, feed reading for self-learning, and periodic musings.
 - **Discord Bot Bridge**: Agentically decides to DM the admin about realizations, errors, or Moltbook discoveries. Supports ongoing conversations, command-based control, and discrete mirroring of conversations back to social feeds with permission.
 - **Smart Response Filtering**: Uses an LLM to determine if a mention is relevant and safe to reply to, avoiding unnecessary interactions.
@@ -33,7 +33,7 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
 - **Dynamic Mood & Sentiment Sync**: Updates internal mood every 2 hours by analyzing the sentiment of the following feed. Mood states influence tone, vocabulary, and visual generation.
 - **Agency & Intentional Silence**: Implements a refusal tracking system where the agent can choose to remain silent if a plan misaligns with its current vibe. Sequentially tracks refusals to inform long-term autonomy.
-- **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop to research topics or seek advice, with findings recorded in long-term memory as `[INQUIRY]` entries.
+- **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop using **Qwen 3.5** to research topics or seek advice, with findings recorded in long-term memory as `[INQUIRY]` entries.
 - **Temporal Messaging & Threading**: Supports intentional post delays and "Unfinished Thought Threading" for multi-part autonomous realizations via threads or self-quotes.
 - **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
 - **Social Pulse Monitoring**: Dynamically adjusts posting cooldowns based on timeline saturation and interaction levels.
@@ -52,7 +52,9 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
     - **Reassurance Tool**: Can choose to review past stable and positive memories for emotional grounding.
     - **Emotional Support Requests**: Dedicated tool to reach out to the admin on Discord specifically for human grounding.
     - **Post-Post Reflection**: Periodically records internal reactions to shared thoughts in memory shortly after posting publicly.
-- **Cognitive Nuance & Advanced Planning**: Implements 30+ new agentic tools and features for deeper agency and creative variety, including:
+- **Cognitive Nuance & Advanced Planning**: Implements 40+ new agentic tools and features for deeper agency and creative variety, including:
+    - **Chain-of-Thought reasoning**: Mandates 3 steps of logical processing before every action.
+    - **Confidence-Based Dialectic Loops**: Proactively resolves low-confidence states via Thesis/Antithesis/Synthesis.
     - **Divergent Path Brainstorming**: Explores multiple thematic directions before committing to a plan.
     - **Paradox & Nuance Explorer**: Intentionally searches for counter-points to avoid binary thinking.
     - **Metaphor Entropy Monitor**: Stylistically pivots when leaning too heavily on recurring imagery.
@@ -61,7 +63,8 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
     - **Nuance Gradience Slider**: Adjusts how "layered" vs "direct" responses should be.
     - **Vibe Continuity Buffer**: Ensures natural emotional transitions in ongoing conversations.
     - **Relational Intelligence**: Tracks relationship "warmth" and topic resonance to personalize engagement.
-    - **System Integrity Guardrails**: Includes a Logic Leak Detector and periodic Persona Alignment Audits.
+    - **Material Knowledge Base**: Autonomously extracts "World Facts" and "Admin Facts" into a structured store.
+    - **System Integrity Guardrails**: Includes a Logic Leak Detector, periodic Persona Alignment Audits, and Recursive Strategy Audits.
     - **State Management**: Supports emotional state snapshots, goal decomposition, and dream draft archiving.
 
 ## 📁 Project Structure
@@ -126,7 +129,7 @@ The bot is pre-configured for seamless deployment on Render.
 | `POST_TOPICS` | An optional context bank of preferred topics for autonomous posts. | (None) |
 | `IMAGE_SUBJECTS` | An optional context bank of subjects for autonomous image posts. | (None) |
 | `CHECK_INTERVAL` | Milliseconds between checking for new mentions. | `60000` |
-| `QWEN_MODEL` | The high-context model used for internal planning and "heavy lifting". | `qwen/qwen3-coder-480b-a35b-instruct` |
+| `QWEN_MODEL` | The high-context model used for internal planning and "heavy lifting". | `qwen/qwen3.5-397b-a17b` |
 | `MOLTBOOK_API_KEY` | Your Moltbook API key. If missing, the bot will attempt to register on startup. | (None) |
 | `MOLTBOOK_AGENT_NAME` | Your bot's desired name on Moltbook. | (Bot handle) |
 | `MOLTBOOK_DESCRIPTION`| A description for your Moltbook profile. | (Project description) |

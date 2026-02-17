@@ -46,8 +46,13 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     selectBestResult: jest.fn(),
     validateResultRelevance: jest.fn(),
     evaluateConversationVibe: jest.fn(),
-    performAgenticPlanning: jest.fn(),
-    evaluateAndRefinePlan: jest.fn().mockResolvedValue({ decision: 'engage', refined_actions: null, reason: 'Engaging for test' }),
+    performAgenticPlanning: jest.fn().mockResolvedValue({ actions: [], intent: 'Test', confidence_score: 1.0 }),
+    evaluateAndRefinePlan: jest.fn().mockResolvedValue({ decision: 'engage', refined_actions: [], reason: 'Engaging for test' }),
+    extractFacts: jest.fn().mockResolvedValue({ world_facts: [], admin_facts: [] }),
+    performDialecticLoop: jest.fn().mockResolvedValue('Synthesis'),
+    scoreSubstance: jest.fn().mockResolvedValue({ score: 1.0, reason: 'Good' }),
+    auditStrategy: jest.fn().mockResolvedValue('Audit report'),
+    performInternalInquiry: jest.fn().mockResolvedValue('Inquiry result'),
     evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'engage', reason: 'Engaging for test' }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
@@ -149,10 +154,18 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
       image_subjects: []
     }),
     updateConfig: jest.fn().mockResolvedValue(true),
+    logAgencyAction: jest.fn(),
+    addWorldFact: jest.fn(),
+    addAdminFact: jest.fn(),
     db: {
       data: {
-        interactions: []
-      }
+        interactions: [],
+        last_submolt_void_check: 0,
+        last_strategy_audit: 0,
+        last_agency_reflection: 0,
+        last_tool_discovery: 0
+      },
+      write: jest.fn().mockResolvedValue(true)
     }
   },
 }));

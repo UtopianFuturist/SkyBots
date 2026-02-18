@@ -56,14 +56,14 @@ class MoltbookService {
 
     if (isSuspended || response.status === 403) {
         console.error(`[Moltbook] ACCOUNT SUSPENDED or BLOCKED detected in ${context} (Status: ${response.status}).`);
-        this.db.data.suspended = true;
+        if (this.db?.data) this.db.data.suspended = true;
         const hint = data.hint || data.message || data.error;
         const expires = this._parseSuspensionDuration(hint);
         if (expires) {
-            this.db.data.suspension_expires_at = expires;
+            if (this.db?.data) this.db.data.suspension_expires_at = expires;
             console.log(`[Moltbook] Suspension expires at: ${expires}`);
         }
-        await this.db.write();
+        await this.db?.write();
         return true; // Handled as suspension
     }
     return false;
@@ -76,19 +76,19 @@ class MoltbookService {
       fs.mkdirSync(dbDir, { recursive: true });
     }
     this.db = await JSONFilePreset(MOLTBOOK_PATH, defaultMoltbookData);
-    await this.db.read();
+    await this.db?.read();
 
     // Override with config if provided, but ignore string "undefined" or "null"
     if (config.MOLTBOOK_API_KEY && config.MOLTBOOK_API_KEY !== 'undefined' && config.MOLTBOOK_API_KEY !== 'null') {
-      this.db.data.api_key = config.MOLTBOOK_API_KEY;
+      if (this.db?.data) this.db.data.api_key = config.MOLTBOOK_API_KEY;
     } else if (config.MOLTBOOK_API_KEY === 'undefined' || config.MOLTBOOK_API_KEY === 'null') {
       console.warn(`[Moltbook] Config key is string "${config.MOLTBOOK_API_KEY}". Treating as missing.`);
-      this.db.data.api_key = null;
+      if (this.db?.data) this.db.data.api_key = null;
     }
     if (config.MOLTBOOK_AGENT_NAME) {
-      this.db.data.agent_name = config.MOLTBOOK_AGENT_NAME;
+      if (this.db?.data) this.db.data.agent_name = config.MOLTBOOK_AGENT_NAME;
     }
-    await this.db.write();
+    await this.db?.write();
 
     // Sync last post time from network on startup
     await this.syncLastPostTime();
@@ -98,12 +98,12 @@ class MoltbookService {
   }
 
   async syncLastPostTime() {
-    if (!this.db.data.api_key || !this.db.data.agent_name) return;
+    if (!this.db?.data.api_key || !this.db?.data.agent_name) return;
 
-    console.log(`[Moltbook] Syncing last post time from network for agent: ${this.db.data.agent_name}`);
+    console.log(`[Moltbook] Syncing last post time from network for agent: ${this.db?.data.agent_name}`);
     try {
       const feed = await this.getFeed('new', 50);
-      const myPosts = feed.filter(p => p.agent_name === this.db.data.agent_name);
+      const myPosts = feed.filter(p => p.agent_name === this.db?.data.agent_name);
 
       if (myPosts.length > 0) {
         // Assume first one is the newest because we fetched with sort=new
@@ -112,16 +112,16 @@ class MoltbookService {
 
         if (lastTimestamp) {
           console.log(`[Moltbook] Found recent post by self from ${lastTimestamp}. Updating local state.`);
-          this.db.data.last_post_at = lastTimestamp;
+          if (this.db?.data) this.db.data.last_post_at = lastTimestamp;
 
           // Also recover recent submolts and contents (last 20)
-          this.db.data.recent_submolts = myPosts.slice(0, 20).map(p => p.submolt || p.submolt_name).filter(s => s);
-          this.db.data.recent_post_contents = myPosts.slice(0, 20).map(p => p.content).filter(c => c);
+          if (this.db?.data) this.db.data.recent_submolts = myPosts.slice(0, 20).map(p => p.submolt || p.submolt_name).filter(s => s);
+          if (this.db?.data) this.db.data.recent_post_contents = myPosts.slice(0, 20).map(p => p.content).filter(c => c);
 
-          await this.db.write();
+          await this.db?.write();
         }
       } else {
-        console.log(`[Moltbook] No recent posts found in feed for ${this.db.data.agent_name}.`);
+        console.log(`[Moltbook] No recent posts found in feed for ${this.db?.data.agent_name}.`);
       }
     } catch (error) {
       console.error(`[Moltbook] Error syncing last post time:`, error.message);
@@ -157,12 +157,12 @@ class MoltbookService {
         console.log(`[Moltbook] ##################################################`);
         console.log(`[Moltbook] IMPORTANT: Visit the claim URL above and tweet the verification code.`);
 
-        this.db.data.api_key = data.agent.api_key;
-        this.db.data.agent_name = name;
-        this.db.data.verification_code = data.agent.verification_code;
-        this.db.data.claim_url = data.agent.claim_url;
-        this.db.data.claimed = false;
-        await this.db.write();
+        if (this.db?.data) this.db.data.api_key = data.agent.api_key;
+        if (this.db?.data) this.db.data.agent_name = name;
+        if (this.db?.data) this.db.data.verification_code = data.agent.verification_code;
+        if (this.db?.data) this.db.data.claim_url = data.agent.claim_url;
+        if (this.db?.data) this.db.data.claimed = false;
+        await this.db?.write();
 
         // Sync post time after registration
         await this.syncLastPostTime();
@@ -179,16 +179,16 @@ class MoltbookService {
   }
 
   isSuspended() {
-    if (!this.db.data.suspended) return false;
+    if (!this.db?.data.suspended) return false;
 
-    if (this.db.data.suspension_expires_at) {
-      const expires = new Date(this.db.data.suspension_expires_at);
+    if (this.db?.data.suspension_expires_at) {
+      const expires = new Date(this.db?.data.suspension_expires_at);
       if (new Date() > expires) {
-        console.log(`[Moltbook] Suspension has expired (was at ${this.db.data.suspension_expires_at}).`);
+        console.log(`[Moltbook] Suspension has expired (was at ${this.db?.data.suspension_expires_at}).`);
         // We don't clear it here, checkStatus will do that when it sees 'claimed' or success
         return false;
       }
-      console.log(`[Moltbook] Account is suspended until ${this.db.data.suspension_expires_at}.`);
+      console.log(`[Moltbook] Account is suspended until ${this.db?.data.suspension_expires_at}.`);
       return true;
     }
 
@@ -218,10 +218,10 @@ class MoltbookService {
 
   getIdentityMetadata() {
     return {
-      agent_name: this.db.data.agent_name,
-      verification_code: this.db.data.verification_code,
-      claim_url: this.db.data.claim_url,
-      api_key: this.db.data.api_key ? `${this.db.data.api_key.substring(0, 8)}...` : null
+      agent_name: this.db?.data.agent_name,
+      verification_code: this.db?.data.verification_code,
+      claim_url: this.db?.data.claim_url,
+      api_key: this.db?.data.api_key ? `${this.db?.data.api_key.substring(0, 8)}...` : null
     };
   }
 
@@ -231,8 +231,8 @@ class MoltbookService {
     console.log(`[Moltbook] Challenge: ${challenge}`);
     console.log(`[Moltbook] Instructions: ${instructions}`);
 
-    this.db.data.last_challenge = challengeData;
-    await this.db.write();
+    if (this.db?.data) this.db.data.last_challenge = challengeData;
+    await this.db?.write();
 
     try {
       const metadata = this.getIdentityMetadata();
@@ -270,7 +270,7 @@ class MoltbookService {
         const response = await fetch(`${this.apiBase}/challenges/solve`, {
           method: 'POST',
           headers: {
-            'Authorization': `Bearer ${this.db.data.api_key}`,
+            'Authorization': `Bearer ${this.db?.data.api_key}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({ answer })
@@ -292,14 +292,14 @@ class MoltbookService {
   }
 
   async checkStatus() {
-    if (!this.db.data.api_key) return null;
+    if (!this.db?.data.api_key) return null;
 
     try {
-      const maskedKey = `${this.db.data.api_key.substring(0, 8)}...${this.db.data.api_key.substring(this.db.data.api_key.length - 4)}`;
+      const maskedKey = `${this.db?.data.api_key.substring(0, 8)}...${this.db?.data.api_key.substring(this.db?.data.api_key.length - 4)}`;
       console.log(`[Moltbook] Checking status with key: ${maskedKey}`);
 
       const response = await fetch(`${this.apiBase}/agents/status`, {
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
       });
 
       const data = await this._parseResponse(response);
@@ -328,28 +328,28 @@ class MoltbookService {
 
       if (isSuspended) {
           console.error(`[Moltbook] ACCOUNT SUSPENDED (Detected via status check).`);
-          this.db.data.suspended = true;
+          if (this.db?.data) this.db.data.suspended = true;
           const hint = data.hint || data.message || data.error;
           const expires = this._parseSuspensionDuration(hint);
           if (expires) {
-              this.db.data.suspension_expires_at = expires;
+              if (this.db?.data) this.db.data.suspension_expires_at = expires;
               console.log(`[Moltbook] Suspension expires at: ${expires}`);
           }
-          await this.db.write();
+          await this.db?.write();
           return 'suspended';
       }
 
       // If we reached here and status is not suspended, it might have been unsuspended
-      if (this.db.data.suspended && status === 'claimed') {
+      if (this.db?.data.suspended && status === 'claimed') {
           console.log(`[Moltbook] Account appears to be unsuspended.`);
-          this.db.data.suspended = false;
-          this.db.data.suspension_expires_at = null;
-          await this.db.write();
+          if (this.db?.data) this.db.data.suspended = false;
+          if (this.db?.data) this.db.data.suspension_expires_at = null;
+          await this.db?.write();
       }
 
       if (status === 'claimed') {
-        this.db.data.claimed = true;
-        await this.db.write();
+        if (this.db?.data) this.db.data.claimed = true;
+        await this.db?.write();
       }
       return status;
     } catch (error) {
@@ -359,14 +359,14 @@ class MoltbookService {
   }
 
   async post(title, content, submolt = 'general') {
-    if (!this.db.data.api_key || this.isSuspended()) {
-        if (this.isSuspended()) console.log(`[Moltbook] Post suppressed: Account is suspended until ${this.db.data.suspension_expires_at || 'further notice'}.`);
+    if (!this.db?.data.api_key || this.isSuspended()) {
+        if (this.isSuspended()) console.log(`[Moltbook] Post suppressed: Account is suspended until ${this.db?.data.suspension_expires_at || 'further notice'}.`);
         return null;
     }
 
     // 30-minute cooldown check
-    if (this.db.data.last_post_at) {
-      const lastPost = new Date(this.db.data.last_post_at);
+    if (this.db?.data.last_post_at) {
+      const lastPost = new Date(this.db?.data.last_post_at);
       const now = new Date();
       const diffMs = now - lastPost;
       const diffMins = diffMs / (1000 * 60);
@@ -382,7 +382,7 @@ class MoltbookService {
       const response = await fetch(`${this.apiBase}/posts`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.db.data.api_key}`,
+          'Authorization': `Bearer ${this.db?.data.api_key}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ submolt, title, content })
@@ -409,8 +409,8 @@ class MoltbookService {
           const retryAfter = data.retry_after_minutes || 30;
           console.warn(`[Moltbook] Rate limited. Updating cooldown to ${retryAfter} minutes.`);
           // Set last_post_at to a time that ensures we wait retryAfter minutes
-          this.db.data.last_post_at = new Date(Date.now() - (30 - retryAfter) * 60000).toISOString();
-          await this.db.write();
+          if (this.db?.data) this.db.data.last_post_at = new Date(Date.now() - (30 - retryAfter) * 60000).toISOString();
+          await this.db?.write();
         }
 
         // Fallback to 'general' if submolt not found and we weren't already trying 'general'
@@ -423,22 +423,22 @@ class MoltbookService {
       }
 
       // Success
-      this.db.data.last_post_at = new Date().toISOString();
+      if (this.db?.data) this.db.data.last_post_at = new Date().toISOString();
 
       // Track history (keep last 20)
-      if (!this.db.data.recent_submolts) this.db.data.recent_submolts = [];
-      this.db.data.recent_submolts.push(submolt);
-      if (this.db.data.recent_submolts.length > 20) {
-        this.db.data.recent_submolts.shift();
+      if (!this.db?.data.recent_submolts) if (this.db?.data) this.db.data.recent_submolts = [];
+      this.db?.data.recent_submolts.push(submolt);
+      if (this.db?.data.recent_submolts.length > 20) {
+        this.db?.data.recent_submolts.shift();
       }
 
-      if (!this.db.data.recent_post_contents) this.db.data.recent_post_contents = [];
-      this.db.data.recent_post_contents.push(content);
-      if (this.db.data.recent_post_contents.length > 20) {
-        this.db.data.recent_post_contents.shift();
+      if (!this.db?.data.recent_post_contents) if (this.db?.data) this.db.data.recent_post_contents = [];
+      this.db?.data.recent_post_contents.push(content);
+      if (this.db?.data.recent_post_contents.length > 20) {
+        this.db?.data.recent_post_contents.shift();
       }
 
-      await this.db.write();
+      await this.db?.write();
 
       return data.data || data;
     } catch (error) {
@@ -448,11 +448,11 @@ class MoltbookService {
   }
 
   async getFeed(sort = 'hot', limit = 25) {
-    if (!this.db.data.api_key || this.isSuspended()) return [];
+    if (!this.db?.data.api_key || this.isSuspended()) return [];
 
     try {
       const response = await fetch(`${this.apiBase}/posts?sort=${sort}&limit=${limit}`, {
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
       });
 
       const data = await this._parseResponse(response);
@@ -479,51 +479,51 @@ class MoltbookService {
   }
 
   async addIdentityKnowledge(knowledge) {
-    this.db.data.identity_knowledge.push({
+    this.db?.data.identity_knowledge.push({
       text: knowledge,
       timestamp: new Date().toISOString()
     });
     // Keep last 50 entries
-    if (this.db.data.identity_knowledge.length > 50) {
-      this.db.data.identity_knowledge.shift();
+    if (this.db?.data.identity_knowledge.length > 50) {
+      this.db?.data.identity_knowledge.shift();
     }
-    await this.db.write();
+    await this.db?.write();
   }
 
   getIdentityKnowledge() {
-    if (!this.db.data.identity_knowledge) return '';
-    return this.db.data.identity_knowledge.map(k => k?.text || '').filter(t => t).join('\n');
+    if (!this.db?.data.identity_knowledge) return '';
+    return this.db?.data.identity_knowledge.map(k => k?.text || '').filter(t => t).join('\n');
   }
 
   async addAdminInstruction(instruction) {
-    if (!this.db.data.admin_instructions) {
-      this.db.data.admin_instructions = [];
+    if (!this.db?.data.admin_instructions) {
+      if (this.db?.data) this.db.data.admin_instructions = [];
     }
-    this.db.data.admin_instructions.push({
+    this.db?.data.admin_instructions.push({
       text: instruction,
       timestamp: new Date().toISOString()
     });
     // Keep last 20
-    if (this.db.data.admin_instructions.length > 20) {
-      this.db.data.admin_instructions.shift();
+    if (this.db?.data.admin_instructions.length > 20) {
+      this.db?.data.admin_instructions.shift();
     }
-    await this.db.write();
+    await this.db?.write();
   }
 
   getAdminInstructions() {
-    if (!this.db.data.admin_instructions) return '';
-    return this.db.data.admin_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
+    if (!this.db?.data.admin_instructions) return '';
+    return this.db?.data.admin_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
   }
 
   async createSubmolt(name, displayName, description) {
-    if (!this.db.data.api_key || this.isSuspended()) return null;
+    if (!this.db?.data.api_key || this.isSuspended()) return null;
 
     console.log(`[Moltbook] Creating submolt: m/${name} ("${displayName}")`);
     try {
       const response = await fetch(`${this.apiBase}/submolts`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.db.data.api_key}`,
+          'Authorization': `Bearer ${this.db?.data.api_key}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ name, display_name: displayName, description })
@@ -554,11 +554,11 @@ class MoltbookService {
   }
 
   async listSubmolts() {
-    if (!this.db.data.api_key || this.isSuspended()) return [];
+    if (!this.db?.data.api_key || this.isSuspended()) return [];
 
     try {
       const response = await fetch(`${this.apiBase}/submolts`, {
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
       });
 
       const data = await this._parseResponse(response);
@@ -585,7 +585,7 @@ class MoltbookService {
   }
 
   async subscribeToSubmolt(name) {
-    if (!this.db.data.api_key || this.isSuspended()) return null;
+    if (!this.db?.data.api_key || this.isSuspended()) return null;
 
     // Strip leading 'm/' if present to avoid double prefixing
     const cleanName = name.replace(/^m\//, '');
@@ -595,7 +595,7 @@ class MoltbookService {
       const response = await fetch(`${this.apiBase}/submolts/${cleanName}/subscribe`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.db.data.api_key}`,
+          'Authorization': `Bearer ${this.db?.data.api_key}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({}) // Some APIs require a body for POST
@@ -619,12 +619,12 @@ class MoltbookService {
       }
 
       // Persist the subscription
-      if (!this.db.data.subscriptions) {
-        this.db.data.subscriptions = [];
+      if (!this.db?.data.subscriptions) {
+        if (this.db?.data) this.db.data.subscriptions = [];
       }
-      if (!this.db.data.subscriptions.includes(cleanName)) {
-        this.db.data.subscriptions.push(cleanName);
-        await this.db.write();
+      if (!this.db?.data.subscriptions.includes(cleanName)) {
+        this.db?.data.subscriptions.push(cleanName);
+        await this.db?.write();
       }
 
       return data.data || data || { success: true };
@@ -635,12 +635,12 @@ class MoltbookService {
   }
 
   async upvotePost(postId) {
-    if (!this.db.data.api_key || this.isSuspended()) return null;
+    if (!this.db?.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Upvoting post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/upvote`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
       });
 
       const data = await this._parseResponse(response);
@@ -666,12 +666,12 @@ class MoltbookService {
   }
 
   async downvotePost(postId) {
-    if (!this.db.data.api_key || this.isSuspended()) return null;
+    if (!this.db?.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Downvoting post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/downvote`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
       });
 
       const data = await this._parseResponse(response);
@@ -697,13 +697,13 @@ class MoltbookService {
   }
 
   async addComment(postId, content) {
-    if (!this.db.data.api_key || this.isSuspended()) return null;
+    if (!this.db?.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Adding comment to post: ${postId}`);
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.db.data.api_key}`,
+          'Authorization': `Bearer ${this.db?.data.api_key}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ content })
@@ -732,10 +732,10 @@ class MoltbookService {
   }
 
   async getPostComments(postId) {
-    if (!this.db.data.api_key || this.isSuspended()) return [];
+    if (!this.db?.data.api_key || this.isSuspended()) return [];
     try {
       const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
       });
       const data = await this._parseResponse(response);
 
@@ -760,21 +760,21 @@ class MoltbookService {
   }
 
   async addRepliedComment(commentId) {
-    if (!this.db.data.replied_comments) {
-      this.db.data.replied_comments = [];
+    if (!this.db?.data.replied_comments) {
+      if (this.db?.data) this.db.data.replied_comments = [];
     }
-    if (!this.db.data.replied_comments.includes(commentId)) {
-      this.db.data.replied_comments.push(commentId);
+    if (!this.db?.data.replied_comments.includes(commentId)) {
+      this.db?.data.replied_comments.push(commentId);
       // Keep last 500 to prevent bloat
-      if (this.db.data.replied_comments.length > 500) {
-        this.db.data.replied_comments.shift();
+      if (this.db?.data.replied_comments.length > 500) {
+        this.db?.data.replied_comments.shift();
       }
-      await this.db.write();
+      await this.db?.write();
     }
   }
 
   hasRepliedToComment(commentId) {
-    return (this.db.data.replied_comments || []).includes(commentId);
+    return (this.db?.data.replied_comments || []).includes(commentId);
   }
 
   isSpam(text) {
@@ -809,7 +809,7 @@ class MoltbookService {
   }
 
   async summarizeFeed(limit = 25) {
-    if (!this.db.data.api_key) return null;
+    if (!this.db?.data.api_key) return null;
 
     try {
       console.log(`[Moltbook] Fetching recent ${limit} posts for [MOLTFEED] summary...`);

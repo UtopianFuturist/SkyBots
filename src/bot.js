@@ -55,8 +55,8 @@ export class Bot {
     console.log('[Bot] DataStore initialized.');
     llmService.setDataStore(dataStore);
 
-    await moltbookService.init();
-    console.log('[Bot] MoltbookService initialized.');
+    // await moltbookService.init();
+    // console.log('[Bot] MoltbookService initialized.');
 
     await openClawService.init();
     console.log('[Bot] OpenClawService initialized.');
@@ -264,7 +264,7 @@ export class Bot {
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
     const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
-    const command = `python3 -m pip install --break-system-packages -r requirements.txt && python3 ${firehosePath}`;
+    const command = `python3 ${firehosePath}`;
     this.firehoseProcess = spawn(command, { shell: true });
 
     this.firehoseProcess.stdout.on('data', async (data) => {
@@ -348,18 +348,18 @@ export class Bot {
         console.error('[Bot] Error in initial autonomous post:', e);
       }
 
-      try {
-        await this.performMoltbookTasks();
-      } catch (e) {
-        console.error('[Bot] Error in initial Moltbook tasks:', e);
-      }
+      // try {
+      //   await this.performMoltbookTasks();
+      // } catch (e) {
+      //   console.error('[Bot] Error in initial Moltbook tasks:', e);
+      // }
     }, 30000); // 30 second delay
 
     // Periodic autonomous post check (every 2 hours)
     setInterval(() => this.performAutonomousPost(), 7200000);
 
     // Periodic Moltbook tasks (every 2 hours)
-    setInterval(() => this.performMoltbookTasks(), 7200000);
+    // setInterval(() => this.performMoltbookTasks(), 7200000);
 
     // Periodic timeline exploration (every 4 hours)
     setInterval(() => this.performTimelineExploration(), 14400000);
@@ -652,17 +652,17 @@ export class Bot {
         await dataStore.updateLastMemoryCleanupTime(now.getTime());
     }
 
-    // 1b. Moltfeed Summary (Every 6 hours)
-    const lastMoltfeed = dataStore.getLastMoltfeedSummaryTime();
-    const moltfeedDiff = (now.getTime() - lastMoltfeed) / (1000 * 60 * 60);
-    if (moltfeedDiff >= 6 && memoryService.isEnabled() && moltbookService.db.data.api_key && !moltbookService.isSuspended()) {
-        console.log('[Bot] Triggering periodic [MOLTFEED] summary...');
-        const summary = await moltbookService.summarizeFeed(25);
-        if (summary) {
-            await memoryService.createMemoryEntry('moltfeed', summary);
-            await dataStore.updateLastMoltfeedSummaryTime(now.getTime());
-        }
-    }
+    // 1b. Moltfeed Summary (Every 6 hours) - DISABLED
+    // const lastMoltfeed = dataStore.getLastMoltfeedSummaryTime();
+    // const moltfeedDiff = (now.getTime() - lastMoltfeed) / (1000 * 60 * 60);
+    // if (moltfeedDiff >= 6 && memoryService.isEnabled() && moltbookService.db.data.api_key && !moltbookService.isSuspended()) {
+    //     console.log('[Bot] Triggering periodic [MOLTFEED] summary...');
+    //     const summary = await moltbookService.summarizeFeed(25);
+    //     if (summary) {
+    //         await memoryService.createMemoryEntry('moltfeed', summary);
+    //         await dataStore.updateLastMoltfeedSummaryTime(now.getTime());
+    //     }
+    // }
 
     // 1bb. Daily Mental Health Wrap-up (Every 24 hours)
     const lastMentalReflection = dataStore.getLastMentalReflectionTime();
@@ -1083,7 +1083,8 @@ export class Bot {
             // Item 29 FIX: Refresh history from Discord if local is empty or indicates >24h absence
             // This prevents false "absent for >24h" suppression after redeploys or if local state is wiped.
             const localQuietMins = history.length > 0 ? (Date.now() - history[history.length - 1].timestamp) / (1000 * 60) : Infinity;
-            if (history.length === 0 || localQuietMins > 24 * 60) {
+            // Item 15: More frequent refresh (every 60 mins) to ensure repetition filtering is accurate
+            if (history.length === 0 || localQuietMins > 60) {
                 console.log(`[Bot] Discord history for admin is empty or old (${Math.round(localQuietMins)}m). Refreshing from API to verify presence...`);
                 const refreshed = await discordService.fetchAdminHistory(20);
                 if (refreshed) history = refreshed;
@@ -1347,13 +1348,22 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         try {
                             const containsSlop = isSlop(cand);
                             const historyTexts = formattedHistory.map(h => h.content);
+
+                            // Item 15 Repetition FIX: Aggressive Exact Match Check
+                            const lowerCand = cand.toLowerCase().trim().replace(/\s+/g, ' ');
+                            const isExactDuplicate = historyTexts.some(h => {
+                                const lowerH = h.toLowerCase().trim().replace(/\s+/g, ' ');
+                                return lowerH === lowerCand || lowerH.includes(lowerCand) || lowerCand.includes(lowerH);
+                            });
+
                             const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
                             const isJaccardRepetitive = checkSimilarity(cand, historyTexts, dConfig.repetition_similarity_threshold);
+
                             const [varietyCheck, personaCheck] = await Promise.all([
                                 llmService.checkVariety(cand, formattedHistory, { relationshipRating: 5, platform: 'discord', currentMood }),
                                 llmService.isPersonaAligned(cand, 'discord')
                             ]);
-                            return { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive };
+                            return { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive, isExactDuplicate };
                         } catch (e) {
                             console.error(`[Bot] Error evaluating heartbeat candidate: ${e.message}`);
                             return { cand, error: e.message };
@@ -1374,9 +1384,9 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
                         const score = varietyWeight + moodWeight + lengthBonus;
 
-                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, PrefixMatch=${hasPrefixMatch}, JaccardRep=${jRep}`);
+                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, ExactDup=${evalResult.isExactDuplicate}, PrefixMatch=${hasPrefixMatch}, JaccardRep=${jRep}`);
 
-                        if (!containsSlop && !varietyCheck.repetitive && !hasPrefixMatch && !jRep && personaCheck.aligned) {
+                        if (!containsSlop && !varietyCheck.repetitive && !hasPrefixMatch && !jRep && !evalResult.isExactDuplicate && personaCheck.aligned) {
                             if (score > bestScore) {
                                 bestScore = score;
                                 bestCandidate = cand;
@@ -1385,11 +1395,12 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                             if (!bestCandidate) {
                                 isJaccardRepetitive = jRep;
                                 rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                                               (evalResult.isExactDuplicate ? "Exact or near-exact duplicate detected in history." :
                                                (hasPrefixMatch ? "Prefix overlap detected." :
                                                (jRep ? "Jaccard similarity threshold exceeded (too similar to history)." :
                                                (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                                (varietyCheck.misaligned ? "Misaligned with current mood." :
-                                               (varietyCheck.feedback || "Too similar to recent history.")))));
+                                               (varietyCheck.feedback || "Too similar to recent history."))))));
                             }
                             rejectedAttempts.push(cand);
                         }

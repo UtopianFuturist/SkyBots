@@ -120,7 +120,7 @@ class DiscordService {
                     console.log(`[DiscordService] Token prefix: ${this.token.substring(0, 10)}... (Suffix: ...${this.token.substring(this.token.length - 5)})`);
                 }
 
-                // Set a timeout for login - 30m as requested
+                // Set a timeout for login - 6m as requested
                 let timeoutHandle;
                 console.log(`[DiscordService] STARTING client.login(). Token length: ${this.token?.length}`);
 
@@ -141,7 +141,7 @@ class DiscordService {
                 });
 
                 const timeoutPromise = new Promise((_, reject) =>
-                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 30m')), 1800000)
+                    timeoutHandle = setTimeout(() => reject(new Error('Discord login timeout after 6m')), 360000)
                 );
 
                 try {

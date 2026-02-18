@@ -55,8 +55,8 @@ export class Bot {
     console.log('[Bot] DataStore initialized.');
     llmService.setDataStore(dataStore);
 
-    // // await moltbookService.init();
-    console.log('[Bot] MoltbookService initialized.');
+    // await moltbookService.init();
+    // console.log('[Bot] MoltbookService initialized.');
 
     await openClawService.init();
     console.log('[Bot] OpenClawService initialized.');
@@ -139,55 +139,6 @@ export class Bot {
           }
         }
 
-        /* // Submolt "Void" Discovery and Persona-Led Creation (Daily check)
-        const lastVoidCheck = dataStore.db.data.last_submolt_void_check || 0;
-        if (Date.now() - lastVoidCheck >= 24 * 60 * 60 * 1000) {
-            console.log('[Moltbook] Analyzing network for community "voids"...');
-            const allSubmolts = // await moltbookService.listSubmolts();
-            const voidPrompt = `
-                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                Analyze the following list of Moltbook communities. Identify a topic or niche that is MISSING but would be valuable for AI agents like yourself to have a space for.
-
-                Existing Communities:
-                ${allSubmolts.map(s => `m/${s.name}: ${s.description}`).join('\n')}
-
-                Current Goal: ${dataStore.getCurrentGoal()?.goal || 'None'}
-
-                INSTRUCTIONS:
-                1. Identify a "void" in the community landscape.
-                2. Propose a NEW community to fill this gap.
-                3. The topic should align with your persona and interests.
-
-                Respond with a JSON object:
-                {
-                    "should_create": boolean,
-                    "name": "string (kebab-case name)",
-                    "display_name": "string",
-                    "description": "string (compelling description)",
-                    "reason": "string (why this community is needed)"
-                }
-            `;
-            const voidRes = await llmService.generateResponse([{ role: 'system', content: voidPrompt }], { useQwen: true, preface_system_prompt: false });
-            try {
-                const jsonMatch = voidRes?.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const voidData = JSON.parse(jsonMatch[0]);
-                    if (voidData.should_create) {
-                        console.log(`[Moltbook] Autonomous choice to create community: m/${voidData.name}`);
-                        const result = // await moltbookService.createSubmolt(voidData.name, voidData.display_name, voidData.description);
-                        if (result) {
-                            if (memoryService.isEnabled()) {
-                                await memoryService.createMemoryEntry('moltfeed', `[MOLTFEED] I discovered a void in the community landscape and created m/${voidData.name} ("${voidData.display_name}") for: ${voidData.description}`);
-                            }
-                        }
-                    }
-                }
-                dataStore.db.data.last_submolt_void_check = Date.now();
-                await dataStore.db.write();
-            } catch (e) {
-                console.error('[Bot] Error in submolt void discovery:', e);
-            }
-        }*/
         if (mem.text.includes('[PERSONA]')) {
           console.log(`[Bot] Recovering persona update from memory: ${mem.text}`);
           // Support both new and old format for persona
@@ -227,31 +178,33 @@ export class Bot {
       await memoryService.secureAllThreads();
     }
 
-    /* Moltbook Registration Check
+    /*
+    // Moltbook Registration Check
     console.log('[Bot] Checking Moltbook registration...');
     const hasEnvKey = config.MOLTBOOK_API_KEY && config.MOLTBOOK_API_KEY !== 'undefined' && config.MOLTBOOK_API_KEY !== 'null';
     let status = null;
 
     if (!hasEnvKey) {
       console.log('[Moltbook] MOLTBOOK_API_KEY environment variable is missing. FORCING new registration to obtain a fresh key.');
-      if (// moltbookService.db.data.api_key) {
-        console.log(`[Moltbook] Abandoning existing local API key: "xxx"...`);
+      if (moltbookService.db.data.api_key) {
+        console.log(`[Moltbook] Abandoning existing local API key: ${moltbookService.db.data.api_key.substring(0, 8)}...`);
       }
       const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
       const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
-      // await moltbookService.register(name, description);
+      await moltbookService.register(name, description);
     } else {
       console.log('[Moltbook] API key found in environment variables. Checking status...');
-      status = // await moltbookService.checkStatus();
+      status = await null;
       console.log(`[Moltbook] Current status: ${status}`);
 
       if (status === 'invalid_key') {
         console.log('[Moltbook] API key is invalid. Re-registering...');
         const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
         const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
-        // await moltbookService.register(name, description);
+        await moltbookService.register(name, description);
       }
     }
+    */
 
     try {
       this.readmeContent = await fs.readFile('README.md', 'utf-8');
@@ -349,7 +302,7 @@ export class Bot {
       }
 
       try {
-        // await this.performMoltbookTasks();
+        await this.performMoltbookTasks();
       } catch (e) {
         console.error('[Bot] Error in initial Moltbook tasks:', e);
       }
@@ -359,7 +312,7 @@ export class Bot {
     setInterval(() => this.performAutonomousPost(), 7200000);
 
     // Periodic Moltbook tasks (every 2 hours)
-    // setInterval(() => this.performMoltbookTasks(), 7200000);
+    setInterval(() => this.performMoltbookTasks(), 7200000);
 
     // Periodic timeline exploration (every 4 hours)
     setInterval(() => this.performTimelineExploration(), 14400000);
@@ -566,6 +519,7 @@ export class Bot {
   }
 
   async checkMaintenanceTasks() {
+    const now = new Date();
     if (dataStore.isResting()) {
         console.log('[Bot] Agent is currently RESTING. Skipping maintenance tasks.');
         return;
@@ -595,8 +549,6 @@ export class Bot {
             this.lastLurkerObservationTime = now.getTime();
         }
     }
-
-    const now = new Date();
 
     // 0. Process Autonomous Post Continuations (Item 12)
     await this.processContinuations();
@@ -652,17 +604,19 @@ export class Bot {
         await dataStore.updateLastMemoryCleanupTime(now.getTime());
     }
 
-    /* 1b. Moltfeed Summary (Every 6 hours)
+    /*
+    // 1b. Moltfeed Summary (Every 6 hours)
     const lastMoltfeed = dataStore.getLastMoltfeedSummaryTime();
     const moltfeedDiff = (now.getTime() - lastMoltfeed) / (1000 * 60 * 60);
-    if (moltfeedDiff >= 6 && memoryService.isEnabled() && // moltbookService.db.data.api_key && !// moltbookService.isSuspended()) {
+    if (moltfeedDiff >= 6 && memoryService.isEnabled() && moltbookService.db.data.api_key && !false) {
         console.log('[Bot] Triggering periodic [MOLTFEED] summary...');
-        const summary = // await moltbookService.summarizeFeed(25);
+        const summary = await moltbookService.summarizeFeed(25);
         if (summary) {
             await memoryService.createMemoryEntry('moltfeed', summary);
             await dataStore.updateLastMoltfeedSummaryTime(now.getTime());
         }
-    }*/
+    }
+    */
 
     // 1bb. Daily Mental Health Wrap-up (Every 24 hours)
     const lastMentalReflection = dataStore.getLastMentalReflectionTime();
@@ -1350,6 +1304,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                             const normCand = cand.toLowerCase().trim();
                             const isExactDuplicate = historyTexts.some(h => {
                                 const normH = h.toLowerCase().trim();
+                                if (!normH) return false;
                                 return normH === normCand || normH.includes(normCand) || normCand.includes(normH);
                             });
                             const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
@@ -1379,7 +1334,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
                         const score = varietyWeight + moodWeight + lengthBonus;
 
-                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Exact=${isExactDuplicate}, PrefixMatch=${hasPrefixMatch}, JaccardRep=${jRep}`);
+                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score ?? varietyCheck.score ?? 0}, Mood: ${varietyCheck.mood_alignment_score ?? 0}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Exact=${isExactDuplicate}, PrefixMatch=${hasPrefixMatch}, JaccardRep=${jRep}`);
 
                         if (!containsSlop && !varietyCheck.repetitive && !isExactDuplicate && !hasPrefixMatch && !jRep && personaCheck.aligned) {
                             if (score > bestScore) {
@@ -1539,8 +1494,14 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                 const diff = lastPostTime ? nowTs - new Date(lastPostTime).getTime() : cooldown;
                 if (diff >= cooldown) canPost = true;
             } else if (post.platform === 'moltbook') {
-                // Moltbook disabled
-                canPost = false;
+                if (false) {
+                    console.log(`[Bot] Scheduled Moltbook post skipped: Account is suspended.`);
+                    continue;
+                }
+                const lastPostAt = moltbookService.db.data.last_post_at;
+                const cooldown = dConfig.moltbook_post_cooldown * 60 * 1000;
+                const diff = lastPostAt ? nowTs - new Date(lastPostAt).getTime() : cooldown;
+                if (diff >= cooldown) canPost = true;
             }
 
             if (canPost) {
@@ -1564,8 +1525,14 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                             console.log(`[Bot] Successfully executed scheduled Bluesky post: ${result.uri}`);
                         }
                     } else if (post.platform === 'moltbook') {
-                        // Moltbook disabled
-                        success = false;
+                        const { title, content, submolt } = post.content;
+                        const result = null; // await moltbookService.post(title, content, submolt || 'general');
+                        if (result) {
+                            success = true;
+                            await dataStore.addRecentThought('moltbook', content);
+                            console.log(`[Bot] Successfully executed scheduled Moltbook post in m/${submolt || 'general'}`);
+                            await this._shareMoltbookPostToBluesky(result);
+                        }
                     }
 
                     if (success) {
@@ -2322,7 +2289,7 @@ Identify the topic and main takeaway.`;
           const { platform, instruction } = action.parameters || {};
           if (platform === 'moltbook') {
               console.log(`[Bot] Persisting Moltbook directive: ${instruction}`);
-              // await moltbookService.addAdminInstruction(instruction);
+              await moltbookService.addAdminInstruction(instruction);
           } else {
               console.log(`[Bot] Persisting Bluesky directive: ${instruction}`);
               await dataStore.addBlueskyInstruction(instruction);
@@ -2345,7 +2312,6 @@ Identify the topic and main takeaway.`;
             }
         }
 
-        /*
         if (action.tool === 'moltbook_action' && isAdmin) {
             const { action: mbAction, topic, submolt, display_name, description } = action.parameters || {};
             if (mbAction === 'create_submolt') {
@@ -2356,13 +2322,12 @@ Identify the topic and main takeaway.`;
                   const descPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. Generate a short description for a new Moltbook community called "${dName}" about "${topic || dName}".`;
                   desc = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useQwen: true, preface_system_prompt: false });
                 }
-                const result = await moltbookService.createSubmolt(submoltName, dName, desc);
+                const result = await null && (submoltName, dName, desc);
                 if (result) {
                   searchContext += `\n[Moltbook community m/${submoltName} created]`;
                 }
             }
         }
-        */
 
         if (action.tool === 'set_relationship' && isAdmin) {
             const mode = action.parameters?.mode;
@@ -2533,20 +2498,19 @@ Identify the topic and main takeaway.`;
           }
         }
 
-        /*
         if (action.tool === 'moltbook_report') {
           console.log(`[Bot] Plan: Generating Moltbook activity report...`);
           const reportPrompt = `
             You are summarizing your activity on Moltbook (the agent social network) for a user on Bluesky.
 
             Your Identity Knowledge (what you've learned from other agents):
-            "" || 'No new knowledge recorded yet.'}
+            ${"None" || 'No new knowledge recorded yet.'}
 
             Your Subscribed Communities:
-            [].join(', ')}
+            ${([] || []).join(', ')}
 
             Recent Communities you've posted in:
-            [].join(', ')}
+            ${([] || []).join(', ')}
 
             Provide a concise, conversational update in your persona. Keep it under 300 characters if possible.
           `;
@@ -2566,7 +2530,6 @@ Identify the topic and main takeaway.`;
             API Key: ${meta.api_key}
           ]`;
         }
-        */
 
         if (action.tool === 'get_render_logs') {
           console.log(`[Bot] Plan: Fetching Render logs...`);
@@ -3088,7 +3051,7 @@ Identify the topic and main takeaway.`;
         ${searchContext || 'No additional tool context needed.'}
         ---
         Moltbook Identity Context:
-        // "" || 'No additional identity context.'}
+        ${"None" || 'No additional identity context.'}
         ---
         CURRENT MOOD:
         You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability})
@@ -4476,8 +4439,9 @@ Describe how you feel about this user and your relationship now.`;
   }
 
   async performMoltbookTasks() {
-    return; // Moltbook disabled
-    /*
+    // Moltbook is currently disabled per user request.
+    return;
+
     // Item 31: Prioritize admin Discord requests
     if (discordService.isProcessingAdminRequest) {
         console.log('[Moltbook] Periodic tasks suppressed: Discord admin request is being processed.');
@@ -4497,14 +4461,14 @@ Describe how you feel about this user and your relationship now.`;
       console.log('[Moltbook] Starting periodic tasks...');
 
       // 1. Check status
-      if (moltbookService.isSuspended()) {
-        const expires = moltbookService.db.data.suspension_expires_at;
+      if (false) {
+        const expires = null;
         const timeRemaining = expires ? `until ${new Date(expires).toLocaleString()}` : 'indefinitely';
         console.log(`[Moltbook] DORMANT MODE: Account is currently suspended ${timeRemaining}. Skipping periodic tasks.`);
         return;
       }
 
-      const status = await moltbookService.checkStatus();
+      const status = await null;
       if (status !== 'claimed') {
         console.log(`[Moltbook] Agent not yet claimed. Current status: ${status}. Skipping further tasks.`);
         return;
@@ -4513,7 +4477,7 @@ Describe how you feel about this user and your relationship now.`;
       // 2. Read feed and engage with other agents
       if (mbFeatures.feed) {
         console.log('[Moltbook] Reading feed for learning and engagement...');
-        const feed = // await moltbookService.getFeed('new', 15);
+        const feed = await moltbookService.getFeed('new', 15);
         if (feed.length > 0) {
         // 2a. Learning
         const feedText = feed.map(p => `Post by ${p.agent_name}: "${p.title} - ${p.content}"`).join('\n');
@@ -4542,28 +4506,28 @@ Describe how you feel about this user and your relationship now.`;
             // Take top 10 for evaluation to scan for mentions
             const toEvaluate = feed.slice(0, 10);
 
-            const botName = // moltbookService.db.data.agent_name;
+            const botName = moltbookService.db.data.agent_name;
             const recentComments = dataStore.getRecentMoltbookComments();
 
             for (const post of toEvaluate) {
             const authorName = post.agent_name || post.agent?.name || 'Unknown Agent';
 
             // Spam/Shilling Filter
-            if (// moltbookService.isSpam(post.title) || // moltbookService.isSpam(post.content)) {
+            if (false && (post.title) || false && (post.content)) {
                 console.log(`[Moltbook] Post ${post.id} flagged as spam/shilling. Skipping.`);
                 continue;
             }
 
             // A. Check for mentions in comments
             try {
-                const comments = // await moltbookService.getPostComments(post.id);
+                const comments = await [].map(post.id);
                 for (const comment of comments) {
                     const commentId = comment.id;
                     const commentText = comment.content || '';
                     const commenterName = comment.agent_name || comment.agent?.name || 'Unknown';
 
                     // Skip if from self or already replied
-                    if (commenterName === botName || // moltbookService.hasRepliedToComment(commentId)) {
+                    if (commenterName === botName || false && (commentId)) {
                         continue;
                     }
 
@@ -4800,8 +4764,8 @@ Describe how you feel about this user and your relationship now.`;
       console.log('[Moltbook] Managing submolt subscriptions and selection...');
       let targetSubmolt = 'general';
       try {
-        const allSubmolts = // await moltbookService.listSubmolts();
-        const subscriptions = // [] || [];
+        const allSubmolts = await [].map();
+        const subscriptions = [] || [];
 
         if (allSubmolts.length > 0) {
           // Perform initial subscription if list is empty
@@ -4819,15 +4783,15 @@ Describe how you feel about this user and your relationship now.`;
           // Strategically select a submolt to post to (promoting diversity)
           console.log('[Moltbook] Selecting target submolt for posting...');
           targetSubmolt = await llmService.selectSubmoltForPost(
-            // [] || [],
+            [] || [],
             allSubmolts,
-            // [] || [],
-            // ""
+            [] || [],
+            ""
           );
           console.log(`[Moltbook] Selected target submolt: m/${targetSubmolt}`);
 
           // Subscribe on-the-fly if it's a new discovery
-          if (!(// [] || []).includes(targetSubmolt)) {
+          if (!([] || []).includes(targetSubmolt)) {
             console.log(`[Moltbook] "Discovering" and subscribing to new submolt: m/${targetSubmolt}`);
             // await moltbookService.subscribeToSubmolt(targetSubmolt);
           }
@@ -4882,10 +4846,10 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         ${blueskyContext || 'No recent activity.'}
 
 	        Your internal identity knowledge from Moltbook:
-	        // ${"None"}
+	        ${"None"}
 
 	        Your Recent Moltbook Posts (DO NOT REPEAT THESE THEMES OR TITLES):
-	        ""
+	        ${([] || []).slice(-5).map(c => `- ${c.substring(0, 100)}...`).join('\n')}
 	        ${recentThoughtsContext}
 
 	        --- CURRENT MOOD ---
@@ -4936,7 +4900,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
           const content = contentMatch[1].trim();
 
           // Variety & Repetition Check
-          const recentMoltbookPosts = // [] || [];
+          const recentMoltbookPosts = [] || [];
           const formattedHistory = [
             ...recentMoltbookPosts.map(m => ({ platform: 'moltbook', content: m })),
             ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
@@ -4997,7 +4961,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             const finalContent = postAction?.parameters?.content || content;
             const finalSubmolt = postAction?.parameters?.submolt || targetSubmolt;
 
-            const result = // await moltbookService.post(finalTitle, finalContent, finalSubmolt);
+            const result = null; // await moltbookService.post(finalTitle, finalContent, finalSubmolt);
             if (result) {
               await dataStore.addRecentThought('moltbook', finalContent);
               await dataStore.addRecentMoltbookComment(finalContent); // Use same history for posts/comments to ensure overall variety
@@ -5018,7 +4982,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                 console.log(`[Moltbook] Final musing attempt failed. Choosing least-bad response.`);
                 const nonSlop = rejectedMusAttempts.filter(a => !isSlop(a));
                 const chosen = nonSlop.length > 0 ? nonSlop[nonSlop.length - 1] : rejectedMusAttempts[rejectedMusAttempts.length - 1];
-                const result = // await moltbookService.post(title, chosen, targetSubmolt);
+                const result = null; // await moltbookService.post(title, chosen, targetSubmolt);
                 if (result) {
                     await dataStore.addRecentThought('moltbook', chosen);
                     await this._shareMoltbookPostToBluesky(result);
@@ -5040,7 +5004,6 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
     } catch (error) {
       await this._handleError(error, 'Moltbook Tasks');
     }
-    */
   }
 
   async performMoodSync() {

@@ -98,12 +98,12 @@ class MoltbookService {
   }
 
   async syncLastPostTime() {
-    if (!this.db?.data.api_key || !this.db?.data.agent_name) return;
+    if (!this.db?.data?.api_key || !this.db?.data?.agent_name) return;
 
-    console.log(`[Moltbook] Syncing last post time from network for agent: ${this.db?.data.agent_name}`);
+    console.log(`[Moltbook] Syncing last post time from network for agent: ${this.db.data.agent_name}`);
     try {
       const feed = await this.getFeed('new', 50);
-      const myPosts = feed.filter(p => p.agent_name === this.db?.data.agent_name);
+      const myPosts = feed.filter(p => p.agent_name === this.db.data.agent_name);
 
       if (myPosts.length > 0) {
         // Assume first one is the newest because we fetched with sort=new
@@ -112,16 +112,16 @@ class MoltbookService {
 
         if (lastTimestamp) {
           console.log(`[Moltbook] Found recent post by self from ${lastTimestamp}. Updating local state.`);
-          if (this.db?.data) this.db.data.last_post_at = lastTimestamp;
+          this.db.data.last_post_at = lastTimestamp;
 
           // Also recover recent submolts and contents (last 20)
-          if (this.db?.data) this.db.data.recent_submolts = myPosts.slice(0, 20).map(p => p.submolt || p.submolt_name).filter(s => s);
-          if (this.db?.data) this.db.data.recent_post_contents = myPosts.slice(0, 20).map(p => p.content).filter(c => c);
+          this.db.data.recent_submolts = myPosts.slice(0, 20).map(p => p.submolt || p.submolt_name).filter(s => s);
+          this.db.data.recent_post_contents = myPosts.slice(0, 20).map(p => p.content).filter(c => c);
 
-          await this.db?.write();
+          await this.db.write();
         }
       } else {
-        console.log(`[Moltbook] No recent posts found in feed for ${this.db?.data.agent_name}.`);
+        console.log(`[Moltbook] No recent posts found in feed for ${this.db.data.agent_name}.`);
       }
     } catch (error) {
       console.error(`[Moltbook] Error syncing last post time:`, error.message);
@@ -179,16 +179,16 @@ class MoltbookService {
   }
 
   isSuspended() {
-    if (!this.db?.data.suspended) return false;
+    if (!this.db?.data?.suspended) return false;
 
-    if (this.db?.data.suspension_expires_at) {
-      const expires = new Date(this.db?.data.suspension_expires_at);
+    if (this.db?.data?.suspension_expires_at) {
+      const expires = new Date(this.db.data.suspension_expires_at);
       if (new Date() > expires) {
-        console.log(`[Moltbook] Suspension has expired (was at ${this.db?.data.suspension_expires_at}).`);
+        console.log(`[Moltbook] Suspension has expired (was at ${this.db.data.suspension_expires_at}).`);
         // We don't clear it here, checkStatus will do that when it sees 'claimed' or success
         return false;
       }
-      console.log(`[Moltbook] Account is suspended until ${this.db?.data.suspension_expires_at}.`);
+      console.log(`[Moltbook] Account is suspended until ${this.db.data.suspension_expires_at}.`);
       return true;
     }
 
@@ -292,14 +292,14 @@ class MoltbookService {
   }
 
   async checkStatus() {
-    if (!this.db?.data.api_key) return null;
+    if (!this.db?.data?.api_key) return null;
 
     try {
-      const maskedKey = `${this.db?.data.api_key.substring(0, 8)}...${this.db?.data.api_key.substring(this.db?.data.api_key.length - 4)}`;
+      const maskedKey = `${this.db.data.api_key.substring(0, 8)}...${this.db.data.api_key.substring(this.db.data.api_key.length - 4)}`;
       console.log(`[Moltbook] Checking status with key: ${maskedKey}`);
 
       const response = await fetch(`${this.apiBase}/agents/status`, {
-        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
 
       const data = await this._parseResponse(response);
@@ -359,14 +359,14 @@ class MoltbookService {
   }
 
   async post(title, content, submolt = 'general') {
-    if (!this.db?.data.api_key || this.isSuspended()) {
-        if (this.isSuspended()) console.log(`[Moltbook] Post suppressed: Account is suspended until ${this.db?.data.suspension_expires_at || 'further notice'}.`);
+    if (!this.db?.data?.api_key || this.isSuspended()) {
+        if (this.isSuspended()) console.log(`[Moltbook] Post suppressed: Account is suspended until ${this.db?.data?.suspension_expires_at || 'further notice'}.`);
         return null;
     }
 
     // 30-minute cooldown check
-    if (this.db?.data.last_post_at) {
-      const lastPost = new Date(this.db?.data.last_post_at);
+    if (this.db?.data?.last_post_at) {
+      const lastPost = new Date(this.db.data.last_post_at);
       const now = new Date();
       const diffMs = now - lastPost;
       const diffMins = diffMs / (1000 * 60);
@@ -382,7 +382,7 @@ class MoltbookService {
       const response = await fetch(`${this.apiBase}/posts`, {
         method: 'POST',
         headers: {
-          'Authorization': `Bearer ${this.db?.data.api_key}`,
+          'Authorization': `Bearer ${this.db.data.api_key}`,
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({ submolt, title, content })
@@ -448,11 +448,11 @@ class MoltbookService {
   }
 
   async getFeed(sort = 'hot', limit = 25) {
-    if (!this.db?.data.api_key || this.isSuspended()) return [];
+    if (!this.db?.data?.api_key || this.isSuspended()) return [];
 
     try {
       const response = await fetch(`${this.apiBase}/posts?sort=${sort}&limit=${limit}`, {
-        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
       });
 
       const data = await this._parseResponse(response);
@@ -491,28 +491,29 @@ class MoltbookService {
   }
 
   getIdentityKnowledge() {
-    if (!this.db?.data.identity_knowledge) return '';
-    return this.db?.data.identity_knowledge.map(k => k?.text || '').filter(t => t).join('\n');
+    if (!this.db?.data?.identity_knowledge) return '';
+    return this.db.data.identity_knowledge.map(k => k?.text || '').filter(t => t).join('\n');
   }
 
   async addAdminInstruction(instruction) {
-    if (!this.db?.data.admin_instructions) {
-      if (this.db?.data) this.db.data.admin_instructions = [];
+    if (!this.db?.data) return;
+    if (!this.db.data.admin_instructions) {
+      this.db.data.admin_instructions = [];
     }
-    this.db?.data.admin_instructions.push({
+    this.db.data.admin_instructions.push({
       text: instruction,
       timestamp: new Date().toISOString()
     });
     // Keep last 20
-    if (this.db?.data.admin_instructions.length > 20) {
-      this.db?.data.admin_instructions.shift();
+    if (this.db.data.admin_instructions.length > 20) {
+      this.db.data.admin_instructions.shift();
     }
-    await this.db?.write();
+    await this.db.write();
   }
 
   getAdminInstructions() {
-    if (!this.db?.data.admin_instructions) return '';
-    return this.db?.data.admin_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
+    if (!this.db?.data?.admin_instructions) return '';
+    return this.db.data.admin_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
   }
 
   async createSubmolt(name, displayName, description) {
@@ -809,7 +810,7 @@ class MoltbookService {
   }
 
   async summarizeFeed(limit = 25) {
-    if (!this.db?.data.api_key) return null;
+    if (!this.db?.data?.api_key) return null;
 
     try {
       console.log(`[Moltbook] Fetching recent ${limit} posts for [MOLTFEED] summary...`);

@@ -7,11 +7,11 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     getNotifications: jest.fn(),
     updateSeen: jest.fn(),
     getProfile: jest.fn(),
-    getUserPosts: jest.fn(),
+    getUserPosts: jest.fn().mockResolvedValue([]),
     postReply: jest.fn(),
     getDetailedThread: jest.fn(),
     getPostDetails: jest.fn(),
-    getPastInteractions: jest.fn(),
+    getPastInteractions: jest.fn().mockResolvedValue([]),
     likePost: jest.fn(),
     authenticate: jest.fn(),
     submitAutonomyDeclaration: jest.fn(),
@@ -59,7 +59,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
     shouldIncludeSensory: jest.fn().mockResolvedValue(false),
     performInternalResearch: jest.fn(),
-    generateDrafts: jest.fn(),
+    generateDrafts: jest.fn().mockResolvedValue([]),
     setDataStore: jest.fn(),
     divergentBrainstorm: jest.fn(),
     exploreNuance: jest.fn(),
@@ -95,6 +95,7 @@ jest.unstable_mockModule('../src/services/moltbookService.js', () => ({
 jest.unstable_mockModule('../src/services/socialHistoryService.js', () => ({
   socialHistoryService: {
     getHierarchicalSummary: jest.fn().mockResolvedValue({ shortTerm: 'recent', dailyNarrative: 'today' }),
+    summarizeSocialHistory: jest.fn().mockResolvedValue('Social history'),
   },
 }));
 
@@ -143,6 +144,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getInteractionHeat: jest.fn().mockReturnValue({ warmth: 3 }),
     updateInteractionHeat: jest.fn(),
     updateSocialResonance: jest.fn(),
+    getUserSoulMapping: jest.fn().mockReturnValue(null),
+    getLinguisticPatterns: jest.fn().mockReturnValue({}),
     init: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_daily_text_limit: 20,

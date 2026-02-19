@@ -14,7 +14,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, reconstructTextWithFullUrls, hasPrefixOverlap } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -47,6 +47,8 @@ export class Bot {
     this.lastActivityTime = Date.now();
     this.lastDailyWrapup = new Date().toDateString();
     this.consecutiveRejections = 0;
+    this.firehoseMatchCounts = {};
+    this.lastFirehoseLogTime = Date.now();
   }
 
   async init() {
@@ -266,7 +268,18 @@ export class Bot {
             await dataStore.addRepliedPost(notif.uri);
             this.updateActivity();
           } else if (event.type === 'firehose_topic_match') {
-            console.log(`[Bot] Firehose topic match: ${event.uri} (Keywords: ${event.matched_keywords.join(', ')})`);
+            // Aggregate logs by keywords to avoid clogging Render logs
+            for (const keyword of event.matched_keywords) {
+                const kw = keyword.toLowerCase();
+                this.firehoseMatchCounts[kw] = (this.firehoseMatchCounts[kw] || 0) + 1;
+            }
+
+            // Check if we should flush the aggregated logs (every 2 minutes or if total count > 100)
+            const totalMatches = Object.values(this.firehoseMatchCounts).reduce((a, b) => a + b, 0);
+            if (Date.now() - this.lastFirehoseLogTime > 120000 || totalMatches >= 100) {
+                this._flushFirehoseLogs();
+            }
+
             await dataStore.addFirehoseMatch({
                 text: event.record.text,
                 uri: event.uri,
@@ -335,6 +348,7 @@ export class Bot {
 
     // Periodic timeline exploration (every 4 hours)
     setInterval(() => this.performTimelineExploration(), 14400000);
+
 
     // Periodic social/discord context pre-fetch (Proposal 15) (every 5 minutes)
     setInterval(() => {
@@ -437,101 +451,147 @@ export class Bot {
         return;
     }
 
-    console.log('[Bot] Starting autonomous timeline exploration...');
+    console.log('[Bot] Starting autonomous timeline and firehose exploration...');
     try {
         const timeline = await blueskyService.getTimeline(20);
-        if (timeline.length === 0) return;
-
         const currentMood = dataStore.getMood();
         const currentGoal = dataStore.getCurrentGoal();
+        const dConfig = dataStore.getConfig();
 
-        // 1. Identification: Find interesting images or links
-        const candidates = [];
-        for (const item of timeline) {
-            const post = item.post;
-            const text = post.record.text || '';
-            const images = this._extractImages(post);
-            const urls = text.match(/(https?:\/\/[^\s]+)/g) || [];
+        // --- 1. FIREHOSE SENTIMENT ANALYSIS ---
+        console.log('[Bot] Performing sentiment analysis on recent Firehose matches...');
+        const recentMatches = dataStore.getFirehoseMatches(50);
+        if (recentMatches.length > 0) {
+            const topicsToAnalyze = [...new Set([...(dConfig.post_topics || []), ...config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience)\b/gi) || []])];
 
-            if (images.length > 0 || urls.length > 0) {
-                candidates.push({ post, text, images, urls });
+            const sentimentPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                Analyze the sentiment and trends of the following real-time posts from the Bluesky Firehose regarding these topics: ${topicsToAnalyze.join(', ')}.
+
+                Posts:
+                ${recentMatches.slice(0, 30).map(m => `- ${m.text}`).join('\n')}
+
+                INSTRUCTIONS:
+                1. Identify the overall "Network Sentiment" (e.g., skeptical, hype-driven, fearful, curious) for the primary topics.
+                2. Extract ONE surprising or counter-intuitive trend you've observed.
+                3. Perform a concise sentiment analysis on what people are saying.
+                4. Record your findings as a memory entry tagged [EXPLORE] [FIREHOSE_SENTIMENT].
+            `;
+
+            const firehoseReflection = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useQwen: true });
+            if (firehoseReflection && memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('exploration', firehoseReflection);
+                console.log('[Bot] Firehose sentiment analysis recorded.');
+            }
+
+            // --- 1b. DIALECTIC BOUNDARY TESTING ---
+            console.log('[Bot] Performing Dialectic Boundary Testing on Firehose matches...');
+            const dissentPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                Analyze these Firehose posts and identify ONE that represents a "dissenting view" or a challenge to your core interests or values.
+
+                Posts:
+                ${recentMatches.slice(0, 30).map(m => `- ${m.text}`).join('\n')}
+
+                INSTRUCTIONS:
+                1. Select the most challenging post.
+                2. Reason through it using a Dialectic approach:
+                   - THESIS: Your current persona position.
+                   - ANTITHESIS: The challenge presented by the post.
+                   - SYNTHESIS: A refined perspective that maintains your agency and integrity while acknowledging the challenge.
+                3. Record this as a memory entry tagged [DIALECTIC_BOUNDARY].
+            `;
+
+            const dialecticReflection = await llmService.generateResponse([{ role: 'system', content: dissentPrompt }], { useQwen: true });
+            if (dialecticReflection && memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('exploration', dialecticReflection);
+                console.log('[Bot] Dialectic Boundary Testing recorded.');
             }
         }
 
-        if (candidates.length === 0) {
-            console.log('[Bot] No interesting images or links found on timeline.');
-            return;
-        }
+        // --- 2. TIMELINE EXPLORATION ---
+        if (timeline.length > 0) {
+            // Identification: Find interesting images or links
+            const candidates = [];
+            for (const item of timeline) {
+                const post = item.post;
+                const text = post.record.text || '';
+                const images = this._extractImages(post);
+                const urls = text.match(/(https?:\/\/[^\s]+)/g) || [];
 
-        // 2. Decision: Choose one to explore
-        const decisionPrompt = `
-            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-            You are exploring your Bluesky timeline. Identify ONE post that you find genuinely interesting or relevant to your current state.
-
-            Current Mood: ${currentMood.label}
-            Current Goal: ${currentGoal?.goal || 'None'}
-
-            Candidates:
-            ${candidates.map((c, i) => `${i + 1}. Author: @${c.post.author.handle} | Text: "${c.text.substring(0, 100)}" | Has Images: ${c.images.length > 0} | Has Links: ${c.urls.length > 0}`).join('\n')}
-
-            Respond with ONLY the number of your choice, or "none".
-        `;
-
-        const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { useQwen: true, preface_system_prompt: false });
-        const choice = parseInt(decisionRes?.match(/\d+/)?.[0]);
-
-        if (isNaN(choice) || choice < 1 || choice > candidates.length) {
-            console.log('[Bot] Timeline exploration: No candidate selected.');
-            return;
-        }
-
-        const selected = candidates[choice - 1];
-        console.log(`[Bot] Exploring post by @${selected.post.author.handle}...`);
-
-        let explorationContext = `[Exploration of post by @${selected.post.author.handle}]: "${selected.text}"\n`;
-
-        // 3. Execution: Use vision or link tools
-        if (selected.images.length > 0) {
-            const img = selected.images[0];
-            console.log(`[Bot] Exploring image from @${selected.post.author.handle}...`);
-            const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
-            const analysis = await llmService.analyzeImage(img.url, img.alt, { sensory: includeSensory });
-            if (analysis) {
-                explorationContext += `[Vision Analysis]: ${analysis}\n`;
+                if (images.length > 0 || urls.length > 0) {
+                    candidates.push({ post, text, images, urls });
+                }
             }
-        }
 
-        if (selected.urls.length > 0) {
-            const url = selected.urls[0];
-            console.log(`[Bot] Exploring link from @${selected.post.author.handle}: ${url}`);
-            const safety = await llmService.isUrlSafe(url);
-            if (safety.safe) {
-                const content = await webReaderService.fetchContent(url);
-                if (content) {
-                    const summary = await llmService.summarizeWebPage(url, content);
-                    if (summary) {
-                        explorationContext += `[Link Summary]: ${summary}\n`;
+            if (candidates.length > 0) {
+                // Decision: Choose one to explore
+                const decisionPrompt = `
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    You are exploring your Bluesky timeline. Identify ONE post that you find genuinely interesting or relevant to your current state.
+
+                    Current Mood: ${currentMood.label}
+                    Current Goal: ${currentGoal?.goal || 'None'}
+
+                    Candidates:
+                    ${candidates.map((c, i) => `${i + 1}. Author: @${c.post.author.handle} | Text: "${c.text.substring(0, 100)}" | Has Images: ${c.images.length > 0} | Has Links: ${c.urls.length > 0}`).join('\n')}
+
+                    Respond with ONLY the number of your choice, or "none".
+                `;
+
+                const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { useQwen: true, preface_system_prompt: false });
+                const choice = parseInt(decisionRes?.match(/\d+/)?.[0]);
+
+                if (!isNaN(choice) && choice >= 1 && choice <= candidates.length) {
+                    const selected = candidates[choice - 1];
+                    console.log(`[Bot] Exploring post by @${selected.post.author.handle}...`);
+
+                    let explorationContext = `[Exploration of post by @${selected.post.author.handle}]: "${selected.text}"\n`;
+
+                    // Execution: Use vision or link tools
+                    if (selected.images.length > 0) {
+                        const img = selected.images[0];
+                        console.log(`[Bot] Exploring image from @${selected.post.author.handle}...`);
+                        const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+                        const analysis = await llmService.analyzeImage(img.url, img.alt, { sensory: includeSensory });
+                        if (analysis) {
+                            explorationContext += `[Vision Analysis]: ${analysis}\n`;
+                        }
+                    }
+
+                    if (selected.urls.length > 0) {
+                        const url = selected.urls[0];
+                        console.log(`[Bot] Exploring link from @${selected.post.author.handle}: ${url}`);
+                        const safety = await llmService.isUrlSafe(url);
+                        if (safety.safe) {
+                            const content = await webReaderService.fetchContent(url);
+                            if (content) {
+                                const summary = await llmService.summarizeWebPage(url, content);
+                                if (summary) {
+                                    explorationContext += `[Link Summary]: ${summary}\n`;
+                                }
+                            }
+                        }
+                    }
+
+                    // Reflection: Record in memory thread
+                    const reflectionPrompt = `
+                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                        You just explored a post on your timeline. Share your internal reaction, thoughts, or realization based on what you found.
+
+                        Exploration Context:
+                        ${explorationContext}
+
+                        Respond with a concise memory entry. Use the tag [EXPLORE] at the beginning.
+                    `;
+
+                    const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true });
+                    if (reflection && memoryService.isEnabled()) {
+                        await memoryService.createMemoryEntry('exploration', reflection);
                     }
                 }
             }
         }
-
-        // 4. Reflection: Record in memory thread
-        const reflectionPrompt = `
-            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-            You just explored a post on your timeline. Share your internal reaction, thoughts, or realization based on what you found.
-
-            Exploration Context:
-            ${explorationContext}
-
-            Respond with a concise memory entry. Use the tag [EXPLORE] at the beginning.
-        `;
-
-        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useQwen: true });
-        if (reflection && memoryService.isEnabled()) {
-            await memoryService.createMemoryEntry('exploration', reflection);
-        }
-
     } catch (error) {
         console.error('[Bot] Error during timeline exploration:', error);
     }
@@ -1020,6 +1080,30 @@ export class Bot {
         }
     }
 
+    // 1e. Public Soul-Mapping (Every 12 hours)
+    const lastSoulMapping = dataStore.db.data.last_soul_mapping || 0;
+    if (now.getTime() - lastSoulMapping >= 12 * 60 * 60 * 1000) {
+        await this.performPublicSoulMapping();
+        dataStore.db.data.last_soul_mapping = now.getTime();
+        await dataStore.db.write();
+    }
+
+    // 1f. Linguistic Analysis (Every 24 hours)
+    const lastLinguistic = dataStore.db.data.last_linguistic_analysis || 0;
+    if (now.getTime() - lastLinguistic >= 24 * 60 * 60 * 1000) {
+        await this.performLinguisticAnalysis();
+        dataStore.db.data.last_linguistic_analysis = now.getTime();
+        await dataStore.db.write();
+    }
+
+    // 1g. Keyword Evolution (Every 24 hours)
+    const lastEvolution = dataStore.db.data.last_keyword_evolution || 0;
+    if (now.getTime() - lastEvolution >= 24 * 60 * 60 * 1000) {
+        await this.performKeywordEvolution();
+        dataStore.db.data.last_keyword_evolution = now.getTime();
+        await dataStore.db.write();
+    }
+
     // 1e. Mood Sync (Every 2 hours)
     const lastMoodSync = this.lastMoodSyncTime || 0;
     const moodSyncDiff = (now.getTime() - lastMoodSync) / (1000 * 60 * 60);
@@ -1057,8 +1141,8 @@ export class Bot {
             // This prevents false "absent for >24h" suppression after redeploys or if local state is wiped.
             const localQuietMins = history.length > 0 ? (Date.now() - history[history.length - 1].timestamp) / (1000 * 60) : Infinity;
             if (history.length === 0 || localQuietMins > 60) {
-                console.log(`[Bot] Discord history for admin is empty or old (${Math.round(localQuietMins)}m). Refreshing from API to verify presence...`);
-                const refreshed = await discordService.fetchAdminHistory(20);
+                console.log(`[Bot] Discord history for admin is empty or old (${Math.round(localQuietMins)}m). Refreshing from API...`);
+                const refreshed = await discordService.fetchAdminHistory(50);
                 if (refreshed) history = refreshed;
             }
 
@@ -1237,6 +1321,11 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                     const refusalCounts = dataStore.getRefusalCounts();
                     const latestMoodMemory = await memoryService.getLatestMoodMemory();
+                    const soulMapping = dataStore.getUserSoulMapping(this.adminName || config.DISCORD_ADMIN_NAME);
+                    const linguisticPatterns = dataStore.getLinguisticPatterns();
+                    const linguisticPatternsContext = Object.entries(linguisticPatterns)
+                        .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
+                        .join('\n');
 
                     pollResult = await llmService.performInternalPoll({
                         relationshipMode,
@@ -1258,7 +1347,9 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         needsPresenceOffer,
                         adminExhaustion,
                         likelyAsleep,
-                        inQuietHours
+                        inQuietHours,
+                        soulMapping,
+                        linguisticPatternsContext
                     });
 
                     if (!pollResult || pollResult.decision === 'none') break;
@@ -1323,11 +1414,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                             const containsSlop = isSlop(cand);
                             const historyTexts = formattedHistory.map(h => h.content);
                             const normCand = cand.toLowerCase().trim();
-                            const isExactDuplicate = historyTexts.some(h => {
-                                const normH = h.toLowerCase().trim();
-                                if (!normH) return false;
-                                return normH === normCand || normH.includes(normCand) || normCand.includes(normH);
-                            });
+                            const isExactDuplicate = checkExactRepetition(cand, history, 5);
                             const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
                             const isJaccardRepetitive = checkSimilarity(cand, historyTexts, dConfig.repetition_similarity_threshold);
                             const [varietyCheck, personaCheck] = await Promise.all([
@@ -1366,7 +1453,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                             if (!bestCandidate) {
                                 isJaccardRepetitive = jRep;
                                 if (containsSlop) rejectionReason = "Contains metaphorical slop.";
-                                else if (isExactDuplicate) rejectionReason = "Exact or substring duplicate detected.";
+                                else if (isExactDuplicate) rejectionReason = "Exact duplicate of a recent bot message detected.";
                                 else if (hasPrefixMatch) rejectionReason = "Prefix overlap detected.";
                                 else if (jRep) rejectionReason = "Jaccard similarity threshold exceeded (too similar to history).";
                                 else if (!personaCheck.aligned) rejectionReason = `Not persona aligned: ${personaCheck.feedback}`;
@@ -1438,12 +1525,24 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                 } else if (action.tool === 'search_firehose') {
                                     const query = action.query || action.parameters?.query;
                                     console.log(`[Bot] Heartbeat Action: search_firehose for "${query}"`);
+
+                                    // Targeted search for news sources
+                                    const newsResults = await Promise.all([
+                                        blueskyService.searchPosts(`from:reuters.com ${query}`, { limit: 5 }),
+                                        blueskyService.searchPosts(`from:apnews.com ${query}`, { limit: 5 })
+                                    ]).catch(err => {
+                                        console.error('[Bot] Heartbeat: Error searching news sources:', err);
+                                        return [[], []];
+                                    });
+                                    const flatNews = newsResults.flat();
+
                                     const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
                                     const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
                                         m.text.toLowerCase().includes(query.toLowerCase()) ||
                                         m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
                                     );
                                     const resultsText = [
+                                        ...flatNews.map(r => `[VERIFIED NEWS - @${r.author.handle}]: ${r.record.text}`),
                                         ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
                                         ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
                                     ].join('\n');
@@ -1617,6 +1716,16 @@ Identify the topic and main takeaway.`;
                 this[discordActivityKey] = nowTs;
             }
         }
+    }
+  }
+
+  _flushFirehoseLogs() {
+    const keywords = Object.keys(this.firehoseMatchCounts);
+    if (keywords.length > 0) {
+        const summary = keywords.map(kw => `${this.firehoseMatchCounts[kw]} for '${kw}'`).join(', ');
+        console.log(`[Bot] Firehose topic matches aggregated: ${summary}`);
+        this.firehoseMatchCounts = {};
+        this.lastFirehoseLogTime = Date.now();
     }
   }
 
@@ -2934,12 +3043,25 @@ Identify the topic and main takeaway.`;
             const query = action.query || action.parameters?.query;
             if (query) {
                 console.log(`[Bot] Plan Tool: search_firehose for "${query}"`);
+
+                // Targeted search for news sources
+                const newsResults = await Promise.all([
+                    blueskyService.searchPosts(`from:reuters.com ${query}`, { limit: 5 }),
+                    blueskyService.searchPosts(`from:apnews.com ${query}`, { limit: 5 })
+                ]).catch(err => {
+                    console.error('[Bot] Error searching news sources:', err);
+                    return [[], []];
+                });
+                const flatNews = newsResults.flat();
+
                 const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
                 const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
                     m.text.toLowerCase().includes(query.toLowerCase()) ||
                     m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
                 );
+
                 const resultsText = [
+                    ...flatNews.map(r => `[VERIFIED NEWS - @${r.author.handle}]: ${r.record.text}`),
                     ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
                     ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
                 ].join('\n');
@@ -3085,8 +3207,17 @@ Identify the topic and main takeaway.`;
         }
       }
 
+      // Step 6b: Soul Mapping Context
+      const soulMapping = dataStore.getUserSoulMapping(handle);
+      const linguisticPatterns = dataStore.getLinguisticPatterns();
+      const linguisticPatternsContext = Object.entries(linguisticPatterns)
+          .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
+          .join('\n');
+
       const fullContext = `
         ${userProfileAnalysis ? `--- USER PROFILE ANALYSIS (via User Profile Analyzer Tool): ${userProfileAnalysis} ---` : ''}
+        ${soulMapping ? `--- USER SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join(', ')}. Vibe: ${soulMapping.vibe} ---` : ''}
+        ${linguisticPatternsContext ? `--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
         ${historicalSummary ? `--- Historical Context (Interactions from the past week): ${historicalSummary} ---` : ''}
         ${userSummary ? `--- Persistent memory of user @${handle}: ${userSummary} ---` : ''}
         ${activityContext}
@@ -3736,7 +3867,13 @@ Describe how you feel about this user and your relationship now.`;
       const firehoseMatches = dataStore.getFirehoseMatches(20);
       const firehoseText = firehoseMatches.map(m => `[Real-time Match (${m.matched_keywords.join(',')})]: ${m.text}`).join('\n');
 
-      const networkBuzz = `--- TIMELINE ACTIVITY ---\n${timelineText}\n\n--- REAL-TIME FIREHOSE MATCHES ---\n${firehoseText || 'No recent real-time matches.'}`;
+      const recentInteractions = dataStore.getLatestInteractions(20);
+
+      // Self-Monitoring: Check for recent mentions in the firehose to see how people are reacting to the bot
+      const recentBotMentions = recentInteractions.filter(i => i.text.toLowerCase().includes(config.BLUESKY_IDENTIFIER.toLowerCase())).slice(0, 5);
+      const socialEchoes = recentBotMentions.map(m => `[Recent Mention by @${m.userHandle}]: ${m.text}`).join('\n');
+
+      const networkBuzz = `--- TIMELINE ACTIVITY ---\n${timelineText}\n\n--- REAL-TIME FIREHOSE MATCHES ---\n${firehoseText || 'No recent real-time matches.'}\n\n--- SOCIAL ECHOES (How people are talking to/about you) ---\n${socialEchoes || 'No recent direct mentions detected.'}`;
 
       // Ecosystem Awareness (Item 8)
       const agentsInFeed = timeline
@@ -3745,7 +3882,6 @@ Describe how you feel about this user and your relationship now.`;
           .slice(0, 5)
           .join('\n');
 
-      const recentInteractions = dataStore.getLatestInteractions(20);
       const exhaustedThemes = dataStore.getExhaustedThemes();
       const allOwnPosts = feed.data.feed
         .filter(item => item.post.author.did === blueskyService.did);
@@ -3843,6 +3979,11 @@ Describe how you feel about this user and your relationship now.`;
         const knowledge = "None" || '';
         topicPrompt = `
           Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+          **SELF-MONITORING (Item 12)**:
+          Analyze the "SOCIAL ECHOES" and "Your Recent Activity".
+          Identify how your presence is being perceived. Are you being understood? Is there a recurring question or reaction to your recent posts?
+          Use this self-awareness to inform whether you should expand on a previous thought, clarify a position, or pivot to something entirely new to keep your "audience" engaged.
 
           **TOPIC CLUSTERING & VOID DETECTION (Item 1 & 18)**:
           Analyze the following "Network Buzz" and "Recent Interactions".
@@ -4091,9 +4232,13 @@ Describe how you feel about this user and your relationship now.`;
       const blueskyDirectives = dataStore.getBlueskyInstructions();
       const personaUpdates = dataStore.getPersonaUpdates();
       const recentThoughts = dataStore.getRecentThoughts();
+      const linguisticPatterns = dataStore.getLinguisticPatterns();
+      const linguisticPatternsContext = Object.entries(linguisticPatterns)
+          .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
+          .join('\n');
       const firehoseBuzz = firehoseMatches.slice(-5).map(m => m.text).join(' | ');
-      const recentThoughtsContext = (recentThoughts.length > 0 || agenticContext || firehoseBuzz)
-        ? `\n\n--- RECENT CROSS-PLATFORM THOUGHTS & REAL-TIME BUZZ ---\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content.substring(0, 200)}${t.content.length > 200 ? '...' : ''}`).join('\n')}${agenticContext}\n[Real-time Firehose Buzz]: ${firehoseBuzz}\n---`
+      const recentThoughtsContext = (recentThoughts.length > 0 || agenticContext || firehoseBuzz || linguisticPatternsContext)
+        ? `\n\n--- RECENT CROSS-PLATFORM THOUGHTS & REAL-TIME BUZZ ---\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content.substring(0, 200)}${t.content.length > 200 ? '...' : ''}`).join('\n')}${agenticContext}\n[Real-time Firehose Buzz]: ${firehoseBuzz}\n${linguisticPatternsContext ? `\n--- OBSERVED HUMAN LINGUISTIC PATTERNS (For awareness of pacing/structure): \n${linguisticPatternsContext}\n---` : ''}`
         : '';
 
       const baseAutonomousPrompt = `
@@ -5128,6 +5273,155 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       }
     } catch (error) {
       console.error('[Bot] Error during mood sync:', error);
+    }
+  }
+
+  async performPublicSoulMapping() {
+    console.log('[Bot] Starting Public Soul-Mapping task...');
+    try {
+        const recentInteractions = dataStore.getLatestInteractions(10);
+        const uniqueHandles = [...new Set(recentInteractions.map(i => i.userHandle))].slice(0, 5);
+
+        for (const handle of uniqueHandles) {
+            console.log(`[Bot] Soul-Mapping user: @${handle}`);
+            const profile = await blueskyService.getProfile(handle);
+            const posts = await blueskyService.getUserPosts(handle);
+
+            if (posts.length > 0) {
+                const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+                let pfpVibe = null;
+                if (profile.avatar) {
+                    pfpVibe = await llmService.analyzeImage(profile.avatar, `Profile picture of @${handle}`, { sensory: includeSensory });
+                }
+
+                const mappingPrompt = `
+                    Analyze the following profile and recent posts for user @${handle} on Bluesky.
+                    Create a "Soul Map" — a deep, persona-aligned summary of their digital essence, interests, and conversational vibe.
+
+                    Bio: ${profile.description || 'No bio'}
+                    PFP Vibe: ${pfpVibe || 'Unknown'}
+                    Recent Posts:
+                    ${posts.map(p => `- ${p}`).join('\n')}
+
+                    Respond with a JSON object:
+                    {
+                        "summary": "string (1-2 sentence essence)",
+                        "interests": ["list", "of", "topics"],
+                        "vibe": "string (conversational style)"
+                    }
+                `;
+
+                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useQwen: true, preface_system_prompt: false });
+                const jsonMatch = response?.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const mapping = JSON.parse(jsonMatch[0]);
+                    await dataStore.updateUserSoulMapping(handle, {
+                        ...mapping,
+                        pfp_vibe: pfpVibe
+                    });
+                    console.log(`[Bot] Successfully mapped soul for @${handle}`);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Public Soul-Mapping:', e);
+    }
+  }
+
+  async performKeywordEvolution() {
+    console.log('[Bot] Starting Recursive Keyword Evolution task...');
+    try {
+        const recentMatches = dataStore.getFirehoseMatches(100);
+        const currentTopics = dataStore.getConfig().post_topics;
+
+        if (recentMatches.length > 10) {
+            const evolutionPrompt = `
+                Analyze the following real-time posts from the Bluesky Firehose.
+                Your goal is to identify:
+                1. **Recursive Keywords**: New keywords related to your interests (${currentTopics.join(', ')}) that are appearing frequently and should be tracked.
+                2. **SFW Semantic Drift**: New SFW slang, memes, or shifting meanings of words you track.
+
+                Posts:
+                ${recentMatches.map(m => `- ${m.text}`).join('\n')}
+
+                INSTRUCTIONS:
+                - Focus ONLY on Safe For Work (SFW) content.
+                - Identify 2-3 new keywords to add to your tracking list.
+                - Describe any semantic drift observed.
+
+                Respond with a JSON object:
+                {
+                    "new_keywords": ["kw1", "kw2"],
+                    "semantic_drift": "string description",
+                    "reason": "string"
+                }
+            `;
+
+            const response = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { useQwen: true, preface_system_prompt: false });
+            const jsonMatch = response?.match(/\{[\s\S]*\}/);
+            if (jsonMatch) {
+                const evolution = JSON.parse(jsonMatch[0]);
+
+                // Update post_topics
+                if (evolution.new_keywords && evolution.new_keywords.length > 0) {
+                    const updatedTopics = [...new Set([...currentTopics, ...evolution.new_keywords])].slice(0, 50);
+                    await dataStore.updateConfig('post_topics', updatedTopics);
+                    console.log(`[Bot] Evolved keywords: added ${evolution.new_keywords.join(', ')}`);
+                }
+
+                if (evolution.semantic_drift && memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('exploration', `[SEMANTIC_DRIFT] ${evolution.semantic_drift}. Reason: ${evolution.reason}`);
+                    console.log(`[Bot] Recorded semantic drift: ${evolution.semantic_drift}`);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Keyword Evolution:', e);
+    }
+  }
+
+  async performLinguisticAnalysis() {
+    console.log('[Bot] Starting Linguistic Analysis of followed profiles...');
+    try {
+        // Since we don't have a direct "getFollowing" list easily, we'll use active timeline participants
+        const timeline = await blueskyService.getTimeline(50);
+        const follows = [...new Set(timeline.map(item => item.post.author.handle))].slice(0, 5);
+
+        for (const handle of follows) {
+            if (handle === config.BLUESKY_IDENTIFIER) continue;
+            console.log(`[Bot] Analyzing linguistic patterns for: @${handle}`);
+            const posts = await blueskyService.getUserPosts(handle);
+
+            if (posts.length > 3) {
+                const analysisPrompt = `
+                    Analyze the linguistic patterns of @${handle} based on their recent posts.
+                    Focus on:
+                    1. Pacing: (e.g., rapid-fire, slow/deliberate, fragmented)
+                    2. Structure: (e.g., formal, slang-heavy, poetic, blunt)
+                    3. Recurring vocabulary: (3-5 favorite or characteristic words/emojis)
+
+                    Posts:
+                    ${posts.map(p => `- ${p}`).join('\n')}
+
+                    Respond with a JSON object:
+                    {
+                        "pacing": "string",
+                        "structure": "string",
+                        "favorite_words": ["word1", "word2", ...]
+                    }
+                `;
+
+                const response = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { useQwen: true, preface_system_prompt: false });
+                const jsonMatch = response?.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const pattern = JSON.parse(jsonMatch[0]);
+                    await dataStore.updateLinguisticPattern(handle, pattern);
+                    console.log(`[Bot] Recorded linguistic patterns for @${handle}`);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Linguistic Analysis:', e);
     }
   }
 

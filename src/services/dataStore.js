@@ -95,6 +95,9 @@ const defaultData = {
   news_searches_today: 0,
   last_core_value_discovery: 0,
   last_existential_reflection: 0,
+  last_soul_mapping: 0,
+  last_linguistic_analysis: 0,
+  last_keyword_evolution: 0,
   interaction_count_since_audit: 0,
   render_service_id: null,
   render_service_name: null,
@@ -114,7 +117,9 @@ const defaultData = {
   goal_subtasks: [], // [ { subtask, status: 'pending|completed', timestamp } ]
   agency_logs: [], // [ { action, decision, reason, timestamp } ]
   strategy_audits: [], // [ { audit, timestamp } ]
-  firehose_matches: [] // [ { text, uri, matched_keywords, timestamp } ]
+  firehose_matches: [], // [ { text, uri, matched_keywords, timestamp } ]
+  user_soul_mappings: {}, // { handle/userId: { summary, last_posts: [], interests: [], pfp_vibe, last_updated } }
+  followed_linguistic_patterns: {} // { handle: { pacing, structure, favorite_words, last_updated } }
 };
 
 class DataStore {
@@ -1257,6 +1262,34 @@ class DataStore {
 
   getFirehoseMatches(limit = 10) {
     return (this.db.data.firehose_matches || []).slice(-limit).reverse();
+  }
+
+  async updateUserSoulMapping(handle, mapping) {
+    if (!this.db.data.user_soul_mappings) this.db.data.user_soul_mappings = {};
+    this.db.data.user_soul_mappings[handle] = {
+        ...this.db.data.user_soul_mappings[handle],
+        ...mapping,
+        last_updated: Date.now()
+    };
+    await this.db.write();
+  }
+
+  getUserSoulMapping(handle) {
+    return this.db.data.user_soul_mappings?.[handle] || null;
+  }
+
+  async updateLinguisticPattern(handle, pattern) {
+    if (!this.db.data.followed_linguistic_patterns) this.db.data.followed_linguistic_patterns = {};
+    this.db.data.followed_linguistic_patterns[handle] = {
+        ...this.db.data.followed_linguistic_patterns[handle],
+        ...pattern,
+        last_updated: Date.now()
+    };
+    await this.db.write();
+  }
+
+  getLinguisticPatterns() {
+    return this.db.data.followed_linguistic_patterns || {};
   }
 }
 

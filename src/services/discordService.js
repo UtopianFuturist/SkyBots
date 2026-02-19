@@ -13,7 +13,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, getSlopInfo, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting, sanitizeCjkCharacters, stripWrappingQuotes } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, getSlopInfo, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting, sanitizeCjkCharacters, stripWrappingQuotes, checkExactRepetition } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -804,8 +804,8 @@ class DiscordService {
 
         let history = dataStore.getDiscordConversation(normChannelId);
 
-        // If local history is empty, try to fetch from Discord channel
-        if (history.length === 0) {
+        // If local history is empty or sparse, fetch from Discord channel
+        if (history.length < 10) {
             // Cooldown for message fetching: 1 minute per channel to reduce API pressure
             const now = Date.now();
             const lastFetch = this._lastMessageFetch[normChannelId] || 0;
@@ -814,8 +814,8 @@ class DiscordService {
             } else {
                 this._lastMessageFetch[normChannelId] = now;
                 try {
-                    console.log(`[DiscordService] Local history empty, fetching from Discord...`);
-                    const fetchedMessages = await message.channel.messages.fetch({ limit: 15 });
+                    console.log(`[DiscordService] Local history sparse, fetching from Discord...`);
+                    const fetchedMessages = await message.channel.messages.fetch({ limit: 50 });
                 const fetchedHistory = fetchedMessages
                     .reverse()
                     .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
@@ -928,6 +928,11 @@ class DiscordService {
         // Memory & Context: User Fact Store & Channel Summary
         const userFacts = dataStore.getDiscordUserFacts(message.author.id);
         const channelSummary = dataStore.getDiscordChannelSummary(normChannelId);
+        const soulMapping = dataStore.getUserSoulMapping(message.author.username);
+        const linguisticPatterns = dataStore.getLinguisticPatterns();
+        const linguisticPatternsContext = Object.entries(linguisticPatterns)
+            .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
+            .join('\n');
 
         const systemPrompt = `
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
@@ -995,6 +1000,8 @@ ${channelSummary ? `Last Summary: ${channelSummary.summary}\nLast Vibe: ${channe
 
 --- USER FACTS ---
 ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific facts known about this user.'}
+${soulMapping ? `\n--- USER SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join(', ')}. Vibe: ${soulMapping.vibe} ---` : ''}
+${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
 ---
 ${presenceContext}${relevantMemories}
 
@@ -1824,12 +1831,24 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                           const query = action.query || action.parameters?.query;
                           if (query) {
                               console.log(`[DiscordService] Plan Tool: search_firehose for "${query}"`);
+
+                              // Targeted search for news sources
+                              const newsResults = await Promise.all([
+                                  blueskyService.searchPosts(`from:reuters.com ${query}`, { limit: 5 }),
+                                  blueskyService.searchPosts(`from:apnews.com ${query}`, { limit: 5 })
+                              ]).catch(err => {
+                                  console.error('[DiscordService] Error searching news sources:', err);
+                                  return [[], []];
+                              });
+                              const flatNews = newsResults.flat();
+
                               const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
                               const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
                                   m.text.toLowerCase().includes(query.toLowerCase()) ||
                                   m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
                               );
                               const resultsText = [
+                                  ...flatNews.map(r => `[VERIFIED NEWS - @${r.author.handle}]: ${r.record.text}`),
                                   ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
                                   ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
                               ].join('\n');
@@ -1855,29 +1874,54 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      return this.respond(message);
                  }
 
-                 responseText = await llmService.generateResponse(messages, {
-                     useQwen: true,
-                     temperature: 0.7,
-                     tropeBlacklist: prePlanning?.trope_blacklist || [],
-                     currentMood,
-                     abortSignal: abortController.signal
-                 });
+                 let attempts = 0;
+                 const MAX_RESP_ATTEMPTS = 3;
+                 let respFeedback = '';
 
-                 // Information Density Filter (Item 6)
-                 if (responseText) {
+                 while (attempts < MAX_RESP_ATTEMPTS) {
+                     attempts++;
+                     const attemptMessages = respFeedback
+                        ? [...messages, { role: 'system', content: `**REPETITION BLOCK**: Your previous draft was an exact or near-duplicate of a recent message. You MUST choose a completely different opening and angle. Feedback: ${respFeedback}` }]
+                        : messages;
+
+                     responseText = await llmService.generateResponse(attemptMessages, {
+                         useQwen: true,
+                         temperature: 0.7 + (attempts * 0.05),
+                         tropeBlacklist: prePlanning?.trope_blacklist || [],
+                         currentMood,
+                         abortSignal: abortController.signal
+                     });
+
+                     if (!responseText) {
+                        console.warn(`[DiscordService] Fast-path generation failed on attempt ${attempts}.`);
+                        break;
+                     }
+
+                     // Information Density Filter (Item 6)
                      const substance = await llmService.scoreSubstance(responseText);
                      if (substance.score < 0.3) {
                          console.log(`[DiscordService] Low substance score (${substance.score}). Requesting material injection...`);
                          const injection = await llmService.performInternalInquiry(`Provide material substance to improve this response: "${responseText}"`);
                          if (injection) {
-                             const improvedMessages = [...messages, { role: 'system', content: `[MATERIAL INJECTION]: ${injection}. Rewrite the response to be more substantive.` }];
+                             const improvedMessages = [...attemptMessages, { role: 'system', content: `[MATERIAL INJECTION]: ${injection}. Rewrite the response to be more substantive.` }];
                              responseText = await llmService.generateResponse(improvedMessages, { useQwen: true, currentMood });
                          }
                      }
+
+                     // Final Strict Repetition Check (Last 5 Bot Messages)
+                     const isExactDuplicate = checkExactRepetition(responseText, history, 5);
+                     if (isExactDuplicate) {
+                         console.warn(`[DiscordService] Generated response is an EXACT DUPLICATE of a recent message. Retrying...`);
+                         respFeedback = "Your response is identical to one of your last 5 messages in this channel. Change your opening and theme entirely.";
+                         responseText = null;
+                         continue;
+                     }
+
+                     break; // Success
                  }
 
                  if (!responseText) {
-                    console.warn(`[DiscordService] Fast-path generation failed.`);
+                    console.warn(`[DiscordService] Fast-path generation failed after ${attempts} attempts.`);
                  }
             } else {
                 // Fast-Path for Simple DMs: Direct response
@@ -2194,7 +2238,7 @@ INSTRUCTIONS:
         return null;
     }
 
-    async fetchAdminHistory(limit = 15) {
+    async fetchAdminHistory(limit = 50) {
         if (!this.client?.isReady()) return null;
 
         try {
@@ -2240,7 +2284,7 @@ INSTRUCTIONS:
         console.log('[DiscordService] Starting Historical Vibe Recovery...');
         try {
             // 1. Proactively fetch admin history first
-            await this.fetchAdminHistory(20);
+            await this.fetchAdminHistory(50);
 
             // 2. Get last 10 channels we interacted in
             const conversations = dataStore.db.data.discord_conversations || {};

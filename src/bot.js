@@ -14,7 +14,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -297,9 +297,29 @@ export class Bot {
     });
 
     this.firehoseProcess.on('close', (code) => {
-      console.log(`[Bot] Firehose monitor exited with code ${code}. Restarting in 10s...`);
-      setTimeout(() => this.startFirehose(), 10000);
+      const delay = this._intentionalFirehoseRestart ? 1000 : 10000;
+      console.log(`[Bot] Firehose monitor exited with code ${code}. Restarting in ${delay / 1000}s...`);
+      this._intentionalFirehoseRestart = false;
+      setTimeout(() => this.startFirehose(), delay);
     });
+  }
+
+  restartFirehose() {
+    if (this._firehoseRestartTimeout) {
+        clearTimeout(this._firehoseRestartTimeout);
+    }
+
+    this._firehoseRestartTimeout = setTimeout(() => {
+        if (this.firehoseProcess) {
+            console.log('[Bot] Intentional Firehose restart triggered (debounced).');
+            this._intentionalFirehoseRestart = true;
+            this.firehoseProcess.kill();
+        } else {
+            console.log('[Bot] Firehose monitor not running. Starting fresh...');
+            this.startFirehose();
+        }
+        this._firehoseRestartTimeout = null;
+    }, 5000); // 5 second debounce
   }
 
   async run() {
@@ -1411,7 +1431,6 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                     const evaluations = await Promise.all(candidates.map(async (cand) => {
                         try {
-                            const containsSlop = isSlop(cand);
                             const historyTexts = formattedHistory.map(h => h.content);
                             const normCand = cand.toLowerCase().trim();
                             const isExactDuplicate = checkExactRepetition(cand, history, 5);
@@ -1421,7 +1440,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                 llmService.checkVariety(cand, formattedHistory, { relationshipRating: 5, platform: 'discord', currentMood }),
                                 llmService.isPersonaAligned(cand, 'discord')
                             ]);
-                            return { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive, isExactDuplicate };
+                            return { cand, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive, isExactDuplicate };
                         } catch (e) {
                             console.error(`[Bot] Error evaluating heartbeat candidate: ${e.message}`);
                             return { cand, error: e.message };
@@ -1430,11 +1449,14 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                     let isJaccardRepetitive = false;
                     for (const evalResult of evaluations) {
-                        const { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
+                        const { cand, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
                         if (error) {
                             rejectedAttempts.push(cand);
                             continue;
                         }
+
+                        const slopInfo = getSlopInfo(cand);
+                        const containsSlop = slopInfo.isSlop;
 
                         // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
                         const lengthBonus = Math.min(cand.length / 500, 0.2);
@@ -1452,7 +1474,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         } else {
                             if (!bestCandidate) {
                                 isJaccardRepetitive = jRep;
-                                if (containsSlop) rejectionReason = "Contains metaphorical slop.";
+                                if (containsSlop) rejectionReason = `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.`;
                                 else if (isExactDuplicate) rejectionReason = "Exact duplicate of a recent bot message detected.";
                                 else if (hasPrefixMatch) rejectionReason = "Prefix overlap detected.";
                                 else if (jRep) rejectionReason = "Jaccard similarity threshold exceeded (too similar to history).";
@@ -3353,7 +3375,6 @@ Identify the topic and main takeaway.`;
       // Parallelize evaluation of all candidates to avoid sequential LLM slowness
       const evaluations = await Promise.all(candidates.map(async (cand) => {
           try {
-              const containsSlop = isSlop(cand);
               const historyTexts = formattedHistory.map(h => h.content);
               const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
 
@@ -3362,7 +3383,7 @@ Identify the topic and main takeaway.`;
                   llmService.isPersonaAligned(cand, 'bluesky'),
                   isAdminInThread ? Promise.resolve({ safe: true }) : llmService.isResponseSafe(cand)
               ]);
-              return { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch };
+              return { cand, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch };
           } catch (e) {
               console.error(`[Bot] Error evaluating candidate: ${e.message}`);
               return { cand, error: e.message };
@@ -3370,11 +3391,14 @@ Identify the topic and main takeaway.`;
       }));
 
       for (const evalResult of evaluations) {
-          const { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch, error } = evalResult;
+          const { cand, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch, error } = evalResult;
           if (error) {
               rejectedRespAttempts.push(cand);
               continue;
           }
+
+          const slopInfo = getSlopInfo(cand);
+          const containsSlop = slopInfo.isSlop;
 
           // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
           const lengthBonus = Math.min(cand.length / 500, 0.2);
@@ -3391,7 +3415,7 @@ Identify the topic and main takeaway.`;
               }
           } else {
               if (!bestCandidate) {
-                  rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                  rejectionReason = containsSlop ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
                                     (hasPrefixMatch ? "Prefix overlap detected." :
                                     (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                     (!responseSafetyCheck.safe ? "Failed safety check." :
@@ -4453,7 +4477,8 @@ Describe how you feel about this user and your relationship now.`;
           const historyTexts = formattedHistory.map(h => h.content);
           const isJaccardRepetitive = checkSimilarity(postContent, historyTexts, dConfig.repetition_similarity_threshold);
           const hasPrefixMatch = hasPrefixOverlap(postContent, historyTexts, 3);
-          const containsSlop = isSlop(postContent);
+          const slopInfo = getSlopInfo(postContent);
+          const containsSlop = slopInfo.isSlop;
           const varietyCheck = await llmService.checkVariety(postContent, formattedHistory);
           const personaCheck = await llmService.isPersonaAligned(postContent, 'bluesky', {
             imageSource: imageBuffer,
@@ -4463,7 +4488,7 @@ Describe how you feel about this user and your relationship now.`;
 
           if (isJaccardRepetitive || hasPrefixMatch || containsSlop || varietyCheck.repetitive || !personaCheck.aligned) {
             console.warn(`[Bot] Autonomous post attempt ${postAttempts} failed quality/persona check. Rejecting.`);
-            postFeedback = containsSlop ? "Contains repetitive metaphorical 'slop'." :
+            postFeedback = containsSlop ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
                        (hasPrefixMatch ? "Prefix overlap detected." :
                        (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                        (varietyCheck.feedback || "Too similar to your recent history.")));

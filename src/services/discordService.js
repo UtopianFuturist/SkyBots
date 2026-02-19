@@ -405,6 +405,44 @@ class DiscordService {
                 await dataStore.addAdminEmotionalState(message.content);
             }
 
+        // Item 1: Entity-Aware Dynamic Tracking
+        (async () => {
+            const extractionPrompt = `
+                Identify any unique titles (video games, books, movies, software, specific people) mentioned in the following message from the admin.
+                Admin Message: "${message.content}"
+
+                Respond with a comma-separated list of ONLY the titles/entities. If none, respond "NONE".
+            `;
+            try {
+                const entitiesRaw = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false });
+                if (entitiesRaw && !entitiesRaw.toUpperCase().includes('NONE')) {
+                    const entities = entitiesRaw.split(',').map(e => e.trim()).filter(e => e.length > 2);
+                    if (entities.length > 0) {
+                        console.log(`[DiscordService] Extracted entities from admin message: ${entities.join(', ')}`);
+                        const dConfig = dataStore.getConfig();
+                        const currentTopics = dConfig.post_topics || [];
+
+                        // Only restart if new keywords are actually being added (Item 17: Optimized Rotation)
+                        const newKeywords = entities.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
+
+                        if (newKeywords.length > 0) {
+                            console.log(`[DiscordService] Adding ${newKeywords.length} NEW entities to Firehose tracking: ${newKeywords.join(', ')}`);
+                            const updatedTopics = [...new Set([...currentTopics, ...newKeywords])].slice(-100);
+                            await dataStore.updateConfig('post_topics', updatedTopics);
+
+                            if (this.botInstance) {
+                                this.botInstance.restartFirehose();
+                            }
+                        } else {
+                            console.log(`[DiscordService] All extracted entities are already being tracked. Skipping Firehose restart.`);
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error('[DiscordService] Error extracting entities:', e);
+            }
+        })();
+
         // Admin Feedback Capture (Proposal 8)
         if (message.content.toLowerCase().includes('good job') ||
             message.content.toLowerCase().includes('bad job') ||
@@ -1908,6 +1946,15 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          }
                      }
 
+                     // Slop Check (Item 22: Recursive Slop Retry)
+                     const slopInfo = getSlopInfo(responseText);
+                     if (slopInfo.isSlop) {
+                         console.warn(`[DiscordService] Fast-path response failed slop check: ${slopInfo.reason}. Retrying...`);
+                         respFeedback = `REJECTED: Your response contained forbidden metaphorical "slop": "${slopInfo.reason}". You MUST rewrite the message to be more grounded and avoid that specific phrase or any similar overused AI cliches.`;
+                         responseText = null;
+                         continue;
+                     }
+
                      // Final Strict Repetition Check (Last 5 Bot Messages)
                      const isExactDuplicate = checkExactRepetition(responseText, history, 5);
                      if (isExactDuplicate) {
@@ -1968,8 +2015,9 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                 }
 
                 console.log(`[DiscordService] Sending response to Discord...`);
-                // Item 28: Use Discord's reply/quote feature for direct responses
-                await this._send(message, responseText, { reply: true });
+            // Dynamic Reply (Item 23): Only use Discord's reply feature if specifically requested by planning
+            const useReply = !!(typeof plan !== 'undefined' && plan?.strategy?.use_discord_reply);
+            await this._send(message, responseText, { reply: useReply });
 
                 const adminExhaustionVal = await dataStore.getAdminExhaustion();
 

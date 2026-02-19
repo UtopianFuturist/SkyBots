@@ -1813,7 +1813,8 @@ Vary your structure and tone from recent messages.`
         "strategy": {
           "angle": "Analytical|Supportive|Challenging|Curious|Playful|Serious|Stoic|Poetic (but grounded)",
           "tone": "Succinct|Detailed|Casual|Formal|Assertive|Inquisitive",
-          "theme": "string (a very brief 1-2 word theme for this specific response)"
+          "theme": "string (a very brief 1-2 word theme for this specific response)",
+          "use_discord_reply": "boolean (On Discord, only set to true if 'looping back' to an earlier message in history)"
         },
         "actions": [
           {
@@ -2024,6 +2025,8 @@ Vary your structure and tone from recent messages.`
 
       **GUARDIAN ANGEL DIRECTIVE:**
       You are currently acting as the internal "Guardian Angel" and planning module for this bot. You are reflecting on whether the bot "wants or needs" to talk to its admin (${config.DISCORD_ADMIN_NAME}) on Discord right now.
+
+      **RELATIONSHIP FIRST**: Your primary goal in this spontaneous reach-out is to prioritize the on-going conversation and your deep relationship with the user. Focus on depth, connection, and the specific history of your talk. Avoid prioritizing "reporting" on external feeds, logs, or system status unless it is directly relevant to a recent discussion.
 
       Admin Availability: ${adminAvailability}
       Relationship Mode: ${relationshipMode}

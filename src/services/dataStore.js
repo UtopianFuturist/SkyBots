@@ -113,7 +113,8 @@ const defaultData = {
   discovered_capabilities: [], // [ { capability, combination, timestamp } ]
   goal_subtasks: [], // [ { subtask, status: 'pending|completed', timestamp } ]
   agency_logs: [], // [ { action, decision, reason, timestamp } ]
-  strategy_audits: [] // [ { audit, timestamp } ]
+  strategy_audits: [], // [ { audit, timestamp } ]
+  firehose_matches: [] // [ { text, uri, matched_keywords, timestamp } ]
 };
 
 class DataStore {
@@ -727,7 +728,12 @@ class DataStore {
       discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 21, end: 5 },
       discord_admin_available: this.db.data.discord_admin_available ?? true,
       admin_exhaustion_score: this.db.data.admin_exhaustion_score || 0.0,
-      admin_last_emotional_states: this.db.data.admin_last_emotional_states || []
+      admin_last_emotional_states: this.db.data.admin_last_emotional_states || [],
+      current_mood: this.db.data.current_mood,
+      current_goal: this.db.data.current_goal,
+      energy_level: this.db.data.energy_level ?? 1.0,
+      lurker_mode: this.db.data.lurker_mode ?? false,
+      mute_feed_impact_until: this.db.data.mute_feed_impact_until ?? 0
     };
   }
 
@@ -1232,6 +1238,25 @@ class DataStore {
 
   getRenderServiceName() {
     return this.db.data.render_service_name;
+  }
+
+  async addFirehoseMatch(match) {
+    if (!this.db.data.firehose_matches) {
+        this.db.data.firehose_matches = [];
+    }
+    this.db.data.firehose_matches.push({
+        ...match,
+        timestamp: Date.now()
+    });
+    // Keep last 100 matches
+    if (this.db.data.firehose_matches.length > 100) {
+        this.db.data.firehose_matches.shift();
+    }
+    await this.db.write();
+  }
+
+  getFirehoseMatches(limit = 10) {
+    return (this.db.data.firehose_matches || []).slice(-limit).reverse();
   }
 }
 

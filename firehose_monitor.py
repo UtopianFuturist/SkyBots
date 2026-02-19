@@ -2,6 +2,7 @@ import asyncio
 import os
 import json
 import sys
+import argparse
 from atproto import AsyncFirehoseSubscribeReposClient, parse_subscribe_repos_message, models, Client, CAR
 from atproto.exceptions import AtProtocolError
 
@@ -27,6 +28,15 @@ def make_serializable(obj):
     return obj
 
 async def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--keywords', type=str, help='Comma-separated list of keywords to monitor')
+    args = parser.parse_args()
+
+    keywords = []
+    if args.keywords:
+        keywords = [k.strip().lower() for k in args.keywords.split(',') if k.strip()]
+        print(f"Monitoring firehose for keywords: {keywords}", file=sys.stderr)
+
     if not BLUESKY_IDENTIFIER or not BLUESKY_APP_PASSWORD:
         print("Error: BLUESKY_IDENTIFIER or BLUESKY_APP_PASSWORD not set in environment.")
         sys.exit(1)
@@ -67,6 +77,9 @@ async def main():
                     if not record_raw:
                         continue
 
+                    text = record_raw.get('text', '').lower()
+
+                    # 1. Check for mentions/replies (existing logic)
                     reply = record_raw.get('reply')
                     is_reply_to_bot = False
                     if reply:
@@ -74,9 +87,8 @@ async def main():
                         if bot_did in parent_uri:
                             is_reply_to_bot = True
 
-                    text = record_raw.get('text', '')
                     facets = record_raw.get('facets', [])
-                    is_mention_of_bot = bot_did in text
+                    is_mention_of_bot = bot_did in record_raw.get('text', '')
 
                     if not is_mention_of_bot:
                         for facet in facets:
@@ -114,10 +126,28 @@ async def main():
                             "reason": reason
                         }
                         print(json.dumps(event), flush=True)
-                        print(f"Detected event for DID {commit.repo} (Reason: {reason})", file=sys.stderr)
+                        continue # Already handled
+
+                    # 2. Check for keyword matches
+                    if keywords:
+                        matched_keywords = [k for k in keywords if k in text]
+                        if matched_keywords:
+                            event = {
+                                "type": "firehose_topic_match",
+                                "uri": f"at://{commit.repo}/{op.path}",
+                                "cid": str(op.cid),
+                                "author": {
+                                    "did": commit.repo,
+                                    "handle": None
+                                },
+                                "record": make_serializable(record_raw),
+                                "matched_keywords": matched_keywords
+                            }
+                            print(json.dumps(event), flush=True)
 
                 except Exception as e:
-                    print(f"Error processing firehose op: {e}", file=sys.stderr)
+                    # Ignore individual op errors
+                    pass
 
         except Exception as e:
             # Main handler error

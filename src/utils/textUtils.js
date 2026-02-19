@@ -300,6 +300,48 @@ export const getSlopInfo = (text) => {
     return { isSlop: false, reason: null };
 };
 
+export const checkExactRepetition = (newText, history, lastN = 5) => {
+  if (!newText || !history || history.length === 0) return false;
+
+  const normalize = (str) => {
+    if (typeof str !== 'string') return '';
+    return str.toLowerCase().trim()
+      .replace(/[^\w\s]/g, '')
+      .replace(/\s+/g, ' ');
+  };
+
+  const normalizedNew = normalize(newText);
+  if (!normalizedNew) return false;
+
+  // Filter for bot messages across different history formats (Discord role vs Bluesky author)
+  const botMessages = history
+    .filter(h => {
+        // Simple string array
+        if (typeof h === 'string') return true;
+
+        // Discord format
+        if (h.role === 'assistant' || h.role === 'Assistant (Self)') return true;
+
+        // Bluesky/Context format
+        if (h.author === 'assistant' || h.author === 'Assistant (Self)' || h.author === 'You') return true;
+
+        // Default to true if no role/author info to be safe
+        if (!h.role && !h.author) return true;
+
+        return false;
+    })
+    .slice(-lastN);
+
+  for (const old of botMessages) {
+    const oldText = typeof old === 'string' ? old : (old.text || old.content || '');
+    const normalizedOld = normalize(oldText);
+    if (normalizedNew === normalizedOld && normalizedNew.length > 0) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export const checkSimilarity = (newText, recentTexts, threshold = 0.4) => {
   const result = getSimilarityInfo(newText, recentTexts, threshold);
   return result.isRepetitive;

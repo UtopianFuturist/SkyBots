@@ -1,4 +1,4 @@
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap, stripWrappingQuotes } from '../src/utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap, stripWrappingQuotes, checkExactRepetition } from '../src/utils/textUtils.js';
 
 describe('textUtils - sanitizeCjkCharacters', () => {
   it('should remove Chinese characters', () => {
@@ -202,5 +202,45 @@ describe('textUtils - hasPrefixOverlap', () => {
 
   it('should return true if prefix match is in the middle of history list', () => {
     expect(hasPrefixOverlap("I love coding and coffee", history, 3)).toBe(true);
+  });
+});
+
+describe('textUtils - checkExactRepetition', () => {
+  it('should return true for exact matches after normalization', () => {
+    const history = [
+      { role: 'assistant', content: 'This is a test.' },
+      { role: 'user', content: 'Hello' }
+    ];
+    expect(checkExactRepetition('this is a test', history)).toBe(true);
+  });
+
+  it('should ignore non-bot messages', () => {
+    const history = [
+      { role: 'user', content: 'Repeat me' }
+    ];
+    expect(checkExactRepetition('Repeat me', history)).toBe(false);
+  });
+
+  it('should work with string arrays', () => {
+    const history = ['Already said this'];
+    expect(checkExactRepetition('Already said this', history)).toBe(true);
+  });
+
+  it('should handle curly apostrophes and punctuation', () => {
+    const history = ["Don't repeat this!"];
+    expect(checkExactRepetition("don't repeat this", history)).toBe(true);
+  });
+
+  it('should honor lastN limit', () => {
+    const history = [
+      { role: 'assistant', content: 'Very old message' },
+      { role: 'assistant', content: '1' },
+      { role: 'assistant', content: '2' },
+      { role: 'assistant', content: '3' },
+      { role: 'assistant', content: '4' },
+      { role: 'assistant', content: '5' }
+    ];
+    expect(checkExactRepetition('Very old message', history, 5)).toBe(false);
+    expect(checkExactRepetition('1', history, 5)).toBe(true);
   });
 });

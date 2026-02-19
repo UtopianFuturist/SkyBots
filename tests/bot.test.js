@@ -4,6 +4,7 @@ jest.setTimeout(20000);
 
 jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
   blueskyService: {
+    did: 'did:plc:bot',
     getNotifications: jest.fn(),
     updateSeen: jest.fn(),
     getProfile: jest.fn(),
@@ -12,6 +13,8 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     getDetailedThread: jest.fn(),
     getPostDetails: jest.fn(),
     getPastInteractions: jest.fn().mockResolvedValue([]),
+    searchPosts: jest.fn().mockResolvedValue([]),
+    resolveDid: jest.fn().mockImplementation(did => Promise.resolve(did)),
     likePost: jest.fn(),
     authenticate: jest.fn(),
     submitAutonomyDeclaration: jest.fn(),
@@ -53,7 +56,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     scoreSubstance: jest.fn().mockResolvedValue({ score: 1.0, reason: 'Good' }),
     auditStrategy: jest.fn().mockResolvedValue('Audit report'),
     performInternalInquiry: jest.fn().mockResolvedValue('Inquiry result'),
-    performPrePlanning: jest.fn().mockResolvedValue({ intuition: 'test', trope_blacklist: [] }),
+    performPrePlanning: jest.fn().mockResolvedValue({ intuition: 'test', trope_blacklist: [], suggestions: [] }),
     evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'engage', reason: 'Engaging for test' }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
@@ -96,6 +99,23 @@ jest.unstable_mockModule('../src/services/socialHistoryService.js', () => ({
   socialHistoryService: {
     getHierarchicalSummary: jest.fn().mockResolvedValue({ shortTerm: 'recent', dailyNarrative: 'today' }),
     summarizeSocialHistory: jest.fn().mockResolvedValue('Social history'),
+    getRecentSocialContext: jest.fn().mockResolvedValue([]),
+  },
+}));
+
+jest.unstable_mockModule('../src/services/discordService.js', () => ({
+  discordService: {
+    init: jest.fn().mockResolvedValue(true),
+    setBotInstance: jest.fn(),
+    status: 'offline',
+    isEnabled: false,
+    isInitializing: false,
+    isProcessingAdminRequest: false,
+    fetchAdminHistory: jest.fn().mockResolvedValue([]),
+    getAdminUser: jest.fn().mockResolvedValue(null),
+    sendSpontaneousMessage: jest.fn().mockResolvedValue(true),
+    startTyping: jest.fn().mockResolvedValue(true),
+    stopTyping: jest.fn().mockResolvedValue(true),
   },
 }));
 
@@ -146,6 +166,37 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     updateSocialResonance: jest.fn(),
     getUserSoulMapping: jest.fn().mockReturnValue(null),
     getLinguisticPatterns: jest.fn().mockReturnValue({}),
+    getFirehoseMatches: jest.fn().mockReturnValue([]),
+    addFirehoseMatch: jest.fn(),
+    getNewsSearchesToday: jest.fn().mockReturnValue(0),
+    incrementNewsSearchCount: jest.fn(),
+    getGoalSubtasks: jest.fn().mockReturnValue([]),
+    setGoalSubtasks: jest.fn(),
+    getDiscordAdminAvailability: jest.fn().mockReturnValue(true),
+    getDiscordRelationshipMode: jest.fn().mockReturnValue('friend'),
+    getDiscordScheduledTimes: jest.fn().mockReturnValue([]),
+    getDiscordQuietHours: jest.fn().mockReturnValue({ start: 0, end: 0 }),
+    getAdminExhaustion: jest.fn().mockReturnValue(0),
+    getAdminSleepMentionedAt: jest.fn().mockReturnValue(0),
+    getDiscordConversation: jest.fn().mockReturnValue([]),
+    getDiscordExhaustedThemes: jest.fn().mockReturnValue([]),
+    addDiscordExhaustedTheme: jest.fn(),
+    getLastRejectionReason: jest.fn().mockReturnValue(null),
+    getEnergyLevel: jest.fn().mockReturnValue(1.0),
+    setEnergyLevel: jest.fn(),
+    setRestingUntil: jest.fn(),
+    getLastMemoryCleanupTime: jest.fn().mockReturnValue(0),
+    updateLastMemoryCleanupTime: jest.fn(),
+    getLastMentalReflectionTime: jest.fn().mockReturnValue(0),
+    updateLastMentalReflectionTime: jest.fn(),
+    setCurrentGoal: jest.fn(),
+    getCurrentGoal: jest.fn().mockReturnValue({ goal: 'test', description: 'test', timestamp: Date.now() }),
+    getAdminEmotionalStates: jest.fn().mockReturnValue([]),
+    updateAdminExhaustion: jest.fn(),
+    addAdminEmotionalState: jest.fn(),
+    addAdminFeedback: jest.fn(),
+    checkGreetingEligibility: jest.fn().mockReturnValue(true),
+    setGreetingState: jest.fn(),
     init: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_daily_text_limit: 20,
@@ -209,6 +260,7 @@ const { Bot } = await import('../src/bot.js');
 const { blueskyService } = await import('../src/services/blueskyService.js');
 const { llmService } = await import('../src/services/llmService.js');
 const { socialHistoryService } = await import('../src/services/socialHistoryService.js');
+const { discordService } = await import('../src/services/discordService.js');
 const { dataStore } = await import('../src/services/dataStore.js');
 const { googleSearchService } = await import('../src/services/googleSearchService.js');
 const { wikipediaService } = await import('../src/services/wikipediaService.js');
@@ -216,12 +268,18 @@ const { youtubeService } = await import('../src/services/youtubeService.js');
 const { webReaderService } = await import('../src/services/webReaderService.js');
 import config from '../config.js';
 
+// Ensure required keys for tests are present
+config.GOOGLE_CUSTOM_SEARCH_API_KEY = 'test_key';
+config.GOOGLE_CUSTOM_SEARCH_CX_ID = 'test_cx';
+config.YOUTUBE_API_KEY = 'test_youtube';
+
 describe('Bot', () => {
   let bot;
 
   beforeEach(async () => {
     jest.clearAllMocks();
     bot = new Bot();
+    bot.restartFirehose = jest.fn(); // Prevent spawning processes in tests
     await bot.init(); // To load readme, etc.
 
     // Default mocks for common behavior
@@ -241,10 +299,23 @@ describe('Bot', () => {
     llmService.shouldLikePost.mockResolvedValue(false);
     llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
     llmService.rateUserInteraction.mockResolvedValue(3);
-    llmService.performAgenticPlanning.mockResolvedValue({ actions: [], intent: 'Friendly' });
+    llmService.performAgenticPlanning.mockResolvedValue({
+      actions: [],
+      intent: 'Friendly',
+      confidence_score: 1.0,
+      action_plan: 'GENERATE_RESPONSE with test content'
+    });
     llmService.evaluateAndRefinePlan.mockImplementation((plan) => Promise.resolve({ decision: 'engage', refined_actions: plan.actions, reason: 'Engaging for test' }));
     llmService.generateDrafts.mockImplementation(async (messages) => {
-        const res = await llmService.generateResponse(messages);
+        const systemContent = messages[0].content || '';
+        const userContent = messages[messages.length - 1].content || '';
+        let res = 'Test response';
+        if (systemContent.includes('You are replying to')) {
+            res = 'Test reply';
+            if (userContent.includes('sky is blue')) res = 'Yes, the sky is blue due to a phenomenon called Rayleigh scattering.';
+            if (userContent.includes('cool post')) res = 'Thank you for the compliment!';
+        }
+        if (systemContent.toLowerCase().includes('summary')) res = 'Summary result';
         return [res];
     });
 
@@ -305,6 +376,7 @@ describe('Bot', () => {
     llmService.isReplyCoherent.mockResolvedValue(true);
     dataStore.getInteractionsByUser.mockReturnValue([]);
 
+    console.log(`[Test] Calling bot.processNotification for ${mockNotif.uri}`);
     await bot.processNotification(mockNotif);
 
     expect(bot._getThreadHistory).toHaveBeenCalledWith(mockNotif.uri);

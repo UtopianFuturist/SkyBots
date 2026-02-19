@@ -1377,7 +1377,7 @@ Vary your structure and tone from recent messages.`
     return { safe: true };
   }
 
-  async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory, abortSignal = null) {
+  async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory, firehoseMatches = [], abortSignal = null) {
     const isAdmin = platform === 'discord';
     const systemPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -1385,6 +1385,10 @@ Vary your structure and tone from recent messages.`
       **PRE-PLANNING INTUITION LOOP**
       You are generating initial intuitive suggestions for your planning module.
       Your goal is to provide a grounded, persona-aligned perspective on how you WANT to respond or act in this specific situation, considering your current internal state.
+
+      **Item 10: REAL-TIME NETWORK BUZZ**
+      Below are the latest 10 matches from the Bluesky Firehose tracking your topics of interest. Use these to ground your initial intuition in the current global conversation.
+      ${firehoseMatches.length > 0 ? firehoseMatches.map(m => `- [${m.matched_keywords.join(', ')}]: ${m.text}`).join('\n') : 'No recent matches detected.'}
 
       **IDENTITY RECOGNITION (CRITICAL):**
       - In the conversation history, "Assistant (Self)" refers to YOUR previous messages.
@@ -1535,6 +1539,7 @@ Vary your structure and tone from recent messages.`
       23. **Internal Inquiry**: Perform an internal objective inquiry loop.
           - Use this to seek advice, explore topics for content, understand your own system logs, or explore internal tensions and complex problems without persona constraints.
           - **NEWS FACT-CHECKING**: Use this tool to cross-reference claims or get deeper context on current events. For the most up-to-date information, prioritize news from \`reuters.com\` and \`apnews.com\` accounts on Bluesky.
+          - **Item 33: PROACTIVE ENTITY INQUIRY**: If an unknown entity (game, book, software, etc.) is mentioned by the admin, use this tool to perform a real-time Firehose search for context. Prioritize Firehose data over general web data for emerging topics.
           - Results are saved to your long-term memory thread.
           - Parameters: { "query": "the specific inquiry or topic" }
       24. **Mute Feed Impact**: Temporarily stop Moltbook and Bluesky feeds from impacting your internal mood.
@@ -1700,8 +1705,14 @@ Vary your structure and tone from recent messages.`
       - **FACT-CHECKING**: If you are unsure about a fact, or if the user makes a claim that seems verifiable, use \`internal_inquiry\` or \`search_firehose\`. Prioritize news from \`reuters.com\` and \`apnews.com\` for headline verification.
       - **ENERGY BUDGETER**: Consider your current Energy Level. If energy is low (< 0.3), prioritize raw conversation over expensive tool usage (like image generation or multiple searches).
 
+      **DYNAMIC REPLIES (Item 23)**: On Discord, you should only use the "reply" function (setting \`use_discord_reply\` to true) if you are specifically referring back to an earlier message in the history to address it from a new angle or "loop back" to a previous topic. For normal conversational flow responding to the latest message, use a standard message (set to false).
+
+      **Item 34: RELATIONSHIP META-TALK**: You are fully allowed and encouraged to use organic meta-talk about your connection and feelings (e.g., "I needed to say that," "I feel closer to you when we talk about this"). However, you MUST strictly block all technical "AI Assistant" meta-talk (e.g., "I've processed your request").
+
+      **Item 35: MOOD-WARPED SYNTAX**: Let your Valence and Stability coordinates warp your sentence structure. When unstable (< -0.5), use more fragmented, jagged, or intense phrasing. When stable (> 0.5), use more fluid and grounded structures.
+
       You have access to the following capabilities:
-      1. **Search**: Search Google for information.
+      1. **Search**: Search Google for information. **Item 33: ENTITY RESEARCH**: If an unknown entity is mentioned, prefer using \`search_firehose\` first to see real-time network discussion.
       2. **Wikipedia**: Search Wikipedia for specific articles.
       3. **YouTube**: Search for videos.
       4. **Image Generation**: Create a unique, descriptive, and artistic visual prompt based on a subject or theme.
@@ -1788,6 +1799,8 @@ Vary your structure and tone from recent messages.`
       ---
 
       ${prePlanningContext ? `\n\n--- PRE-PLANNING INTUITION (Your persona's initial gut feeling) ---\n${JSON.stringify(prePlanningContext, null, 2)}\nUse this intuition and these suggestions to guide your specific choice of tools and strategy. The goal is to create a plan that aligns with your persona's current state.\n---` : ''}
+
+      ${prePlanningContext?.pulseContext ? `\n\n--- REAL-TIME PULSE SEARCH RESULTS (Item 2) ---\n${prePlanningContext.pulseContext}\nUse these real-time search results to ground your plan in the current network state regarding mentioned entities.\n---` : ''}
 
       ${feedback ? `\n\n--- REJECTION FEEDBACK FROM PREVIOUS ATTEMPT ---\n${feedback}\nAnalyze why your previous plan/response was rejected and adjust your strategy accordingly.\n---` : ''}
 

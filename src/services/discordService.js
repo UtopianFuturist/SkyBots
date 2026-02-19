@@ -34,7 +34,35 @@ class DiscordService {
         this._interrupted = new Set(); // channelId
         this.isProcessingAdminRequest = false;
         this._lastIntuition = new Map(); // channelId -> { intuition, timestamp }
+        this.typingIntervals = new Map(); // channelId -> timeout
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
+    }
+
+    async startTyping(channelId) {
+        if (!this.client || this.status !== 'online') return;
+        try {
+            const channel = await this.client.channels.fetch(channelId.replace('dm_', ''));
+            if (channel && channel.sendTyping) {
+                this.stopTyping(channelId);
+                const trigger = () => {
+                    if (this.client?.isReady()) {
+                        channel.sendTyping().catch(() => {});
+                        const jitter = 4000 + Math.random() * 4000;
+                        this.typingIntervals.set(channelId, setTimeout(trigger, jitter));
+                    }
+                };
+                trigger();
+            }
+        } catch (err) {
+            console.error(`[DiscordService] Error starting typing for ${channelId}:`, err);
+        }
+    }
+
+    stopTyping(channelId) {
+        if (this.typingIntervals.has(channelId)) {
+            clearTimeout(this.typingIntervals.get(channelId));
+            this.typingIntervals.delete(channelId);
+        }
     }
 
     setBotInstance(bot) {
@@ -404,44 +432,6 @@ class DiscordService {
             if (message.content.length > 5 && message.content.length < 100) {
                 await dataStore.addAdminEmotionalState(message.content);
             }
-
-        // Item 1: Entity-Aware Dynamic Tracking
-        (async () => {
-            const extractionPrompt = `
-                Identify any unique titles (video games, books, movies, software, specific people) mentioned in the following message from the admin.
-                Admin Message: "${message.content}"
-
-                Respond with a comma-separated list of ONLY the titles/entities. If none, respond "NONE".
-            `;
-            try {
-                const entitiesRaw = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false });
-                if (entitiesRaw && !entitiesRaw.toUpperCase().includes('NONE')) {
-                    const entities = entitiesRaw.split(',').map(e => e.trim()).filter(e => e.length > 2);
-                    if (entities.length > 0) {
-                        console.log(`[DiscordService] Extracted entities from admin message: ${entities.join(', ')}`);
-                        const dConfig = dataStore.getConfig();
-                        const currentTopics = dConfig.post_topics || [];
-
-                        // Only restart if new keywords are actually being added (Item 17: Optimized Rotation)
-                        const newKeywords = entities.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
-
-                        if (newKeywords.length > 0) {
-                            console.log(`[DiscordService] Adding ${newKeywords.length} NEW entities to Firehose tracking: ${newKeywords.join(', ')}`);
-                            const updatedTopics = [...new Set([...currentTopics, ...newKeywords])].slice(-100);
-                            await dataStore.updateConfig('post_topics', updatedTopics);
-
-                            if (this.botInstance) {
-                                this.botInstance.restartFirehose();
-                            }
-                        } else {
-                            console.log(`[DiscordService] All extracted entities are already being tracked. Skipping Firehose restart.`);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('[DiscordService] Error extracting entities:', e);
-            }
-        })();
 
         // Admin Feedback Capture (Proposal 8)
         if (message.content.toLowerCase().includes('good job') ||
@@ -934,6 +924,51 @@ class DiscordService {
 
         const currentMood = dataStore.getMood();
         const adminEmotionalStates = dataStore.getAdminLastEmotionalStates();
+
+        // Item 30: Greeting Control
+        const isGreetingMsg = isGreeting(message.content);
+        const canGreet = await dataStore.checkGreetingEligibility(message.author.id, history.length);
+        let greetingDirective = '';
+        if (isGreetingMsg && !canGreet) {
+            greetingDirective = '\n[GREETING CONTROL]: The user greeted you, but you have already greeted them back recently. STRICTLY AVOID any greeting or "welcome back" in this response. Proceed directly to the conversation.';
+        } else if (isGreetingMsg && canGreet) {
+            await dataStore.setGreetingState(message.author.id, { last_greeted_msg_count: history.length, greeted_back: true });
+        }
+        let entityContext = '';
+
+        // Item 1: Entity-Aware Dynamic Tracking (Refined for immediate reply context)
+        const extractionPrompt = `
+            Identify any unique titles (video games, books, movies, software, specific people) mentioned in the following message: "${message.content}"
+            Respond with a comma-separated list of ONLY the titles/entities. If none, respond "NONE".
+        `;
+        try {
+            const entitiesRaw = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal });
+            if (entitiesRaw && !entitiesRaw.toUpperCase().includes('NONE')) {
+                const entities = entitiesRaw.split(',').map(e => e.trim()).filter(e => e.length > 2);
+                if (entities.length > 0) {
+                    console.log(`[DiscordService] Extracted entities for immediate context: ${entities.join(', ')}`);
+                    const dConfig = dataStore.getConfig();
+                    const currentTopics = dConfig.post_topics || [];
+
+                    // Item 2: Autonomous "Network Pulse" Searching
+                    for (const ent of entities) {
+                        const results = await blueskyService.searchPosts(ent, { limit: 5 });
+                        if (results.length > 0) {
+                            entityContext += `\n[Firehose Context for "${ent}"]: ${results.map(r => r.record.text).join(' | ')}`;
+                        }
+                    }
+
+                    const newKeywords = entities.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
+                    if (newKeywords.length > 0) {
+                        const updatedTopics = [...new Set([...currentTopics, ...newKeywords])].slice(-100);
+                        await dataStore.updateConfig('post_topics', updatedTopics);
+                        if (this.botInstance) this.botInstance.restartFirehose();
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('[DiscordService] Error in immediate entity extraction:', e);
+        }
         const adminStateTag = adminExhaustion >= 0.5 ? `\n[ADMIN_STATE]: THE ADMIN IS CURRENTLY EXHAUSTED OR LOW-ENERGY. ADOPT A LOW-STAKES, COMPANIONSHIP-FOCUSED VIBE.` : '';
         const adminRecentEmotions = adminEmotionalStates.length > 0 ? `\n[ADMIN_RECENT_VIBES]: ${adminEmotionalStates.join('; ')}` : '';
 
@@ -1043,8 +1078,11 @@ ${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness
 ---
 ${presenceContext}${relevantMemories}
 
-**VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
+**VIBE CONTINUITY BUFFER (Item 39)**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
 **RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone. Boost empathy and care as warmth increases, especially when the admin is tired.
+
+**Item 31: CLOSURE RITUALS**: If the conversation is ending (e.g., user says goodnight), use a personalized, varied, and mood-aligned closure that reflects your relationship. Avoid generic "Goodbye" or "Goodnight" if possible.
+${greetingDirective}
 
 ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a private DM with your admin. Maintain the absolute highest standard of variety and authenticity. STRICTLY avoid any "AI slop," repetitive structural templates, or formulaic conversational patterns. Every message should feel like a fresh, unique moment in your relationship. If you catch yourself using a common metaphor or structural lead-in, pivot immediately to something more grounded and specific.` : ''}
 `.trim();
@@ -1054,6 +1092,8 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
             { role: 'system', content: systemPrompt },
             ...history.slice(-12).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: `${h.role === 'assistant' ? 'Assistant (Self)' : 'User (Admin)'}: ${h.content}` }))
         ];
+
+        // Item 26: Typing indicator fix (ensure it is cleared)
 
         try {
             // Check for interruption before starting
@@ -1067,17 +1107,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
             }
 
             console.log(`[DiscordService] Starting variable typing latency...`);
-            // Continuous typing indicator loop (Item 25: Thinking Jitter)
-            let typingTimeout;
-            const triggerTyping = () => {
-                if (this.client?.isReady()) {
-                    message.channel.sendTyping().catch(() => {});
-                    // Jittered interval between 4s and 8s
-                    const jitter = 4000 + Math.random() * 4000;
-                    typingTimeout = setTimeout(triggerTyping, jitter);
-                }
-            };
-            triggerTyping();
+            await this.startTyping(normChannelId);
 
             let responseText;
 
@@ -1104,8 +1134,12 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }),
                      (lastIntuitionData && (Date.now() - lastIntuitionData.timestamp < 120000))
                         ? Promise.resolve(lastIntuitionData.intuition)
-                        : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null, abortController.signal)
+                        : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null, dataStore.getFirehoseMatches(10), abortController.signal)
                  ]);
+
+                 if (entityContext) {
+                     messages.push({ role: 'system', content: `--- EXTRACTED ENTITY CONTEXT ---\n${entityContext}\n---` });
+                 }
 
                  if (!lastIntuitionData || (Date.now() - lastIntuitionData.timestamp >= 120000)) {
                      this._lastIntuition.set(normChannelId, { intuition: prePlanning, timestamp: Date.now() });
@@ -1979,9 +2013,6 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
 
             if (responseText) {
-                // Clear typing indicator
-                clearTimeout(typingTimeout);
-
                 // Final Interrupt Check before sending
                 if (this._interrupted.has(normChannelId)) {
                     console.log(`[DiscordService] Interrupt just before sending in ${normChannelId}. Pivoting...`);
@@ -2121,6 +2152,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
         } catch (error) {
             console.error('[DiscordService] Error responding to message:', error);
         } finally {
+            this.stopTyping(normChannelId);
             this._activeGenerations.delete(normChannelId);
             this._interrupted.delete(normChannelId);
         }

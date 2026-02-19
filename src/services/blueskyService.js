@@ -8,6 +8,7 @@ class BlueskyService {
     this.agent = new AtpAgent({
       service: 'https://bsky.social',
     });
+    this._didCache = new Map();
   }
 
   get did() {
@@ -303,8 +304,28 @@ class BlueskyService {
   }
 
   async getProfile(actor) {
+    if (this._didCache.has(actor)) {
+        return this._didCache.get(actor);
+    }
     const { data } = await this.agent.getProfile({ actor });
+    if (data) {
+        this._didCache.set(actor, data);
+        if (data.handle) this._didCache.set(data.handle, data);
+        if (data.did) this._didCache.set(data.did, data);
+    }
     return data;
+  }
+
+  async resolveDid(did) {
+      if (this._didCache.has(did)) {
+          return this._didCache.get(did).handle;
+      }
+      try {
+          const profile = await this.getProfile(did);
+          return profile.handle;
+      } catch (e) {
+          return null;
+      }
   }
 
   async getUserPosts(actor) {

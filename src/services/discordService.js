@@ -928,6 +928,11 @@ class DiscordService {
         // Memory & Context: User Fact Store & Channel Summary
         const userFacts = dataStore.getDiscordUserFacts(message.author.id);
         const channelSummary = dataStore.getDiscordChannelSummary(normChannelId);
+        const soulMapping = dataStore.getUserSoulMapping(message.author.username);
+        const linguisticPatterns = dataStore.getLinguisticPatterns();
+        const linguisticPatternsContext = Object.entries(linguisticPatterns)
+            .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
+            .join('\n');
 
         const systemPrompt = `
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
@@ -995,6 +1000,8 @@ ${channelSummary ? `Last Summary: ${channelSummary.summary}\nLast Vibe: ${channe
 
 --- USER FACTS ---
 ${userFacts.length > 0 ? userFacts.map(f => `- ${f}`).join('\n') : 'No specific facts known about this user.'}
+${soulMapping ? `\n--- USER SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join(', ')}. Vibe: ${soulMapping.vibe} ---` : ''}
+${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
 ---
 ${presenceContext}${relevantMemories}
 
@@ -1824,12 +1831,24 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                           const query = action.query || action.parameters?.query;
                           if (query) {
                               console.log(`[DiscordService] Plan Tool: search_firehose for "${query}"`);
+
+                              // Targeted search for news sources
+                              const newsResults = await Promise.all([
+                                  blueskyService.searchPosts(`from:reuters.com ${query}`, { limit: 5 }),
+                                  blueskyService.searchPosts(`from:apnews.com ${query}`, { limit: 5 })
+                              ]).catch(err => {
+                                  console.error('[DiscordService] Error searching news sources:', err);
+                                  return [[], []];
+                              });
+                              const flatNews = newsResults.flat();
+
                               const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
                               const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
                                   m.text.toLowerCase().includes(query.toLowerCase()) ||
                                   m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
                               );
                               const resultsText = [
+                                  ...flatNews.map(r => `[VERIFIED NEWS - @${r.author.handle}]: ${r.record.text}`),
                                   ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
                                   ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
                               ].join('\n');

@@ -727,7 +727,12 @@ class DataStore {
       discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 21, end: 5 },
       discord_admin_available: this.db.data.discord_admin_available ?? true,
       admin_exhaustion_score: this.db.data.admin_exhaustion_score || 0.0,
-      admin_last_emotional_states: this.db.data.admin_last_emotional_states || []
+      admin_last_emotional_states: this.db.data.admin_last_emotional_states || [],
+      current_mood: this.db.data.current_mood,
+      current_goal: this.db.data.current_goal,
+      energy_level: this.db.data.energy_level ?? 1.0,
+      lurker_mode: this.db.data.lurker_mode ?? false,
+      mute_feed_impact_until: this.db.data.mute_feed_impact_until ?? 0
     };
   }
 

@@ -31,6 +31,7 @@ async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--keywords', type=str, help='Comma-separated list of keywords to monitor')
     parser.add_argument('--negatives', type=str, help='Comma-separated list of negative keywords to filter out')
+    parser.add_argument('--actors', type=str, help='Comma-separated list of DIDs to monitor specifically')
     args = parser.parse_args()
 
     keywords = []
@@ -42,6 +43,11 @@ async def main():
     if args.negatives:
         negatives = [k.strip().lower() for k in args.negatives.split(',') if k.strip()]
         print(f"Filtering out negative keywords: {negatives}", file=sys.stderr)
+
+    actors = []
+    if args.actors:
+        actors = [a.strip() for a in args.actors.split(',') if a.strip()]
+        print(f"Monitoring firehose for actors: {actors}", file=sys.stderr)
 
     if not BLUESKY_IDENTIFIER or not BLUESKY_APP_PASSWORD:
         print("Error: BLUESKY_IDENTIFIER or BLUESKY_APP_PASSWORD not set in environment.")
@@ -133,6 +139,21 @@ async def main():
                         }
                         print(json.dumps(event), flush=True)
                         continue # Already handled
+
+                    # 1b. Check for specifically tracked actors (Proposal 4)
+                    if actors and commit.repo in actors:
+                        event = {
+                            "type": "firehose_actor_match",
+                            "uri": f"at://{commit.repo}/{op.path}",
+                            "cid": str(op.cid),
+                            "author": {
+                                "did": commit.repo,
+                                "handle": None
+                            },
+                            "record": make_serializable(record_raw)
+                        }
+                        print(json.dumps(event), flush=True)
+                        continue
 
                     # 2. Check for keyword matches
                     if keywords:

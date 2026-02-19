@@ -2469,7 +2469,12 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
   async extractFacts(context) {
     const systemPrompt = `
       You are a material knowledge extraction module. Analyze the provided context and extract 1-3 discrete "Facts".
-      Distinguish between "World Facts" (objective facts about entities, events, or concepts) and "Admin Facts" (facts about the bot's administrator).
+      Distinguish between "World Facts" (objective facts about entities, events, or concepts) and "Admin Facts" (facts about the bot's administrator, "Admin").
+
+      **CRITICAL CATEGORIZATION**:
+      - Personal details about the Admin (meals, health, wellness, goals, plans, emotional state, physical activity) MUST be categorized as "admin_facts".
+      - Facts about the bot's own functioning or relationship with the Admin should also be considered for "admin_facts" if they relate to the Admin's preferences or instructions.
+      - General knowledge, news, or facts about other entities are "world_facts".
 
       **ANCHORING**: For World Facts, identify a source URL or post link if available in the context.
 

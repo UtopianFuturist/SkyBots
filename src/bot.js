@@ -234,7 +234,11 @@ export class Bot {
     // Item 11: Anti-Spam Keyword Negation
     const negativesArg = `--negatives "${config.FIREHOSE_NEGATIVE_KEYWORDS.join(',')}"`;
 
-    const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${firehosePath} ${keywordsArg} ${negativesArg}`;
+    // Proposal 4: Monitor Admin Profile specifically
+    const adminDid = dataStore.getAdminDid();
+    const actorsArg = adminDid ? `--actors "${adminDid}"` : '';
+
+    const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${firehosePath} ${keywordsArg} ${negativesArg} ${actorsArg}`;
     this.firehoseProcess = spawn(command, { shell: true });
 
     this.firehoseProcess.stdout.on('data', async (data) => {
@@ -303,6 +307,30 @@ export class Bot {
                 matched_keywords: event.matched_keywords,
                 author_handle: handle
             });
+          } else if (event.type === 'firehose_actor_match') {
+            // Proposal 4: Admin post detected. Perform autonomous analysis for wellness/goals.
+            const handle = await blueskyService.resolveDid(event.author.did);
+            console.log(`[Bot] Proposal 4: Admin post detected from @${handle}. Analyzing for wellness/goals...`);
+
+            const analysisPrompt = `
+                Analyze the following post from your Admin (@${handle}):
+                "${event.record.text}"
+
+                Identify any updates regarding:
+                1. Personal Goals or projects.
+                2. Wellness/Health state.
+                3. Developmental progress or learning.
+
+                If found, summarize the update as an [ADMIN_FACT].
+                If nothing personal is shared, respond with ONLY "NONE".
+            `;
+            const analysis = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { useQwen: true, preface_system_prompt: false });
+            if (analysis && !analysis.toUpperCase().includes('NONE')) {
+                await dataStore.addAdminFact(analysis);
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('admin_fact', analysis);
+                }
+            }
           }
         } catch (e) {
           // Ignore non-JSON output
@@ -1370,11 +1398,14 @@ export class Bot {
 
                 // Opening Phrase Blacklist - increased depth from 5 to 15
                 const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-15);
-                // Capture multiple prefix lengths for strict avoidance
+                // Capture multiple prefix lengths for strict avoidance, including cross-platform thoughts
                 const openingBlacklist = [
                     ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 3).join(' ')),
                     ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 5).join(' ')),
-                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 10).join(' '))
+                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 10).join(' ')),
+                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 3).join(' ')),
+                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 5).join(' ')),
+                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 10).join(' '))
                 ].filter(o => o.length > 0);
 
                 while (attempts < MAX_ATTEMPTS) {
@@ -1498,7 +1529,8 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         try {
                             const historyTexts = formattedHistory.map(h => h.content);
                             const normCand = cand.toLowerCase().trim();
-                            const isExactDuplicate = checkExactRepetition(cand, history, 5);
+                            // Use formattedHistory instead of raw history to check across platforms
+                            const isExactDuplicate = checkExactRepetition(cand, formattedHistory, 5);
                             const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
                             const isJaccardRepetitive = checkSimilarity(cand, historyTexts, dConfig.repetition_similarity_threshold);
                             const [varietyCheck, personaCheck] = await Promise.all([
@@ -1805,7 +1837,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                 console.log(`[Bot] Found ${recentHistory.length} new Discord messages. Generating [INTERACTION] memory...`);
                 const context = `Conversation with admin (@${config.DISCORD_ADMIN_NAME}) on Discord.
 Recent history:
-${recentHistory.map(h => `${h.role}: ${h.content}`).join('\n')}
+${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin'}: ${h.content}`).join('\n')}
 Identify the topic and main takeaway.`;
                 await memoryService.createMemoryEntry('interaction', context);
                 this[discordActivityKey] = nowTs;
@@ -3569,7 +3601,7 @@ Identify the topic and main takeaway.`;
       // Material Knowledge Extraction (Item 2 & 29)
       (async () => {
           console.log(`[Bot] Extracting material facts from interaction with @${handle}...`);
-          const facts = await llmService.extractFacts(`User: "${text}"\nBot: "${responseText}"`);
+          const facts = await llmService.extractFacts(`${isAdmin ? 'Admin' : 'User'}: "${text}"\nBot: "${responseText}"`);
           if (facts.world_facts.length > 0) {
               for (const f of facts.world_facts) {
                   await dataStore.addWorldFact(f.entity, f.fact, f.source);

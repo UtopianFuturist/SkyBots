@@ -118,9 +118,12 @@ const defaultData = {
   agency_logs: [], // [ { action, decision, reason, timestamp } ]
   strategy_audits: [], // [ { audit, timestamp } ]
   firehose_matches: [], // [ { text, uri, matched_keywords, timestamp } ]
+  greeting_state: {}, // { userId: { last_greeted_msg_count, greeted_back: boolean } }
   user_soul_mappings: {}, // { handle/userId: { summary, last_posts: [], interests: [], pfp_vibe, last_updated } }
   followed_linguistic_patterns: {} // { handle: { pacing, structure, favorite_words, last_updated } }
 };
+
+const GREETING_BLOCK_LIMIT = 5;
 
 class DataStore {
   constructor() {
@@ -1290,6 +1293,27 @@ class DataStore {
 
   getLinguisticPatterns() {
     return this.db.data.followed_linguistic_patterns || {};
+  }
+
+  async setGreetingState(userId, state) {
+      if (!this.db.data.greeting_state) this.db.data.greeting_state = {};
+      this.db.data.greeting_state[userId] = {
+          ...this.db.data.greeting_state[userId],
+          ...state
+      };
+      await this.db.write();
+  }
+
+  getGreetingState(userId) {
+      return this.db.data.greeting_state?.[userId] || { last_greeted_msg_count: 0, greeted_back: false };
+  }
+
+  async checkGreetingEligibility(userId, messageCount) {
+      const state = this.getGreetingState(userId);
+      if (!state.greeted_back) return true; // Haven't greeted them back yet
+
+      const diff = messageCount - state.last_greeted_msg_count;
+      return diff >= GREETING_BLOCK_LIMIT;
   }
 }
 

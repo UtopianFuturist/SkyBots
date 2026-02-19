@@ -14,6 +14,8 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     getTimeline: jest.fn().mockResolvedValue([]),
     post: jest.fn(),
     postReply: jest.fn(),
+    searchPosts: jest.fn().mockResolvedValue([]),
+    resolveDid: jest.fn().mockImplementation(did => Promise.resolve(did)),
     getProfile: jest.fn().mockResolvedValue({ followersCount: 1234, did: 'did:plc:bot' }),
     did: 'did:plc:bot',
   },
@@ -40,6 +42,8 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     extractFacts: jest.fn().mockResolvedValue({ world_facts: [], admin_facts: [] }),
     performDialecticLoop: jest.fn().mockResolvedValue('Synthesis'),
     auditStrategy: jest.fn().mockResolvedValue('Audit report'),
+    decomposeGoal: jest.fn().mockResolvedValue('1. Task A\n2. Task B'),
+    requestConfirmation: jest.fn().mockResolvedValue({ confirmed: true }),
   },
 }));
 
@@ -134,7 +138,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     updateConfig: jest.fn().mockResolvedValue(true),
     db: {
       data: {
-        interactions: []
+        interactions: [],
+        recent_thoughts: []
       }
     }
   },

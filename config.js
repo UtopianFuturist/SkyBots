@@ -107,6 +107,9 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   // Memory Thread
   MEMORY_THREAD_HASHTAG: process.env.MEMORY_THREAD_HASHTAG || null,
 
+  // Firehose Filters
+  FIREHOSE_NEGATIVE_KEYWORDS: (process.env.FIREHOSE_NEGATIVE_KEYWORDS || 'crypto,nft,airdrop,giveaway,memecoin,solana,eth ,bitcoin,trading signal,pump and dump').split(','),
+
   // Cooldowns (in minutes)
   BLUESKY_POST_COOLDOWN: parseInt(process.env.BLUESKY_POST_COOLDOWN || '90'),
   MOLTBOOK_POST_COOLDOWN: parseInt(process.env.MOLTBOOK_POST_COOLDOWN || '60'),

@@ -30,12 +30,18 @@ def make_serializable(obj):
 async def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--keywords', type=str, help='Comma-separated list of keywords to monitor')
+    parser.add_argument('--negatives', type=str, help='Comma-separated list of negative keywords to filter out')
     args = parser.parse_args()
 
     keywords = []
     if args.keywords:
         keywords = [k.strip().lower() for k in args.keywords.split(',') if k.strip()]
         print(f"Monitoring firehose for keywords: {keywords}", file=sys.stderr)
+
+    negatives = []
+    if args.negatives:
+        negatives = [k.strip().lower() for k in args.negatives.split(',') if k.strip()]
+        print(f"Filtering out negative keywords: {negatives}", file=sys.stderr)
 
     if not BLUESKY_IDENTIFIER or not BLUESKY_APP_PASSWORD:
         print("Error: BLUESKY_IDENTIFIER or BLUESKY_APP_PASSWORD not set in environment.")
@@ -130,6 +136,11 @@ async def main():
 
                     # 2. Check for keyword matches
                     if keywords:
+                        # Item 11: Anti-Spam Keyword Negation
+                        is_spam = any(n in text for n in negatives)
+                        if is_spam:
+                            continue
+
                         matched_keywords = [k for k in keywords if k in text]
                         if matched_keywords:
                             event = {

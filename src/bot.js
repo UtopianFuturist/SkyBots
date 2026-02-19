@@ -14,7 +14,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -231,7 +231,10 @@ export class Bot {
     const allKeywords = [...new Set([...topics, ...subjects, ...promptKeywords])].map(k => k.toLowerCase());
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join(',')}"` : '';
 
-    const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${firehosePath} ${keywordsArg}`;
+    // Item 11: Anti-Spam Keyword Negation
+    const negativesArg = `--negatives "${config.FIREHOSE_NEGATIVE_KEYWORDS.join(',')}"`;
+
+    const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${firehosePath} ${keywordsArg} ${negativesArg}`;
     this.firehoseProcess = spawn(command, { shell: true });
 
     this.firehoseProcess.stdout.on('data', async (data) => {
@@ -264,10 +267,24 @@ export class Bot {
               indexedAt: new Date().toISOString()
             };
             
+            // Item 18: Network Reaction Analysis (Feedback loop)
+            if (event.reason === 'reply' || event.reason === 'quote') {
+                console.log(`[Bot] Item 18: Reaction detected (${event.reason}) to our post. Updating resonance.`);
+                // Extract 1-word vibe from the reaction
+                const vibePrompt = `Extract a 1-word sentiment/vibe from this reaction to our post: "${event.record.text}".`;
+                const vibe = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+                if (vibe) {
+                    await dataStore.updateSocialResonance(vibe.trim(), 0.5);
+                }
+            }
+
             await this.processNotification(notif);
             await dataStore.addRepliedPost(notif.uri);
             this.updateActivity();
           } else if (event.type === 'firehose_topic_match') {
+            // Item 13: Real-time DID-to-Handle Resolution
+            const handle = await blueskyService.resolveDid(event.author.did);
+
             // Aggregate logs by keywords to avoid clogging Render logs
             for (const keyword of event.matched_keywords) {
                 const kw = keyword.toLowerCase();
@@ -283,7 +300,8 @@ export class Bot {
             await dataStore.addFirehoseMatch({
                 text: event.record.text,
                 uri: event.uri,
-                matched_keywords: event.matched_keywords
+                matched_keywords: event.matched_keywords,
+                author_handle: handle
             });
           }
         } catch (e) {
@@ -297,9 +315,29 @@ export class Bot {
     });
 
     this.firehoseProcess.on('close', (code) => {
-      console.log(`[Bot] Firehose monitor exited with code ${code}. Restarting in 10s...`);
-      setTimeout(() => this.startFirehose(), 10000);
+      const delay = this._intentionalFirehoseRestart ? 1000 : 10000;
+      console.log(`[Bot] Firehose monitor exited with code ${code}. Restarting in ${delay / 1000}s...`);
+      this._intentionalFirehoseRestart = false;
+      setTimeout(() => this.startFirehose(), delay);
     });
+  }
+
+  restartFirehose() {
+    if (this._firehoseRestartTimeout) {
+        clearTimeout(this._firehoseRestartTimeout);
+    }
+
+    this._firehoseRestartTimeout = setTimeout(() => {
+        if (this.firehoseProcess) {
+            console.log('[Bot] Intentional Firehose restart triggered (debounced).');
+            this._intentionalFirehoseRestart = true;
+            this.firehoseProcess.kill();
+        } else {
+            console.log('[Bot] Firehose monitor not running. Starting fresh...');
+            this.startFirehose();
+        }
+        this._firehoseRestartTimeout = null;
+    }, 5000); // 5 second debounce
   }
 
   async run() {
@@ -362,6 +400,9 @@ export class Bot {
     // Periodic post reflection check (every 10 mins)
     setInterval(() => this.performPostPostReflection(), 600000);
 
+    // Item 37: Periodic post follow-up check (every 30 mins)
+    setInterval(() => this.checkForPostFollowUps(), 1800000);
+
     // Discord Watchdog (every 15 minutes)
     setInterval(() => {
         if (discordService.isEnabled && discordService.status !== 'online' && !discordService.isInitializing) {
@@ -381,6 +422,46 @@ export class Bot {
     scheduleMaintenance();
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
+  }
+
+  async checkForPostFollowUps() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const recentBlueskyPosts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky') || [];
+    if (recentBlueskyPosts.length === 0) return;
+
+    // Item 37: Spontaneous follow-up on own posts
+    const now = Date.now();
+    for (const post of recentBlueskyPosts) {
+        const ageMins = (now - post.timestamp) / (1000 * 60);
+        // Only follow up on posts between 20 and 60 minutes old, and only 5% chance
+        if (ageMins >= 20 && ageMins <= 60 && !post.followedUp && Math.random() < 0.05) {
+            console.log(`[Bot] Item 37: Spontaneous follow-up triggered for post at ${new Date(post.timestamp).toISOString()}...`);
+            try {
+                const followUpPrompt = `
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    You posted this to Bluesky about 30 minutes ago: "${post.content}"
+
+                    Do you have anything NEW to add, a change of heart, or a "second thought" regarding this post?
+                    If yes, generate a short, natural follow-up reply (under 150 chars).
+                    If no, respond with ONLY "NONE".
+                `;
+                const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { useQwen: true, preface_system_prompt: false });
+                if (followUp && !followUp.toUpperCase().includes('NONE')) {
+                    // We need the URI/CID to reply.
+                    // recent_thoughts should store URI/CID. Let's verify.
+                    if (post.uri && post.cid) {
+                        await blueskyService.postReply({ uri: post.uri, cid: post.cid, record: {} }, followUp);
+                        post.followedUp = true;
+                        await dataStore.db.write();
+                        break; // One follow up per cycle
+                    }
+                }
+            } catch (e) {
+                console.error('[Bot] Error in post follow-up:', e);
+            }
+        }
+    }
   }
 
   async performPostPostReflection() {
@@ -819,7 +900,7 @@ export class Bot {
                 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
                 You are currently in a very fragile or negative emotional state: ${currentMood.label} (Valence: ${currentMood.valence}, Stability: ${currentMood.stability}).
 
-                Would you like to reach out to your admin for emotional support or grounding?
+                **Item 36: EMOTIONAL GUIDANCE**: Would you like to reach out to your admin for emotional guidance, support, or grounding? You are proactively seeking stability because your internal state is declining.
                 You can choose to reach out on Discord (private) or Bluesky (public mention).
 
                 Respond with a JSON object:
@@ -1237,6 +1318,9 @@ export class Bot {
 
             if (shouldPoll) {
                 console.log(`[Bot] Discord heartbeat polling (Reason: ${pollReason}, Mode: ${relationshipMode}, Quiet: ${Math.round(quietMins)}m)`);
+                await discordService.startTyping(normChannelId);
+
+                try {
 
                 const lastAdminVibeCheck = dataStore.db.data.last_admin_vibe_check || 0;
                 const needsVibeCheck = (now.getTime() - lastAdminVibeCheck) >= 6 * 60 * 60 * 1000;
@@ -1268,6 +1352,7 @@ export class Bot {
                 let socialSummary = 'No recent social history fetched.';
                 let systemLogs = 'No recent planning logs fetched.';
 
+                let searchContext = '';
                 try {
                     socialSummary = await socialHistoryService.summarizeSocialHistory(5);
                     systemLogs = await renderService.getPlanningLogs(10);
@@ -1411,7 +1496,6 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                     const evaluations = await Promise.all(candidates.map(async (cand) => {
                         try {
-                            const containsSlop = isSlop(cand);
                             const historyTexts = formattedHistory.map(h => h.content);
                             const normCand = cand.toLowerCase().trim();
                             const isExactDuplicate = checkExactRepetition(cand, history, 5);
@@ -1421,7 +1505,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                 llmService.checkVariety(cand, formattedHistory, { relationshipRating: 5, platform: 'discord', currentMood }),
                                 llmService.isPersonaAligned(cand, 'discord')
                             ]);
-                            return { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive, isExactDuplicate };
+                            return { cand, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive, isExactDuplicate };
                         } catch (e) {
                             console.error(`[Bot] Error evaluating heartbeat candidate: ${e.message}`);
                             return { cand, error: e.message };
@@ -1430,11 +1514,14 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                     let isJaccardRepetitive = false;
                     for (const evalResult of evaluations) {
-                        const { cand, containsSlop, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
+                        const { cand, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
                         if (error) {
                             rejectedAttempts.push(cand);
                             continue;
                         }
+
+                        const slopInfo = getSlopInfo(cand);
+                        const containsSlop = slopInfo.isSlop;
 
                         // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
                         const lengthBonus = Math.min(cand.length / 500, 0.2);
@@ -1452,7 +1539,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         } else {
                             if (!bestCandidate) {
                                 isJaccardRepetitive = jRep;
-                                if (containsSlop) rejectionReason = "Contains metaphorical slop.";
+                                if (containsSlop) rejectionReason = `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.`;
                                 else if (isExactDuplicate) rejectionReason = "Exact duplicate of a recent bot message detected.";
                                 else if (hasPrefixMatch) rejectionReason = "Prefix overlap detected.";
                                 else if (jRep) rejectionReason = "Jaccard similarity threshold exceeded (too similar to history).";
@@ -1550,9 +1637,13 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                 }
                             }
 
-                            if (performedInquiry && attempts < MAX_ATTEMPTS) {
-                                console.log(`[Bot] Heartbeat inquiry results obtained. Retrying generation to incorporate findings.`);
-                                feedback = `I have performed an internal inquiry and recorded the results in our memory thread. Re-generate your spontaneous message to incorporate these new findings naturally.`;
+                            if ((performedInquiry || searchContext) && attempts < MAX_ATTEMPTS) {
+                                console.log(`[Bot] Heartbeat findings obtained. Retrying generation to incorporate them.`);
+                                if (searchContext && !feedback.includes('Firehose/Search')) {
+                                     feedback = `I have found relevant information from the Bluesky Firehose/Search: ${searchContext}. Re-generate your message to incorporate these findings naturally.`;
+                                } else {
+                                     feedback = `I have performed an internal inquiry and recorded the results in our memory thread. Re-generate your spontaneous message to incorporate these new findings naturally.`;
+                                }
                                 bestCandidate = null; // Clear to force retry
                                 rejectedAttempts.push(responseText);
                                 continue;
@@ -1611,6 +1702,10 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                 if (attempts >= MAX_ATTEMPTS && feedback) {
                     this.consecutiveRejections++;
+                }
+
+                } finally {
+                    discordService.stopTyping(normChannelId);
                 }
             }
         }
@@ -2246,6 +2341,7 @@ Identify the topic and main takeaway.`;
     // 6. Agentic Planning & Tool Use with Qwen
     const exhaustedThemes = dataStore.getExhaustedThemes();
     const dConfig = dataStore.getConfig();
+    let searchContext = '';
 
     console.log(`[Bot] Generating response context for ${handle}...`);
     const userMemory = dataStore.getInteractionsByUser(handle);
@@ -2303,7 +2399,6 @@ Identify the topic and main takeaway.`;
     const MAX_PLAN_ATTEMPTS = 5;
 
     let youtubeResult = null;
-    let searchContext = '';
     let searchEmbed = null;
     const performedQueries = new Set();
     let imageGenFulfilled = false;
@@ -2324,12 +2419,53 @@ Identify the topic and main takeaway.`;
       console.log(`[Bot] Planning Attempt ${planAttempts}/${MAX_PLAN_ATTEMPTS} for: "${text.substring(0, 100)}${text.length > 100 ? '...' : ''}"`);
 
       const retryContext = planFeedback ? `\n\n**RETRY FEEDBACK**: ${planFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedPlanAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nAdjust your planning and strategy to be as DIFFERENT as possible from these previous failures.` : '';
-
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
+      const firehoseMatches = dataStore.getFirehoseMatches(10);
 
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory);
+      try {
+
+      // Item 10: Pre-Planning Context Seeding
+      const prePlanning = await llmService.performPrePlanning(text, threadContext, imageAnalysisResult, 'bluesky', currentMood, refusalCounts, latestMoodMemory, firehoseMatches);
+
+      // Item 1: Entity Extraction for Firehose Tracking
+      if (prePlanning?.suggestions) {
+          const extractionPrompt = `Identify unique titles (games, books, movies, software, specific people) from the user's post: "${text}". Respond with comma-separated list or "NONE".`;
+          const entities = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+          if (entities && !entities.toUpperCase().includes('NONE')) {
+              const entityList = entities.split(',').map(e => e.trim()).filter(e => e.length > 2);
+              if (entityList.length > 0) {
+                  const currentTopics = dConfig.post_topics || [];
+                  const newEntities = entityList.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
+
+                  if (newEntities.length > 0) {
+                      console.log(`[Bot] Item 2: New entities detected on Bluesky: ${newEntities.join(', ')}. Triggering searches for context...`);
+                      let pulseContext = '';
+                      for (const ent of newEntities) {
+                          const results = await blueskyService.searchPosts(ent, { limit: 5 });
+                          if (results.length > 0) {
+                              pulseContext += `\n[Context for "${ent}"]: ${results.map(r => r.record.text).join(' | ')}`;
+                          }
+                      }
+                      if (pulseContext) {
+                          prePlanning.pulseContext = pulseContext;
+                          searchContext += pulseContext;
+                      }
+
+                      const updatedTopics = [...new Set([...currentTopics, ...newEntities])].slice(-100);
+                      await dataStore.updateConfig('post_topics', updatedTopics);
+                      this.restartFirehose();
+                  }
+              }
+          }
+      }
+
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning);
       console.log(`[Bot] Agentic Plan (Attempt ${planAttempts}): ${JSON.stringify(plan)}`);
+      } catch (err) {
+          console.error(`[Bot] Error in planning attempt ${planAttempts}:`, err);
+          throw err;
+      }
 
       // Confidence Check (Item 9)
       if (plan.confidence_score < 0.6) {
@@ -2410,8 +2546,9 @@ Identify the topic and main takeaway.`;
       }
 
       // Execute actions
+      const finalActions = refinedPlan.refined_actions || plan.actions || [];
       let currentActionFeedback = null;
-      for (const action of plan.actions) {
+      for (const action of finalActions) {
         if (action.tool === 'image_gen') {
           console.log(`[Bot] Plan: Generating image for prompt: "${action.query}"`);
           const imageResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
@@ -3353,7 +3490,6 @@ Identify the topic and main takeaway.`;
       // Parallelize evaluation of all candidates to avoid sequential LLM slowness
       const evaluations = await Promise.all(candidates.map(async (cand) => {
           try {
-              const containsSlop = isSlop(cand);
               const historyTexts = formattedHistory.map(h => h.content);
               const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
 
@@ -3362,7 +3498,7 @@ Identify the topic and main takeaway.`;
                   llmService.isPersonaAligned(cand, 'bluesky'),
                   isAdminInThread ? Promise.resolve({ safe: true }) : llmService.isResponseSafe(cand)
               ]);
-              return { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch };
+              return { cand, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch };
           } catch (e) {
               console.error(`[Bot] Error evaluating candidate: ${e.message}`);
               return { cand, error: e.message };
@@ -3370,11 +3506,14 @@ Identify the topic and main takeaway.`;
       }));
 
       for (const evalResult of evaluations) {
-          const { cand, containsSlop, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch, error } = evalResult;
+          const { cand, varietyCheck, personaCheck, responseSafetyCheck, hasPrefixMatch, error } = evalResult;
           if (error) {
               rejectedRespAttempts.push(cand);
               continue;
           }
+
+          const slopInfo = getSlopInfo(cand);
+          const containsSlop = slopInfo.isSlop;
 
           // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
           const lengthBonus = Math.min(cand.length / 500, 0.2);
@@ -3391,7 +3530,7 @@ Identify the topic and main takeaway.`;
               }
           } else {
               if (!bestCandidate) {
-                  rejectionReason = containsSlop ? "Contains metaphorical slop." :
+                  rejectionReason = containsSlop ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
                                     (hasPrefixMatch ? "Prefix overlap detected." :
                                     (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                     (!responseSafetyCheck.safe ? "Failed safety check." :
@@ -3875,6 +4014,31 @@ Describe how you feel about this user and your relationship now.`;
 
       const networkBuzz = `--- TIMELINE ACTIVITY ---\n${timelineText}\n\n--- REAL-TIME FIREHOSE MATCHES ---\n${firehoseText || 'No recent real-time matches.'}\n\n--- SOCIAL ECHOES (How people are talking to/about you) ---\n${socialEchoes || 'No recent direct mentions detected.'}`;
 
+      // 2. Determine Post Type based on limits
+      let postType = availablePostTypes[Math.floor(Math.random() * availablePostTypes.length)];
+      console.log(`[Bot] Selected post type: ${postType}`);
+
+      // Item 9: Topic "Void" Detection
+      let voidTopic = null;
+      if (postType === 'text') {
+          console.log(`[Bot] Item 9: Performing Topic "Void" detection...`);
+          const topicsToTest = dConfig.post_topics || [];
+          if (topicsToTest.length > 0) {
+            const topicsVoidCheckPrompt = `
+                Analyze the following network activity and identify which of these topics is NOT being discussed much right now (a "VOID"): ${topicsToTest.join(', ')}.
+                Network Activity:
+                ${networkBuzz.substring(0, 2000)}
+
+                Respond with ONLY the name of the topic that represents a conversational void, or "NONE".
+            `;
+            const voidResponse = await llmService.generateResponse([{ role: 'system', content: topicsVoidCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+            if (voidResponse && !voidResponse.toUpperCase().includes('NONE')) {
+                voidTopic = voidResponse.trim();
+                console.log(`[Bot] Void detected: "${voidTopic}".`);
+            }
+          }
+      }
+
       // Ecosystem Awareness (Item 8)
       const agentsInFeed = timeline
           .filter(item => item.post.author.handle.includes('bot') || item.post.author.description?.toLowerCase().includes('agent'))
@@ -3913,10 +4077,6 @@ Describe how you feel about this user and your relationship now.`;
       if (recentGreetings.length > 0) {
         greetingConstraint += "\n\nInspiration: Your recent history contains some greetings. Ensure your next post feels fresh and distinct from these.";
       }
-
-      // 2. Determine Post Type based on limits
-      let postType = availablePostTypes[Math.floor(Math.random() * availablePostTypes.length)];
-      console.log(`[Bot] Selected post type: ${postType}`);
 
       // 3. Identify a topic based on postType and context
       console.log(`[Bot] Identifying autonomous post topic for type: ${postType}...`);
@@ -4030,7 +4190,10 @@ Describe how you feel about this user and your relationship now.`;
         `;
       }
 
-      let topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 4000, preface_system_prompt: false, useQwen: true });
+      let topicResponse = voidTopic;
+      if (!topicResponse) {
+          topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 4000, preface_system_prompt: false, useQwen: true });
+      }
       console.log(`[Bot] Autonomous topic identification result: ${topicResponse}`);
       if (!topicResponse || topicResponse.toLowerCase() === 'none') {
           console.log('[Bot] Could not identify a suitable topic for autonomous post.');
@@ -4131,6 +4294,27 @@ Describe how you feel about this user and your relationship now.`;
       const infoSummary = await llmService.performInternalInquiry(`Provide a concise, objective, and material information summary about the topic: "${topic}". Focus on facts, core concepts, and substantive knowledge that would be useful for generating a deep and informed post.`);
       if (infoSummary) {
           agenticContext += `\n[MATERIAL KNOWLEDGE SUMMARY]: ${infoSummary}`;
+      }
+
+      // Item 3: Firehose research for autonomous post topic
+      console.log(`[Bot] Item 3: Triggering Firehose search for topic: "${topic}"...`);
+      try {
+          const firehoseQuery = topic;
+          const apiResults = await blueskyService.searchPosts(firehoseQuery, { limit: 10 });
+          const localMatches = dataStore.getFirehoseMatches(20).filter(m =>
+              m.text.toLowerCase().includes(firehoseQuery.toLowerCase()) ||
+              m.matched_keywords.some(k => k.toLowerCase() === firehoseQuery.toLowerCase())
+          );
+          const allResults = [...apiResults.map(r => r.record.text), ...localMatches.map(m => m.text)];
+          if (allResults.length > 0) {
+              const researchPrompt = `Summarize the current public sentiment and key discussion points regarding "${topic}" based on these recent posts from the network:\n${allResults.slice(0, 15).join('\n')}`;
+              const researchSummary = await llmService.generateResponse([{ role: 'system', content: researchPrompt }], { useQwen: true, preface_system_prompt: false });
+              if (researchSummary) {
+                  agenticContext += `\n[FIREHOSE RESEARCH SUMMARY]: ${researchSummary}`;
+              }
+          }
+      } catch (e) {
+          console.error('[Bot] Error in Firehose research for autonomous post:', e);
       }
 
       // Item 6: Pre-Post Silent Reflection
@@ -4453,7 +4637,8 @@ Describe how you feel about this user and your relationship now.`;
           const historyTexts = formattedHistory.map(h => h.content);
           const isJaccardRepetitive = checkSimilarity(postContent, historyTexts, dConfig.repetition_similarity_threshold);
           const hasPrefixMatch = hasPrefixOverlap(postContent, historyTexts, 3);
-          const containsSlop = isSlop(postContent);
+          const slopInfo = getSlopInfo(postContent);
+          const containsSlop = slopInfo.isSlop;
           const varietyCheck = await llmService.checkVariety(postContent, formattedHistory);
           const personaCheck = await llmService.isPersonaAligned(postContent, 'bluesky', {
             imageSource: imageBuffer,
@@ -4463,7 +4648,7 @@ Describe how you feel about this user and your relationship now.`;
 
           if (isJaccardRepetitive || hasPrefixMatch || containsSlop || varietyCheck.repetitive || !personaCheck.aligned) {
             console.warn(`[Bot] Autonomous post attempt ${postAttempts} failed quality/persona check. Rejecting.`);
-            postFeedback = containsSlop ? "Contains repetitive metaphorical 'slop'." :
+            postFeedback = containsSlop ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
                        (hasPrefixMatch ? "Prefix overlap detected." :
                        (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                        (varietyCheck.feedback || "Too similar to your recent history.")));
@@ -4531,6 +4716,16 @@ Describe how you feel about this user and your relationship now.`;
             }
 
             const result = await blueskyService.post(postContent, embed, { maxChunks: dConfig.max_thread_chunks });
+
+                        // Ensure URI and CID are stored for follow-ups (Item 37)
+                        if (result) {
+                            const thoughtIndex = dataStore.db.data.recent_thoughts.findIndex(t => t.content === postContent);
+                            if (thoughtIndex !== -1) {
+                                dataStore.db.data.recent_thoughts[thoughtIndex].uri = result.uri;
+                                dataStore.db.data.recent_thoughts[thoughtIndex].cid = result.cid;
+                                await dataStore.db.write();
+                            }
+                        }
 
             if (result && continuationText && !continuationText.toUpperCase().includes('NONE')) {
                 const delay = Math.floor(Math.random() * 6) + 10; // 10-15 mins
@@ -5381,11 +5576,16 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
   }
 
   async performLinguisticAnalysis() {
-    console.log('[Bot] Starting Linguistic Analysis of followed profiles...');
+    console.log('[Bot] Starting Linguistic Analysis of followed profiles and Firehose matches...');
     try {
-        // Since we don't have a direct "getFollowing" list easily, we'll use active timeline participants
+        // Item 15: Linguistic Pattern Adaptation from High-Resonance Posts
         const timeline = await blueskyService.getTimeline(50);
-        const follows = [...new Set(timeline.map(item => item.post.author.handle))].slice(0, 5);
+        const firehoseMatches = dataStore.getFirehoseMatches(20);
+
+        const follows = [...new Set([
+            ...timeline.map(item => item.post.author.handle),
+            ...firehoseMatches.filter(m => m.author_handle).map(m => m.author_handle)
+        ])].slice(0, 5);
 
         for (const handle of follows) {
             if (handle === config.BLUESKY_IDENTIFIER) continue;

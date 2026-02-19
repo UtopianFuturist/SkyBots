@@ -305,9 +305,11 @@ export const checkExactRepetition = (newText, history, lastN = 5) => {
 
   const normalize = (str) => {
     if (typeof str !== 'string') return '';
+    // Aggressive normalization: lowercase, remove all non-alphanumeric, collapse whitespace
     return str.toLowerCase().trim()
-      .replace(/[^\w\s]/g, '')
-      .replace(/\s+/g, ' ');
+      .replace(/[^\w\s]/g, '') // Remove punctuation/emojis (except underscores)
+      .replace(/\s+/g, '')     // Remove ALL whitespace for a true content comparison
+      .replace(/_/g, '');      // Also remove underscores to be safe
   };
 
   const normalizedNew = normalize(newText);

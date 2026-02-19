@@ -235,6 +235,7 @@ class MemoryService {
 
           INSTRUCTIONS:
           - Use the tag ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} at the beginning.
+          ${!isWorld ? '- **IDENTITY**: Always refer to the administrator as "Admin" in the fact details (e.g., "Admin prefers...", "Admin is planning..."). NEVER use "User".' : ''}
           - **ANCHORING**: If a source link or cross-platform post link is provided in the context, YOU MUST INCLUDE IT.
           - **MATERIAL SUBSTANCE**: Focus on the objective fact, not your feeling about it.
           - Format: ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} [Fact details]. Source: [Link or None]

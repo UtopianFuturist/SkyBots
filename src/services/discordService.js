@@ -561,6 +561,16 @@ class DiscordService {
         }
 
         try {
+            // Determine the normalized channel ID for logging
+            let normId;
+            if (target.constructor.name === 'User') {
+                normId = `dm_${target.id}`;
+            } else if (target.channel) {
+                normId = this.getNormalizedChannelId(target);
+            } else {
+                normId = target.id; // Fallback
+            }
+
             // Check if this message should be sent in bulk (e.g. emotional impact)
             const isEmotional = /love|miss|pain|heart|ache|feel|fragile|vulnerable/i.test(sanitized) && sanitized.length < 1000;
 
@@ -608,9 +618,7 @@ class DiscordService {
                 if (!firstSentMessage) firstSentMessage = sentMessage;
 
                 // Log interaction immediately after sending to prevent duplicate heartbeat realizations
-                const channelId = target.id || (target.channel && target.channel.id);
-                if (channelId && sentMessage) {
-                    const normId = (target.constructor.name === 'User' || target.type === ChannelType.DM) ? `dm_${target.id}` : channelId;
+                if (normId && sentMessage) {
                     await dataStore.saveDiscordInteraction(normId, 'assistant', chunk, {
                         id: sentMessage.id,
                         authorId: this.client.user.id,
@@ -2098,7 +2106,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                             // Material Knowledge Extraction (Item 2 & 29)
                             console.log(`[DiscordService] Extracting material facts...`);
-                            const facts = await llmService.extractFacts(`User: "${message.content}"\nBot: "${responseText}"`);
+                            const facts = await llmService.extractFacts(`${isAdmin ? 'Admin' : 'User'}: "${message.content}"\nBot: "${responseText}"`);
                             if (facts.world_facts.length > 0) {
                                 for (const f of facts.world_facts) {
                                     await dataStore.addWorldFact(f.entity, f.fact, f.source);

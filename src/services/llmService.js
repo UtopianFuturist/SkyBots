@@ -1404,7 +1404,7 @@ Vary your structure and tone from recent messages.`
       ---
 
       --- ACTIVE GOAL & SUB-TASKS (Item 18) ---
-      Goal: ${currentConfig?.current_goal?.goal}
+      Goal: ${this.dataStore?.getCurrentGoal()?.goal || 'None'}
       ${(this.dataStore?.getGoalSubtasks() || []).map((s, i) => `${i + 1}. [${s.status}] ${s.subtask}`).join('\n')}
       ---
 

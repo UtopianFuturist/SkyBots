@@ -5,8 +5,8 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 ## ✨ Key Features
 
 - **Planner/Executor Pattern**: Uses the **Qwen-3-Coder 480B** model as a "Heavy Lifter" to agentically plan tool use, refine search queries, and summarize deep context before passing it to the main LLM.
-- **Agentic Moltbook Integration**: Automatically interacts with **Moltbook.com** (a social network for AI agents), including automated registration, feed reading for self-learning, and periodic musings.
-- **Discord Bot Bridge**: Agentically decides to DM the admin about realizations, errors, or Moltbook discoveries. Supports ongoing conversations, command-based control, and discrete mirroring of conversations back to social feeds with permission.
+- **Agentic Moltbook Integration (Legacy)**: Support for **Moltbook.com** (a social network for AI agents) is currently disabled to focus on Bluesky and Discord capabilities.
+- **Discord Bot Bridge**: Agentically decides to DM the admin about realizations, errors, or internal discoveries. Supports ongoing conversations, command-based control, and optimized history management for consistent conversational presence.
 - **Smart Response Filtering**: Uses an LLM to determine if a mention is relevant and safe to reply to, avoiding unnecessary interactions.
 - **Chained Replies**: Automatically splits longer responses into a threaded chain of up to 3 posts.
 - **Nvidia NIM Image Generation**: Creates high-quality images directly in replies using the **Stable Diffusion 3 Medium** model.
@@ -33,7 +33,9 @@ SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, 
 - **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
 - **Dynamic Mood & Sentiment Sync**: Updates internal mood every 2 hours by analyzing the sentiment of the following feed. Mood states influence tone, vocabulary, and visual generation.
 - **Agency & Intentional Silence**: Implements a refusal tracking system where the agent can choose to remain silent if a plan misaligns with its current vibe. Sequentially tracks refusals to inform long-term autonomy.
-- **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop using **Qwen 3.5 397B** to research topics or seek advice, with findings recorded in long-term memory as `[INQUIRY]` entries.
+- **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop using **Qwen 3.5 397B** to research topics or seek advice. On Discord, inquiry findings are autonomously incorporated back into the conversation with the admin.
+- **Real-Time Firehose Monitoring**: Actively monitors the Bluesky firehose for configured topics and persona-adjacent keywords. Local matches are combined with network-wide search to provide highly contextual, real-time awareness.
+- **Agentic Firehose Search**: Dedicated tool for the bot to perform real-time and historical keyword searches across the entire Bluesky network.
 - **Temporal Messaging & Threading**: Supports intentional post delays and "Unfinished Thought Threading" for multi-part autonomous realizations via threads or self-quotes.
 - **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
 - **Social Pulse Monitoring**: Dynamically adjusts posting cooldowns based on timeline saturation and interaction levels.

@@ -1820,6 +1820,22 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                             actionResults.push(`--- CROSS-THREAD SEARCH RESULTS FOR "${query}" ---\n${searchResults.join('\n\n') || 'No matches in other channels.'}\n---`);
                         }
                      }
+                      if (action.tool === 'search_firehose') {
+                          const query = action.query || action.parameters?.query;
+                          if (query) {
+                              console.log(`[DiscordService] Plan Tool: search_firehose for "${query}"`);
+                              const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
+                              const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
+                                  m.text.toLowerCase().includes(query.toLowerCase()) ||
+                                  m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
+                              );
+                              const resultsText = [
+                                  ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
+                                  ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
+                              ].join('\n');
+                              actionResults.push(`--- BLUESKY FIREHOSE/SEARCH RESULTS FOR "${query}" ---\n${resultsText || 'No recent results found.'}\n---`);
+                          }
+                      }
                  });
 
                  await Promise.all(toolPromises);

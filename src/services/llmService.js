@@ -1729,6 +1729,10 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)", "delay_minutes": number (optional delay) }
       14. **Read Link**: Directly read and summarize the content of one or more web pages from provided URLs.
           - Use this if a user provides a link and asks about its content, or if you believe reading a provided link is necessary to fulfill their request.
+      52. **Search Firehose**: Real-time and historical search for topics and keywords on the Bluesky network.
+          - Use this to see what people are saying about a given topic right now.
+          - This tool returns both recent matches from the firehose monitor and results from the network-wide search index.
+          - Parameters: { "query": "string (the topic or keyword to search for)" }
           - **HISTORY AWARENESS**: If a user asks you to "read the link" or "check that article" but doesn't include the URL in their latest message, look for the URL in the previous messages of the conversation history. You are responsible for identifying URLs from the entire context.
           - **CAPABILITY**: You are fully capable of reading web pages directly via this tool. Never claim that you cannot open links or visit websites.
           - **CRITICAL**: Perform this action for up to 4 URLs if multiple links are provided.
@@ -1809,7 +1813,7 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask|call_skill",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask|call_skill|search_firehose",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "name": "string (for call_skill)", "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed. INCLUDE LINKS for anchoring if applicable)"

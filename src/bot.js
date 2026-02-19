@@ -217,7 +217,19 @@ export class Bot {
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
     const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
-    const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${firehosePath}`;
+
+    // Extract keywords from post_topics and system prompt
+    const dConfig = dataStore.getConfig();
+    const topics = dConfig.post_topics || [];
+    const subjects = dConfig.image_subjects || [];
+
+    // Simple extraction of nouns/topics from system prompt (if any)
+    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience)\b/gi) || [];
+
+    const allKeywords = [...new Set([...topics, ...subjects, ...promptKeywords])].map(k => k.toLowerCase());
+    const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join(',')}"` : '';
+
+    const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${firehosePath} ${keywordsArg}`;
     this.firehoseProcess = spawn(command, { shell: true });
 
     this.firehoseProcess.stdout.on('data', async (data) => {
@@ -253,6 +265,13 @@ export class Bot {
             await this.processNotification(notif);
             await dataStore.addRepliedPost(notif.uri);
             this.updateActivity();
+          } else if (event.type === 'firehose_topic_match') {
+            console.log(`[Bot] Firehose topic match: ${event.uri} (Keywords: ${event.matched_keywords.join(', ')})`);
+            await dataStore.addFirehoseMatch({
+                text: event.record.text,
+                uri: event.uri,
+                matched_keywords: event.matched_keywords
+            });
           }
         } catch (e) {
           // Ignore non-JSON output
@@ -1138,7 +1157,6 @@ export class Bot {
                 const lastAdminVibeCheck = dataStore.db.data.last_admin_vibe_check || 0;
                 const needsVibeCheck = (now.getTime() - lastAdminVibeCheck) >= 6 * 60 * 60 * 1000;
 
-                const recentMemories = memoryService.formatMemoriesForPrompt();
                 const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
                 const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
                 const recentThoughts = dataStore.getRecentThoughts();
@@ -1194,6 +1212,9 @@ export class Bot {
                     attempts++;
                     const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
                     const isFinalAttempt = attempts === MAX_ATTEMPTS;
+
+                    // Re-fetch memories in case a tool updated them
+                    const recentMemories = memoryService.formatMemoriesForPrompt();
 
                     const retryContext = feedback ? `\n\n**RETRY FEEDBACK (STRICT)**: ${feedback}
 You are being rejected because your response is too similar to recent history or previous attempts.
@@ -1361,6 +1382,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         // Execute Heartbeat Tools
                         const discordOptions = {};
                         if (finalActions && finalActions.length > 0) {
+                            let performedInquiry = false;
                             for (const action of finalActions) {
                                 if (action.tool === 'image_gen') {
                                     console.log(`[Bot] Heartbeat Action: Generating image for: "${action.query}"`);
@@ -1381,6 +1403,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                         const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed a heartbeat inquiry on "${query}". Should I record the finding: "${inquiryResult.substring(0, 100)}..." in our memory thread?`, { details: { query, result: inquiryResult } });
                                         if (confirmation.confirmed) {
                                             await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${query}. Result: ${inquiryResult}`);
+                                            performedInquiry = true;
                                         }
                                     }
                                 } else if (action.tool === 'mute_feed_impact') {
@@ -1412,7 +1435,28 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                     const points = action.parameters?.conflicting_points || [];
                                     console.log(`[Bot] Heartbeat Action: resolve_dissonance`);
                                     await llmService.resolveDissonance(points);
+                                } else if (action.tool === 'search_firehose') {
+                                    const query = action.query || action.parameters?.query;
+                                    console.log(`[Bot] Heartbeat Action: search_firehose for "${query}"`);
+                                    const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
+                                    const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
+                                        m.text.toLowerCase().includes(query.toLowerCase()) ||
+                                        m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
+                                    );
+                                    const resultsText = [
+                                        ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
+                                        ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
+                                    ].join('\n');
+                                    searchContext += `\n--- BLUESKY FIREHOSE/SEARCH RESULTS FOR "${query}" ---\n${resultsText || 'No recent results found.'}\n---`;
                                 }
+                            }
+
+                            if (performedInquiry && attempts < MAX_ATTEMPTS) {
+                                console.log(`[Bot] Heartbeat inquiry results obtained. Retrying generation to incorporate findings.`);
+                                feedback = `I have performed an internal inquiry and recorded the results in our memory thread. Re-generate your spontaneous message to incorporate these new findings naturally.`;
+                                bestCandidate = null; // Clear to force retry
+                                rejectedAttempts.push(responseText);
+                                continue;
                             }
                         }
 
@@ -2885,6 +2929,23 @@ Identify the topic and main takeaway.`;
                 }
             }
         }
+
+        if (action.tool === 'search_firehose') {
+            const query = action.query || action.parameters?.query;
+            if (query) {
+                console.log(`[Bot] Plan Tool: search_firehose for "${query}"`);
+                const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
+                const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
+                    m.text.toLowerCase().includes(query.toLowerCase()) ||
+                    m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
+                );
+                const resultsText = [
+                    ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
+                    ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
+                ].join('\n');
+                searchContext += `\n--- BLUESKY FIREHOSE/SEARCH RESULTS FOR "${query}" ---\n${resultsText || 'No recent results found.'}\n---`;
+            }
+        }
       }
 
       if (currentActionFeedback) {
@@ -3670,7 +3731,12 @@ Describe how you feel about this user and your relationship now.`;
 
       // 1. Gather context from timeline, interactions, and own profile
       const timeline = await blueskyService.getTimeline(40);
-      const networkBuzz = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 30).join('\n');
+      const timelineText = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 30).join('\n');
+
+      const firehoseMatches = dataStore.getFirehoseMatches(20);
+      const firehoseText = firehoseMatches.map(m => `[Real-time Match (${m.matched_keywords.join(',')})]: ${m.text}`).join('\n');
+
+      const networkBuzz = `--- TIMELINE ACTIVITY ---\n${timelineText}\n\n--- REAL-TIME FIREHOSE MATCHES ---\n${firehoseText || 'No recent real-time matches.'}`;
 
       // Ecosystem Awareness (Item 8)
       const agentsInFeed = timeline
@@ -4025,8 +4091,9 @@ Describe how you feel about this user and your relationship now.`;
       const blueskyDirectives = dataStore.getBlueskyInstructions();
       const personaUpdates = dataStore.getPersonaUpdates();
       const recentThoughts = dataStore.getRecentThoughts();
-      const recentThoughtsContext = (recentThoughts.length > 0 || agenticContext)
-        ? `\n\n--- RECENT CROSS-PLATFORM THOUGHTS ---\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content.substring(0, 200)}${t.content.length > 200 ? '...' : ''}`).join('\n')}${agenticContext}\n---`
+      const firehoseBuzz = firehoseMatches.slice(-5).map(m => m.text).join(' | ');
+      const recentThoughtsContext = (recentThoughts.length > 0 || agenticContext || firehoseBuzz)
+        ? `\n\n--- RECENT CROSS-PLATFORM THOUGHTS & REAL-TIME BUZZ ---\n${recentThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content.substring(0, 200)}${t.content.length > 200 ? '...' : ''}`).join('\n')}${agenticContext}\n[Real-time Firehose Buzz]: ${firehoseBuzz}\n---`
         : '';
 
       const baseAutonomousPrompt = `

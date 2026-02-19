@@ -113,7 +113,8 @@ const defaultData = {
   discovered_capabilities: [], // [ { capability, combination, timestamp } ]
   goal_subtasks: [], // [ { subtask, status: 'pending|completed', timestamp } ]
   agency_logs: [], // [ { action, decision, reason, timestamp } ]
-  strategy_audits: [] // [ { audit, timestamp } ]
+  strategy_audits: [], // [ { audit, timestamp } ]
+  firehose_matches: [] // [ { text, uri, matched_keywords, timestamp } ]
 };
 
 class DataStore {
@@ -1237,6 +1238,25 @@ class DataStore {
 
   getRenderServiceName() {
     return this.db.data.render_service_name;
+  }
+
+  async addFirehoseMatch(match) {
+    if (!this.db.data.firehose_matches) {
+        this.db.data.firehose_matches = [];
+    }
+    this.db.data.firehose_matches.push({
+        ...match,
+        timestamp: Date.now()
+    });
+    // Keep last 100 matches
+    if (this.db.data.firehose_matches.length > 100) {
+        this.db.data.firehose_matches.shift();
+    }
+    await this.db.write();
+  }
+
+  getFirehoseMatches(limit = 10) {
+    return (this.db.data.firehose_matches || []).slice(-limit).reverse();
   }
 }
 

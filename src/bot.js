@@ -1257,7 +1257,11 @@ export class Bot {
 
             const lastInteraction = history.length > 0 ? history[history.length - 1] : null;
             const lastInteractionTime = lastInteraction ? lastInteraction.timestamp : 0;
-            const quietMins = (Date.now() - lastInteractionTime) / (1000 * 60);
+            const lastHeartbeatTime = dataStore.getLastDiscordHeartbeatTime();
+
+            // Use the more recent of either the last message or the last recorded heartbeat
+            const effectiveLastInteractionTime = Math.max(lastInteractionTime, lastHeartbeatTime);
+            const quietMins = (Date.now() - effectiveLastInteractionTime) / (1000 * 60);
 
             // --- Advanced Heartbeat Logic ---
             const relationshipMode = dataStore.getDiscordRelationshipMode();
@@ -1516,7 +1520,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                     const finalActions = refinedPlan.refined_actions || [];
 
-                    // Variety & Repetition Check - increased depth from 5 to 12
+                    // Variety & Repetition Check - increased depth to cross-platform 50
                     const formattedHistory = [
                         ...recentBotMsgsInHistory.map(m => ({ platform: 'discord', content: m.content })),
                         ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
@@ -1528,9 +1532,8 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                     const evaluations = await Promise.all(candidates.map(async (cand) => {
                         try {
                             const historyTexts = formattedHistory.map(h => h.content);
-                            const normCand = cand.toLowerCase().trim();
                             // Use formattedHistory instead of raw history to check across platforms
-                            const isExactDuplicate = checkExactRepetition(cand, formattedHistory, 5);
+                            const isExactDuplicate = checkExactRepetition(cand, formattedHistory, 50);
                             const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
                             const isJaccardRepetitive = checkSimilarity(cand, historyTexts, dConfig.repetition_similarity_threshold);
                             const [varietyCheck, personaCheck] = await Promise.all([
@@ -1689,6 +1692,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         if (messageAction) {
                             await discordService.sendSpontaneousMessage(msgToSend, discordOptions);
                             await dataStore.addRecentThought('discord', msgToSend);
+                            await dataStore.updateLastDiscordHeartbeatTime(Date.now());
 
                             // If this was a vibe check or a welcome, update timestamp to prevent redundant welcomes
                             const lowerMsg = msgToSend.toLowerCase();

@@ -26,6 +26,7 @@ const defaultData = {
   admin_did: null,
   discord_admin_available: true,
   discord_last_replied: true,
+  lastDiscordHeartbeatTime: 0,
   discord_conversations: {}, // { channelId: [ { role, content, timestamp } ] }
   discord_pending_mirror: null, // { content, topic, timestamp }
   discord_relationship_mode: 'friend', // partner, friend, coworker
@@ -410,6 +411,15 @@ class DataStore {
     return this.db.data.discord_last_replied;
   }
 
+  async updateLastDiscordHeartbeatTime(timestamp) {
+    this.db.data.lastDiscordHeartbeatTime = timestamp;
+    await this.db.write();
+  }
+
+  getLastDiscordHeartbeatTime() {
+    return this.db.data.lastDiscordHeartbeatTime || 0;
+  }
+
   async saveDiscordInteraction(channelId, role, content, metadata = {}) {
     if (!this.db.data.discord_conversations[channelId]) {
       this.db.data.discord_conversations[channelId] = [];
@@ -438,6 +448,8 @@ class DataStore {
       // Increment audit count for assistant responses
       if (role === 'assistant') {
           this.db.data.interaction_count_since_audit = (this.db.data.interaction_count_since_audit || 0) + 1;
+          // Update last heartbeat time to prevent immediate spontaneous messages after any bot response
+          this.db.data.lastDiscordHeartbeatTime = Date.now();
       }
 
       await this.db.write();
@@ -523,8 +535,8 @@ class DataStore {
       content,
       timestamp: Date.now()
     });
-    // Keep last 30 thoughts across all platforms
-    if (this.db.data.recent_thoughts.length > 30) {
+    // Keep last 100 thoughts across all platforms for robust cross-platform variety
+    if (this.db.data.recent_thoughts.length > 100) {
       this.db.data.recent_thoughts.shift();
     }
     await this.db.write();

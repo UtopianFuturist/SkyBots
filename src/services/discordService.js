@@ -2014,8 +2014,8 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          continue;
                      }
 
-                     // Final Strict Repetition Check (Last 5 Bot Messages)
-                     const isExactDuplicate = checkExactRepetition(responseText, history, 5);
+                     // Final Strict Repetition Check (Last 20 Bot Messages)
+                     const isExactDuplicate = checkExactRepetition(responseText, history, 20);
                      if (isExactDuplicate) {
                          console.warn(`[DiscordService] Generated response is an EXACT DUPLICATE of a recent message. Retrying...`);
                          respFeedback = "Your response is identical to one of your last 5 messages in this channel. Change your opening and theme entirely.";

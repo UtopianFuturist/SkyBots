@@ -14,7 +14,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -228,7 +228,7 @@ export class Bot {
     // Simple extraction of nouns/topics from system prompt (if any)
     const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience)\b/gi) || [];
 
-    const allKeywords = [...new Set([...topics, ...subjects, ...promptKeywords])].map(k => k.toLowerCase()).filter(k => k.length >= 3 && !KEYWORD_BLACKLIST.includes(k));
+    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords]);
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
 
     // Item 11: Anti-Spam Keyword Negation
@@ -2467,7 +2467,7 @@ Identify the topic and main takeaway.`;
           const extractionPrompt = `Identify unique titles (games, books, movies, software, specific people) from the user's post: "${text}". Respond with comma-separated list or "NONE".`;
           const entities = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
           if (entities && !entities.toUpperCase().includes('NONE')) {
-              const entityList = entities.split(',').map(e => e.trim()).filter(e => e.length > 2 && !KEYWORD_BLACKLIST.includes(e.toLowerCase()));
+              const entityList = cleanKeywords(entities);
               if (entityList.length > 0) {
                   const currentTopics = dConfig.post_topics || [];
                   const newEntities = entityList.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
@@ -5593,7 +5593,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
                 // Update post_topics
                 if (evolution.new_keywords && evolution.new_keywords.length > 0) {
-                    const filteredNewKeywords = (evolution.new_keywords || []).filter(k => k.length >= 3 && !KEYWORD_BLACKLIST.includes(k.toLowerCase()));
+                    const filteredNewKeywords = cleanKeywords(evolution.new_keywords || []);
                     const updatedTopics = [...new Set([...currentTopics, ...filteredNewKeywords])].slice(0, 50);
                     await dataStore.updateConfig('post_topics', updatedTopics);
                     console.log(`[Bot] Evolved keywords: added ${evolution.new_keywords.join(', ')}`);

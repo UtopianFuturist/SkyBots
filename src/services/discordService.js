@@ -1,6 +1,18 @@
 import { Client, GatewayIntentBits, Partials, ChannelType } from 'discord.js';
 import fetch from 'node-fetch';
 import config from '../../config.js';
+const withTimeout = async (promise, ms, fallback) => {
+  let timeoutId;
+  const timeoutPromise = new Promise(resolve => {
+    timeoutId = setTimeout(() => {
+      console.warn(`[Timeout] Promise timed out after ${ms}ms`);
+      resolve(fallback);
+    }, ms);
+  });
+  const result = await Promise.race([promise, timeoutPromise]);
+  clearTimeout(timeoutId);
+  return result;
+};
 import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
 import { imageService } from './imageService.js';
@@ -937,7 +949,7 @@ class DiscordService {
         const [hierarchicalSummary, adminExhaustion, relevantMemoriesList] = await Promise.all([
             socialHistoryService.getHierarchicalSummary(),
             dataStore.getAdminExhaustion(),
-            memorySearchQuery ? memoryService.searchMemories(memorySearchQuery, 5) : Promise.resolve([])
+            withTimeout(memorySearchQuery ? memoryService.searchMemories(memorySearchQuery, 5) : Promise.resolve([]), 15000, [])
         ]);
 
         const currentMood = dataStore.getMood();
@@ -1152,13 +1164,13 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  const topicProgressionPrompt = `Analyze the Discord history. Identify 1-3 topics/emotional states already discussed and "moved on" from. For GREETINGS/RETURNS: if already welcomed back, it is a PASSED topic. Respond with ONLY comma-separated list or "NONE".\nHistory:\n${history.slice(-15).map(h => `${h.role}: ${h.content}`).join('\n')}`;
 
                  const [latestMoodMemory, directiveCheck, passedTopicsRaw, prePlanning, extractionResult] = await Promise.all([
-                     memoryService.getLatestMoodMemory(),
-                     llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }),
-                     llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }),
+                     withTimeout(memoryService.getLatestMoodMemory(), 15000, null),
+                     withTimeout(llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 20000, null),
+                     withTimeout(llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 20000, 'NONE'),
                      (lastIntuitionData && (Date.now() - lastIntuitionData.timestamp < 120000))
                         ? Promise.resolve(lastIntuitionData.intuition)
                         : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null, dataStore.getFirehoseMatches(10), abortController.signal),
-                     extractionPromise
+                     withTimeout(extractionPromise, 20000, null)
                  ]);
 
                  if (extractionResult) {

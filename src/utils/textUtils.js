@@ -1,3 +1,5 @@
+import config from '../../config.js';
+
 export const truncateText = (text, maxLength = 300) => {
   const segmenter = new Intl.Segmenter();
   const graphemes = [...segmenter.segment(text)].map(s => s.segment);
@@ -300,14 +302,15 @@ export const getSlopInfo = (text) => {
     return { isSlop: false, reason: null };
 };
 
-export const checkExactRepetition = (newText, history, lastN = 5) => {
+export const checkExactRepetition = (newText, history, lastN = 50) => {
   if (!newText || !history || history.length === 0) return false;
 
   const normalize = (str) => {
     if (typeof str !== 'string') return '';
     // Aggressive normalization: lowercase, remove all non-alphanumeric, collapse whitespace
+    // Include CJK characters and other symbols that might be used
     return str.toLowerCase().trim()
-      .replace(/[^\w\s]/g, '') // Remove punctuation/emojis (except underscores)
+      .replace(/[^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g, '') // Remove punctuation/emojis but keep CJK
       .replace(/\s+/g, '')     // Remove ALL whitespace for a true content comparison
       .replace(/_/g, '');      // Also remove underscores to be safe
   };
@@ -325,7 +328,14 @@ export const checkExactRepetition = (newText, history, lastN = 5) => {
         if (h.role === 'assistant' || h.role === 'Assistant (Self)') return true;
 
         // Bluesky/Context format
-        if (h.author === 'assistant' || h.author === 'Assistant (Self)' || h.author === 'You') return true;
+        const isBotAuthor = (h.author === 'assistant' || h.author === 'Assistant (Self)' || h.author === 'You') ||
+                           (config?.BLUESKY_IDENTIFIER && h.author === config.BLUESKY_IDENTIFIER) ||
+                           (config?.DISCORD_NICKNAME && h.author === config.DISCORD_NICKNAME) ||
+                           (config?.BOT_NICKNAMES && Array.isArray(config.BOT_NICKNAMES) && config.BOT_NICKNAMES.includes(h.author));
+        if (isBotAuthor) return true;
+
+        // Platform-specific content objects
+        if (h.content && !h.role && !h.author) return true;
 
         // Default to true if no role/author info to be safe
         if (!h.role && !h.author) return true;

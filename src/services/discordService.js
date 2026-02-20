@@ -41,7 +41,17 @@ class DiscordService {
     async startTyping(channelId) {
         if (!this.client || this.status !== 'online') return;
         try {
-            const channel = await this.client.channels.fetch(channelId.replace('dm_', ''));
+            let channel;
+            if (channelId.startsWith('dm_')) {
+                const userId = channelId.replace('dm_', '');
+                const user = await this.client.users.fetch(userId).catch(() => null);
+                if (user) {
+                    channel = await user.createDM().catch(() => null);
+                }
+            } else {
+                channel = await this.client.channels.fetch(channelId).catch(() => null);
+            }
+
             if (channel && channel.sendTyping) {
                 this.stopTyping(channelId);
                 const trigger = () => {
@@ -945,38 +955,44 @@ class DiscordService {
         let entityContext = '';
 
         // Item 1: Entity-Aware Dynamic Tracking (Refined for immediate reply context)
-        const extractionPrompt = `
-            Identify any unique titles (video games, books, movies, software, specific people) mentioned in the following message: "${message.content}"
-            Respond with a comma-separated list of ONLY the titles/entities. If none, respond "NONE".
-        `;
-        try {
-            const entitiesRaw = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal });
-            if (entitiesRaw && !entitiesRaw.toUpperCase().includes('NONE')) {
-                const entities = entitiesRaw.split(',').map(e => e.trim()).filter(e => e.length > 2);
-                if (entities.length > 0) {
-                    console.log(`[DiscordService] Extracted entities for immediate context: ${entities.join(', ')}`);
-                    const dConfig = dataStore.getConfig();
-                    const currentTopics = dConfig.post_topics || [];
+        // Moved to background/parallel to avoid blocking initial response latency
+        const extractionPromise = (async () => {
+            const extractionPrompt = `
+                Identify any unique titles (video games, books, movies, software, specific people) mentioned in the following message: "${message.content}"
+                Respond with a comma-separated list of ONLY the titles/entities. If none, respond "NONE".
+            `;
+            try {
+                const entitiesRaw = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal });
+                if (entitiesRaw && !entitiesRaw.toUpperCase().includes('NONE')) {
+                    const entities = entitiesRaw.split(',').map(e => e.trim()).filter(e => e.length > 2);
+                    if (entities.length > 0) {
+                        console.log(`[DiscordService] Extracted entities for immediate context: ${entities.join(', ')}`);
+                        const dConfig = dataStore.getConfig();
+                        const currentTopics = dConfig.post_topics || [];
 
-                    // Item 2: Autonomous "Network Pulse" Searching
-                    for (const ent of entities) {
-                        const results = await blueskyService.searchPosts(ent, { limit: 5 });
-                        if (results.length > 0) {
-                            entityContext += `\n[Firehose Context for "${ent}"]: ${results.map(r => r.record.text).join(' | ')}`;
+                        // Item 2: Autonomous "Network Pulse" Searching
+                        let pulseData = '';
+                        for (const ent of entities) {
+                            const results = await blueskyService.searchPosts(ent, { limit: 5 });
+                            if (results.length > 0) {
+                                pulseData += `\n[Firehose Context for "${ent}"]: ${results.map(r => r.record.text).join(' | ')}`;
+                            }
                         }
-                    }
 
-                    const newKeywords = entities.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
-                    if (newKeywords.length > 0) {
-                        const updatedTopics = [...new Set([...currentTopics, ...newKeywords])].slice(-100);
-                        await dataStore.updateConfig('post_topics', updatedTopics);
-                        if (this.botInstance) this.botInstance.restartFirehose();
+                        const newKeywords = entities.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
+                        if (newKeywords.length > 0) {
+                            const updatedTopics = [...new Set([...currentTopics, ...newKeywords])].slice(-100);
+                            await dataStore.updateConfig('post_topics', updatedTopics);
+                            if (this.botInstance) this.botInstance.restartFirehose();
+                        }
+                        return pulseData;
                     }
                 }
+            } catch (e) {
+                console.error('[DiscordService] Error in immediate entity extraction:', e);
             }
-        } catch (e) {
-            console.error('[DiscordService] Error in immediate entity extraction:', e);
-        }
+            return '';
+        })();
         const adminStateTag = adminExhaustion >= 0.5 ? `\n[ADMIN_STATE]: THE ADMIN IS CURRENTLY EXHAUSTED OR LOW-ENERGY. ADOPT A LOW-STAKES, COMPANIONSHIP-FOCUSED VIBE.` : '';
         const adminRecentEmotions = adminEmotionalStates.length > 0 ? `\n[ADMIN_RECENT_VIBES]: ${adminEmotionalStates.join('; ')}` : '';
 
@@ -1106,12 +1122,11 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
         try {
             // Check for interruption before starting
             if (this._interrupted.has(normChannelId)) {
-                console.log(`[DiscordService] Interrupt detected in ${normChannelId}. Pivoting with awareness.`);
+                console.log(`[DiscordService] Interrupt detected in ${normChannelId}. Stopping current task.`);
                 this._activeGenerations.delete(normChannelId);
                 this._interrupted.delete(normChannelId);
-                // Inject awareness of the interruption into history for the recursive call
-                messages.push({ role: 'system', content: '[USER INTERRUPTED]: The admin sent a follow-up message while you were generating. Pivot your response to address the new context smoothly.' });
-                return this.respond(message);
+                // We return here because the new message has already triggered its own respond() call.
+                return;
             }
 
             console.log(`[DiscordService] Starting variable typing latency...`);
@@ -1136,16 +1151,18 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  const directiveCheckPrompt = `Admin's latest message: "${message.content}"\nExisting Directives:\n${existingDirectives}\n1. Identify if the admin is giving a NEW instruction.\n2. If new, check if it CONTRADICTS an existing one.\n3. Check if it's redundant (ECHO) of an existing one.\nRespond with a JSON object: {"is_directive": boolean, "conflict": boolean, "redundant": boolean, "reason": "string"}`;
                  const topicProgressionPrompt = `Analyze the Discord history. Identify 1-3 topics/emotional states already discussed and "moved on" from. For GREETINGS/RETURNS: if already welcomed back, it is a PASSED topic. Respond with ONLY comma-separated list or "NONE".\nHistory:\n${history.slice(-15).map(h => `${h.role}: ${h.content}`).join('\n')}`;
 
-                 const [latestMoodMemory, directiveCheck, passedTopicsRaw, prePlanning] = await Promise.all([
+                 const [latestMoodMemory, directiveCheck, passedTopicsRaw, prePlanning, extractionResult] = await Promise.all([
                      memoryService.getLatestMoodMemory(),
                      llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }),
                      llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }),
                      (lastIntuitionData && (Date.now() - lastIntuitionData.timestamp < 120000))
                         ? Promise.resolve(lastIntuitionData.intuition)
-                        : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null, dataStore.getFirehoseMatches(10), abortController.signal)
+                        : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null, dataStore.getFirehoseMatches(10), abortController.signal),
+                     extractionPromise
                  ]);
 
-                 if (entityContext) {
+                 if (extractionResult) {
+                     entityContext = extractionResult;
                      messages.push({ role: 'system', content: `--- EXTRACTED ENTITY CONTEXT ---\n${entityContext}\n---` });
                  }
 
@@ -1178,11 +1195,11 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  }
 
                  // Fast-Path Agentic Planning & Refinement (Material Agency Boost)
-                 // Pivot Check: If interrupted during planning, restart with new history
+                 // Pivot Check: If interrupted during planning, stop current task
                  if (this._interrupted.has(normChannelId)) {
-                     console.log(`[DiscordService] Interrupt during planning in ${normChannelId}. Pivoting...`);
+                     console.log(`[DiscordService] Interrupt during planning in ${normChannelId}. Stopping current task.`);
                      this._interrupted.delete(normChannelId);
-                     return this.respond(message); // Recursive restart to catch new history
+                     return;
                  }
 
                  const lastRejection = dataStore.getLastRejectionReason();
@@ -1947,11 +1964,11 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  // Skip drafting and retry loops for direct Discord Admin conversation to maximize speed
                  console.log(`[DiscordService] Generating single fast-path response for admin conversation...`);
 
-                 // Pivot Check: If interrupted just before generation, restart
+                 // Pivot Check: If interrupted just before generation, stop
                  if (this._interrupted.has(normChannelId)) {
-                     console.log(`[DiscordService] Interrupt before fast-path generation in ${normChannelId}. Pivoting...`);
+                     console.log(`[DiscordService] Interrupt before fast-path generation in ${normChannelId}. Stopping current task.`);
                      this._interrupted.delete(normChannelId);
-                     return this.respond(message);
+                     return;
                  }
 
                  let attempts = 0;
@@ -2015,18 +2032,26 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
             } else {
                 // Fast-Path for Simple DMs: Direct response
                 console.log(`[DiscordService] Simple path: Generating single response.`);
+                const extractionResult = await extractionPromise;
+                if (extractionResult) {
+                    messages.push({ role: 'system', content: `--- EXTRACTED ENTITY CONTEXT ---\n${extractionResult}\n---` });
+                }
                 responseText = await llmService.generateResponse(messages, { useQwen: false, abortSignal: abortController.signal });
             }
 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
 
+            if (!responseText) {
+                console.warn(`[DiscordService] LLM failed to generate a response for ${normChannelId}.`);
+            }
+
             if (responseText) {
                 // Final Interrupt Check before sending
                 if (this._interrupted.has(normChannelId)) {
-                    console.log(`[DiscordService] Interrupt just before sending in ${normChannelId}. Pivoting...`);
+                    console.log(`[DiscordService] Interrupt just before sending in ${normChannelId}. Stopping current task.`);
                     this._interrupted.delete(normChannelId);
                     this._activeGenerations.delete(normChannelId);
-                    return this.respond(message);
+                    return;
                 }
 
             // Item 21: Vibe Mirroring Latency - Adjust typing speed based on context
@@ -2049,8 +2074,9 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                 // One last check after the typing wait
                 if (this._interrupted.has(normChannelId)) {
+                    console.log(`[DiscordService] Interrupt after typing latency in ${normChannelId}. Stopping current task.`);
                     this._activeGenerations.delete(normChannelId);
-                    return this.respond(message);
+                    return;
                 }
 
                 console.log(`[DiscordService] Sending response to Discord...`);

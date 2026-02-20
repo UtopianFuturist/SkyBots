@@ -1,10 +1,20 @@
-
 export const KEYWORD_BLACKLIST = [
     "glass", "ruins", "everything", "nothing", "somebody", "anybody", "someone", "anyone", "something", "anything",
     "about", "their", "there", "would", "could", "should", "people", "really", "think", "thought", "going",
     "thanks", "thank", "hello", "please", "maybe", "actually", "probably", "just", "very", "much", "many",
     "always", "never", "often", "sometimes", "usually", "almost", "quite", "rather", "somewhat", "too", "enough"
 ];
+
+export const cleanKeywords = (keywords) => {
+  if (!keywords) return [];
+  const list = Array.isArray(keywords) ? keywords : [keywords];
+  return [...new Set(
+    list
+      .flatMap(k => (typeof k === "string" ? k.split(",") : [k]))
+      .map(k => (typeof k === "string" ? k.trim().toLowerCase() : k))
+      .filter(k => typeof k === "string" &&  (k.length >= 3 || k === 'ai') && !KEYWORD_BLACKLIST.includes(k))
+  )];
+};
 import config from '../../config.js';
 
 export const truncateText = (text, maxLength = 300) => {
@@ -34,6 +44,7 @@ export const splitText = (text, maxLength = 300, maxChunks = 10) => {
 
   if (graphemes.length <= maxLength) {
     return [text];
+
   }
 
   const chunks = [];

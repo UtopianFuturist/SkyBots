@@ -1,4 +1,4 @@
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap, stripWrappingQuotes, checkExactRepetition } from '../src/utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap, stripWrappingQuotes, checkExactRepetition, cleanKeywords } from '../src/utils/textUtils.js';
 
 describe('textUtils - sanitizeCjkCharacters', () => {
   it('should remove Chinese characters', () => {
@@ -242,5 +242,41 @@ describe('textUtils - checkExactRepetition', () => {
     ];
     expect(checkExactRepetition('Very old message', history, 5)).toBe(false);
     expect(checkExactRepetition('1', history, 5)).toBe(true);
+  });
+});
+
+describe('textUtils - cleanKeywords', () => {
+  test('should split comma-separated strings', () => {
+    const input = ["ai", "glass, ruins", "consciousness"];
+    const result = cleanKeywords(input);
+    expect(result).toContain('ai');
+    expect(result).not.toContain('glass, ruins');
+    expect(result).not.toContain('glass');
+    expect(result).not.toContain('ruins');
+    expect(result).toContain('consciousness');
+  });
+
+  test('should trim and lowercase keywords', () => {
+    const input = [" AI ", "CONSCIOUSNESS"];
+    const result = cleanKeywords(input);
+    expect(result).toEqual(['ai', 'consciousness']);
+  });
+
+  test('should filter blacklisted words', () => {
+    const input = ["glass", "ruins", "ai", "everything"];
+    const result = cleanKeywords(input);
+    expect(result).toEqual(['ai']);
+  });
+
+  test('should filter short keywords except ai', () => {
+    const input = ["ai", "a", "bot"];
+    const result = cleanKeywords(input);
+    expect(result).toEqual(['ai', 'bot']);
+  });
+
+  test('should remove duplicates', () => {
+    const input = ["ai", "ai", "AI"];
+    const result = cleanKeywords(input);
+    expect(result).toEqual(['ai']);
   });
 });

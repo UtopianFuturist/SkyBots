@@ -229,10 +229,10 @@ export class Bot {
     const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience)\b/gi) || [];
 
     const allKeywords = [...new Set([...topics, ...subjects, ...promptKeywords])].map(k => k.toLowerCase()).filter(k => k.length >= 3 && !KEYWORD_BLACKLIST.includes(k));
-    const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join(',')}"` : '';
+    const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
 
     // Item 11: Anti-Spam Keyword Negation
-    const negativesArg = `--negatives "${config.FIREHOSE_NEGATIVE_KEYWORDS.join(',')}"`;
+    const negativesArg = `--negatives "${config.FIREHOSE_NEGATIVE_KEYWORDS.join('|')}"`;
 
     // Proposal 4: Monitor Admin Profile specifically
     const adminDid = dataStore.getAdminDid();

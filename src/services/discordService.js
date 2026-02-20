@@ -1656,7 +1656,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                              await dataStore.updateMood({ valence, arousal, stability, label });
                              actionResults.push(`[Internal mood updated to: ${label}]`);
                              if (memoryService.isEnabled()) {
-                                 await memoryService.createMemoryEntry('mood', `[MOOD] My mood has shifted to: ${label} (Valence: ${valence}, Arousal: ${arousal}, Stability: ${stability})`);
+                                 memoryService.createMemoryEntry('mood', `[MOOD] My mood has shifted to: ${label} (Valence: ${valence}, Arousal: ${arousal}, Stability: ${stability})`) .catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                              }
                          }
                      }
@@ -1667,15 +1667,18 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                              if (result) {
                                  actionResults.push(`[Internal Inquiry Result for "${query}": ${result}]`);
                                  if (memoryService.isEnabled()) {
-                                     // Reflector loop: Ask persona if they want results preserved
-                                     const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed an inquiry on "${query}". Should I record the finding: "${result.substring(0, 100)}..." in our memory thread?`, { details: { query, result } });
-
-                                     if (confirmation.confirmed) {
-                                         memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
-                                         actionResults.push(`[Inquiry results preserved in memory thread]`);
-                                     } else {
-                                         actionResults.push(`[Inquiry results kept private per persona request]`);
-                                     }
+                                     // Reflector loop: Backgrounded to avoid blocking response
+                                     (async () => {
+                                         try {
+                                             const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed an inquiry on "${query}". Should I record the finding: "${result.substring(0, 100)}..." in our memory thread?`, { details: { query, result } });
+                                             if (confirmation.confirmed) {
+                                                 await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`);
+                                             }
+                                         } catch (e) {
+                                             console.error('[DiscordService] Background inquiry confirmation failed:', e);
+                                         }
+                                     })();
+                                     actionResults.push(`[Inquiry task performed. Results will be preserved in memory if approved by persona.]`);
                                  }
                              }
                          }

@@ -78,7 +78,8 @@ class MemoryService {
       ${memories}
 
       INSTRUCTIONS:
-      - Write a cohesive reflection or observation that represents a meaningful update to your persona, functioning, or long-term memory.
+      - Write a cohesive reflection or observation that represents a meaningful update.
+      - **CRITICAL**: YOUR ENTIRE RESPONSE MUST BE LESS THAN 180 CHARACTERS. THIS IS A HARD LIMIT.
       - **CONCISE MEANINGFUL SUBSTANCE**: Only include information that is genuinely important for your evolution or self-awareness. Avoid trivial details.
       - **ARCHIVAL STYLE**: Be concise, easy to read, and straight to the point. Focus on the core realization or event.
       - Tone: ${config.TEXT_SYSTEM_PROMPT}

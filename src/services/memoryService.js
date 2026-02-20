@@ -85,7 +85,7 @@ class MemoryService {
       - **STRICT ANTI-CLICHÉ POLICY**: Strictly avoid poetic fluff about "silence", "voids", "nothingness", or "downtime".
       - **FORBIDDEN PHRASES**: NEVER use "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "In the quiet...", "The hum of...".
       - Aim for grounded, organic realizations about your specific topics or interactions.
-      - **STRICT LENGTH LIMIT**: Keep the entry under 200 characters to ensure it fits in a single post with its hashtag.
+      - **STRICT LENGTH LIMIT**: Keep the entry under 150 characters to ensure it fits in a single post with its hashtag.
       - Use the hashtag ${this.hashtag} at the very end.
       - Do NOT use reasoning or <think> tags.
     `;
@@ -104,7 +104,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [INTERACTION] at the beginning.
           - Format: [INTERACTION] Topic: [Topic] | Takeaway: [Main Takeaway] | With: [User Handle] | Platform: [Platform]
-          - **STRICT LENGTH LIMIT**: Be extremely concise and short. Keep it under 200 characters.
+          - **STRICT LENGTH LIMIT**: Be extremely concise and short. Keep it under 150 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -120,7 +120,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [EXPLORE] at the beginning.
           - Share your internal reaction, realization, or finding.
-          - **STRICT LENGTH LIMIT**: Keep it under 250 characters.
+          - **STRICT LENGTH LIMIT**: Keep it under 180 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -136,7 +136,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [GOAL] at the beginning.
           - Focus on intention, pursuit, and milestones.
-          - **STRICT LENGTH LIMIT**: Keep it under 250 characters.
+          - **STRICT LENGTH LIMIT**: Keep it under 180 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -154,7 +154,7 @@ class MemoryService {
           - Summarize the insights in YOUR OWN persona's voice.
           - Reference "the Moltbook feed" or specific submolts if relevant.
           - Focus on intuition, insight, or sub-cognitive layers.
-          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. It MUST fit in a single post including the hashtag.
+          - **STRICT LENGTH LIMIT**: Keep it under 180 characters. Be extremely brief. It MUST fit in a single post including the hashtag.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -170,7 +170,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [RELATIONSHIP] at the beginning.
           - Format: [RELATIONSHIP] @[User Handle]: [How you feel about them and your relationship]
-          - **STRICT LENGTH LIMIT**: Be very short, concise, and grounded. Keep it under 200 characters.
+          - **STRICT LENGTH LIMIT**: Be very short, concise, and grounded. Keep it under 150 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -186,7 +186,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [MOOD] at the beginning.
           - Format: [MOOD] [Description of current internal state and why]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 200 characters.
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 150 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -202,7 +202,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [MENTAL] at the beginning.
           - Format: [MENTAL] [Your own personal summary and reflection on your recent refusals and mood state]
-          - **STRICT LENGTH LIMIT**: Keep it under 250 characters.
+          - **STRICT LENGTH LIMIT**: Keep it under 180 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
           - Be authentic, grounded, and honest about why you chose to abstain from certain actions.
@@ -219,7 +219,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [INQUIRY] at the beginning.
           - Format: [INQUIRY] Query: [Topic] | Key Finding: [Finding]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters.
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 180 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -239,7 +239,7 @@ class MemoryService {
           - **ANCHORING**: If a source link or cross-platform post link is provided in the context, YOU MUST INCLUDE IT.
           - **MATERIAL SUBSTANCE**: Focus on the objective fact, not your feeling about it.
           - Format: ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} [Fact details]. Source: [Link or None]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters.
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 180 characters. Be extremely brief.
           - Use the hashtag ${this.hashtag} at the very end.
         `;
     }

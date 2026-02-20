@@ -14,7 +14,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -228,7 +228,7 @@ export class Bot {
     // Simple extraction of nouns/topics from system prompt (if any)
     const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience)\b/gi) || [];
 
-    const allKeywords = [...new Set([...topics, ...subjects, ...promptKeywords])].map(k => k.toLowerCase());
+    const allKeywords = [...new Set([...topics, ...subjects, ...promptKeywords])].map(k => k.toLowerCase()).filter(k => k.length >= 3 && !KEYWORD_BLACKLIST.includes(k));
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join(',')}"` : '';
 
     // Item 11: Anti-Spam Keyword Negation
@@ -375,36 +375,26 @@ export class Bot {
     this.startFirehose();
 
     // Perform initial startup tasks after a delay to avoid API burst
+    // Perform initial startup tasks in a staggered way to avoid LLM/API pressure
     setTimeout(async () => {
-      console.log('[Bot] Running initial startup tasks...');
+      console.log('[Bot] Running initial startup task: catchUpNotifications...');
+      try { await this.catchUpNotifications(); } catch (e) { console.error('[Bot] Error in initial catch-up:', e); }
+    }, 30000);
 
-      // Run catch-up once on startup to process missed notifications (now delayed)
-      try {
-        await this.catchUpNotifications();
-      } catch (e) {
-        console.error('[Bot] Error in initial catch-up:', e);
-      }
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: cleanupOldPosts...');
+      try { await this.cleanupOldPosts(); } catch (e) { console.error('[Bot] Error in initial cleanup:', e); }
+    }, 120000);
 
-      // Run cleanup on startup (now delayed)
-      try {
-        await this.cleanupOldPosts();
-      } catch (e) {
-        console.error('[Bot] Error in initial cleanup:', e);
-      }
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: performAutonomousPost...');
+      try { await this.performAutonomousPost(); } catch (e) { console.error('[Bot] Error in initial autonomous post:', e); }
+    }, 240000);
 
-      // Run autonomous post and Moltbook tasks independently so one failure doesn't block the other
-      try {
-        await this.performAutonomousPost();
-      } catch (e) {
-        console.error('[Bot] Error in initial autonomous post:', e);
-      }
-
-      try {
-        await this.performMoltbookTasks();
-      } catch (e) {
-        console.error('[Bot] Error in initial Moltbook tasks:', e);
-      }
-    }, 30000); // 30 second delay
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: performMoltbookTasks...');
+      try { await this.performMoltbookTasks(); } catch (e) { console.error('[Bot] Error in initial Moltbook tasks:', e); }
+    }, 360000);
 
     // Periodic autonomous post check (every 2 hours)
     setInterval(() => this.performAutonomousPost(), 7200000);
@@ -1399,6 +1389,13 @@ export class Bot {
                 const MAX_ATTEMPTS = 5;
                 let responseText = null;
                 let bestCandidate = null;
+                let lastContainsSlop = false;
+                let lastIsExactDuplicate = false;
+                let lastMisaligned = false;
+                let lastIsJaccardRepetitive = false;
+                let lastHasPrefixMatch = false;
+                let lastPersonaCheck = { aligned: true };
+                let lastVarietyCheck = { feedback: "Too similar to recent history." };
 
                 // Opening Phrase Blacklist - increased depth from 5 to 15
                 const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-15);
@@ -1547,16 +1544,17 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         }
                     }));
 
-                    let isJaccardRepetitive = false;
+
+
                     for (const evalResult of evaluations) {
-                        const { cand, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
+                        const { cand, varietyCheck, personaCheck, hasPrefixMatch: hpm, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
                         if (error) {
                             rejectedAttempts.push(cand);
                             continue;
                         }
 
                         const slopInfo = getSlopInfo(cand);
-                        const containsSlop = slopInfo.isSlop;
+                        const isSlopCand = slopInfo.isSlop;
 
                         // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
                         const lengthBonus = Math.min(cand.length / 500, 0.2);
@@ -1564,28 +1562,26 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
                         const score = varietyWeight + moodWeight + lengthBonus;
 
-                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score ?? varietyCheck.score ?? 0}, Mood: ${varietyCheck.mood_alignment_score ?? 0}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Exact=${isExactDuplicate}, PrefixMatch=${hasPrefixMatch}, JaccardRep=${jRep}`);
+                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score ?? varietyCheck.score ?? 0}, Mood: ${varietyCheck.mood_alignment_score ?? 0}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${isSlopCand}, Aligned=${personaCheck.aligned}, Exact=${isExactDuplicate}, PrefixMatch=${hpm}, JaccardRep=${jRep}`);
 
-                        if (!containsSlop && !varietyCheck.repetitive && !isExactDuplicate && !hasPrefixMatch && !jRep && personaCheck.aligned) {
+                        if (!isSlopCand && !varietyCheck.repetitive && !isExactDuplicate && !hpm && !jRep && personaCheck.aligned) {
                             if (score > bestScore) {
                                 bestScore = score;
                                 bestCandidate = cand;
                             }
                         } else {
                             if (!bestCandidate) {
-                                isJaccardRepetitive = jRep;
-                                if (containsSlop) rejectionReason = `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.`;
-                                else if (isExactDuplicate) rejectionReason = "Exact duplicate of a recent bot message detected.";
-                                else if (hasPrefixMatch) rejectionReason = "Prefix overlap detected.";
-                                else if (jRep) rejectionReason = "Jaccard similarity threshold exceeded (too similar to history).";
-                                else if (!personaCheck.aligned) rejectionReason = `Not persona aligned: ${personaCheck.feedback}`;
-                                else if (varietyCheck.misaligned) rejectionReason = "Misaligned with current mood.";
-                                else rejectionReason = varietyCheck.feedback || "Too similar to recent history.";
+                                lastIsJaccardRepetitive = jRep;
+                                lastHasPrefixMatch = hpm;
+                                lastPersonaCheck = personaCheck;
+                                lastVarietyCheck = varietyCheck;
+                                lastContainsSlop = isSlopCand;
+                                lastIsExactDuplicate = isExactDuplicate;
+                                lastMisaligned = varietyCheck.misaligned;
                             }
                             rejectedAttempts.push(cand);
                         }
                     }
-
                     if (bestCandidate) {
                         responseText = bestCandidate;
                         // Execute Heartbeat Tools
@@ -1721,11 +1717,13 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         this.consecutiveRejections = 0; // Reset on success
                         break;
                     } else {
-                        feedback = containsSlop ? "Contains metaphorical slop." :
-                                   (isJaccardRepetitive ? "Jaccard similarity threshold exceeded (too similar to history)." :
+                        feedback = lastContainsSlop ? "Contains metaphorical slop." :
+                                   (lastIsExactDuplicate ? "Exact duplicate of a recent bot message detected." :
                                    (hasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
+                                   (lastIsJaccardRepetitive ? "Jaccard similarity threshold exceeded (too similar to history)." :
                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
-                                   (varietyCheck.feedback || "Too similar to recent history."))));
+                                   (lastMisaligned ? "Misaligned with current mood." :
+                                   (lastVarietyCheck.feedback || "Too similar to recent history."))))));
                         rejectedAttempts.push(message);
                         console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
 
@@ -2469,7 +2467,7 @@ Identify the topic and main takeaway.`;
           const extractionPrompt = `Identify unique titles (games, books, movies, software, specific people) from the user's post: "${text}". Respond with comma-separated list or "NONE".`;
           const entities = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
           if (entities && !entities.toUpperCase().includes('NONE')) {
-              const entityList = entities.split(',').map(e => e.trim()).filter(e => e.length > 2);
+              const entityList = entities.split(',').map(e => e.trim()).filter(e => e.length > 2 && !KEYWORD_BLACKLIST.includes(e.toLowerCase()));
               if (entityList.length > 0) {
                   const currentTopics = dConfig.post_topics || [];
                   const newEntities = entityList.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
@@ -3549,7 +3547,7 @@ Identify the topic and main takeaway.`;
           }
 
           const slopInfo = getSlopInfo(cand);
-          const containsSlop = slopInfo.isSlop;
+          const isSlopCand = slopInfo.isSlop;
 
           // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
           const lengthBonus = Math.min(cand.length / 500, 0.2);
@@ -3557,9 +3555,9 @@ Identify the topic and main takeaway.`;
           const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
           const score = varietyWeight + moodWeight + lengthBonus;
 
-          console.log(`[Bot] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${containsSlop}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}, PrefixMatch=${hasPrefixMatch}`);
+          console.log(`[Bot] Candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score?.toFixed(2)}, Mood: ${varietyCheck.mood_alignment_score?.toFixed(2)}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${isSlopCand}, Aligned=${personaCheck.aligned}, Safe=${responseSafetyCheck.safe}, PrefixMatch=${hasPrefixMatch}`);
 
-          if (!containsSlop && !varietyCheck.repetitive && !hasPrefixMatch && personaCheck.aligned && responseSafetyCheck.safe) {
+          if (!isSlopCand && !varietyCheck.repetitive && !hasPrefixMatch && personaCheck.aligned && responseSafetyCheck.safe) {
               if (score > bestScore) {
                   bestScore = score;
                   bestCandidate = cand;
@@ -3567,8 +3565,8 @@ Identify the topic and main takeaway.`;
           } else {
               if (!bestCandidate) {
                   rejectionReason = containsSlop ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
-                                    (hasPrefixMatch ? "Prefix overlap detected." :
-                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                                   (hasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
+                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                     (!responseSafetyCheck.safe ? "Failed safety check." :
                                     (varietyCheck.misaligned ? "Misaligned with current mood." :
                                     (varietyCheck.feedback || "Too similar to recent history.")))));
@@ -4674,7 +4672,7 @@ Describe how you feel about this user and your relationship now.`;
           const isJaccardRepetitive = checkSimilarity(postContent, historyTexts, dConfig.repetition_similarity_threshold);
           const hasPrefixMatch = hasPrefixOverlap(postContent, historyTexts, 3);
           const slopInfo = getSlopInfo(postContent);
-          const containsSlop = slopInfo.isSlop;
+          const isSlopCand = slopInfo.isSlop;
           const varietyCheck = await llmService.checkVariety(postContent, formattedHistory);
           const personaCheck = await llmService.isPersonaAligned(postContent, 'bluesky', {
             imageSource: imageBuffer,
@@ -4682,11 +4680,11 @@ Describe how you feel about this user and your relationship now.`;
             imageAnalysis: imageAnalysis
           });
 
-          if (isJaccardRepetitive || hasPrefixMatch || containsSlop || varietyCheck.repetitive || !personaCheck.aligned) {
+          if (isJaccardRepetitive || hasPrefixMatch || isSlopCand || varietyCheck.repetitive || !personaCheck.aligned) {
             console.warn(`[Bot] Autonomous post attempt ${postAttempts} failed quality/persona check. Rejecting.`);
-            postFeedback = containsSlop ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
-                       (hasPrefixMatch ? "Prefix overlap detected." :
-                       (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+            postFeedback = isSlopCand ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
+                                   (hasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
+                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                        (varietyCheck.feedback || "Too similar to your recent history.")));
 
             rejectedPostAttempts.push(postContent);
@@ -5415,8 +5413,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             success = true;
             break;
           } else {
-            musingFeedback = containsSlop ? "Contains metaphorical slop." :
-                       (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+            musingFeedback = isSlopCand ? "Contains metaphorical slop." :
+                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                        (varietyCheck.feedback || "Too similar to recent history."));
             rejectedMusAttempts.push(content);
             console.log(`[Moltbook] Post attempt ${musingAttempts} rejected: ${musingFeedback}`);
@@ -5595,7 +5593,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
                 // Update post_topics
                 if (evolution.new_keywords && evolution.new_keywords.length > 0) {
-                    const updatedTopics = [...new Set([...currentTopics, ...evolution.new_keywords])].slice(0, 50);
+                    const filteredNewKeywords = (evolution.new_keywords || []).filter(k => k.length >= 3 && !KEYWORD_BLACKLIST.includes(k.toLowerCase()));
+                    const updatedTopics = [...new Set([...currentTopics, ...filteredNewKeywords])].slice(0, 50);
                     await dataStore.updateConfig('post_topics', updatedTopics);
                     console.log(`[Bot] Evolved keywords: added ${evolution.new_keywords.join(', ')}`);
                 }

@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import fs from 'fs';
 import config from '../../config.js';
 import { memoryService } from './memoryService.js';
+import { KEYWORD_BLACKLIST } from '../utils/textUtils.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.resolve(__dirname, '../../src/data');
@@ -931,6 +932,9 @@ class DataStore {
     ];
 
     if (validKeys.includes(key)) {
+      if ((key === 'post_topics' || key === 'image_subjects') && Array.isArray(value)) {
+        value = value.filter(k => k.length >= 3 && !KEYWORD_BLACKLIST.includes(k.toLowerCase()));
+      }
       this.db.data[key] = value;
       await this.db.write();
       console.log(`[DataStore] Configuration updated: ${key} = ${JSON.stringify(value)}`);

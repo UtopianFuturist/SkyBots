@@ -687,7 +687,7 @@ class DiscordService {
             const directive = pending[0];
             if (directive.type === 'persona') {
                 await dataStore.addPersonaUpdate(directive.instruction);
-                if (memoryService.isEnabled()) await memoryService.createMemoryEntry('persona_update', directive.instruction);
+                if (memoryService.isEnabled()) memoryService.createMemoryEntry('persona_update', directive.instruction).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                 await this._send(message.channel, `✅ Approved and saved persona update: "${directive.instruction}"`);
             } else {
                 if (directive.platform === 'moltbook') {
@@ -695,7 +695,7 @@ class DiscordService {
                 } else {
                     await dataStore.addBlueskyInstruction(directive.instruction);
                 }
-                if (memoryService.isEnabled()) await memoryService.createMemoryEntry('directive_update', `Platform: ${directive.platform}. Instruction: ${directive.instruction}`);
+                if (memoryService.isEnabled()) memoryService.createMemoryEntry('directive_update', `Platform: ${directive.platform}. Instruction: ${directive.instruction}`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                 await this._send(message.channel, `✅ Approved and saved ${directive.platform} directive: "${directive.instruction}"`);
             }
             await dataStore.removePendingDirective(0);
@@ -1671,7 +1671,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                      const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed an inquiry on "${query}". Should I record the finding: "${result.substring(0, 100)}..." in our memory thread?`, { details: { query, result } });
 
                                      if (confirmation.confirmed) {
-                                         await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`);
+                                         memoryService.createMemoryEntry('inquiry', `[INQUIRY] Query: ${query}. Result: ${result}`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                                          actionResults.push(`[Inquiry results preserved in memory thread]`);
                                      } else {
                                          actionResults.push(`[Inquiry results kept private per persona request]`);
@@ -1693,7 +1693,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                             await dataStore.updateMood({ valence, arousal, stability, label });
                             actionResults.push(`[Internal mood overridden to ideal state: ${label}]`);
                             if (memoryService.isEnabled()) {
-                                await memoryService.createMemoryEntry('mood', `[MOOD] I have intentionally overridden my mood to: ${label} (Valence: ${valence}, Arousal: ${arousal}, Stability: ${stability})`);
+                                memoryService.createMemoryEntry('mood', `[MOOD] I have intentionally overridden my mood to: ${label} (Valence: ${valence}, Arousal: ${arousal}, Stability: ${stability})`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                             }
                         }
                      }
@@ -1760,7 +1760,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                         if (goal) {
                             actionResults.push(`[Daily goal set: "${goal}"]`);
                             if (memoryService.isEnabled()) {
-                                await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${goal} | Description: ${description || goal}`);
+                                memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${goal} | Description: ${description || goal}`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                             }
                         }
                      }
@@ -1846,7 +1846,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      if (action.tool === 'branch_thought') {
                         const thought = action.parameters?.thought || action.query;
                         if (thought && memoryService.isEnabled()) {
-                            await memoryService.createMemoryEntry('exploration', `[BRANCH] Parking thought: ${thought}`);
+                            memoryService.createMemoryEntry('exploration', `[BRANCH] Parking thought: ${thought}`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                             actionResults.push(`[Thought branched and parked in memory]`);
                         }
                      }
@@ -2137,7 +2137,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 for (const f of facts.world_facts) {
                                     await dataStore.addWorldFact(f.entity, f.fact, f.source);
                                     if (memoryService.isEnabled()) {
-                                        await memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Conversation'}`);
+                                        memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Conversation'}`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                                     }
                                 }
                             }
@@ -2145,7 +2145,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 for (const f of facts.admin_facts) {
                                     await dataStore.addAdminFact(f.fact);
                                     if (memoryService.isEnabled()) {
-                                        await memoryService.createMemoryEntry('admin_fact', f.fact);
+                                        memoryService.createMemoryEntry('admin_fact', f.fact).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                                     }
                                 }
                             }

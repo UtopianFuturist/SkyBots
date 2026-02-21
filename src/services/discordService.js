@@ -633,8 +633,14 @@ class DiscordService {
                 let sentMessage;
                 if (options.reply && typeof target.reply === 'function') {
                     sentMessage = await target.reply(msgOptions);
-                } else {
+                } else if (typeof target.send === 'function') {
                     sentMessage = await target.send(msgOptions);
+                } else if (target.channel && typeof target.channel.send === 'function') {
+                    // Fallback: If target is a message object but no reply requested, send to its channel
+                    sentMessage = await target.channel.send(msgOptions);
+                } else {
+                    console.error('[DiscordService] Target does not support send() or channel.send(). Target type:', target?.constructor?.name);
+                    return null;
                 }
 
                 if (!firstSentMessage) firstSentMessage = sentMessage;

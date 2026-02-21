@@ -1978,9 +1978,11 @@ Identify the topic and main takeaway.`;
     console.log('[Bot] Catching up on missed notifications...');
     let cursor;
     let unreadActionable = [];
+    let pageCount = 0;
 
     // 1. Fetch unread notifications that are actionable
     do {
+      pageCount++;
       const response = await blueskyService.getNotifications(cursor);
       if (!response || response.notifications.length === 0) {
         break;
@@ -1993,11 +1995,11 @@ Identify the topic and main takeaway.`;
       unreadActionable.push(...actionableBatch);
 
       // If we've started hitting read notifications in the batch, we can likely stop fetching more pages
-      const hasRead = response.notifications.some(notif => notif.isRead);
-      if (hasRead) break;
+      const allRead = response.notifications.every(notif => notif.isRead);
+      if (allRead || pageCount >= 5) break;
 
       cursor = response.cursor;
-    } while (cursor);
+    } while (cursor && pageCount < 5);
 
     if (unreadActionable.length === 0) {
       console.log('[Bot] No new notifications to catch up on.');
@@ -2142,7 +2144,13 @@ Identify the topic and main takeaway.`;
 
     if (notif.reason === 'quote') {
         console.log(`[Bot] Notification is a quote repost. Reconstructing context...`);
-        const quotedPostUri = notif.record.embed?.record?.uri;
+        let quotedPostUri = notif.record.embed?.record?.uri;
+        if (!quotedPostUri && notif.record.embed?.$type === 'app.bsky.embed.recordWithMedia') {
+            quotedPostUri = notif.record.embed.record?.record?.uri;
+        }
+        if (!quotedPostUri) {
+            console.log('[Bot] Could not find quoted post URI in notification record.', JSON.stringify(notif.record.embed));
+        }
         if (quotedPostUri) {
             const quotedPost = await blueskyService.getPostDetails(quotedPostUri);
             if (quotedPost) {

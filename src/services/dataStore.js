@@ -133,14 +133,28 @@ class DataStore {
   }
 
   async init() {
-    console.log(`[DataStore] Initializing database at ${DB_PATH}`);
-    // Ensure the directory for the database file exists
-    const dbDir = path.dirname(DB_PATH);
-    if (!fs.existsSync(dbDir)) {
-      console.log(`[DataStore] Creating data directory at ${dbDir}`);
-      fs.mkdirSync(dbDir, { recursive: true });
+    let currentDbPath = DB_PATH;
+    try {
+      console.log(`[DataStore] Initializing database at ${currentDbPath}`);
+      const dbDir = path.dirname(currentDbPath);
+      if (!fs.existsSync(dbDir)) {
+        console.log(`[DataStore] Creating data directory at ${dbDir}`);
+        fs.mkdirSync(dbDir, { recursive: true });
+      }
+      this.db = await JSONFilePreset(currentDbPath, defaultData);
+    } catch (err) {
+      console.error(`[DataStore] Failed to initialize database at ${currentDbPath}:`, err.message);
+      const localPath = path.resolve(DATA_DIR, 'db.json');
+      if (currentDbPath !== localPath) {
+        currentDbPath = localPath;
+        console.log(`[DataStore] Falling back to local database at ${currentDbPath}`);
+        const dbDir = path.dirname(currentDbPath);
+        if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
+        this.db = await JSONFilePreset(currentDbPath, defaultData);
+      } else {
+        throw err;
+      }
     }
-    this.db = await JSONFilePreset(DB_PATH, defaultData);
     await this.db.read();
 
     // Initialize topics and subjects from config if empty

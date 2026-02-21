@@ -1683,7 +1683,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                         // Check if discord_message was approved/retained
                         const messageAction = finalActions.find(a => a.tool === 'discord_message');
-                        const msgToSend = messageAction ? (messageAction.parameters?.message || responseText) : responseText;
+                        const msgToSend = responseText || (messageAction ? messageAction.parameters?.message : null);
 
                         if (messageAction) {
                             await discordService.sendSpontaneousMessage(msgToSend, discordOptions);
@@ -1719,7 +1719,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                     } else {
                         feedback = lastContainsSlop ? "Contains metaphorical slop." :
                                    (lastIsExactDuplicate ? "Exact duplicate of a recent bot message detected." :
-                                   (hasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
+                                   (lastHasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
                                    (lastIsJaccardRepetitive ? "Jaccard similarity threshold exceeded (too similar to history)." :
                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                    (lastMisaligned ? "Misaligned with current mood." :
@@ -1738,6 +1738,8 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                     this.consecutiveRejections++;
                 }
 
+                } catch (err) {
+                    console.error("[Bot] Error in Discord heartbeat processing:", err);
                 } finally {
                     discordService.stopTyping(normChannelId);
                 }
@@ -3564,7 +3566,7 @@ Identify the topic and main takeaway.`;
               }
           } else {
               if (!bestCandidate) {
-                  rejectionReason = containsSlop ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
+                  rejectionReason = isSlopCand ? `REJECTED: Contains forbidden metaphorical "slop": "${slopInfo.reason}". You MUST avoid this specific phrase in your next attempt.` :
                                    (hasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
                                    (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
                                     (!responseSafetyCheck.safe ? "Failed safety check." :

@@ -113,12 +113,20 @@ async def main():
 
                     embed = record_raw.get('embed', {})
                     is_quote_of_bot = False
+                    # Handle both app.bsky.embed.record and app.bsky.embed.recordWithMedia
+                    quote_embed = None
                     if embed.get('$type') == 'app.bsky.embed.record':
-                        record_uri = embed.get('record', {}).get('uri', '')
+                        quote_embed = embed
+                    elif embed.get('$type') == 'app.bsky.embed.recordWithMedia':
+                        quote_embed = embed.get('record')
+
+                    if quote_embed:
+                        record_uri = quote_embed.get('record', {}).get('uri', '')
                         if bot_did in record_uri:
                             is_quote_of_bot = True
 
                     if is_reply_to_bot or is_mention_of_bot or is_quote_of_bot:
+                        print(f"[Firehose Monitor] Detected {'mention' if is_mention_of_bot else ('quote' if is_quote_of_bot else 'reply')} from {commit.repo}", file=sys.stderr)
                         if is_mention_of_bot:
                             reason = "mention"
                         elif is_quote_of_bot:

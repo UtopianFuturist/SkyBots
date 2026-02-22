@@ -233,7 +233,8 @@ export class Bot {
     const currentGoal = dataStore.getCurrentGoal();
     const goalKeywords = currentGoal ? currentGoal.goal.split(/\s+/).filter(w => w.length > 4) : [];
 
-    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords, ...goalKeywords, ...(this._deepKeywords || [])]);
+    const deepKeywords = this._deepKeywords || dataStore.getDeepKeywords();
+    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords, ...goalKeywords, ...deepKeywords]);
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
 
     // Item 11: Anti-Spam Keyword Negation
@@ -373,8 +374,18 @@ export class Bot {
     }, 5000); // 5 second debounce
   }
 
-  async refreshFirehoseKeywords() {
+  async refreshFirehoseKeywords(force = false) {
     try {
+      const lastRefresh = dataStore.getLastDeepKeywordRefresh();
+      const sixHours = 6 * 60 * 60 * 1000;
+
+      if (!force && (Date.now() - lastRefresh < sixHours)) {
+          const remainingMins = Math.round((sixHours - (Date.now() - lastRefresh)) / 60000);
+          console.log(`[Bot] Skipping deep keyword refresh (Last refresh: ${new Date(lastRefresh).toLocaleString()}, Next in: ${remainingMins}m)`);
+          this._deepKeywords = dataStore.getDeepKeywords();
+          return;
+      }
+
       console.log('[Bot] Refreshing Firehose keywords with deep extraction...');
       const dConfig = dataStore.getConfig();
       const currentGoal = dataStore.getCurrentGoal();
@@ -384,6 +395,10 @@ export class Bot {
       if (deepKeywords && deepKeywords.length > 0) {
           console.log(`[Bot] Extracted ${deepKeywords.length} deep keywords: ${deepKeywords.join(', ')}`);
           this._deepKeywords = deepKeywords;
+          await dataStore.setDeepKeywords(deepKeywords);
+          if (memoryService.isEnabled()) {
+              await memoryService.createMemoryEntry('exploration', `[SELF_AUDIT] Refined firehose targeting with deep keywords: ${deepKeywords.join(', ')}`);
+          }
           this.restartFirehose();
       }
     } catch (e) {
@@ -394,6 +409,16 @@ export class Bot {
 
   async run() {
     console.log('[Bot] Starting main loop...');
+
+    // Progress persistence: Note deployment resumption in memory
+    if (memoryService.isEnabled()) {
+        const lastRefresh = dataStore.getLastDeepKeywordRefresh();
+        const deepKeywords = dataStore.getDeepKeywords();
+        const goal = dataStore.getCurrentGoal();
+
+        const resumptionNote = `[SELF_AUDIT] Bot instance resumed. Frequent redeployments/failures acknowledged. Strategy: timestamp-based persistence & memory thread progress tracking. Active Goal: ${goal?.goal || 'None'}. Precision Keywords: ${deepKeywords.length} active.`;
+        memoryService.createMemoryEntry('status', resumptionNote).catch(e => console.error('[Bot] Error recording resumption note:', e));
+    }
 
     // Start Firehose immediately for real-time DID mentions
     this.startFirehose();

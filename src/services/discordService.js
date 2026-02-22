@@ -1996,11 +1996,14 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          const topic = action.parameters?.topic || action.query;
                          if (topic) {
                              console.log(`[DiscordService] Deep research for "${topic}"...`);
-                             const [googleResults, wikiResults] = await Promise.all([
+                             const [googleResults, wikiResults, bskyResults] = await Promise.all([
                                  googleSearchService.search(topic).catch(() => []),
-                                 wikipediaService.searchArticle(topic).catch(() => null)
+                                 wikipediaService.searchArticle(topic).catch(() => null),
+                                 blueskyService.searchPosts(topic, { limit: 10 }).catch(() => [])
                              ]);
-                             const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults);
+                             const localMatches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(topic.toLowerCase()));
+                             const firehoseContext = [...localMatches.map(m => m.text), ...bskyResults.map(r => r.record.text)];
+                             const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults, firehoseContext);
                              if (brief) {
                                  actionResults.push(`[Internal Research Brief for "${topic}": ${brief}]`);
                              }

@@ -916,9 +916,9 @@ Vary your structure and tone from recent messages.`
     return await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
   }
 
-  async buildInternalBrief(topic, searchResults, wikiResults) {
+  async buildInternalBrief(topic, searchResults, wikiResults, firehoseResults = []) {
     const systemPrompt = `
-      You are a specialized RESEARCHER agent. Your goal is to build a comprehensive "Internal Brief" based on provided search results.
+      You are a specialized RESEARCHER agent. Your goal is to build a comprehensive "Internal Brief" based on provided search results and real-time network activity.
       Topic: "${topic}"
 
       Search Results:
@@ -926,6 +926,9 @@ Vary your structure and tone from recent messages.`
 
       Wikipedia Results:
       ${JSON.stringify(wikiResults)}
+
+      Bluesky Firehose/Network Activity:
+      ${JSON.stringify(firehoseResults)}
 
       **INSTRUCTIONS:**
       1. Synthesize the findings into a highly objective, material summary.

@@ -1937,11 +1937,14 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
             const topic = action.parameters?.topic || action.query;
             if (topic) {
                 console.log(`[Bot] Plan Tool: deep_research for "${topic}"`);
-                const [googleResults, wikiResults] = await Promise.all([
+                const [googleResults, wikiResults, bskyResults] = await Promise.all([
                     googleSearchService.search(topic).catch(() => []),
-                    wikipediaService.searchArticle(topic).catch(() => null)
+                    wikipediaService.searchArticle(topic).catch(() => null),
+                    blueskyService.searchPosts(topic, { limit: 10 }).catch(() => [])
                 ]);
-                const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults);
+                const localMatches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(topic.toLowerCase()));
+                const firehoseContext = [...localMatches.map(m => m.text), ...bskyResults.map(r => r.record.text)];
+                const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults, firehoseContext);
                 if (brief) {
                     searchContext += `\n--- INTERNAL RESEARCH BRIEF FOR "${topic}" ---\n${brief}\n---`;
                 }
@@ -3531,11 +3534,14 @@ Identify the topic and main takeaway.`;
             const topic = action.parameters?.topic || action.query;
             if (topic) {
                 console.log(`[Bot] Plan Tool: deep_research for "${topic}"`);
-                const [googleResults, wikiResults] = await Promise.all([
+                const [googleResults, wikiResults, bskyResults] = await Promise.all([
                     googleSearchService.search(topic).catch(() => []),
-                    wikipediaService.searchArticle(topic).catch(() => null)
+                    wikipediaService.searchArticle(topic).catch(() => null),
+                    blueskyService.searchPosts(topic, { limit: 10 }).catch(() => [])
                 ]);
-                const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults);
+                const localMatches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(topic.toLowerCase()));
+                const firehoseContext = [...localMatches.map(m => m.text), ...bskyResults.map(r => r.record.text)];
+                const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults, firehoseContext);
                 if (brief) {
                     searchContext += `\n--- INTERNAL RESEARCH BRIEF FOR "${topic}" ---\n${brief}\n---`;
                 }

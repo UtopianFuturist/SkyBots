@@ -145,9 +145,9 @@ export const sanitizeThinkingTags = (text) => {
   // 5. Aggressively remove entire blocks starting with common reasoning labels
   // Added more patterns for synthesis and draft explanations
   const artifacts = [
-      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation)\s*:\s*[\s\S]*?\n\n/i,
-      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation)\s*:\s*[\s\S]*?\n\n/i,
-      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation)\s*:\s*/i,
+      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*[\s\S]*?\n\n/i,
+      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*[\s\S]*?\n\n/i,
+      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*/i,
       /\n\s*(this combines|this draft|draft 1|draft 2|here is|i have synthesized)[\s\S]*$/i
   ];
   for (const pattern of artifacts) {

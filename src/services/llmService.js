@@ -2490,7 +2490,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
   async extractFacts(context) {
     const systemPrompt = `
-      You are a material knowledge extraction module. Analyze the provided context and extract 1-3 discrete "Facts".
+      You are a material knowledge extraction module. Analyze the provided context and extract 1-3 discrete, high-confidence "Facts".
       Distinguish between "World Facts" (objective facts about entities, events, or concepts) and "Admin Facts" (facts about the bot's administrator, "Admin").
 
       **CRITICAL CATEGORIZATION**:
@@ -2498,12 +2498,20 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       - Facts about the bot's own functioning or relationship with the Admin should also be considered for "admin_facts" if they relate to the Admin's preferences or instructions.
       - General knowledge, news, or facts about other entities are "world_facts".
 
-      **ANCHORING**: For World Facts, identify a source URL or post link if available in the context.
+      **STRICTNESS MANDATE**:
+      - **DO NOT** infer or imagine facts.
+      - **DO NOT** treat suggestions, advice, or bot predictions as facts of the user's state.
+      - Only extract information explicitly and factually stated by the human speaker in the context.
+      - If the context is vague or purely conversational/ritualistic (greetings, simple reactions), return empty arrays.
+
+      **ANCHORING**:
+      - For World Facts, identify a source URL or post link if available in the context.
+      - For Admin Facts, the source should be the platform name (e.g., "Discord" or "Bluesky").
 
       Respond with a JSON object:
       {
         "world_facts": [ { "entity": "string", "fact": "string", "source": "string|null" } ],
-        "admin_facts": [ { "fact": "string" } ]
+        "admin_facts": [ { "fact": "string", "source": "string|null" } ]
       }
       If no new facts are found, return empty arrays.
     `;

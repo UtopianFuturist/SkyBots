@@ -3670,10 +3670,11 @@ Identify the topic and main takeaway.`;
       // Material Knowledge Extraction (Item 2 & 29)
       (async () => {
           console.log(`[Bot] Extracting material facts from interaction with @${handle}...`);
+          // Provide context for better extraction and handle source
           const facts = await llmService.extractFacts(`${isAdmin ? 'Admin' : 'User'}: "${text}"\nBot: "${responseText}"`);
           if (facts.world_facts.length > 0) {
               for (const f of facts.world_facts) {
-                  await dataStore.addWorldFact(f.entity, f.fact, f.source);
+                  await dataStore.addWorldFact(f.entity, f.fact, f.source || 'Bluesky');
                   if (memoryService.isEnabled()) {
                       await memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Bluesky'}`);
                   }
@@ -3683,7 +3684,8 @@ Identify the topic and main takeaway.`;
               for (const f of facts.admin_facts) {
                   await dataStore.addAdminFact(f.fact);
                   if (memoryService.isEnabled()) {
-                      await memoryService.createMemoryEntry('admin_fact', f.fact);
+                      const factWithSource = f.source ? `${f.fact} Source: ${f.source}` : `${f.fact} Source: Bluesky`;
+                      await memoryService.createMemoryEntry('admin_fact', factWithSource);
                   }
               }
           }

@@ -680,6 +680,10 @@ class DiscordService {
         } catch (error) {
             console.error('[DiscordService] Error sending message:', error);
             return null;
+        } finally {
+            if (normId) {
+                this.stopTyping(normId);
+            }
         }
     }
 
@@ -2219,7 +2223,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
         } catch (error) {
             console.error('[DiscordService] Error responding to message:', error);
         } finally {
-            this.stopTyping(normChannelId);
+            // stopTyping now handled by _send
             this._activeGenerations.delete(normChannelId);
             this._interrupted.delete(normChannelId);
         }

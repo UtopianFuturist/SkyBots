@@ -233,7 +233,7 @@ export class Bot {
     const currentGoal = dataStore.getCurrentGoal();
     const goalKeywords = currentGoal ? currentGoal.goal.split(/\s+/).filter(w => w.length > 4) : [];
 
-    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords, ...goalKeywords]);
+    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords, ...goalKeywords, ...(this._deepKeywords || [])]);
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
 
     // Item 11: Anti-Spam Keyword Negation
@@ -373,6 +373,25 @@ export class Bot {
     }, 5000); // 5 second debounce
   }
 
+  async refreshFirehoseKeywords() {
+    try {
+      console.log('[Bot] Refreshing Firehose keywords with deep extraction...');
+      const dConfig = dataStore.getConfig();
+      const currentGoal = dataStore.getCurrentGoal();
+      const context = `Persona: ${config.TEXT_SYSTEM_PROMPT}\nTopics: ${dConfig.post_topics?.join(', ')}\nGoal: ${currentGoal?.goal}`;
+
+      const deepKeywords = await llmService.extractDeepKeywords(context, 15);
+      if (deepKeywords && deepKeywords.length > 0) {
+          console.log(`[Bot] Extracted ${deepKeywords.length} deep keywords: ${deepKeywords.join(', ')}`);
+          this._deepKeywords = deepKeywords;
+          this.restartFirehose();
+      }
+    } catch (e) {
+      console.error('[Bot] Error refreshing deep keywords:', e);
+    }
+  }
+
+
   async run() {
     console.log('[Bot] Starting main loop...');
 
@@ -381,6 +400,11 @@ export class Bot {
 
     // Perform initial startup tasks after a delay to avoid API burst
     // Perform initial startup tasks in a staggered way to avoid LLM/API pressure
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: refreshFirehoseKeywords...');
+      try { await this.refreshFirehoseKeywords(); } catch (e) { console.error('[Bot] Error in initial keyword refresh:', e); }
+    }, 15000);
+
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: catchUpNotifications...');
       try { await this.catchUpNotifications(); } catch (e) { console.error('[Bot] Error in initial catch-up:', e); }
@@ -403,6 +427,9 @@ export class Bot {
 
     // Periodic autonomous post check (every 2 hours)
     setInterval(() => this.performAutonomousPost(), 7200000);
+
+    // Periodic deep keyword refresh (every 6 hours)
+    setInterval(() => this.refreshFirehoseKeywords(), 21600000);
 
     // Periodic Moltbook tasks (every 2 hours)
     setInterval(() => this.performMoltbookTasks(), 7200000);

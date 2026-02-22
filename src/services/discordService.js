@@ -594,10 +594,10 @@ class DiscordService {
             return null;
         }
 
-        let normId;
+        let normId = null;
         try {
             // Determine the normalized channel ID for logging
-            if (target.constructor.name === 'User') {
+            if (target && target.constructor && target.constructor.name === 'User') {
                 normId = `dm_${target.id}`;
             } else if (target.channel) {
                 normId = this.getNormalizedChannelId(target);
@@ -681,7 +681,7 @@ class DiscordService {
             console.error('[DiscordService] Error sending message:', error);
             return null;
         } finally {
-            if (normId) {
+            if (normId !== null) {
                 this.stopTyping(normId);
             }
         }

@@ -89,7 +89,7 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   BACKOFF_DELAY: parseInt(process.env.BACKOFF_DELAY || '60000'),
   MAX_REPLIED_POSTS: parseInt(process.env.MAX_REPLIED_POSTS || '1000'),
   LLM_MODEL: process.env.LLM_MODEL || 'qwen/qwen3.5-397b-a17b',
-  QWEN_MODEL: process.env.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct',
+  QWEN_MODEL: process.env.QWEN_MODEL || 'qwen/qwen3.5-397b-a17b',
   VISION_MODEL: process.env.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct',
 
   // Moltbook

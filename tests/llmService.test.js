@@ -151,3 +151,11 @@ describe('LLM Service', () => {
     });
   });
 });
+
+    it('should call generateResponse with the THERAPIST role when specified', async () => {
+      llmService.generateResponse.mockResolvedValue('reflection');
+      await llmService.performInternalInquiry('test query', 'THERAPIST');
+      const lastCall = llmService.generateResponse.mock.calls.length - 1;
+      const systemPrompt = llmService.generateResponse.mock.calls[lastCall][0][0].content;
+      expect(systemPrompt).toContain('You are an Internal Identity Therapist');
+    });

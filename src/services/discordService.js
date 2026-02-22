@@ -1029,6 +1029,9 @@ class DiscordService {
         })();
         const adminStateTag = adminExhaustion >= 0.5 ? `\n[ADMIN_STATE]: THE ADMIN IS CURRENTLY EXHAUSTED OR LOW-ENERGY. ADOPT A LOW-STAKES, COMPANIONSHIP-FOCUSED VIBE.` : '';
         const adminRecentEmotions = adminEmotionalStates.length > 0 ? `\n[ADMIN_RECENT_VIBES]: ${adminEmotionalStates.join('; ')}` : '';
+        const userVibeHistory = dataStore.getUserVibeHistory(message.author.id);
+        const relationalVibeContext = userVibeHistory.length > 0 ? `\n[RELATIONAL VIBE HISTORY]: ${userVibeHistory.join('; ')}` : '';
+
 
         let relevantMemories = '';
         if (relevantMemoriesList.length > 0) {
@@ -1238,6 +1241,34 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                  const lastRejection = dataStore.getLastRejectionReason();
                  const planningFeedback = (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
+
+
+                     // Item: Mental Health/Feelings Therapist Call
+                     if (/mental health|feelings|sad|depressed|anxious|struggle|identity|who am i/i.test(message.content)) {
+                         console.log(`[DiscordService] Mental health/identity topic detected. Calling THERAPIST specialist...`);
+                         const therapyContext = await llmService.performInternalInquiry(`Analyze the emotional weight and identity implications of this user message: "${message.content}". How should our persona naturally process this?`, "THERAPIST");
+                         if (therapyContext) {
+                             messages.push({ role: 'system', content: `[THERAPIST REFLECTION]: ${therapyContext}` });
+                         }
+                     }
+
+
+                     // Item 49: Admin Behavioral Feedback Capture
+                     if (isAdmin && (this.isDirectiveHint(message.content) || /be more|stop being|you are too|your tone/i.test(message.content))) {
+                         console.log(`[DiscordService] Admin behavioral feedback detected. Capturing for persona update...`);
+                         const feedbackPrompt = `
+                             The Admin provided the following behavioral feedback: "${message.content}"
+                             Identify the specific behavioral or tonal change requested.
+                             Propose a concise instruction (under 150 chars) to update the bot's persona.
+                             Respond with ONLY the instruction or "NONE".
+                         `;
+                         const proposedInstruction = await llmService.generateResponse([{ role: 'system', content: feedbackPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+                         if (proposedInstruction && !proposedInstruction.includes('NONE')) {
+                             console.log(`[DiscordService] Proposing persona update from feedback: ${proposedInstruction}`);
+                             await dataStore.addPendingDirective('persona', 'all', proposedInstruction);
+                             messages.push({ role: 'system', content: `[FEEDBACK CAPTURED]: I have noted your feedback about my behavior and proposed a persona update: "${proposedInstruction}". You can approve it using /approve.` });
+                         }
+                     }
 
                  let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning, abortController.signal);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
@@ -1697,7 +1728,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      if (action.tool === 'internal_inquiry') {
                          const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
                          if (query) {
-                             const result = await llmService.performInternalInquiry(query);
+                             const result = await llmService.performInternalInquiry(query, action.parameters?.role || "RESEARCHER");
                              if (result) {
                                  actionResults.push(`[Internal Inquiry Result for "${query}": ${result}]`);
                                  if (memoryService.isEnabled()) {
@@ -1961,7 +1992,24 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                             actionResults.push(`--- CROSS-THREAD SEARCH RESULTS FOR "${query}" ---\n${searchResults.join('\n\n') || 'No matches in other channels.'}\n---`);
                         }
                      }
-                      if (action.tool === 'search_firehose') {
+                                           if (action.tool === 'deep_research') {
+                         const topic = action.parameters?.topic || action.query;
+                         if (topic) {
+                             console.log(`[DiscordService] Deep research for "${topic}"...`);
+                             const [googleResults, wikiResults, bskyResults] = await Promise.all([
+                                 googleSearchService.search(topic).catch(() => []),
+                                 wikipediaService.searchArticle(topic).catch(() => null),
+                                 blueskyService.searchPosts(topic, { limit: 10 }).catch(() => [])
+                             ]);
+                             const localMatches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(topic.toLowerCase()));
+                             const firehoseContext = [...localMatches.map(m => m.text), ...bskyResults.map(r => r.record.text)];
+                             const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults, firehoseContext);
+                             if (brief) {
+                                 actionResults.push(`[Internal Research Brief for "${topic}": ${brief}]`);
+                             }
+                         }
+                     }
+                     if (action.tool === 'search_firehose') {
                           const query = action.query || action.parameters?.query;
                           if (query) {
                               console.log(`[DiscordService] Plan Tool: search_firehose for "${query}"`);
@@ -2035,7 +2083,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      const substance = await llmService.scoreSubstance(responseText);
                      if (substance.score < 0.3) {
                          console.log(`[DiscordService] Low substance score (${substance.score}). Requesting material injection...`);
-                         const injection = await llmService.performInternalInquiry(`Provide material substance to improve this response: "${responseText}"`);
+                         const injection = await llmService.performInternalInquiry(`Provide material substance to improve this response: "${responseText}"`, "CRITIC");
                          if (injection) {
                              const improvedMessages = [...attemptMessages, { role: 'system', content: `[MATERIAL INJECTION]: ${injection}. Rewrite the response to be more substantive.` }];
                              responseText = await llmService.generateResponse(improvedMessages, { useQwen: true, currentMood });
@@ -2119,7 +2167,19 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                 console.log(`[DiscordService] Sending response to Discord...`);
             // Dynamic Reply (Item 23): Only use Discord's reply feature if specifically requested by planning
             const useReply = !!(typeof plan !== 'undefined' && plan?.strategy?.use_discord_reply);
-            await this._send(message, responseText, { reply: useReply });
+                        await this._send(message, responseText, { reply: useReply });
+
+            // Item 34: Relational Vibe Saving
+            try {
+                const vibe = await llmService.extractRelationalVibe([...history.slice(-3), { role: 'assistant', content: responseText }]);
+                if (vibe) {
+                    console.log(`[DiscordService] Extracted relational vibe: ${vibe}`);
+                    await dataStore.addUserVibe(message.author.id, vibe);
+                }
+            } catch (vE) {
+                console.error('[DiscordService] Error saving user vibe:', vE);
+            }
+
 
                 const adminExhaustionVal = await dataStore.getAdminExhaustion();
 

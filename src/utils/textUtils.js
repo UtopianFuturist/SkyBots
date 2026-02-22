@@ -2,7 +2,11 @@ export const KEYWORD_BLACKLIST = [
     "glass", "ruins", "everything", "nothing", "somebody", "anybody", "someone", "anyone", "something", "anything",
     "about", "their", "there", "would", "could", "should", "people", "really", "think", "thought", "going",
     "thanks", "thank", "hello", "please", "maybe", "actually", "probably", "just", "very", "much", "many",
-    "always", "never", "often", "sometimes", "usually", "almost", "quite", "rather", "somewhat", "too", "enough"
+    "always", "never", "often", "sometimes", "usually", "almost", "quite", "rather", "somewhat", "too", "enough",
+    "today", "tomorrow", "yesterday", "night", "morning", "evening", "life", "world", "time", "feel", "making",
+    "know", "look", "back", "good", "great", "well", "best", "better", "doing", "done", "work", "need", "want",
+    "post", "post", "link", "check", "read", "show", "find", "give", "take", "made", "make", "still", "more",
+    "less", "most", "least", "some", "each", "every", "both", "either", "neither", "once", "twice", "again"
 ];
 
 export const cleanKeywords = (keywords) => {

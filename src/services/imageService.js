@@ -6,7 +6,8 @@ class ImageService {
   constructor() {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-3-medium';
-    this.baseUrl = `https://ai.api.nvidia.com/v1/genai/${this.model}`;
+    // Align with Nvidia NIM standard endpoint
+    this.baseUrl = 'https://integrate.api.nvidia.com/v1/images/generations';
   }
 
   async generateImage(prompt, options = { allowPortraits: true, feedback: null, mood: null }) {
@@ -71,13 +72,13 @@ class ImageService {
         console.log(`[ImageService] Revised prompt was null or "null", falling back to original prompt.`);
       }
 
+      // Align payload with Nvidia NIM standards
       const payload = {
+        model: this.model,
         prompt: finalPrompt,
-        cfg_scale: 5,
-        aspect_ratio: "1:1",
-        seed: 0,
-        steps: 50,
-        negative_prompt: ""
+        n: 1,
+        size: "1024x1024", // Defaulting to 1024x1024 as it is standard for newer models
+        response_format: "b64_json" // Prefer base64 to avoid extra network calls if possible
       };
 
       console.log('[ImageService] Sending request to Nvidia NIM API with payload:', JSON.stringify(payload, null, 2));
@@ -101,16 +102,15 @@ class ImageService {
 
       const data = await response.json();
       
-      // Based on the documentation and user feedback, the image is in the 'image' field
-      // and the status is in 'finish_reason'.
-      const imageAsset = data.image || data.artifacts?.[0]?.base64 || data.data?.[0]?.url || data.data?.[0]?.b64_json;
+      // Standard OpenAI/NIM response format: data[0].b64_json or data[0].url
+      const imageAsset = data.data?.[0]?.b64_json || data.data?.[0]?.url || data.image || data.artifacts?.[0]?.base64;
 
       if (!imageAsset) {
         console.error('[ImageService] No image data in API response:', JSON.stringify(data, null, 2));
         throw new Error('No image data returned from API.');
       }
 
-      console.log(`[ImageService] Successfully received image data from API. Finish reason: ${data.finish_reason}`);
+      console.log(`[ImageService] Successfully received image data from API.`);
 
       let buffer;
       if (typeof imageAsset === 'string' && imageAsset.startsWith('http')) {

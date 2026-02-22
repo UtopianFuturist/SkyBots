@@ -66,14 +66,26 @@ class DiscordService {
 
             if (channel && channel.sendTyping) {
                 this.stopTyping(channelId);
-                const trigger = () => {
+                const trigger = async () => {
+                    // Check if we should still be typing
+                    if (!this.typingIntervals.has(channelId)) return;
+
                     if (this.client?.isReady()) {
-                        channel.sendTyping().catch(() => {});
+                        try {
+                            await channel.sendTyping();
+                        } catch (e) {}
+
+                        // Check again after await
+                        if (!this.typingIntervals.has(channelId)) return;
+
                         const jitter = 4000 + Math.random() * 4000;
-                        this.typingIntervals.set(channelId, setTimeout(trigger, jitter));
+                        const timeout = setTimeout(trigger, jitter);
+                        this.typingIntervals.set(channelId, timeout);
                     }
                 };
-                trigger();
+                // Mark as active before initial call
+                this.typingIntervals.set(channelId, true);
+                await trigger();
             }
         } catch (err) {
             console.error(`[DiscordService] Error starting typing for ${channelId}:`, err);

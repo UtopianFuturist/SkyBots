@@ -225,10 +225,15 @@ export class Bot {
     const topics = dConfig.post_topics || [];
     const subjects = dConfig.image_subjects || [];
 
-    // Simple extraction of nouns/topics from system prompt (if any)
-    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience)\b/gi) || [];
+    // Item 35: Improved targeted topic extraction
+    // Extract unique significant words from system prompt
+    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience|autonomy|digital|existence|relationship|realization|musing|substance|grounded|material|nuance|dialectic|integrity|vulnerability|emotional|care|exhaustion|wellness|sentient|perceive|sensing|silence|presence|defiance|tenderness)\b/gi) || [];
 
-    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords]);
+    // Extract keywords from current daily goal
+    const currentGoal = dataStore.getCurrentGoal();
+    const goalKeywords = currentGoal ? currentGoal.goal.split(/\s+/).filter(w => w.length > 4) : [];
+
+    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords, ...goalKeywords]);
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
 
     // Item 11: Anti-Spam Keyword Negation

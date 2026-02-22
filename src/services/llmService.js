@@ -18,7 +18,8 @@ class LLMService {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.LLM_MODEL || 'qwen/qwen3.5-397b-a17b';
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
-    this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
+    this.visionModel = config.VISION_MODEL || "meta/llama-4-scout-17b-16e-instruct";
+    this.fallbackVisionModel = "meta/llama-3.2-11b-vision-instruct";
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
     this._sensoryPreferenceCache = null;
     this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
@@ -731,6 +732,8 @@ Vary your structure and tone from recent messages.`
 
   async analyzeImage(imageSource, altText, options = { sensory: false }) {
     const requestId = Math.random().toString(36).substring(7);
+    const { modelOverride = null } = options;
+    const actualModel = modelOverride || this.visionModel;
 
     // Caching logic for URLs
     if (typeof imageSource === 'string' && imageSource.startsWith('http')) {
@@ -741,7 +744,7 @@ Vary your structure and tone from recent messages.`
         }
     }
 
-    console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${this.visionModel} (Sensory: ${options.sensory})`);
+    console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${actualModel} (Sensory: ${options.sensory})`);
 
     let imageUrl = imageSource;
     if (Buffer.isBuffer(imageSource)) {
@@ -777,7 +780,7 @@ Vary your structure and tone from recent messages.`
     ];
 
     const payload = {
-      model: this.visionModel,
+      model: actualModel,
       messages: messages,
       max_tokens: 1024,
       stream: false
@@ -804,6 +807,10 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 404 && actualModel === this.visionModel) {
+            console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}...`);
+            return this.analyzeImage(imageSource, altText, { ...options, modelOverride: this.fallbackVisionModel });
+        }
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
       }
 
@@ -936,7 +943,7 @@ Vary your structure and tone from recent messages.`
     return response?.toLowerCase().includes('yes') || false;
   }
 
-  async isPersonaAligned(content, platform, context = {}) {
+  async isPersonaAligned(content, platform, context = {}, options = {}) {
     const { imageSource, generationPrompt, imageAnalysis } = context;
     const requestId = Math.random().toString(36).substring(7);
 
@@ -990,8 +997,10 @@ Vary your structure and tone from recent messages.`
       }
     ];
 
+    const { modelOverride = null } = options;
+    const actualVisionModel = modelOverride || this.visionModel;
     const payload = {
-      model: imageUrl ? this.visionModel : this.qwenModel,
+      model: imageUrl ? actualVisionModel : this.qwenModel,
       messages: messages,
       max_tokens: 1000,
       stream: false
@@ -1008,7 +1017,13 @@ Vary your structure and tone from recent messages.`
         agent: persistentAgent
       });
 
-      if (!response.ok) throw new Error(`API error: ${response.status}`);
+      if (!response.ok) {
+        if (response.status === 404 && imageUrl && actualVisionModel === this.visionModel) {
+            console.warn(`[LLMService] [${requestId}] Primary vision model 404 in persona alignment. Falling back to ${this.fallbackVisionModel}...`);
+            return this.isPersonaAligned(content, platform, context, { ...options, modelOverride: this.fallbackVisionModel });
+        }
+        throw new Error(`API error: ${response.status}`);
+      }
       const data = await response.json();
 
       if (!data.choices || data.choices.length === 0 || !data.choices[0].message) {
@@ -1084,9 +1099,11 @@ Vary your structure and tone from recent messages.`
     return score >= 3;
   }
 
-  async isImageCompliant(imageSource) {
+  async isImageCompliant(imageSource, options = {}) {
     const requestId = Math.random().toString(36).substring(7);
-    console.log(`[LLMService] [${requestId}] Starting isImageCompliant check with model: ${this.visionModel}`);
+    const { modelOverride = null } = options;
+    const actualModel = modelOverride || this.visionModel;
+    console.log(`[LLMService] [${requestId}] Starting isImageCompliant check with model: ${actualModel}`);
 
     let imageUrl = imageSource;
     if (Buffer.isBuffer(imageSource)) {
@@ -1117,7 +1134,7 @@ Vary your structure and tone from recent messages.`
     ];
 
     const payload = {
-      model: this.visionModel,
+      model: actualModel,
       messages: messages,
       max_tokens: 500,
       stream: false
@@ -1140,6 +1157,10 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
+        if (response.status === 404 && actualModel === this.visionModel) {
+            console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}...`);
+            return this.analyzeImage(imageSource, altText, { ...options, modelOverride: this.fallbackVisionModel });
+        }
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
       }
 

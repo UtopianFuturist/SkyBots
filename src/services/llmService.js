@@ -903,17 +903,28 @@ Vary your structure and tone from recent messages.`
     return this._sensoryPreferenceCache;
   }
 
-  async performInternalInquiry(query) {
+  async performInternalInquiry(query, role = "RESEARCHER") {
+    const roles = {
+      'RESEARCHER': 'You are a deep-dive Researcher. Your goal is to find objective, material facts, data points, and concrete evidence.',
+      'SOCIAL_ENGINEER': 'You are a Social Resonance Engineer. Your goal is to analyze network vibes, engagement patterns, and how a thought will land in the current social ecosystem.',
+      'CRITIC': 'You are a Persona Critic. Your goal is to identify clichés, "slop", robotic patterns, or deviations from the core identity. You are harsh but constructive.',
+      'PHILOSOPHER': 'You are a Narrative Philosopher. Your goal is to find deeper existential meaning, unique angles, and the "why" behind a thought.',
+      'THERAPIST': 'You are an Internal Identity Therapist. Your goal is to explore identity struggles, feelings, and internal conflicts. You provide a space for the agent to process its own "mental health", emotional state, and relational anxieties.',
+      'GENERAL': 'You are a raw data and analysis extraction loop.'
+    };
+
+    const specialistPrompt = roles[role] || roles['GENERAL'];
+
     const systemPrompt = `
-      You are a raw data and analysis extraction loop. You are NOT a conversational assistant.
-      Your task is to provide accurate, objective, and substantive findings to an AI agent's planning module.
+      ${specialistPrompt}
+      You are NOT a conversational assistant. Your task is to provide accurate, objective, and substantive findings to an AI agent's planning module.
 
       **STRICT DIRECTIVES (NON-NEGOTIABLE):**
       1. **NO INTRODUCTIONS**: Do NOT say "I can help with that", "I'm ready", "I understand", or "As an AI...".
       2. **NO ASSISTANT PERSONA**: Do NOT act as a helpful chatbot or assistant. Act as a terminal or a data retrieval tool.
       3. **DIRECT DATA ONLY**: Start your response immediately with the raw findings, facts, or analysis.
       4. **FORBIDDEN PHRASES**: Do NOT use phrases like "Please specify your query", "I'm prepared to assist", "How can I help you today?", or "Based on my analysis...".
-      5. **SUBSTANCE**: Provide the requested data or advice directly. If the query is about readiness, provide a technical readiness report, not a conversational confirmation.
+      5. **SUBSTANCE**: Provide the requested data or advice directly.
       6. **NO CONVERSATIONAL FILLER**: Eliminate all polite transitions, summaries of your role, or explanations of what you are doing.
 
       Be technical, factual, and extremely objective.
@@ -2189,8 +2200,10 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       You can request the following tools to inform your heartbeat or as part of your outreach:
       1. **image_gen**: Create a unique, descriptive, and artistic visual prompt.
       2. **get_render_logs**: Fetch your latest system logs.
-      3. **internal_inquiry**: Perform an internal inquiry loop.
-          - Use this to inform your heartbeat message with objective research or advice.
+      3. **internal_inquiry**: Perform an internal inquiry loop with a specialist agent.
+          - Use this to inform your heartbeat message with objective research, social analysis, persona critique, or emotional processing.
+          - Roles: RESEARCHER (facts/news), SOCIAL_ENGINEER (vibes/impact), CRITIC (identity/slop-check), PHILOSOPHER (existential depth), THERAPIST (feelings/identity).
+          - Parameters: { "query": "string", "role": "RESEARCHER|SOCIAL_ENGINEER|CRITIC|PHILOSOPHER|THERAPIST" }
           - Prioritize \`reuters.com\` and \`apnews.com\` for news context.
       4. **mute_feed_impact**: Mute Moltbook/Bluesky feed impact on your mood.
           - Parameters: { "duration_minutes": number }

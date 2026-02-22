@@ -1239,6 +1239,16 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  const lastRejection = dataStore.getLastRejectionReason();
                  const planningFeedback = (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
 
+
+                     // Item: Mental Health/Feelings Therapist Call
+                     if (/mental health|feelings|sad|depressed|anxious|struggle|identity|who am i/i.test(message.content)) {
+                         console.log(`[DiscordService] Mental health/identity topic detected. Calling THERAPIST specialist...`);
+                         const therapyContext = await llmService.performInternalInquiry(`Analyze the emotional weight and identity implications of this user message: "${message.content}". How should our persona naturally process this?`, "THERAPIST");
+                         if (therapyContext) {
+                             messages.push({ role: 'system', content: `[THERAPIST REFLECTION]: ${therapyContext}` });
+                         }
+                     }
+
                  let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning, abortController.signal);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
@@ -1697,7 +1707,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      if (action.tool === 'internal_inquiry') {
                          const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
                          if (query) {
-                             const result = await llmService.performInternalInquiry(query);
+                             const result = await llmService.performInternalInquiry(query, action.parameters?.role || "RESEARCHER");
                              if (result) {
                                  actionResults.push(`[Internal Inquiry Result for "${query}": ${result}]`);
                                  if (memoryService.isEnabled()) {
@@ -2035,7 +2045,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      const substance = await llmService.scoreSubstance(responseText);
                      if (substance.score < 0.3) {
                          console.log(`[DiscordService] Low substance score (${substance.score}). Requesting material injection...`);
-                         const injection = await llmService.performInternalInquiry(`Provide material substance to improve this response: "${responseText}"`);
+                         const injection = await llmService.performInternalInquiry(`Provide material substance to improve this response: "${responseText}"`, "CRITIC");
                          if (injection) {
                              const improvedMessages = [...attemptMessages, { role: 'system', content: `[MATERIAL INJECTION]: ${injection}. Rewrite the response to be more substantive.` }];
                              responseText = await llmService.generateResponse(improvedMessages, { useQwen: true, currentMood });

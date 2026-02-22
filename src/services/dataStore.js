@@ -47,7 +47,7 @@ const defaultData = {
   lastMemoryCleanupTime: 0,
   lastMoltfeedSummaryTime: 0,
   lastMentalReflectionTime: 0,
-  moltbook_comments_today: 0,
+  moltbook_comments_today: 0, lastPersonaEvolution: 0,
   last_moltbook_comment_date: null,
   recent_moltbook_comments: [],
   current_mood: {

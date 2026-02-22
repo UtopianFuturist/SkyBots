@@ -58,7 +58,11 @@ class GoogleSearchService {
     try {
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`Google Search API error (${response.status})`);
+        const errorText = await response.text();
+        if (response.status === 403) {
+            console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+        }
+        throw new Error(`Google Search API error (${response.status}): ${errorText}`);
       }
       const data = await response.json();
       return data.items?.map(item => ({
@@ -81,7 +85,11 @@ class GoogleSearchService {
     try {
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`Google Search API error (${response.status})`);
+        const errorText = await response.text();
+        if (response.status === 403) {
+            console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+        }
+        throw new Error(`Google Search API error (${response.status}): ${errorText}`);
       }
       const data = await response.json();
       return data.items?.map(item => ({
@@ -102,7 +110,11 @@ class GoogleSearchService {
     try {
       const response = await fetch(url);
       if (!response.ok) {
-        throw new Error(`Google Image Search API error (${response.status})`);
+        const errorText = await response.text();
+        if (response.status === 403) {
+            console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+        }
+        throw new Error(`Google Image Search API error (${response.status}): ${errorText}`);
       }
       const data = await response.json();
       if (!data.items) {

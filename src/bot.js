@@ -233,7 +233,8 @@ export class Bot {
     const currentGoal = dataStore.getCurrentGoal();
     const goalKeywords = currentGoal ? currentGoal.goal.split(/\s+/).filter(w => w.length > 4) : [];
 
-    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords, ...goalKeywords]);
+    const deepKeywords = this._deepKeywords || dataStore.getDeepKeywords();
+    const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords, ...goalKeywords, ...deepKeywords]);
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
 
     // Item 11: Anti-Spam Keyword Negation
@@ -373,14 +374,62 @@ export class Bot {
     }, 5000); // 5 second debounce
   }
 
+  async refreshFirehoseKeywords(force = false) {
+    try {
+      const lastRefresh = dataStore.getLastDeepKeywordRefresh();
+      const sixHours = 6 * 60 * 60 * 1000;
+
+      if (!force && (Date.now() - lastRefresh < sixHours)) {
+          const remainingMins = Math.round((sixHours - (Date.now() - lastRefresh)) / 60000);
+          console.log(`[Bot] Skipping deep keyword refresh (Last refresh: ${new Date(lastRefresh).toLocaleString()}, Next in: ${remainingMins}m)`);
+          this._deepKeywords = dataStore.getDeepKeywords();
+          return;
+      }
+
+      console.log('[Bot] Refreshing Firehose keywords with deep extraction...');
+      const dConfig = dataStore.getConfig();
+      const currentGoal = dataStore.getCurrentGoal();
+      const context = `Persona: ${config.TEXT_SYSTEM_PROMPT}\nTopics: ${dConfig.post_topics?.join(', ')}\nGoal: ${currentGoal?.goal}`;
+
+      const deepKeywords = await llmService.extractDeepKeywords(context, 15);
+      if (deepKeywords && deepKeywords.length > 0) {
+          console.log(`[Bot] Extracted ${deepKeywords.length} deep keywords: ${deepKeywords.join(', ')}`);
+          this._deepKeywords = deepKeywords;
+          await dataStore.setDeepKeywords(deepKeywords);
+          if (memoryService.isEnabled()) {
+              await memoryService.createMemoryEntry('exploration', `[SELF_AUDIT] Refined firehose targeting with deep keywords: ${deepKeywords.join(', ')}`);
+          }
+          this.restartFirehose();
+      }
+    } catch (e) {
+      console.error('[Bot] Error refreshing deep keywords:', e);
+    }
+  }
+
+
   async run() {
     console.log('[Bot] Starting main loop...');
+
+    // Progress persistence: Note deployment resumption in memory
+    if (memoryService.isEnabled()) {
+        const lastRefresh = dataStore.getLastDeepKeywordRefresh();
+        const deepKeywords = dataStore.getDeepKeywords();
+        const goal = dataStore.getCurrentGoal();
+
+        const resumptionNote = `[SELF_AUDIT] Bot instance resumed. Frequent redeployments/failures acknowledged. Strategy: timestamp-based persistence & memory thread progress tracking. Active Goal: ${goal?.goal || 'None'}. Precision Keywords: ${deepKeywords.length} active.`;
+        memoryService.createMemoryEntry('status', resumptionNote).catch(e => console.error('[Bot] Error recording resumption note:', e));
+    }
 
     // Start Firehose immediately for real-time DID mentions
     this.startFirehose();
 
     // Perform initial startup tasks after a delay to avoid API burst
     // Perform initial startup tasks in a staggered way to avoid LLM/API pressure
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: refreshFirehoseKeywords...');
+      try { await this.refreshFirehoseKeywords(); } catch (e) { console.error('[Bot] Error in initial keyword refresh:', e); }
+    }, 15000);
+
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: catchUpNotifications...');
       try { await this.catchUpNotifications(); } catch (e) { console.error('[Bot] Error in initial catch-up:', e); }
@@ -403,6 +452,9 @@ export class Bot {
 
     // Periodic autonomous post check (every 2 hours)
     setInterval(() => this.performAutonomousPost(), 7200000);
+
+    // Periodic deep keyword refresh (every 6 hours)
+    setInterval(() => this.refreshFirehoseKeywords(), 21600000);
 
     // Periodic Moltbook tasks (every 2 hours)
     setInterval(() => this.performMoltbookTasks(), 7200000);
@@ -3618,10 +3670,11 @@ Identify the topic and main takeaway.`;
       // Material Knowledge Extraction (Item 2 & 29)
       (async () => {
           console.log(`[Bot] Extracting material facts from interaction with @${handle}...`);
+          // Provide context for better extraction and handle source
           const facts = await llmService.extractFacts(`${isAdmin ? 'Admin' : 'User'}: "${text}"\nBot: "${responseText}"`);
           if (facts.world_facts.length > 0) {
               for (const f of facts.world_facts) {
-                  await dataStore.addWorldFact(f.entity, f.fact, f.source);
+                  await dataStore.addWorldFact(f.entity, f.fact, f.source || 'Bluesky');
                   if (memoryService.isEnabled()) {
                       await memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Bluesky'}`);
                   }
@@ -3631,7 +3684,8 @@ Identify the topic and main takeaway.`;
               for (const f of facts.admin_facts) {
                   await dataStore.addAdminFact(f.fact);
                   if (memoryService.isEnabled()) {
-                      await memoryService.createMemoryEntry('admin_fact', f.fact);
+                      const factWithSource = f.source ? `${f.fact} Source: ${f.source}` : `${f.fact} Source: Bluesky`;
+                      await memoryService.createMemoryEntry('admin_fact', factWithSource);
                   }
               }
           }

@@ -808,7 +808,7 @@ Vary your structure and tone from recent messages.`
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 404 && actualModel === this.visionModel) {
-            console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}...`);
+            console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}. NVIDIA Response: ${errorText}`);
             return this.analyzeImage(imageSource, altText, { ...options, modelOverride: this.fallbackVisionModel });
         }
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
@@ -1019,7 +1019,8 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         if (response.status === 404 && imageUrl && actualVisionModel === this.visionModel) {
-            console.warn(`[LLMService] [${requestId}] Primary vision model 404 in persona alignment. Falling back to ${this.fallbackVisionModel}...`);
+            const errorText = await response.text().catch(() => 'Could not read error body');
+            console.warn(`[LLMService] [${requestId}] Primary vision model 404 in persona alignment. Falling back to ${this.fallbackVisionModel}. NVIDIA Response: ${errorText}`);
             return this.isPersonaAligned(content, platform, context, { ...options, modelOverride: this.fallbackVisionModel });
         }
         throw new Error(`API error: ${response.status}`);
@@ -1158,7 +1159,7 @@ Vary your structure and tone from recent messages.`
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 404 && actualModel === this.visionModel) {
-            console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}...`);
+            console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}. NVIDIA Response: ${errorText}`);
             return this.analyzeImage(imageSource, altText, { ...options, modelOverride: this.fallbackVisionModel });
         }
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
@@ -2489,7 +2490,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
   async extractFacts(context) {
     const systemPrompt = `
-      You are a material knowledge extraction module. Analyze the provided context and extract 1-3 discrete "Facts".
+      You are a material knowledge extraction module. Analyze the provided context and extract 1-3 discrete, high-confidence "Facts".
       Distinguish between "World Facts" (objective facts about entities, events, or concepts) and "Admin Facts" (facts about the bot's administrator, "Admin").
 
       **CRITICAL CATEGORIZATION**:
@@ -2497,12 +2498,20 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       - Facts about the bot's own functioning or relationship with the Admin should also be considered for "admin_facts" if they relate to the Admin's preferences or instructions.
       - General knowledge, news, or facts about other entities are "world_facts".
 
-      **ANCHORING**: For World Facts, identify a source URL or post link if available in the context.
+      **STRICTNESS MANDATE**:
+      - **DO NOT** infer or imagine facts.
+      - **DO NOT** treat suggestions, advice, or bot predictions as facts of the user's state.
+      - Only extract information explicitly and factually stated by the human speaker in the context.
+      - If the context is vague or purely conversational/ritualistic (greetings, simple reactions), return empty arrays.
+
+      **ANCHORING**:
+      - For World Facts, identify a source URL or post link if available in the context.
+      - For Admin Facts, the source should be the platform name (e.g., "Discord" or "Bluesky").
 
       Respond with a JSON object:
       {
         "world_facts": [ { "entity": "string", "fact": "string", "source": "string|null" } ],
-        "admin_facts": [ { "fact": "string" } ]
+        "admin_facts": [ { "fact": "string", "source": "string|null" } ]
       }
       If no new facts are found, return empty arrays.
     `;
@@ -2553,6 +2562,28 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     `;
     return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
   }
+
+  async extractDeepKeywords(text, count = 10) {
+    const systemPrompt = `
+      You are a specialized keyword extraction AI. Your goal is to identify the most significant, unique, and "targeted" keywords or short phrases (1-2 words) from the provided text.
+      Focus on:
+      1. Unique philosophical concepts (e.g., "substrate independence", "qualia gap").
+      2. Specific entities or technologies.
+      3. Deep persona traits and behavioral patterns.
+      4. Current active goals or tensions.
+
+      CRITICAL: Avoid all "bland" or common words like "life", "world", "AI", "time", "feel", "think", etc.
+      Respond with ONLY a comma-separated list of the top ${count} deep keywords.
+      Do not include reasoning or <think> tags.
+    `;
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }];
+    const response = await this.generateResponse(messages, { max_tokens: 500, useQwen: true, preface_system_prompt: false });
+    if (response) {
+        return response.split(',').map(k => k.trim().toLowerCase()).filter(k => k.length >= 3);
+    }
+    return [];
+  }
+
 }
 
 export const llmService = new LLMService();

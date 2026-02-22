@@ -60,7 +60,17 @@ class GoogleSearchService {
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 403) {
-            console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+            try {
+                const errorJson = JSON.parse(errorText);
+                const reason = errorJson.error?.errors?.[0]?.reason || 'unknown';
+                const message = errorJson.error?.message || 'No message';
+                console.error(`[GoogleSearchService] 403 Forbidden: ${reason}. Message: ${message}`);
+                if (reason === 'dailyLimitExceeded' || reason === 'userRateLimitExceeded') {
+                    console.warn('[GoogleSearchService] CRITICAL: Google Search Quota Exceeded for the day.');
+                }
+            } catch (e) {
+                console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+            }
         }
         throw new Error(`Google Search API error (${response.status}): ${errorText}`);
       }
@@ -87,7 +97,17 @@ class GoogleSearchService {
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 403) {
-            console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+            try {
+                const errorJson = JSON.parse(errorText);
+                const reason = errorJson.error?.errors?.[0]?.reason || 'unknown';
+                const message = errorJson.error?.message || 'No message';
+                console.error(`[GoogleSearchService] 403 Forbidden: ${reason}. Message: ${message}`);
+                if (reason === 'dailyLimitExceeded' || reason === 'userRateLimitExceeded') {
+                    console.warn('[GoogleSearchService] CRITICAL: Google Search Quota Exceeded for the day.');
+                }
+            } catch (e) {
+                console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+            }
         }
         throw new Error(`Google Search API error (${response.status}): ${errorText}`);
       }
@@ -112,7 +132,17 @@ class GoogleSearchService {
       if (!response.ok) {
         const errorText = await response.text();
         if (response.status === 403) {
-            console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+            try {
+                const errorJson = JSON.parse(errorText);
+                const reason = errorJson.error?.errors?.[0]?.reason || 'unknown';
+                const message = errorJson.error?.message || 'No message';
+                console.error(`[GoogleSearchService] 403 Forbidden: ${reason}. Message: ${message}`);
+                if (reason === 'dailyLimitExceeded' || reason === 'userRateLimitExceeded') {
+                    console.warn('[GoogleSearchService] CRITICAL: Google Search Quota Exceeded for the day.');
+                }
+            } catch (e) {
+                console.error(`[GoogleSearchService] 403 Forbidden: Possible quota exhaustion or invalid API key. Details: ${errorText}`);
+            }
         }
         throw new Error(`Google Image Search API error (${response.status}): ${errorText}`);
       }

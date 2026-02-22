@@ -122,7 +122,11 @@ const defaultData = {
   firehose_matches: [], // [ { text, uri, matched_keywords, timestamp } ]
   greeting_state: {}, // { userId: { last_greeted_msg_count, greeted_back: boolean } }
   user_soul_mappings: {}, // { handle/userId: { summary, last_posts: [], interests: [], pfp_vibe, last_updated } }
-  followed_linguistic_patterns: {} // { handle: { pacing, structure, favorite_words, last_updated } }
+  followed_linguistic_patterns: {}, // { handle: { pacing, structure, favorite_words, last_updated } }
+  deep_keywords: [],
+  last_deep_keyword_refresh: 0,
+  last_timeline_exploration: 0,
+  last_moltbook_task: 0
 };
 
 const GREETING_BLOCK_LIMIT = 5;
@@ -1344,6 +1348,20 @@ class DataStore {
 
       const diff = messageCount - state.last_greeted_msg_count;
       return diff >= GREETING_BLOCK_LIMIT;
+  }
+
+  async setDeepKeywords(keywords) {
+    this.db.data.deep_keywords = keywords;
+    this.db.data.last_deep_keyword_refresh = Date.now();
+    await this.db.write();
+  }
+
+  getDeepKeywords() {
+    return this.db.data.deep_keywords || [];
+  }
+
+  getLastDeepKeywordRefresh() {
+    return this.db.data.last_deep_keyword_refresh || 0;
   }
 }
 

@@ -680,6 +680,10 @@ class DiscordService {
         } catch (error) {
             console.error('[DiscordService] Error sending message:', error);
             return null;
+        } finally {
+            if (normId) {
+                this.stopTyping(normId);
+            }
         }
     }
 
@@ -1144,7 +1148,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
         // Proposal 6 & 21: Dynamic Context Trimming. Max 15 messages in memory, others from thread.
         const messages = [
             { role: 'system', content: systemPrompt },
-            ...history.slice(-12).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: `${h.role === 'assistant' ? 'Assistant (Self)' : 'User (Admin)'}: ${h.content}` }))
+            ...history.slice(-12).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content }))
         ];
 
         // Item 26: Typing indicator fix (ensure it is cleared)
@@ -2165,12 +2169,14 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                             // Material Knowledge Extraction (Item 2 & 29)
                             console.log(`[DiscordService] Extracting material facts...`);
-                            const facts = await llmService.extractFacts(`${isAdmin ? 'Admin' : 'User'}: "${message.content}"\nBot: "${responseText}"`);
+                            // Provide last 3 turns for better context and avoid hallucinations
+                            const extractionContext = history.slice(-3).map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'User (Admin)'}: "${h.content}"`).join('\n') + `\nAssistant (Self): "${responseText}"`;
+                            const facts = await llmService.extractFacts(extractionContext);
                             if (facts.world_facts.length > 0) {
                                 for (const f of facts.world_facts) {
-                                    await dataStore.addWorldFact(f.entity, f.fact, f.source);
+                                    await dataStore.addWorldFact(f.entity, f.fact, f.source || 'Discord');
                                     if (memoryService.isEnabled()) {
-                                        memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Conversation'}`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
+                                        memoryService.createMemoryEntry('fact', `Entity: ${f.entity} | Fact: ${f.fact} | Source: ${f.source || 'Discord'}`).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                                     }
                                 }
                             }
@@ -2178,7 +2184,8 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 for (const f of facts.admin_facts) {
                                     await dataStore.addAdminFact(f.fact);
                                     if (memoryService.isEnabled()) {
-                                        memoryService.createMemoryEntry('admin_fact', f.fact).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
+                                        const factWithSource = f.source ? `${f.fact} Source: ${f.source}` : `${f.fact} Source: Discord`;
+                                        memoryService.createMemoryEntry('admin_fact', factWithSource).catch(e => console.error('[DiscordService] Background memory entry failed:', e));
                                     }
                                 }
                             }
@@ -2219,7 +2226,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
         } catch (error) {
             console.error('[DiscordService] Error responding to message:', error);
         } finally {
-            this.stopTyping(normChannelId);
+            // stopTyping now handled by _send
             this._activeGenerations.delete(normChannelId);
             this._interrupted.delete(normChannelId);
         }

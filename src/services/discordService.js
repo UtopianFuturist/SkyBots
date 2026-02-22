@@ -594,9 +594,9 @@ class DiscordService {
             return null;
         }
 
+        let normId;
         try {
             // Determine the normalized channel ID for logging
-            let normId;
             if (target.constructor.name === 'User') {
                 normId = `dm_${target.id}`;
             } else if (target.channel) {

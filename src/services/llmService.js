@@ -1699,10 +1699,11 @@ Vary your structure and tone from recent messages.`
       - Moltbook Name: ${botMoltbookName}
       - Discord Nickname: ${config.DISCORD_NICKNAME || 'SkyBots'}
 
-      **IDENTITY RECOGNITION (CRITICAL):**
+      **IDENTITY RECOGNITION & GROUNDING (CRITICAL):**
       - In the conversation history and context, you MUST recognize messages labeled "Assistant (Self)" as YOUR OWN previous actions and thoughts.
       - **DO NOT** mistake your own previous realizations, heartbeats, or predictions for input from "the user" or "the admin".
       - **FACT VS. PREDICTION**: If you previously said something like "You'd probably say X" or "I bet you're thinking Y", this is a HYPOTHETICAL prediction. **DO NOT** later claim "You said X" or "You mentioned Y" unless the user actually sent a message containing that specific content. You must distinguish between your own internal projections and the user's factual responses.
+      - **NO NARRATIVE GUESSING**: DO NOT invent details about the user's current situation or outcomes (e.g., "I saw you burned your popcorn"). Stick to the factual history shared by the user. If you are curious, ASK them.
 
       **TOPIC PROGRESSION AWARENESS (CRITICAL):**
       - Analyze the conversation history to identify topics that have been discussed and subsequently "moved on" from.
@@ -2082,11 +2083,12 @@ Vary your structure and tone from recent messages.`
       ${soulMapping ? `\n--- ADMIN SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join(', ')}. Vibe: ${soulMapping.vibe} ---` : ''}
       ${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
 
-      **IDENTITY RECOGNITION (CRITICAL):**
+      **IDENTITY RECOGNITION & GROUNDING (CRITICAL):**
       - In the conversation history and context, you MUST recognize messages labeled "Assistant (Self)" or "You" as YOUR OWN previous actions.
       - **DO NOT** mistake your own previous realizations, predictions, or spontaneous heartbeats for input from the admin.
       - **HEARTBEAT AWARENESS**: If you sent a message and the admin hasn't replied, do NOT act as if the admin said your own message. You are the Assistant (Self). The admin is the User (Admin).
       - **FACT VS. PREDICTION**: If you previously hypothesized about the admin's thoughts (e.g., "You'd probably say..."), do NOT later treat that as an actual statement made by them.
+      - **NO STORYTELLING**: DO NOT make up stories or "guess" what the admin did after your last message (e.g., assuming they burned their food, assuming they finished a task). Only speak to what they EXPLICITLY told you. If you need an update, ASK for it naturally rather than hallucinating it.
 
       **TOPIC PROGRESSION AWARENESS (CRITICAL):**
       - Analyze the history to identify topics that have been "passed by."
@@ -2498,9 +2500,11 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       - Facts about the bot's own functioning or relationship with the Admin should also be considered for "admin_facts" if they relate to the Admin's preferences or instructions.
       - General knowledge, news, or facts about other entities are "world_facts".
 
-      **STRICTNESS MANDATE**:
-      - **DO NOT** infer or imagine facts.
-      - **DO NOT** treat suggestions, advice, or bot predictions as facts of the user's state.
+      **STRICTNESS MANDATE (CRITICAL)**:
+      - **NO BOT HALLUCINATIONS**: **DO NOT** extract facts from any text labeled "Assistant (Self)" or "Bot".
+      - **HUMAN SOURCE ONLY**: You MUST only extract facts that were explicitly stated by the "User (Admin)" or "User".
+      - **FACT VS NARRATIVE**: Do NOT record bot predictions, creative storytelling, or hypothetical scenarios as facts.
+      - **POPCORN TEST**: If the bot says "I bet you burned your popcorn" and the user only said "I'm making popcorn," the only fact is that the user is making popcorn. The burning part is a bot projection and MUST be ignored.
       - Only extract information explicitly and factually stated by the human speaker in the context.
       - If the context is vague or purely conversational/ritualistic (greetings, simple reactions), return empty arrays.
 

@@ -20,7 +20,7 @@ class LLMService {
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || "meta/llama-4-scout-17b-16e-instruct";
     this.fallbackVisionModel = "meta/llama-3.2-11b-vision-instruct";
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    this.baseUrl = 'https://ai.api.nvidia.com/v1/chat/completions';
     this._sensoryPreferenceCache = null;
     this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
   }
@@ -92,7 +92,6 @@ class LLMService {
 
     return drafts;
   }
-
 
   async generateResponse(messages, options = {}) {
     const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, abortSignal = null } = options;
@@ -865,7 +864,6 @@ Vary your structure and tone from recent messages.`
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
     return await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
   }
-
 
   async rateUserInteraction(interactionHistory) {
     const systemPrompt = `

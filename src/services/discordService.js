@@ -594,10 +594,10 @@ class DiscordService {
             return null;
         }
 
-        let normId;
+        let normId = null;
         try {
             // Determine the normalized channel ID for logging
-            if (target.constructor.name === 'User') {
+            if (target && target.constructor && target.constructor.name === 'User') {
                 normId = `dm_${target.id}`;
             } else if (target.channel) {
                 normId = this.getNormalizedChannelId(target);
@@ -675,13 +675,12 @@ class DiscordService {
                 }
             }
 
-
             return firstSentMessage;
         } catch (error) {
             console.error('[DiscordService] Error sending message:', error);
             return null;
         } finally {
-            if (normId) {
+            if (normId !== null) {
                 this.stopTyping(normId);
             }
         }
@@ -1031,7 +1030,6 @@ class DiscordService {
         const adminRecentEmotions = adminEmotionalStates.length > 0 ? `\n[ADMIN_RECENT_VIBES]: ${adminEmotionalStates.join('; ')}` : '';
         const userVibeHistory = dataStore.getUserVibeHistory(message.author.id);
         const relationalVibeContext = userVibeHistory.length > 0 ? `\n[RELATIONAL VIBE HISTORY]: ${userVibeHistory.join('; ')}` : '';
-
 
         let relevantMemories = '';
         if (relevantMemoriesList.length > 0) {
@@ -2180,7 +2178,6 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                 console.error('[DiscordService] Error saving user vibe:', vE);
             }
 
-
                 const adminExhaustionVal = await dataStore.getAdminExhaustion();
 
                 // Item 11: Self-Correction Cascade (Small chance for a "second thought" follow-up)
@@ -2291,7 +2288,6 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
             this._interrupted.delete(normChannelId);
         }
     }
-
 
     async sendSpontaneousMessage(content, options = {}) {
         if (!this.isEnabled || !this.client?.isReady()) return;

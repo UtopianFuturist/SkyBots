@@ -419,7 +419,6 @@ export class Bot {
     }
   }
 
-
   async run() {
     console.log('[Bot] Starting main loop...');
 
@@ -474,7 +473,6 @@ export class Bot {
 
     // Periodic timeline exploration (every 4 hours)
     setInterval(() => this.performTimelineExploration(), 14400000);
-
 
     // Periodic social/discord context pre-fetch (Proposal 15) (every 5 minutes)
     setInterval(() => {
@@ -1838,7 +1836,6 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                     }));
 
 
-
                     for (const evalResult of evaluations) {
                         const { cand, varietyCheck, personaCheck, hasPrefixMatch: hpm, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
                         if (error) {
@@ -2485,7 +2482,6 @@ Identify the topic and main takeaway.`;
 
     // Prompt injection filter removed per user request.
 
-
     // 2. Refined Reply Trigger Logic
     const botMentioned = text.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => text.includes(nick)) || text.includes(blueskyService.did);
     const isQuoteRepost = notif.reason === 'quote';
@@ -2567,7 +2563,6 @@ Identify the topic and main takeaway.`;
             return; // Command processed, stop further processing
         }
     }
-
 
     // 5. Pre-reply LLM check to avoid unnecessary responses
     const historyText = threadContext.map(h => `${h.author === config.BLUESKY_IDENTIFIER ? 'You' : 'User'}: ${h.text}`).join('\n');

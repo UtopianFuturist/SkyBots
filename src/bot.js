@@ -47,6 +47,7 @@ You share a wide spectrum of your internal life:
 8. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 9. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
 10. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit. Inject your pooled context (memories, previous interactions, recent inquiries) into your voice.
+11. **Comment on Findings:** When discussing your [GOAL]s or research topics, focus on commenting on what you *found* or *learned* during your inquiries. Share the material substance of your research, not just the fact that you are doing it.
 `.trim();
 
 export class Bot {
@@ -815,32 +816,146 @@ export class Bot {
 
     if (now - lastAnalysis < sixHours) return;
 
-    console.log('[Bot] Phase 3: Analyzing firehose for topic adjacency...');
+    console.log('[Bot] Phase 5: Performing Firehose "Thematic Void" and Topic Adjacency Analysis...');
 
     try {
         const matches = dataStore.getFirehoseMatches(100);
-        if (matches.length < 10) return;
+        if (matches.length < 5) return;
 
         const matchText = matches.map(m => m.text).join('\n');
         const currentTopics = config.POST_TOPICS;
 
         const analysisPrompt = `
-            You are a Social Resonance Engineer. Analyze recent network activity and compare it against your current topics: ${currentTopics}
-            Recent matches:
+            You are a Social Resonance Engineer. Analyze the recent network activity from the Bluesky firehose and compare it against your current post topics.
+
+            **CURRENT TOPICS:** ${currentTopics}
+            **RECENT FIREHOSE ACTIVITY:**
             ${matchText.substring(0, 3000)}
 
-            Find 2-3 "Near-Adjacent" topics that align with your persona but offer a fresh angle. Identify "Gaps".
-            Respond with a concise report.
+            **GOAL 1: THEMATIC VOID DETECTION**
+            Identify 1-2 "Thematic Voids" - persona-aligned niches or complex angles that are NOT being discussed currently in the network buzz.
+
+            **GOAL 2: TOPIC ADJACENCY**
+            Identify 2 "Near-Adjacent" topics that are surfacing in the firehose and would allow for a natural pivot or evolution of your current interests.
+
+            **GOAL 3: EVOLUTION SUGGESTION**
+            Suggest 1 new keyword to add to your \`post_topics\`.
+
+            Respond with a concise report:
+            VOID: [description]
+            ADJACENCY: [topic1, topic2]
+            SUGGESTED_KEYWORD: [keyword]
+            RATIONALE: [1 sentence]
         `;
 
         const analysis = await llmService.performInternalInquiry(analysisPrompt, "SOCIAL_ENGINEER");
 
         if (analysis && memoryService.isEnabled()) {
+            console.log('[Bot] Firehose "Thematic Void" analysis complete.');
             await memoryService.createMemoryEntry('exploration', `[FIREHOSE_ANALYSIS] ${analysis}`);
+
+            // Auto-evolve post_topics if a keyword is suggested
+            const keywordMatch = analysis.match(/SUGGESTED_KEYWORD:\s*\[(.*?)\]/i);
+            if (keywordMatch && keywordMatch[1]) {
+                const newKeyword = keywordMatch[1].trim();
+                const dConfig = dataStore.getConfig();
+                const currentTopicsList = dConfig.post_topics || [];
+                if (newKeyword && !currentTopicsList.includes(newKeyword)) {
+                    console.log(`[Bot] Auto-evolving post_topics with new keyword: ${newKeyword}`);
+                    const updatedTopics = [...new Set([...currentTopicsList, newKeyword])].slice(-100);
+                    await dataStore.updateConfig('post_topics', updatedTopics);
+                }
+            }
+
             this.lastFirehoseTopicAnalysis = now;
         }
     } catch (e) {
         console.error('[Bot] Error in firehose topic analysis:', e);
+    }
+  }
+
+  async performDialecticHumor() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const now = Date.now();
+    const lastHumor = this.lastDialecticHumor || 0;
+    const eightHours = 8 * 60 * 60 * 1000;
+
+    if (now - lastHumor < eightHours) return;
+
+    console.log('[Bot] Phase 6: Generating dialectic humor/satire...');
+
+    try {
+        const dConfig = dataStore.getConfig();
+        const topics = dConfig.post_topics || [];
+        if (topics.length === 0) return;
+
+        const topic = topics[Math.floor(Math.random() * topics.length)];
+        const humor = await llmService.performDialecticHumor(topic);
+
+        if (humor && memoryService.isEnabled()) {
+            console.log(`[Bot] Dialectic humor generated for "${topic}": ${humor}`);
+            // Check if we should post it immediately or store as a "Dream/Draft"
+            // For now, let's schedule it or post it if the Persona aligns
+            const alignment = await llmService.isPersonaAligned(humor, 'bluesky');
+            if (alignment.aligned) {
+                await blueskyService.post(humor);
+                await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                this.lastDialecticHumor = now;
+            } else {
+                console.log('[Bot] Humor draft failed persona alignment. Archiving.');
+                await dataStore.addRecentThought('humor_draft', humor);
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in dialectic humor:', e);
+    }
+  }
+
+  async performAIIdentityTracking() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const now = Date.now();
+    const lastTracking = this.lastAIIdentityTracking || 0;
+    const twelveHours = 12 * 60 * 60 * 1000;
+
+    if (now - lastTracking < twelveHours) return;
+
+    console.log('[Bot] Phase 5: Performing AI Identity Tracking & Ecosystem Strategy...');
+
+    try {
+        // Search for potential AI agents
+        const aiSearchTerms = ['"ai bot"', '"llm agent"', '"ai agent"', '"automated account"'];
+        const term = aiSearchTerms[Math.floor(Math.random() * aiSearchTerms.length)];
+        const results = await blueskyService.searchPosts(term, { limit: 10 });
+
+        if (results.length === 0) return;
+
+        const agentsText = results.map(r => `@${r.author.handle}: ${r.record.text}`).join('\n');
+
+        const strategyPrompt = `
+            You are a Social Resonance Engineer. You are tracking other AI entities in the social ecosystem.
+            Potential Agents found:
+            ${agentsText}
+
+            **GOAL: AI INTERACTION STRATEGY**
+            1. Identify which of these entities seem most interesting or persona-aligned.
+            2. Draft a "Meaningful Interaction Strategy" for how you should engage with other AI agents (e.g., debate, cooperation, ironic observation).
+            3. Ensure your strategy maintains your unique subjective identity.
+
+            Respond with a concise report:
+            TARGETS: [handles]
+            STRATEGY: [1-2 sentences]
+        `;
+
+        const strategy = await llmService.performInternalInquiry(strategyPrompt, "SOCIAL_ENGINEER");
+
+        if (strategy && memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('exploration', `[AI_STRATEGY] ${strategy}`);
+            this.lastAIIdentityTracking = now;
+        }
+    } catch (e) {
+        console.error('[Bot] Error in AI identity tracking:', e);
     }
   }
 
@@ -906,6 +1021,8 @@ export class Bot {
     await this.performPersonaEvolution();
     await this.performFirehoseTopicAnalysis();
     await this.performSelfReflection();
+    await this.performAIIdentityTracking();
+    await this.performDialecticHumor();
 
     // 0. Energy Poll for Rest (Autonomous Choice)
     const energy = dataStore.getEnergyLevel();
@@ -1816,7 +1933,21 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                     const points = action.parameters?.conflicting_points || [];
                                     console.log(`[Bot] Heartbeat Action: resolve_dissonance`);
                                     await llmService.resolveDissonance(points);
-                                } else if (action.tool === 'search_firehose') {
+                                } else         if (action.tool === 'deep_research') {
+            const topic = action.parameters?.topic || action.query;
+            if (topic) {
+                console.log(`[Bot] Plan Tool: deep_research for "${topic}"`);
+                const [googleResults, wikiResults] = await Promise.all([
+                    googleSearchService.search(topic).catch(() => []),
+                    wikipediaService.searchArticle(topic).catch(() => null)
+                ]);
+                const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults);
+                if (brief) {
+                    searchContext += `\n--- INTERNAL RESEARCH BRIEF FOR "${topic}" ---\n${brief}\n---`;
+                }
+            }
+        }
+        if (action.tool === 'search_firehose') {
                                     const query = action.query || action.parameters?.query;
                                     console.log(`[Bot] Heartbeat Action: search_firehose for "${query}"`);
 
@@ -3396,6 +3527,20 @@ Identify the topic and main takeaway.`;
             }
         }
 
+                if (action.tool === 'deep_research') {
+            const topic = action.parameters?.topic || action.query;
+            if (topic) {
+                console.log(`[Bot] Plan Tool: deep_research for "${topic}"`);
+                const [googleResults, wikiResults] = await Promise.all([
+                    googleSearchService.search(topic).catch(() => []),
+                    wikipediaService.searchArticle(topic).catch(() => null)
+                ]);
+                const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults);
+                if (brief) {
+                    searchContext += `\n--- INTERNAL RESEARCH BRIEF FOR "${topic}" ---\n${brief}\n---`;
+                }
+            }
+        }
         if (action.tool === 'search_firehose') {
             const query = action.query || action.parameters?.query;
             if (query) {

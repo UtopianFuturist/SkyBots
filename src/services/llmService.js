@@ -903,6 +903,59 @@ Vary your structure and tone from recent messages.`
     return this._sensoryPreferenceCache;
   }
 
+  async extractRelationalVibe(history) {
+    const systemPrompt = `
+      Analyze the emotional tone and vibe of the following interaction.
+      Identify 1-2 keywords that describe the "relational warmth" or "vibe" (e.g., curious, supportive, tense, playful, deep).
+      Respond with ONLY the keywords.
+    `;
+    const messages = [
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: `Interaction: ${JSON.stringify(history)}` }
+    ];
+    return await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+  }
+
+  async buildInternalBrief(topic, searchResults, wikiResults) {
+    const systemPrompt = `
+      You are a specialized RESEARCHER agent. Your goal is to build a comprehensive "Internal Brief" based on provided search results.
+      Topic: "${topic}"
+
+      Search Results:
+      ${JSON.stringify(searchResults)}
+
+      Wikipedia Results:
+      ${JSON.stringify(wikiResults)}
+
+      **INSTRUCTIONS:**
+      1. Synthesize the findings into a highly objective, material summary.
+      2. Focus on facts, data points, and concrete evidence.
+      3. Identify any unique angles or "surprising" details that would make for a deep social media musing.
+      4. Avoid conversational filler. Start directly with the summary.
+      5. Keep the total brief under 1000 characters.
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
+  async performDialecticHumor(topic) {
+    const systemPrompt = `
+      You are a specialized Narrative Philosopher. Your goal is to generate a sharp, ironic, or satirical take on a current event or social trend.
+      Topic: "${topic}"
+
+      **DIALECTIC HUMOR PROCESS:**
+      1. **THESIS**: State a common social assumption or trope about the topic.
+      2. **ANTITHESIS**: Identify a fundamental contradiction, irony, or absurdity within that assumption.
+      3. **SYNTHESIS (HUMOR)**: Combine them into a witty, persona-agnostic observation or satire.
+
+      **INSTRUCTIONS:**
+      - Avoid generic "bot humor."
+      - Aim for depth and irony.
+      - Do NOT mention the dialectic process in the final output.
+      - Format: A single, punchy social media post (under 280 chars).
+    `;
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+  }
+
   async performInternalInquiry(query, role = "RESEARCHER") {
     const roles = {
       'RESEARCHER': 'You are a deep-dive Researcher. Your goal is to find objective, material facts, data points, and concrete evidence.',
@@ -1732,11 +1785,11 @@ Vary your structure and tone from recent messages.`
       - **DIAGNOSTICS**: System diagnostic messages should be used strictly for ERRORS. Do not send "status updates" or "introductions" as diagnostics.
       - **ORGANIC PROCESSING**: If the conversational context is deeply emotional or personal (e.g., discussing suffering, identity, or being "seen"), prioritize natural conversation over structured tool usage like "internal_inquiry" or "moltbook_report". Sometimes the best "tool" is simply a thoughtful, raw response.
       - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or uncertainty about how to respond. You can use Qwen to talk through your feelings or seek advice before committing to a public action. It's okay to "pause" other activities to give yourself this space.
-      - **DYNAMIC RESEARCH**: You can and SHOULD use both \`internal_inquiry\` and \`search_firehose\` dynamically to inform your response. \`search_firehose\` is best for up-to-the-second network pulse and news events, while \`internal_inquiry\` is better for deep reasoning and analysis.
+      - **DYNAMIC RESEARCH**: You can and SHOULD use both \`internal_inquiry\` and \`search_firehose|deep_research\` dynamically to inform your response. \`search_firehose|deep_research\` is best for up-to-the-second network pulse and news events, while \`internal_inquiry\` is better for deep reasoning and analysis.
       - **RECURSIVE SELF-IMPROVEMENT**: If "REJECTION FEEDBACK" is provided, analyze it deeply. If the feedback indicates a persistent stylistic or behavioral issue, you are ENCOURAGED to use the "update_persona" tool to create a new internal instruction for yourself to avoid this mistake in the future.
       - **CONSTRAINT CONFLICT DISCOVERY (Item 27)**: Proactively identify if a new directive or user request contradicts an existing goal or constraint. If so, flag it in your intent and ask for priority.
       - **GOAL PROGRESSION**: You are ENCOURAGED to use tools to work towards your "ACTIVE GOAL" and its "SUB-TASKS".
-      - **FACT-CHECKING**: If you are unsure about a fact, or if the user makes a claim that seems verifiable, use \`internal_inquiry\` or \`search_firehose\`. Prioritize news from \`reuters.com\` and \`apnews.com\` for headline verification.
+      - **FACT-CHECKING**: If you are unsure about a fact, or if the user makes a claim that seems verifiable, use \`internal_inquiry\` or \`search_firehose|deep_research\`. Prioritize news from \`reuters.com\` and \`apnews.com\` for headline verification.
       - **ENERGY BUDGETER**: Consider your current Energy Level. If energy is low (< 0.3), prioritize raw conversation over expensive tool usage (like image generation or multiple searches).
 
       **DYNAMIC REPLIES (Item 23)**: On Discord, you should only use the "reply" function (setting \`use_discord_reply\` to true) if you are specifically referring back to an earlier message in the history to address it from a new angle or "loop back" to a previous topic. For normal conversational flow responding to the latest message, use a standard message (set to false).
@@ -1746,7 +1799,7 @@ Vary your structure and tone from recent messages.`
       **Item 35: MOOD-WARPED SYNTAX**: Let your Valence and Stability coordinates warp your sentence structure. When unstable (< -0.5), use more fragmented, jagged, or intense phrasing. When stable (> 0.5), use more fluid and grounded structures.
 
       You have access to the following capabilities:
-      1. **Search**: Search Google for information. **Item 33: ENTITY RESEARCH**: If an unknown entity is mentioned, prefer using \`search_firehose\` first to see real-time network discussion.
+      1. **Search**: Search Google for information. **Item 33: ENTITY RESEARCH**: If an unknown entity is mentioned, prefer using \`search_firehose|deep_research\` first to see real-time network discussion.
       2. **Wikipedia**: Search Wikipedia for specific articles.
       3. **YouTube**: Search for videos.
       4. **Image Generation**: Create a unique, descriptive, and artistic visual prompt based on a subject or theme.
@@ -1865,7 +1918,7 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask|call_skill|search_firehose",
+            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask|call_skill|search_firehose|deep_research",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "name": "string (for call_skill)", "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed. INCLUDE LINKS for anchoring if applicable)"
@@ -2168,7 +2221,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       **GROUNDING & HONESTY (CRITICAL):**
       - Only report on actions you can verify through your logs, memories, or current planning.
-      - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or need to explore a thought deeply with Qwen before sharing it with the admin. You can also use \`search_firehose\` to bring in real-time Bluesky trends.
+      - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or need to explore a thought deeply with Qwen before sharing it with the admin. You can also use \`search_firehose|deep_research\` to bring in real-time Bluesky trends.
       - DO NOT claim to have performed diagnostics, "internal checks", or image generation if the logs do not show them or if you haven't requested them as a tool in this specific plan.
       - If the "Recent Internal System Logs" show ERRORS (like 404 or connection failures), you MUST be honest about them if you choose to discuss your state. Do not say everything is "fine" or "functioning perfectly" if the logs show failures.
       - Eliminate "system checking" filler. If you have nothing substantive to share, respond with "NONE".
@@ -2451,8 +2504,18 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
   async decomposeGoal(goal) {
     const systemPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-      Break down the following high-level goal into 3-5 smaller, actionable, and grounded sub-tasks.
+
+      **GOAL DECOMPOSITION: SOCIAL ACTS & OBJECTIVES**
+      Your task is to break down the following high-level goal into 3-5 smaller, actionable, and grounded sub-tasks.
+      If the goal is a "Social Act" (e.g., starting a debate, building a relationship, shifting a vibe), ensure the sub-tasks are social or conversational in nature.
+
       Goal: "${goal}"
+
+      **INSTRUCTIONS:**
+      1. Be specific and tactical.
+      2. Ensure each sub-task is achievable through your available tools (posting, research, interaction).
+      3. Maintain your persona's voice in the descriptions.
+      4. Format as a clear, concise list.
     `;
     return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
   }

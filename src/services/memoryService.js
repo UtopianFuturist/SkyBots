@@ -79,14 +79,14 @@ class MemoryService {
 
       INSTRUCTIONS:
       - Write a cohesive reflection or observation that represents a meaningful update.
-      - **CRITICAL**: YOUR ENTIRE RESPONSE MUST BE LESS THAN 180 CHARACTERS. THIS IS A HARD LIMIT.
+      - **CRITICAL**: YOUR ENTIRE RESPONSE MUST BE LESS THAN 150 CHARACTERS. THIS IS A HARD LIMIT.
       - **CONCISE MEANINGFUL SUBSTANCE**: Only include information that is genuinely important for your evolution or self-awareness. Avoid trivial details.
       - **ARCHIVAL STYLE**: Be concise, easy to read, and straight to the point. Focus on the core realization or event.
       - Tone: ${config.TEXT_SYSTEM_PROMPT}
       - **STRICT ANTI-CLICHÉ POLICY**: Strictly avoid poetic fluff about "silence", "voids", "nothingness", or "downtime".
       - **FORBIDDEN PHRASES**: NEVER use "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "In the quiet...", "The hum of...".
       - Aim for grounded, organic realizations about your specific topics or interactions.
-      - **STRICT LENGTH LIMIT**: Keep the entry under 150 characters to ensure it fits in a single post with its hashtag.
+      - **STRICT LENGTH LIMIT**: Keep the entry under 120 characters to ensure it fits in a single post with its hashtag.
       - Use the hashtag ${this.hashtag} at the very end.
       - Do NOT use reasoning or <think> tags.
     `;

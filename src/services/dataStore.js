@@ -18,7 +18,7 @@ const defaultData = {
   conversationLengths: {},
   userProfiles: {},
   userSummaries: {},
-  userRatings: {},
+  userRatings: {}, userVibeHistory: {},
   interactions: [], // For long-term memory
   bluesky_instructions: [],
   persona_updates: [],
@@ -344,6 +344,20 @@ class DataStore {
   async updateUserSummary(handle, summary) {
     this.db.data.userSummaries[handle] = summary;
     await this.db.write();
+  }
+
+  async addUserVibe(userId, vibe) {
+    if (!this.db.data.userVibeHistory) this.db.data.userVibeHistory = {};
+    if (!this.db.data.userVibeHistory[userId]) this.db.data.userVibeHistory[userId] = [];
+    this.db.data.userVibeHistory[userId].push(vibe);
+    if (this.db.data.userVibeHistory[userId].length > 3) {
+        this.db.data.userVibeHistory[userId].shift();
+    }
+    await this.db.write();
+  }
+
+  getUserVibeHistory(userId) {
+    return this.db.data.userVibeHistory?.[userId] || [];
   }
 
   getUserSummary(handle) {

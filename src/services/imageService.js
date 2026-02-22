@@ -7,7 +7,7 @@ class ImageService {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-3-medium';
     // Align with Nvidia NIM standard endpoint
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1/images/generations';
+    this.baseUrl = 'https://ai.api.nvidia.com/v1/images/generations';
   }
 
   async generateImage(prompt, options = { allowPortraits: true, feedback: null, mood: null }) {
@@ -63,7 +63,7 @@ class ImageService {
 
       let finalPrompt = prompt;
       if (revisedPrompt && revisedPrompt.toLowerCase() !== 'null') {
-        finalPrompt = revisedPrompt.trim().replace(/[^\x20-\x7E]/g, '');
+        finalPrompt = revisedPrompt.trim().replace(/[^\x20-\x7E]/g, ' ');
         // Force character limit (270 chars + prefix ensures it stays under 300)
         if (finalPrompt.length > 270) {
           finalPrompt = finalPrompt.substring(0, 267) + "...";

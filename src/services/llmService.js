@@ -20,7 +20,7 @@ class LLMService {
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || "meta/llama-4-scout-17b-16e-instruct";
     this.fallbackVisionModel = "meta/llama-3.2-11b-vision-instruct";
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    this.baseUrl = 'https://ai.api.nvidia.com/v1/chat/completions';
     this._sensoryPreferenceCache = null;
     this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
   }

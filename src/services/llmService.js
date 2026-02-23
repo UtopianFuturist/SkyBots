@@ -15,6 +15,9 @@ class LLMService {
   constructor() {
     this.memoryProvider = null;
     this.dataStore = null;
+    this.skillsContent = '';
+    this.adminDid = null;
+    this.botDid = null;
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.LLM_MODEL || 'qwen/qwen3.5-397b-a17b';
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3.5-397b-a17b';
@@ -24,6 +27,15 @@ class LLMService {
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
     this._sensoryPreferenceCache = null;
     this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
+  }
+
+  setSkillsContent(content) {
+    this.skillsContent = content;
+  }
+
+  setIdentities(adminDid, botDid) {
+    this.adminDid = adminDid;
+    this.botDid = botDid;
   }
 
   setMemoryProvider(provider) {
@@ -44,9 +56,12 @@ class LLMService {
                     (config.BOT_NICKNAMES && config.BOT_NICKNAMES.includes(h.author)) ||
                     h.author === 'You' ||
                     h.author === 'assistant' ||
-                    h.role === 'assistant';
+                    h.role === 'assistant' ||
+                    (this.botDid && h.did === this.botDid);
 
-      const role = isBot ? 'Assistant (Self)' : (isAdmin ? 'User (Admin)' : 'User');
+      const isActualAdmin = (this.adminDid && h.did === this.adminDid) || (h.author === config.ADMIN_BLUESKY_HANDLE);
+      const handle = h.author || 'unknown';
+      const role = isBot ? 'Assistant (Self)' : (isActualAdmin ? `User (Admin: @${handle})` : `User (@${handle})`);
       const text = h.text || h.content || '';
       return `${role}: ${text}`;
     }).join('\n');
@@ -194,9 +209,9 @@ DO NOT use flowery metaphors. Stay grounded in your current state.`;
         const constraintMsg = {
             role: "system",
             content: `**STRICT DYNAMIC CONSTRAINTS**:
-${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH (HARD CONSTRAINT): ${openingBlacklist.map(o => `"${o}"`).join(', ')}` : ''}
-${tropeBlacklist.length > 0 ? `FORBIDDEN TROPES/METAPHORS: ${tropeBlacklist.map(t => `"${t}"`).join(', ')}` : ''}
-${additionalConstraints.length > 0 ? `REJECTION FEEDBACK (MUST OBEY): ${additionalConstraints.join('; ')}` : ''}
+${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH (HARD CONSTRAINT): ${openingBlacklist.map(o => `"${o}"`).join('\n')}` : ''}
+${tropeBlacklist.length > 0 ? `FORBIDDEN TROPES/METAPHORS: ${tropeBlacklist.map(t => `"${t}"`).join('\n')}` : ''}
+${additionalConstraints.length > 0 ? `REJECTION FEEDBACK (MUST OBEY): ${additionalConstraints.join('\n')}` : ''}
 ${currentMood ? `CURRENT MOOD TO ALIGN WITH: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
 ${currentMood.valence < -0.3 ? "Be raw and direct." : currentMood.valence > 0.3 ? "Be expansive and warm." : ""}
 ${currentMood.arousal > 0.5 ? "Be sharp and intense." : currentMood.arousal < -0.5 ? "Be reflective and soft." : ""}` : ''}
@@ -609,7 +624,7 @@ Vary your structure and tone from recent messages.`
       : 'No new submolts to discover.';
 
     const historyText = recentSubmolts.length > 0
-      ? `Your Most Recent Posts were in: ${recentSubmolts.join(', ')}`
+      ? `Your Most Recent Posts were in: ${recentSubmolts.join('\n')}`
       : 'You have no recent posting history recorded.';
 
     const systemPrompt = `
@@ -663,7 +678,7 @@ Vary your structure and tone from recent messages.`
     `;
     const messages = [
       { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Bio: ${userProfile.description}\n\nRecent Posts:\n- ${userPosts.join('\n- ')}` }
+      { role: 'user', content: `Bio: ${userProfile.description}\n\nRecent Posts:\n- ${userPosts.join('\n')}` }
     ];
     const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
 
@@ -878,7 +893,7 @@ Vary your structure and tone from recent messages.`
       5: Very positive and friendly
       Respond with ONLY a single number. Do not include reasoning or <think> tags.
     `;
-    const historyText = interactionHistory.map(i => `User: "${i.text}"\nBot: "${i.response}"`).join('\n\n');
+    const historyText = interactionHistory.map(i => `User: "${i.text}"\nBot: "${i.response}"`).join('\n');
     const messages = [
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Interaction History:\n${historyText}` }
@@ -1337,7 +1352,7 @@ Vary your structure and tone from recent messages.`
       } else {
         return `${i + 1}. Title: ${r.title}\nSnippet: ${r.snippet}`;
       }
-    }).join('\n\n');
+    }).join('\n');
 
     const systemPrompt = `
       You are a relevance selection AI. A user requested information with the query: "${query}".
@@ -1478,7 +1493,7 @@ Vary your structure and tone from recent messages.`
 
       **Item 10: REAL-TIME NETWORK BUZZ**
       Below are the latest 10 matches from the Bluesky Firehose tracking your topics of interest. Use these to ground your initial intuition in the current global conversation.
-      ${firehoseMatches.length > 0 ? firehoseMatches.map(m => `- [${m.matched_keywords.join(', ')}]: ${m.text}`).join('\n') : 'No recent matches detected.'}
+      ${firehoseMatches.length > 0 ? firehoseMatches.map(m => `- [${m.matched_keywords.join('\n')}]: ${m.text}`).join('\n') : 'No recent matches detected.'}
 
       **IDENTITY RECOGNITION (CRITICAL):**
       - In the conversation history, "Assistant (Self)" refers to YOUR previous messages.
@@ -1503,8 +1518,8 @@ Vary your structure and tone from recent messages.`
       ---
 
       --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
-      World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('; ')}
-      Admin Facts: ${(this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('; ')}
+      World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('\n')}
+      Admin Facts: ${(this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('\n')}
       ---
 
       ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
@@ -1555,7 +1570,7 @@ Vary your structure and tone from recent messages.`
   _pruneToolDefinitions(allTools, userPost, conversationHistory) {
     // Proposal 19: Tool Schema Pruning.
     // Basic keyword-based pruning to reduce prompt size.
-    const context = (userPost + ' ' + conversationHistory.map(h => h.text || h.content || '').join(' ')).toLowerCase();
+    const context = (userPost + ' ' + conversationHistory.map(h => h.text || h.content || '').join('\n')).toLowerCase();
 
     // Tools that are always included
     const essentialTools = ['update_mood', 'internal_inquiry', 'update_persona', 'confirm_action', 'image_gen', 'bsky_post', 'moltbook_post', 'read_link', 'update_subtask'];
@@ -1945,7 +1960,7 @@ Vary your structure and tone from recent messages.`
 
       **TEMPORAL VARIETY:**
       Avoid repeating the same 'theme' or 'angle' too many times in a row.
-      ${exhaustedThemes.length > 0 ? `The following themes are currently EXHAUSTED (avoid these): ${exhaustedThemes.join(', ')}` : ''}
+      ${exhaustedThemes.length > 0 ? `The following themes are currently EXHAUSTED (avoid these): ${exhaustedThemes.join('\n')}` : ''}
 
       IMPORTANT:
       - Consolidate queries to minimize API calls (STRICT limit of 50 searches/day).
@@ -2148,7 +2163,7 @@ Vary your structure and tone from recent messages.`
       Recent Discord Conversation History with Admin:
       ${historyFormatted || 'No recent conversation.'}
       ${recentThoughtsContext}
-      ${soulMapping ? `\n--- ADMIN SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join(', ')}. Vibe: ${soulMapping.vibe} ---` : ''}
+      ${soulMapping ? `\n--- ADMIN SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join('\n')}. Vibe: ${soulMapping.vibe} ---` : ''}
       ${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
 
       **IDENTITY RECOGNITION & GROUNDING (CRITICAL):**

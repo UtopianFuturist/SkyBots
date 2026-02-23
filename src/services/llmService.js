@@ -17,10 +17,11 @@ class LLMService {
     this.dataStore = null;
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.LLM_MODEL || 'qwen/qwen3.5-397b-a17b';
-    this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
+    this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3.5-397b-a17b';
+    this.coderModel = config.CODER_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || "meta/llama-4-scout-17b-16e-instruct";
     this.fallbackVisionModel = "meta/llama-3.2-11b-vision-instruct";
-    this.baseUrl = 'https://ai.api.nvidia.com/v1/chat/completions';
+    this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
     this._sensoryPreferenceCache = null;
     this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
   }
@@ -95,9 +96,9 @@ class LLMService {
 
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, abortSignal = null } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, abortSignal = null } = options;
     const requestId = Math.random().toString(36).substring(7);
-    const actualModel = useQwen ? this.qwenModel : this.model;
+    const actualModel = useCoder ? this.coderModel : (useQwen ? this.qwenModel : this.model);
 
     console.log(`[LLMService] [${requestId}] Starting generateResponse with model: ${actualModel}`);
 
@@ -238,7 +239,7 @@ Vary your structure and tone from recent messages.`
     }
 
     const payload = {
-      model: useQwen ? this.qwenModel : this.model,
+      model: actualModel,
       messages: mergedMessages,
       temperature,
       max_tokens,

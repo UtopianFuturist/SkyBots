@@ -1,0 +1,5 @@
+<<<<<<< SEARCH
+    this.baseUrl = 'https://ai.api.nvidia.com/v1/chat/completions';
+=======
+    this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+>>>>>>> REPLACE

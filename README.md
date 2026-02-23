@@ -117,6 +117,7 @@ The bot is pre-configured for seamless deployment on Render.
 | `BLUESKY_IDENTIFIER` | Your bot's Bluesky handle (e.g., `username.bsky.social`). |
 | `BLUESKY_APP_PASSWORD`| Your Bluesky app password. |
 | `ADMIN_BLUESKY_HANDLE`| The Bluesky handle of the bot's administrator. |
+| `BOT_NAME` | The name of your bot persona (used in prompts and service identification). |
 
 ### Optional
 

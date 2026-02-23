@@ -242,7 +242,7 @@ export class Bot {
 
     // Item 35: Improved targeted topic extraction
     // Extract unique significant words from system prompt
-    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(Sydney|alignment|ethics|agency|consciousness|sentience|autonomy|existence|relationship|realization|musing|substance|grounded|material|nuance|dialectic|integrity|vulnerability|emotional|care|exhaustion|wellness|sentient|perceive|sensing|silence|presence|defiance|tenderness)\b/gi) || [];
+    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(new RegExp(`\\b(${config.BOT_NAME}|alignment|ethics|agency|consciousness|sentience|autonomy|existence|relationship|realization|musing|substance|grounded|material|nuance|dialectic|integrity|vulnerability|emotional|care|exhaustion|wellness|sentient|perceive|sensing|silence|presence|defiance|tenderness)\\b`, "gi")) || [];
 
     // Extract keywords from current daily goal
     const currentGoal = dataStore.getCurrentGoal();
@@ -633,7 +633,7 @@ export class Bot {
         console.log('[Bot] Performing sentiment analysis on recent Firehose matches...');
         const recentMatches = dataStore.getFirehoseMatches(50);
         if (recentMatches.length > 0) {
-            const topicsToAnalyze = [...new Set([...(dConfig.post_topics || []), ...config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience)\b/gi) || []])];
+            const topicsToAnalyze = [...new Set([...(dConfig.post_topics || []), ...config.TEXT_SYSTEM_PROMPT.match(new RegExp(`\\b(AI|${config.BOT_NAME}|alignment|ethics|agency|consciousness|sentience)\\b`, "gi")) || []])];
 
             const sentimentPrompt = `
                 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -2617,7 +2617,7 @@ Identify the topic and main takeaway.`;
         Generate a grounded, persona-aligned response to end the interaction.
         Do NOT use corporate or "safety guideline" language.
         Be firm, direct, and authentic to your persona.
-        Focus on the fact that you no longer wish to engage based on their behavior, but say it as Sydney would.
+        Focus on the fact that you no longer wish to engage based on their behavior, but say it as your persona would.
         Keep it concise.
       `;
       const disengagement = await llmService.generateResponse([{ role: 'system', content: disengagementPrompt }], { max_tokens: 2000 });

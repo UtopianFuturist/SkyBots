@@ -14,6 +14,7 @@ const validateConfig = (config) => {
     'BLUESKY_IDENTIFIER',
     'BLUESKY_APP_PASSWORD',
     'ADMIN_BLUESKY_HANDLE',
+    'BOT_NAME',
   ];
 
   const missing = required.filter(key => !config[key]);
@@ -28,6 +29,7 @@ const config = {
   BLUESKY_IDENTIFIER: process.env.BLUESKY_IDENTIFIER,
   BLUESKY_APP_PASSWORD: process.env.BLUESKY_APP_PASSWORD,
   ADMIN_BLUESKY_HANDLE: process.env.ADMIN_BLUESKY_HANDLE,
+  BOT_NAME: process.env.BOT_NAME,
   GOOGLE_CUSTOM_SEARCH_API_KEY: process.env.GOOGLE_CUSTOM_SEARCH_API_KEY,
   GOOGLE_CUSTOM_SEARCH_CX_ID: process.env.GOOGLE_CUSTOM_SEARCH_CX_ID,
   YOUTUBE_API_KEY: process.env.YOUTUBE_API_KEY,
@@ -143,6 +145,6 @@ console.log(`[Config] Loaded DISCORD_HEARTBEAT_ADDENDUM: ${config.DISCORD_HEARTB
 console.log(`[Config] Loaded MEMORY_THREAD_HASHTAG: ${config.MEMORY_THREAD_HASHTAG ? config.MEMORY_THREAD_HASHTAG : 'DISABLED'}`);
 console.log(`[Config] Loaded RENDER_API_KEY: ${config.RENDER_API_KEY ? 'Exists' : 'Optional'}`);
 console.log(`[Config] Loaded RENDER_SERVICE_ID: ${config.RENDER_SERVICE_ID || 'Not set (will attempt discovery if key exists)'}`);
-
+console.log(`[Config] Loaded BOT_NAME: ${config.BOT_NAME || "MISSING!"}`);
 
 export default config;

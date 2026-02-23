@@ -1,4 +1,4 @@
-export const KEYWORD_BLACKLIST = [    "ai", "digital",
+export const KEYWORD_BLACKLIST = [
     "glass", "ruins", "everything", "nothing", "somebody", "anybody", "someone", "anyone", "something", "anything",
     "about", "their", "there", "would", "could", "should", "people", "really", "think", "thought", "going",
     "thanks", "thank", "hello", "please", "maybe", "actually", "probably", "just", "very", "much", "many",

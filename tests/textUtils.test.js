@@ -269,9 +269,9 @@ describe('textUtils - cleanKeywords', () => {
   });
 
   test('should filter short keywords', () => {
-    const input = ["a", "ab", "bot"];
+    const input = ["a", "ab", "ai", "bot", "digital"];
     const result = cleanKeywords(input);
-    expect(result).toEqual(['bot']);
+    expect(result).toEqual(['bot', 'digital']);
   });
 
   test('should remove duplicates', () => {

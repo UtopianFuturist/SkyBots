@@ -971,7 +971,7 @@ class DiscordService {
         const [hierarchicalSummary, adminExhaustion, relevantMemoriesList] = await Promise.all([
             socialHistoryService.getHierarchicalSummary(),
             dataStore.getAdminExhaustion(),
-            withTimeout(memorySearchQuery ? memoryService.searchMemories(memorySearchQuery, 5) : Promise.resolve([]), 15000, [])
+            withTimeout(memorySearchQuery ? memoryService.searchMemories(memorySearchQuery, 5) : Promise.resolve([]), 60000, [])
         ]);
 
         const currentMood = dataStore.getMood();
@@ -1189,13 +1189,13 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  const topicProgressionPrompt = `Analyze the Discord history. Identify 1-3 topics/emotional states already discussed and "moved on" from. For GREETINGS/RETURNS: if already welcomed back, it is a PASSED topic. Respond with ONLY comma-separated list or "NONE".\nHistory:\n${history.slice(-15).map(h => `${h.role}: ${h.content}`).join('\n')}`;
 
                  const [latestMoodMemory, directiveCheck, passedTopicsRaw, prePlanning, extractionResult] = await Promise.all([
-                     withTimeout(memoryService.getLatestMoodMemory(), 15000, null),
-                     withTimeout(llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 20000, null),
-                     withTimeout(llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 20000, 'NONE'),
+                     withTimeout(memoryService.getLatestMoodMemory(), 60000, null),
+                     withTimeout(llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 120000, null),
+                     withTimeout(llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 120000, 'NONE'),
                      (lastIntuitionData && (Date.now() - lastIntuitionData.timestamp < 120000))
                         ? Promise.resolve(lastIntuitionData.intuition)
                         : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null, dataStore.getFirehoseMatches(10), abortController.signal),
-                     withTimeout(extractionPromise, 20000, null)
+                     withTimeout(extractionPromise, 120000, null)
                  ]);
 
                  if (extractionResult) {

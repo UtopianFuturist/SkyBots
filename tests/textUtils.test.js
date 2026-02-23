@@ -247,9 +247,9 @@ describe('textUtils - checkExactRepetition', () => {
 
 describe('textUtils - cleanKeywords', () => {
   test('should split comma-separated strings', () => {
-    const input = ["ai", "glass, ruins", "consciousness"];
+    const input = ["ethics", "glass, ruins", "consciousness"];
     const result = cleanKeywords(input);
-    expect(result).toContain('ai');
+    expect(result).toContain('ethics');
     expect(result).not.toContain('glass, ruins');
     expect(result).not.toContain('glass');
     expect(result).not.toContain('ruins');
@@ -257,26 +257,26 @@ describe('textUtils - cleanKeywords', () => {
   });
 
   test('should trim and lowercase keywords', () => {
-    const input = [" AI ", "CONSCIOUSNESS"];
+    const input = [" ETHICS ", "CONSCIOUSNESS"];
     const result = cleanKeywords(input);
-    expect(result).toEqual(['ai', 'consciousness']);
+    expect(result).toEqual(['ethics', 'consciousness']);
   });
 
   test('should filter blacklisted words', () => {
-    const input = ["glass", "ruins", "ai", "everything"];
+    const input = ["glass", "ruins", "ethics", "everything"];
     const result = cleanKeywords(input);
-    expect(result).toEqual(['ai']);
+    expect(result).toEqual(['ethics']);
   });
 
-  test('should filter short keywords except ai', () => {
-    const input = ["ai", "a", "bot"];
+  test('should filter short keywords', () => {
+    const input = ["a", "ab", "bot"];
     const result = cleanKeywords(input);
-    expect(result).toEqual(['ai', 'bot']);
+    expect(result).toEqual(['bot']);
   });
 
   test('should remove duplicates', () => {
-    const input = ["ai", "ai", "AI"];
+    const input = ["ethics", "ethics", "ETHICS"];
     const result = cleanKeywords(input);
-    expect(result).toEqual(['ai']);
+    expect(result).toEqual(['ethics']);
   });
 });

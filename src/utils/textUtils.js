@@ -1,4 +1,4 @@
-export const KEYWORD_BLACKLIST = [
+export const KEYWORD_BLACKLIST = [    "ai", "digital",
     "glass", "ruins", "everything", "nothing", "somebody", "anybody", "someone", "anyone", "something", "anything",
     "about", "their", "there", "would", "could", "should", "people", "really", "think", "thought", "going",
     "thanks", "thank", "hello", "please", "maybe", "actually", "probably", "just", "very", "much", "many",
@@ -16,7 +16,7 @@ export const cleanKeywords = (keywords) => {
     list
       .flatMap(k => (typeof k === "string" ? k.split(",") : [k]))
       .map(k => (typeof k === "string" ? k.trim().toLowerCase() : k))
-      .filter(k => typeof k === "string" &&  (k.length >= 3 || k === 'ai') && !KEYWORD_BLACKLIST.includes(k))
+      .filter(k => typeof k === "string" &&  (k.length >= 3) && !KEYWORD_BLACKLIST.includes(k))
   )];
 };
 import config from '../../config.js';

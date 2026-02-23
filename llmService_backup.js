@@ -278,7 +278,7 @@ Vary your structure and tone from recent messages.`
         }
 
         // Check for rate limits or other server errors that warrant a fallback
-        if (!useQwen && (response.status === 429 || response.status >= 500) && this.model !== this.qwenModel) {
+        if (!useQwen if (!useQwen && (response.status === 429 || response.status >= 500)) {if (!useQwen && (response.status === 429 || response.status >= 500)) { (response.status === 429 || response.status >= 500) && this.model !== this.qwenModel) {
             console.warn(`[LLMService] [${requestId}] Primary model error (${response.status}). Falling back to Qwen...`);
             clearTimeout(timeout);
             return this.generateResponse(messages, { ...options, useQwen: true });
@@ -996,10 +996,10 @@ Vary your structure and tone from recent messages.`
   async shouldLikePost(postText) {
     const systemPrompt = `
       You are an AI persona evaluator. Your task is to determine if a given social media post aligns with the following persona:
-      
+
       "${config.TEXT_SYSTEM_PROMPT}"
-      
-      If the post content is similar in tone, interest, or style to this persona, respond with "yes". 
+
+      If the post content is similar in tone, interest, or style to this persona, respond with "yes".
       Otherwise, respond with "no".
       Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `;

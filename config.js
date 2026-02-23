@@ -88,9 +88,10 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   MAX_RETRIES: parseInt(process.env.MAX_RETRIES || '5'),
   BACKOFF_DELAY: parseInt(process.env.BACKOFF_DELAY || '60000'),
   MAX_REPLIED_POSTS: parseInt(process.env.MAX_REPLIED_POSTS || '1000'),
-  LLM_MODEL: process.env.LLM_MODEL || 'qwen/qwen3.5-397b-a17b',
+  LLM_MODEL: process.env.LLM_MODEL || process.env.TEXT_MODEL || 'qwen/qwen3.5-397b-a17b',
   IMAGE_GENERATION_MODEL: process.env.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-3-medium',
-  QWEN_MODEL: process.env.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct',
+  QWEN_MODEL: process.env.QWEN_MODEL || 'qwen/qwen3.5-397b-a17b',
+  CODER_MODEL: process.env.CODER_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct',
   VISION_MODEL: process.env.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct',
 
   // Moltbook
@@ -132,7 +133,9 @@ console.log(`[Config] Loaded YOUTUBE_API_KEY: ${config.YOUTUBE_API_KEY ? 'Exists
 console.log(`[Config] Loaded MANUAL_CLEANUP_TOKEN: ${config.MANUAL_CLEANUP_TOKEN ? 'Exists' : 'Optional (not set)'}`);
 console.log(`[Config] Loaded POST_TOPICS: ${config.POST_TOPICS ? 'Exists' : 'Optional (not set)'}`);
 console.log(`[Config] Loaded IMAGE_SUBJECTS: ${config.IMAGE_SUBJECTS ? 'Exists' : 'Optional (not set)'}`);
+console.log(`[Config] Loaded LLM_MODEL: ${config.LLM_MODEL}`);
 console.log(`[Config] Loaded QWEN_MODEL: ${config.QWEN_MODEL}`);
+console.log(`[Config] Loaded CODER_MODEL: ${config.CODER_MODEL}`);
 console.log(`[Config] Loaded MOLTBOOK_API_KEY: ${config.MOLTBOOK_API_KEY ? 'Exists' : 'Optional (will register on startup if missing)'}`);
 console.log(`[Config] Loaded DISCORD_BOT_TOKEN: ${config.DISCORD_BOT_TOKEN ? 'Exists' : 'Optional'}`);
 console.log(`[Config] Loaded DISCORD_GUILD_ID: ${config.DISCORD_GUILD_ID || 'Not set'}`);

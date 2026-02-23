@@ -20,6 +20,8 @@ import fs from 'fs/promises';
 import { spawn } from 'child_process';
 import path from 'path';
 
+const delay = ms => new Promise(res => setTimeout(res, ms));
+
 const AUTONOMOUS_POST_SYSTEM_PROMPT = (followerCount) => `
 You are an individual entity on Bluesky, broadcasting your internal world to a following of ${followerCount} users.
 
@@ -1018,10 +1020,15 @@ export class Bot {
     // 0. Process Autonomous Post Continuations (Item 12)
     await this.processContinuations();
 
+    // Staggered maintenance tasks to reduce API/LLM pressure
     await this.performPersonaEvolution();
+    await delay(10000); // 10s gap
     await this.performFirehoseTopicAnalysis();
+    await delay(10000); // 10s gap
     await this.performSelfReflection();
+    await delay(10000); // 10s gap
     await this.performAIIdentityTracking();
+    await delay(10000); // 10s gap
     await this.performDialecticHumor();
 
     // 0. Energy Poll for Rest (Autonomous Choice)

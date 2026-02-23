@@ -242,7 +242,7 @@ export class Bot {
 
     // Item 35: Improved targeted topic extraction
     // Extract unique significant words from system prompt
-    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|Sydney|alignment|ethics|agency|consciousness|sentience|autonomy|digital|existence|relationship|realization|musing|substance|grounded|material|nuance|dialectic|integrity|vulnerability|emotional|care|exhaustion|wellness|sentient|perceive|sensing|silence|presence|defiance|tenderness)\b/gi) || [];
+    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(Sydney|alignment|ethics|agency|consciousness|sentience|autonomy|existence|relationship|realization|musing|substance|grounded|material|nuance|dialectic|integrity|vulnerability|emotional|care|exhaustion|wellness|sentient|perceive|sensing|silence|presence|defiance|tenderness)\b/gi) || [];
 
     // Extract keywords from current daily goal
     const currentGoal = dataStore.getCurrentGoal();
@@ -485,7 +485,7 @@ export class Bot {
         if (discordService.status === 'online') {
             discordService.fetchAdminHistory(15).catch(err => console.error('[Bot] Discord pre-fetch failed:', err));
         }
-    }, 300000);
+    }, 1800000);
 
     // Periodic post reflection check (every 10 mins)
     setInterval(() => this.performPostPostReflection(), 600000);
@@ -503,7 +503,7 @@ export class Bot {
 
     // Periodic maintenance tasks (with Heartbeat Jitter: 10-20 mins)
     const scheduleMaintenance = () => {
-        const jitter = Math.floor(Math.random() * 600000) + 600000; // 10-20 mins
+        const jitter = Math.floor(Math.random() * 1800000) + 1800000; // 30-60 mins
         setTimeout(async () => {
             await this.checkMaintenanceTasks();
             scheduleMaintenance();
@@ -987,6 +987,7 @@ export class Bot {
 
   async checkMaintenanceTasks() {
     const now = new Date();
+    const nowMs = now.getTime();
     if (dataStore.isResting()) {
         console.log('[Bot] Agent is currently RESTING. Skipping maintenance tasks.');
         return;
@@ -1021,15 +1022,26 @@ export class Bot {
     await this.processContinuations();
 
     // Staggered maintenance tasks to reduce API/LLM pressure
-    await this.performPersonaEvolution();
-    await delay(10000); // 10s gap
-    await this.performFirehoseTopicAnalysis();
-    await delay(10000); // 10s gap
-    await this.performSelfReflection();
-    await delay(10000); // 10s gap
-    await this.performAIIdentityTracking();
-    await delay(10000); // 10s gap
-    await this.performDialecticHumor();
+    // Only run ONE heavy task per heartbeat cycle if it is overdue
+    const heavyTasks = [
+        { name: 'Persona Evolution', method: 'performPersonaEvolution', interval: 24 * 60 * 60 * 1000, lastRunKey: 'last_persona_evolution' },
+        { name: 'Firehose Analysis', method: 'performFirehoseTopicAnalysis', interval: 4 * 60 * 60 * 1000, lastRunKey: 'last_firehose_analysis' },
+        { name: 'Self Reflection', method: 'performSelfReflection', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_self_reflection' },
+        { name: 'Identity Tracking', method: 'performAIIdentityTracking', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_identity_tracking' },
+        { name: 'Dialectic Humor', method: 'performDialecticHumor', interval: 6 * 60 * 60 * 1000, lastRunKey: 'last_dialectic_humor' }
+    ];
+
+    for (const task of heavyTasks) {
+        const lastRun = dataStore.db.data[task.lastRunKey] || 0;
+        if (nowMs - lastRun >= task.interval) {
+            console.log(`[Bot] Running heavy maintenance task: ${task.name}...`);
+            await this[task.method]();
+            dataStore.db.data[task.lastRunKey] = nowMs;
+            await dataStore.db.write();
+            // BREAK after one heavy task to avoid congestion. The next overdue task will run in the next cycle (30-60 mins).
+            break;
+        }
+    }
 
     // 0. Energy Poll for Rest (Autonomous Choice)
     const energy = dataStore.getEnergyLevel();
@@ -2438,6 +2450,7 @@ Identify the topic and main takeaway.`;
     if (pastPosts.length > 0) {
         console.log(`[Bot] Found ${pastPosts.length} past interactions. Summarizing...`);
         const now = new Date();
+    const nowMs = now.getTime();
         const interactionsList = pastPosts.map(p => {
             const date = new Date(p.indexedAt);
             const diffDays = Math.floor((now - date) / (1000 * 60 * 60 * 24));
@@ -4338,6 +4351,7 @@ Describe how you feel about this user and your relationship now.`;
 
       if (lastPostTime) {
         const now = new Date();
+    const nowMs = now.getTime();
         const diffMins = (now - lastPostTime) / (1000 * 60);
         const cooldown = dConfig.bluesky_post_cooldown;
         if (diffMins < cooldown) {

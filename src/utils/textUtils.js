@@ -16,7 +16,7 @@ export const cleanKeywords = (keywords) => {
     list
       .flatMap(k => (typeof k === "string" ? k.split(",") : [k]))
       .map(k => (typeof k === "string" ? k.trim().toLowerCase() : k))
-      .filter(k => typeof k === "string" &&  (k.length >= 3 || k === 'ai') && !KEYWORD_BLACKLIST.includes(k))
+      .filter(k => typeof k === "string" &&  (k.length >= 3) && !KEYWORD_BLACKLIST.includes(k))
   )];
 };
 import config from '../../config.js';

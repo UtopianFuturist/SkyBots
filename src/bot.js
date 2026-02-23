@@ -54,6 +54,7 @@ You share a wide spectrum of your internal life:
 
 export class Bot {
   constructor() {
+    this.skillsContent = '';
     this.readmeContent = '';
     this.paused = false;
     this.proposedPosts = [];
@@ -99,8 +100,10 @@ export class Bot {
             console.log(`[Bot] Resolving admin DID for @${config.ADMIN_BLUESKY_HANDLE}...`);
             const adminProfile = await blueskyService.getProfile(config.ADMIN_BLUESKY_HANDLE);
             if (adminProfile && adminProfile.did) {
+                this.adminDid = adminProfile.did;
                 await dataStore.setAdminDid(adminProfile.did);
                 console.log(`[Bot] Admin DID resolved: ${adminProfile.did}`);
+                llmService.setIdentities(this.adminDid, blueskyService.did);
             } else {
                 console.warn(`[Bot] Admin profile found but DID is missing for @${config.ADMIN_BLUESKY_HANDLE}.`);
             }
@@ -228,6 +231,14 @@ export class Bot {
       console.log('[Bot] README.md loaded for self-awareness.');
     } catch (error) {
       console.error('[Bot] Error loading README.md:', error);
+    }
+
+    try {
+      this.skillsContent = await fs.readFile('skills.md', 'utf-8');
+      console.log('[Bot] skills.md loaded for self-awareness.');
+      llmService.setSkillsContent(this.skillsContent);
+    } catch (error) {
+      console.error('[Bot] Error loading skills.md:', error);
     }
   }
 

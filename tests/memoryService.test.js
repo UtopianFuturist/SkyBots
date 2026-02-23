@@ -18,7 +18,7 @@ import config from '../config.js';
 
 describe('MemoryService', () => {
   it('should strip hashtag from memories when formatting for prompt', () => {
-    const hashtag = '#SydneyDiary';
+    const hashtag = config.MEMORY_THREAD_HASHTAG || '#BotDiary';
     memoryService.hashtag = hashtag;
     memoryService.recentMemories = [
       { text: `Thinking about code today. ${hashtag}`, indexedAt: '2026-01-01T00:00:00Z' }

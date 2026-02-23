@@ -61,7 +61,7 @@ class RenderService {
     }
 
     // Add some common defaults just in case
-    ['skybots', 'sydney'].forEach(n => {
+    ['skybots', config.BOT_NAME.toLowerCase()].forEach(n => {
         if (!possibleNames.includes(n)) possibleNames.push(n);
     });
 

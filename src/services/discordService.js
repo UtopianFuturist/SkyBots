@@ -418,7 +418,7 @@ class DiscordService {
 
                 Respond with ONLY "yes" or "no".
             `;
-            const shouldJoin = await llmService.generateResponse([{ role: 'system', content: orchestrationPrompt }], { useQwen: true, preface_system_prompt: false });
+            const shouldJoin = await llmService.generateResponse([{ role: 'system', content: orchestrationPrompt }], { useStep: true, preface_system_prompt: false });
             if (!shouldJoin?.toLowerCase().includes('yes')) {
                 return;
             }
@@ -513,7 +513,7 @@ class DiscordService {
                 The admin just gave a likely behavioral instruction: "${message.content}"
                 Respond in persona, acknowledging the instruction and asking if they want you to save this as a permanent directive.
             `;
-            const offer = await llmService.generateResponse([{ role: 'system', content: offerPrompt }], { useQwen: true, preface_system_prompt: false });
+            const offer = await llmService.generateResponse([{ role: 'system', content: offerPrompt }], { useStep: true, preface_system_prompt: false });
             await this._send(message.channel, offer || "I've noted that. Should I make that a permanent instruction for how I behave?");
             // We continue to respond normally too
         }
@@ -698,7 +698,7 @@ class DiscordService {
             await dataStore.db.write();
 
             const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications back ON (you can now message them spontaneously). Generate a short, natural welcome back message. CRITICAL: Do NOT introduce yourself or announce who you are.`;
-            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
+            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
             await this._send(message.channel, response || "Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
             return;
         }
@@ -706,7 +706,7 @@ class DiscordService {
         if (content.startsWith('/off') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(false);
             const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications OFF (you should stop messaging them spontaneously). Generate a short, natural acknowledgment of their need for focus. CRITICAL: Do NOT introduce yourself or announce who you are.`;
-            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
+            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
             await this._send(message.channel, response || "Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
             return;
         }
@@ -996,7 +996,7 @@ class DiscordService {
                 Respond with a comma-separated list of ONLY the titles/entities. If none, respond "NONE".
             `;
             try {
-                const entitiesRaw = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal });
+                const entitiesRaw = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal });
                 if (entitiesRaw && !entitiesRaw.toUpperCase().includes('NONE')) {
                     const entities = entitiesRaw.split(',').map(e => e.trim()).filter(e => e.length > 2);
                     if (entities.length > 0) {
@@ -1190,8 +1190,8 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                  const [latestMoodMemory, directiveCheck, passedTopicsRaw, prePlanning, extractionResult] = await Promise.all([
                      withTimeout(memoryService.getLatestMoodMemory(), 60000, null),
-                     withTimeout(llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 120000, null),
-                     withTimeout(llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 120000, 'NONE'),
+                     withTimeout(llmService.generateResponse([{ role: 'system', content: directiveCheckPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 120000, null),
+                     withTimeout(llmService.generateResponse([{ role: 'system', content: topicProgressionPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal }), 120000, 'NONE'),
                      (lastIntuitionData && (Date.now() - lastIntuitionData.timestamp < 120000))
                         ? Promise.resolve(lastIntuitionData.intuition)
                         : llmService.performPrePlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, 'discord', currentMood, refusalCounts, null, dataStore.getFirehoseMatches(10), abortController.signal),
@@ -1262,7 +1262,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                              Propose a concise instruction (under 150 chars) to update the bot's persona.
                              Respond with ONLY the instruction or "NONE".
                          `;
-                         const proposedInstruction = await llmService.generateResponse([{ role: 'system', content: feedbackPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+                         const proposedInstruction = await llmService.generateResponse([{ role: 'system', content: feedbackPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0 });
                          if (proposedInstruction && !proposedInstruction.includes('NONE')) {
                              console.log(`[DiscordService] Proposing persona update from feedback: ${proposedInstruction}`);
                              await dataStore.addPendingDirective('persona', 'all', proposedInstruction);
@@ -1610,7 +1610,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                           Title: [Title]
                                           Content: [Content]
                                      `;
-                                     const retryRaw = await llmService.generateResponse([{ role: 'system', content: retryPrompt }], { useQwen: true });
+                                     const retryRaw = await llmService.generateResponse([{ role: 'system', content: retryPrompt }], { useStep: true });
                                      if (retryRaw) {
                                          const tMatch = retryRaw.match(/Title:\s*(.*)/i);
                                          const cMatch = retryRaw.match(/Content:\s*([\s\S]*)/i);
@@ -2067,7 +2067,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                         : messages;
 
                      responseText = await llmService.generateResponse(attemptMessages, {
-                         useQwen: true,
+                         useStep: true,
                          temperature: 0.7 + (attempts * 0.05),
                          tropeBlacklist: prePlanning?.trope_blacklist || [],
                          currentMood,
@@ -2086,7 +2086,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          const injection = await llmService.performInternalInquiry(`Provide material substance to improve this response: "${responseText}"`, "CRITIC");
                          if (injection) {
                              const improvedMessages = [...attemptMessages, { role: 'system', content: `[MATERIAL INJECTION]: ${injection}. Rewrite the response to be more substantive.` }];
-                             responseText = await llmService.generateResponse(improvedMessages, { useQwen: true, currentMood });
+                             responseText = await llmService.generateResponse(improvedMessages, { useStep: true, currentMood });
                          }
                      }
 
@@ -2121,7 +2121,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                 if (extractionResult) {
                     messages.push({ role: 'system', content: `--- EXTRACTED ENTITY CONTEXT ---\n${extractionResult}\n---` });
                 }
-                responseText = await llmService.generateResponse(messages, { useQwen: false, abortSignal: abortController.signal });
+                responseText = await llmService.generateResponse(messages, { useStep: true, abortSignal: abortController.signal });
             }
 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
@@ -2195,7 +2195,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                             (e.g. "Actually...", "Also, I was thinking...", "Forgot to mention...")
                             STRICTLY NO reasoning, meta-commentary, or tags.
                         `;
-                        const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { useQwen: true, preface_system_prompt: false });
+                        const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { useStep: true, preface_system_prompt: false });
                         if (followUp) {
                             await this._send(message.channel, followUp);
                         }
@@ -2221,7 +2221,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                             // Extract theme and add to exhausted themes for admin interactions
                             const themePrompt = `Extract a 1-2 word theme for the following response: "${responseText}". Respond with ONLY the theme.`;
-                            const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useQwen: true, preface_system_prompt: false });
+                            const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useStep: true, preface_system_prompt: false });
                             if (theme) {
                                 await dataStore.addDiscordExhaustedTheme(theme);
                                 await dataStore.addExhaustedTheme(theme);
@@ -2264,7 +2264,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 SUMMARY: [summary]
                                 VIBE: [vibe]
                             `;
-                            const contextUpdate = await llmService.generateResponse([{ role: 'system', content: contextUpdatePrompt }], { useQwen: true, preface_system_prompt: false });
+                            const contextUpdate = await llmService.generateResponse([{ role: 'system', content: contextUpdatePrompt }], { useStep: true, preface_system_prompt: false });
                             if (contextUpdate) {
                                 const factMatch = contextUpdate.match(/FACT:\s*(.*)/i);
                                 const sumMatch = contextUpdate.match(/SUMMARY:\s*(.*)/i);
@@ -2337,7 +2337,7 @@ INSTRUCTIONS:
 `;
 
         try {
-            const response = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useQwen: true, preface_system_prompt: false });
+            const response = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useStep: true, preface_system_prompt: false });
             if (response) {
                 // Remove the 🚨 emoji for a more natural feel
                 await this.sendSpontaneousMessage(response);
@@ -2520,7 +2520,7 @@ INSTRUCTIONS:
                         SUMMARY: [summary]
                         VIBE: [vibe]
                     `;
-                    const result = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { useQwen: true, preface_system_prompt: false });
+                    const result = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { useStep: true, preface_system_prompt: false });
                     if (result) {
                         const sumMatch = result.match(/SUMMARY:\s*(.*)/i);
                         const vibeMatch = result.match(/VIBE:\s*(.*)/i);

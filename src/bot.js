@@ -308,7 +308,7 @@ export class Bot {
                 console.log(`[Bot] Item 18: Reaction detected (${event.reason}) to our post. Updating resonance.`);
                 // Extract 1-word vibe from the reaction
                 const vibePrompt = `Extract a 1-word sentiment/vibe from this reaction to our post: "${event.record.text}".`;
-                const vibe = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0 });
+                const vibe = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true });
                 if (vibe) {
                     await dataStore.updateSocialResonance(vibe.trim(), 0.5);
                 }
@@ -356,7 +356,7 @@ export class Bot {
                 If found, summarize the update as an [ADMIN_FACT].
                 If nothing personal is shared, respond with ONLY "NONE".
             `;
-            const analysis = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { useStep: true, preface_system_prompt: false });
+            const analysis = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { preface_system_prompt: false, useStep: true });
             if (analysis && !analysis.toUpperCase().includes('NONE')) {
                 await dataStore.addAdminFact(analysis);
                 if (memoryService.isEnabled()) {
@@ -547,7 +547,7 @@ export class Bot {
                     If yes, generate a short, natural follow-up reply (under 150 chars).
                     If no, respond with ONLY "NONE".
                 `;
-                const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { useStep: true, preface_system_prompt: false });
+                const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { preface_system_prompt: false, useStep: true });
                 if (followUp && !followUp.toUpperCase().includes('NONE')) {
                     // We need the URI/CID to reply.
                     // recent_thoughts should store URI/CID. Let's verify.
@@ -721,7 +721,7 @@ export class Bot {
                     Respond with ONLY the number of your choice, or "none".
                 `;
 
-                const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { useStep: true, preface_system_prompt: false });
+                const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { preface_system_prompt: false, useStep: true });
                 const choice = parseInt(decisionRes?.match(/\d+/)?.[0]);
 
                 if (!isNaN(choice) && choice >= 1 && choice <= candidates.length) {
@@ -807,7 +807,7 @@ export class Bot {
             Respond with a concise, first-person statement of this shift (under 200 characters).
         `;
 
-        const evolution = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { useStep: true, preface_system_prompt: false });
+        const evolution = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { preface_system_prompt: false, useStep: true });
 
         if (evolution && memoryService.isEnabled()) {
             console.log(`[Bot] Daily evolution crystallized: "${evolution}"`);
@@ -1078,7 +1078,7 @@ export class Bot {
         }
     `;
 
-    const energyResponse = await llmService.generateResponse([{ role: 'system', content: energyPrompt }], { useStep: true, preface_system_prompt: false });
+    const energyResponse = await llmService.generateResponse([{ role: 'system', content: energyPrompt }], { preface_system_prompt: false, useStep: true });
     try {
         const jsonMatch = energyResponse?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -1148,7 +1148,7 @@ export class Bot {
             4. Summarize how you feel about your identity and agency.
         `;
 
-        const reflection = await llmService.generateResponse([{ role: 'system', content: mentalPrompt }], { useStep: true, preface_system_prompt: false });
+        const reflection = await llmService.generateResponse([{ role: 'system', content: mentalPrompt }], { preface_system_prompt: false, useStep: true });
         if (reflection) {
             await memoryService.createMemoryEntry('mental', reflection);
             await dataStore.updateLastMentalReflectionTime(now.getTime());
@@ -1184,7 +1184,7 @@ export class Bot {
             }
         `;
 
-        const goalResponse = await llmService.generateResponse([{ role: 'system', content: goalPrompt }], { useStep: true, preface_system_prompt: false });
+        const goalResponse = await llmService.generateResponse([{ role: 'system', content: goalPrompt }], { preface_system_prompt: false, useStep: true });
         try {
             const jsonMatch = goalResponse?.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
@@ -1200,7 +1200,7 @@ export class Bot {
 
                     // Trigger Inquiry for help if persona wants
                     const askHelp = `Adopt your persona. You just set a goal: "${goalData.goal}". Would you like to perform an internal inquiry to get advice on how to best achieve it? Respond with "yes" or "no".`;
-                    const helpWanted = await llmService.generateResponse([{ role: 'system', content: askHelp }], { useStep: true, preface_system_prompt: false });
+                    const helpWanted = await llmService.generateResponse([{ role: 'system', content: askHelp }], { preface_system_prompt: false, useStep: true });
                     if (helpWanted?.toLowerCase().includes('yes')) {
                         const advice = await llmService.performInternalInquiry(`Provide strategic advice on achieving this goal: "${goalData.goal}" - ${goalData.description}`, "PHILOSOPHER");
                         if (advice && memoryService.isEnabled()) {
@@ -1252,7 +1252,7 @@ export class Bot {
                     "message": "string (your outreach message in persona)"
                 }
             `;
-            const supportRes = await llmService.generateResponse([{ role: 'system', content: supportPrompt }], { useStep: true, preface_system_prompt: false });
+            const supportRes = await llmService.generateResponse([{ role: 'system', content: supportPrompt }], { preface_system_prompt: false, useStep: true });
             try {
                 const jsonMatch = supportRes?.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
@@ -1383,7 +1383,7 @@ export class Bot {
                 Identify 1-2 novel combinations of these tools or a specific "Material Agency" boost you could perform for the admin.
                 Respond with a JSON object: { "capability": "string", "combination": "string" }
             `;
-            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { useStep: true, preface_system_prompt: false });
+            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { preface_system_prompt: false, useStep: true });
             const jsonMatch = discoveryRes?.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const disc = JSON.parse(jsonMatch[0]);
@@ -1415,7 +1415,7 @@ export class Bot {
                 2. Identify ONE specific area for improvement.
                 3. Respond with a memory entry tagged [SELF_AUDIT].
             `;
-            const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, preface_system_prompt: false });
+            const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true });
             if (audit && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('audit', audit);
             }
@@ -1436,7 +1436,7 @@ export class Bot {
 
             Use the tag [EXISTENTIAL] at the beginning.
         `;
-        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true, preface_system_prompt: false });
+        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { preface_system_prompt: false, useStep: true });
         if (reflection && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('mental', reflection);
         }
@@ -1468,7 +1468,7 @@ export class Bot {
                     "reason": "string (why this value is core to your current state)"
                 }
             `;
-            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { useStep: true, preface_system_prompt: false });
+            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { preface_system_prompt: false, useStep: true });
             try {
                 const jsonMatch = discoveryRes?.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
@@ -1805,7 +1805,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                             { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
                         ];
                         // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
-                        candidates = await llmService.generateDrafts(draftMessages, 5, { useStep: true, temperature: 0.8, openingBlacklist, currentMood });
+                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: true, openingBlacklist, currentMood });
                         // Also include the original message from the poll
                         if (!candidates.includes(message)) candidates.unshift(message);
                     } else {
@@ -1820,14 +1820,13 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
 
                     const refinedPlan = await llmService.evaluateAndRefinePlan({
                         intent: "Sending a spontaneous message to the admin to maintain connection.",
-                        actions: proposedActions
-                    }, {
-                        history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
+                        actions: proposedActions },
+                    { history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
                         platform: 'discord',
                         currentMood,
                         refusalCounts,
                         latestMoodMemory,
-                        currentConfig: dConfig
+                        currentConfig: dConfig, useStep: true
                     });
 
                     if (refinedPlan.decision === 'refuse') {
@@ -2045,7 +2044,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         // Extract and record the theme of the sent message to avoid immediate repetition
                         try {
                             const themePrompt = `Extract a 1-2 word theme for the following message: "${msgToSend}". Respond with ONLY the theme.`;
-                            const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { useStep: true, preface_system_prompt: false });
+                            const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { preface_system_prompt: false, useStep: true });
                             if (theme) {
                                 await dataStore.addDiscordExhaustedTheme(theme);
                                 await dataStore.addExhaustedTheme(theme);
@@ -2479,7 +2478,7 @@ Identify the topic and main takeaway.`;
 
             Summary (be brief, objective, and conversational):
         `;
-        historicalSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 2000 });
+        historicalSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 2000, useStep: true});
 
     }
 
@@ -2559,7 +2558,7 @@ Identify the topic and main takeaway.`;
 
           Do not invite further discussion.
         `;
-        const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 2000 });
+        const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 2000, useStep: true});
         if (conclusion) {
           const reply = await blueskyService.postReply(notif, conclusion);
           if (reply && reply.uri) {
@@ -2631,7 +2630,7 @@ Identify the topic and main takeaway.`;
         Focus on the fact that you no longer wish to engage based on their behavior, but say it as your persona would.
         Keep it concise.
       `;
-      const disengagement = await llmService.generateResponse([{ role: 'system', content: disengagementPrompt }], { max_tokens: 2000 });
+      const disengagement = await llmService.generateResponse([{ role: 'system', content: disengagementPrompt }], { max_tokens: 2000, useStep: true});
       if (disengagement) {
         const reply = await blueskyService.postReply(notif, disengagement);
         if (reply && reply.uri) {
@@ -2653,7 +2652,7 @@ Identify the topic and main takeaway.`;
 
           CRITICAL: YOUR RESPONSE MUST BE LESS THAN 10 WORDS. DO NOT EXCEED THIS LIMIT UNDER ANY CIRCUMSTANCES.
         `;
-        const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 2000 });
+        const conclusion = await llmService.generateResponse([{ role: 'system', content: conclusionPrompt }], { max_tokens: 2000, useStep: true});
         if (conclusion) {
           const reply = await blueskyService.postReply(notif, conclusion);
           if (reply && reply.uri) {
@@ -2816,7 +2815,7 @@ Identify the topic and main takeaway.`;
       // Item 1: Entity Extraction for Firehose Tracking
       if (prePlanning?.suggestions) {
           const extractionPrompt = `Identify unique titles (games, books, movies, software, specific people) from the user's post: "${text}". Respond with comma-separated list or "NONE".`;
-          const entities = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0 });
+          const entities = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true });
           if (entities && !entities.toUpperCase().includes('NONE')) {
               const entityList = cleanKeywords(entities);
               if (entityList.length > 0) {
@@ -2845,7 +2844,7 @@ Identify the topic and main takeaway.`;
           }
       }
 
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning);
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning, true);
       console.log(`[Bot] Agentic Plan (Attempt ${planAttempts}): ${JSON.stringify(plan)}`);
       } catch (err) {
           console.error(`[Bot] Error in planning attempt ${planAttempts}:`, err);
@@ -2869,8 +2868,8 @@ Identify the topic and main takeaway.`;
           currentMood,
           refusalCounts,
           latestMoodMemory,
-          currentConfig: dConfig
-      });
+          currentConfig: dConfig, useStep: true
+       });
 
       // Log Agency (Item 30)
       await dataStore.logAgencyAction(plan.intent, refinedPlan.decision, refinedPlan.reason);
@@ -2892,7 +2891,7 @@ Identify the topic and main takeaway.`;
 
               if (isMelancholic) {
                   const askTalk = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. You just refused a plan due to a melancholic internal state. You suggested an alternative: "${alternative}". Would you like to talk about this feeling in a private self-dialogue (Inquiry Call) before continuing? Respond with ONLY "yes" or "no".`;
-                  const wantToTalk = await llmService.generateResponse([{ role: 'system', content: askTalk }], { useStep: true, preface_system_prompt: false });
+                  const wantToTalk = await llmService.generateResponse([{ role: 'system', content: askTalk }], { preface_system_prompt: false, useStep: true });
                   if (wantToTalk?.toLowerCase().includes('yes')) {
                       console.log(`[Bot] Triggering melancholic self-dialogue Inquiry call.`);
                       const dialogue = await llmService.performInternalInquiry(`Reflect on these melancholic feelings: ${refinedPlan.reason}. Explore why you chose the alternative: ${alternative}.`, "THERAPIST");
@@ -2995,7 +2994,7 @@ Identify the topic and main takeaway.`;
                 let desc = description;
                 if (!desc) {
                   const descPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. Generate a short description for a new Moltbook community called "${dName}" about "${topic || dName}".`;
-                  desc = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useStep: true, preface_system_prompt: false });
+                  desc = await llmService.generateResponse([{ role: 'system', content: descPrompt }], { max_tokens: 150, useStep: true, preface_system_prompt: false});
                 }
                 const result = await null && (submoltName, dName, desc);
                 if (result) {
@@ -3189,7 +3188,7 @@ Identify the topic and main takeaway.`;
 
             Provide a concise, conversational update in your persona. Keep it under 300 characters if possible.
           `;
-          const report = await llmService.generateResponse([{ role: 'system', content: reportPrompt }], { max_tokens: 500, useStep: true });
+          const report = await llmService.generateResponse([{ role: 'system', content: reportPrompt }], { max_tokens: 50, useStep: true});
           if (report) {
             searchContext += `\n[Moltbook Activity Report: ${report}]`;
           }
@@ -3652,7 +3651,7 @@ Identify the topic and main takeaway.`;
 
         Respond with ONLY the word "yes" or "no". Do NOT include any other text, reasoning, <think> tags, or "I can't see images" refusals.
       `.trim();
-      const pfpIntentResponse = await llmService.generateResponse([{ role: 'system', content: pfpIntentSystemPrompt }, { role: 'user', content: `The user's post is: "${text}"` }], { max_tokens: 2000 });
+      const pfpIntentResponse = await llmService.generateResponse([{ role: 'system', content: pfpIntentSystemPrompt }, { role: 'user', content: `The user's post is: "${text}"` }], { max_tokens: 2000, useStep: true});
 
       if (pfpIntentResponse && pfpIntentResponse.toLowerCase().includes('yes')) {
           console.log(`[Bot] PFP analysis intent confirmed.`);
@@ -3670,7 +3669,7 @@ Identify the topic and main takeaway.`;
 
             User post: "${text}"
           `.trim();
-          const targetsResponse = await llmService.generateResponse([{ role: 'system', content: pfpTargetPrompt }], { max_tokens: 2000 });
+          const targetsResponse = await llmService.generateResponse([{ role: 'system', content: pfpTargetPrompt }], { max_tokens: 2000, useStep: true});
 
           if (targetsResponse && !targetsResponse.toLowerCase().includes('none')) {
               const targets = targetsResponse.split(',').map(t => t.trim().toLowerCase());
@@ -3739,7 +3738,7 @@ Identify the topic and main takeaway.`;
 
           Analysis:
         `;
-          userProfileAnalysis = await llmService.generateResponse([{ role: 'system', content: analyzerPrompt }], { max_tokens: 4000, useStep: true });
+          userProfileAnalysis = await llmService.generateResponse([{ role: 'system', content: analyzerPrompt }], { max_tokens: 4000, useStep: true});
           console.log(`[Bot] User Profile Analyzer Tool finished for @${handle}.`);
         } else {
           userProfileAnalysis = "No recent activity found for this user.";
@@ -3858,7 +3857,7 @@ Identify the topic and main takeaway.`;
                 4. Maintain your core persona: grounded, direct, and authentic.
                 5. Keep it under 300 characters.
               `;
-              const finalRewrite = await llmService.generateResponse([...messages, { role: 'system', content: rewritePrompt }], { useStep: true, temperature: 0.7, openingBlacklist, currentMood });
+              const finalRewrite = await llmService.generateResponse([...messages, { role: 'system', content: rewritePrompt  }], {  temperature: 0.7, openingBlacklist, currentMood, useStep: true });
               if (finalRewrite) candidates = [finalRewrite];
           } else {
               const attemptMessages = respFeedback
@@ -3867,9 +3866,9 @@ Identify the topic and main takeaway.`;
 
               if (respAttempts === 1) {
                   console.log(`[Bot] Generating 5 diverse drafts for initial reply attempt...`);
-                  candidates = await llmService.generateDrafts(attemptMessages, 5, { useStep: true, temperature: currentTemp, openingBlacklist, currentMood });
+                  candidates = await llmService.generateDrafts(attemptMessages, 5, {  temperature: currentTemp, openingBlacklist, currentMood });
               } else {
-                  const singleResponse = await llmService.generateResponse(attemptMessages, { useStep: true, temperature: currentTemp, openingBlacklist, currentMood });
+                  const singleResponse = await llmService.generateResponse(attemptMessages, { temperature: currentTemp, openingBlacklist, currentMood, useStep: true });
                   if (singleResponse) candidates = [singleResponse];
               }
           }
@@ -4047,7 +4046,7 @@ Identify the topic and main takeaway for this interaction.`;
 
             Respond with "yes", "no", or "milestone".
           `;
-          const shouldUpdate = await llmService.generateResponse([{ role: 'system', content: relPrompt }], { useStep: true, preface_system_prompt: false });
+          const shouldUpdate = await llmService.generateResponse([{ role: 'system', content: relPrompt }], { preface_system_prompt: false, useStep: true });
           if (shouldUpdate && (shouldUpdate.toLowerCase().includes('yes') || shouldUpdate.toLowerCase().includes('milestone'))) {
               const isMilestone = shouldUpdate.toLowerCase().includes('milestone');
               console.log(`[Bot] Spontaneous relationship update (${isMilestone ? 'MILESTONE' : 'YES'}) triggered for @${handle}.`);
@@ -4074,7 +4073,7 @@ Describe how you feel about this user and your relationship now.`;
           Respond with ONLY the submolt name (e.g., "coding", "philosophy", "art", "general").
           Do not include m/ prefix or any other text.
         `;
-        const catResponse = await llmService.generateResponse([{ role: 'system', content: categorizationPrompt }], { max_tokens: 50, useStep: true, preface_system_prompt: false });
+        const catResponse = await llmService.generateResponse([{ role: 'system', content: categorizationPrompt }], { max_tokens: 50, useStep: true, preface_system_prompt: false});
         const targetSubmolt = catResponse?.toLowerCase().replace(/^m\//, '').trim() || 'general';
 
         // await moltbookService.post(title, content, targetSubmolt);
@@ -4094,7 +4093,7 @@ Describe how you feel about this user and your relationship now.`;
       // Update User Summary periodically
       if (userMemory.length % 5 === 0) {
         const summaryPrompt = `Based on the following interaction history with @${handle}, provide a concise, one-sentence summary of this user's interests, relationship with the bot, and personality. Be objective but conversational. Do not include reasoning or <think> tags.\n\nInteraction History:\n${userMemory.slice(-10).map(m => `User: "${m.text}"\nBot: "${m.response}"`).join('\n')}`;
-        const newSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 2000 });
+        const newSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 2000, useStep: true});
         if (newSummary) {
           await dataStore.updateUserSummary(handle, newSummary);
           console.log(`[Bot] Updated persistent summary for @${handle}: ${newSummary}`);
@@ -4103,14 +4102,14 @@ Describe how you feel about this user and your relationship now.`;
 
     // Repo Knowledge Injection
     const repoIntentPrompt = `Analyze the user's post to determine if they are asking about the bot's code, architecture, tools, or internal logic. Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.\n\nUser's post: "${text}"`;
-    const repoIntentResponse = await llmService.generateResponse([{ role: 'system', content: repoIntentPrompt }], { max_tokens: 2000, preface_system_prompt: false });
+    const repoIntentResponse = await llmService.generateResponse([{ role: 'system', content: repoIntentPrompt }], { max_tokens: 2000, useStep: true, preface_system_prompt: false});
 
     if (repoIntentResponse && repoIntentResponse.toLowerCase().includes('yes')) {
       console.log(`[Bot] Repo-related query detected. Searching codebase for context...`);
       if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
         console.log(`[Bot] Google Search keys missing for repo search.`);
         const repoMissingKeyPrompt = `A user is asking about your code or internal logic, but your Google Search API key is not configured, which you use to search your repository. Write a very short, conversational message (max 150 characters) explaining that you can't access your codebase right now because of this missing configuration.`;
-        const repoMissingKeyMsg = await llmService.generateResponse([{ role: 'system', content: repoMissingKeyPrompt }], { max_tokens: 200 });
+        const repoMissingKeyMsg = await llmService.generateResponse([{ role: 'system', content: repoMissingKeyPrompt }], { max_tokens: 2000, useStep: true});
         if (repoMissingKeyMsg) {
           responseText = repoMissingKeyMsg;
         }
@@ -4130,7 +4129,7 @@ Describe how you feel about this user and your relationship now.`;
           // Inject this into the messages before final response generation
           messages.splice(1, 0, { role: 'system', content: repoSystemPrompt });
             // Re-generate response with new context
-            responseText = await llmService.generateResponse(messages, { max_tokens: 2000 });
+            responseText = await llmService.generateResponse(messages, { max_tokens: 2000, useStep: true  });
           }
         }
       }
@@ -4436,7 +4435,7 @@ Describe how you feel about this user and your relationship now.`;
 
                 Respond with ONLY the name of the topic that represents a conversational void, or "NONE".
             `;
-            const voidResponse = await llmService.generateResponse([{ role: 'system', content: topicsVoidCheckPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0 });
+            const voidResponse = await llmService.generateResponse([{ role: 'system', content: topicsVoidCheckPrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true });
             if (voidResponse && !voidResponse.toUpperCase().includes('NONE')) {
                 voidTopic = voidResponse.trim();
                 console.log(`[Bot] Void detected: "${voidTopic}".`);
@@ -4496,7 +4495,7 @@ Describe how you feel about this user and your relationship now.`;
       `;
       let feedSentiment = { valence: 0, arousal: 0 };
       try {
-          const sentRes = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true, preface_system_prompt: false });
+          const sentRes = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { preface_system_prompt: false, useStep: true });
           const jsonMatch = sentRes?.match(/\{[\s\S]*\}/);
           if (jsonMatch) feedSentiment = JSON.parse(jsonMatch[0]);
       } catch (e) {}
@@ -4597,7 +4596,7 @@ Describe how you feel about this user and your relationship now.`;
 
       let topicResponse = voidTopic;
       if (!topicResponse) {
-          topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 4000, preface_system_prompt: false, useStep: true });
+          topicResponse = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { max_tokens: 4000, useStep: true, preface_system_prompt: false});
       }
       console.log(`[Bot] Autonomous topic identification result: ${topicResponse}`);
       if (!topicResponse || topicResponse.toLowerCase() === 'none') {
@@ -4653,7 +4652,7 @@ Describe how you feel about this user and your relationship now.`;
                     Article: ${best.title} - ${content.substring(0, 1000)}
                     Respond with ONLY "yes" or "no".
                   `;
-                  const isRel = await llmService.generateResponse([{ role: 'system', content: relevancePrompt }], { useStep: true, preface_system_prompt: false });
+                  const isRel = await llmService.generateResponse([{ role: 'system', content: relevancePrompt }], { preface_system_prompt: false, useStep: true });
                   if (isRel?.toLowerCase().includes('yes')) {
                       agenticContext += `\n[NEWS GROUNDING]: Article found: "${best.title}" at ${best.link}. Content summary: ${content.substring(0, 1000)}`;
                       postType = 'text'; // Post as text grounding the news
@@ -4681,7 +4680,7 @@ Describe how you feel about this user and your relationship now.`;
                 URL: ${url}
                 Respond with ONLY "yes" or "no".
               `;
-              const shouldRead = await llmService.generateResponse([{ role: 'system', content: relevancePrompt }], { useStep: true, preface_system_prompt: false });
+              const shouldRead = await llmService.generateResponse([{ role: 'system', content: relevancePrompt }], { preface_system_prompt: false, useStep: true });
               if (shouldRead?.toLowerCase().includes('yes')) {
                   const safety = await llmService.isUrlSafe(url);
                   if (safety.safe) {
@@ -4713,7 +4712,7 @@ Describe how you feel about this user and your relationship now.`;
           const allResults = [...apiResults.map(r => r.record.text), ...localMatches.map(m => m.text)];
           if (allResults.length > 0) {
               const researchPrompt = `Summarize the current public sentiment and key discussion points regarding "${topic}" based on these recent posts from the network:\n${allResults.slice(0, 15).join('\n')}`;
-              const researchSummary = await llmService.generateResponse([{ role: 'system', content: researchPrompt }], { useStep: true, preface_system_prompt: false });
+              const researchSummary = await llmService.generateResponse([{ role: 'system', content: researchPrompt }], { preface_system_prompt: false, useStep: true });
               if (researchSummary) {
                   agenticContext += `\n[FIREHOSE RESEARCH SUMMARY]: ${researchSummary}`;
               }
@@ -4738,12 +4737,12 @@ Describe how you feel about this user and your relationship now.`;
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
 
       const refinedPlan = await llmService.evaluateAndRefinePlan(autonomousPlan, {
-          history: recentTimelineActivity.split('\n').map(line => ({ author: 'You', text: line })),
+          history: recentTimelineActivity.split('\n').map(line => ({ author: 'You', text: line  })),
           platform: 'bluesky',
           currentMood: { ...currentMood, valence: (currentMood.valence + feedSentiment.valence) / 2, arousal: (currentMood.arousal + feedSentiment.arousal) / 2 },
           refusalCounts,
           latestMoodMemory,
-          currentConfig: dConfig
+          currentConfig: dConfig, useStep: true
       });
 
       // Log Agency (Item 30)
@@ -4789,7 +4788,7 @@ Describe how you feel about this user and your relationship now.`;
         If yes, respond with ONLY their handle (e.g., @user.bsky.social). Otherwise, respond "none".
         CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
       `;
-      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 4000, preface_system_prompt: false, useStep: true });
+      const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 4000, useStep: true, preface_system_prompt: false});
       const useMention = mentionHandle && mentionHandle.startsWith('@');
       console.log(`[Bot] Mention check result: ${mentionHandle} (Use mention: ${useMention})`);
 
@@ -4891,7 +4890,7 @@ Describe how you feel about this user and your relationship now.`;
             Respond with 1-3 words representing the aesthetic (e.g. "fractured-noir", "ethereal-glitch", "haunting-minimalism").
             Respond with ONLY the style keywords.
           `.trim();
-          const style = await llmService.generateResponse([{ role: 'system', content: stylePrompt }], { useStep: true, preface_system_prompt: false });
+          const style = await llmService.generateResponse([{ role: 'system', content: stylePrompt }], { preface_system_prompt: false, useStep: true });
 
           const imageResult = await imageService.generateImage(`${style || ''} ${topic}`, { allowPortraits: false, feedback: postFeedback, mood: currentMood });
 
@@ -4914,7 +4913,7 @@ Describe how you feel about this user and your relationship now.`;
 
             if (imageAnalysis) {
               const altTextPrompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}. Respond with ONLY the alt-text.`;
-              imageAltText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 2000, preface_system_prompt: false });
+              imageAltText = await llmService.generateResponse([{ role: 'system', content: altTextPrompt }], { max_tokens: 2000, useStep: true, preface_system_prompt: false});
 
               console.log(`[Bot] Uploading image blob...`);
               try {
@@ -4982,7 +4981,7 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: true, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
 
           embed = {
             $type: 'app.bsky.embed.images',
@@ -5019,7 +5018,7 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist });
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: true, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
         }
 
         if (postContent) {
@@ -5109,7 +5108,7 @@ Describe how you feel about this user and your relationship now.`;
                     Generate a second part of this realization to be posted 10-15 minutes later as a thread.
                     Respond with ONLY the continuation text, or "NONE".
                 `;
-                continuationText = await llmService.generateResponse([{ role: 'system', content: threadPrompt }], { useStep: true, preface_system_prompt: false });
+                continuationText = await llmService.generateResponse([{ role: 'system', content: threadPrompt }], { preface_system_prompt: false, useStep: true });
             }
 
             // Pre-Post Consultation Mode
@@ -5204,7 +5203,7 @@ Describe how you feel about this user and your relationship now.`;
             EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
-        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, temperature: 0.8, openingBlacklist });
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, useStep: true, temperature: 0.8, useStep: true, openingBlacklist});
         if (postContent) {
           postContent = sanitizeThinkingTags(postContent);
           postContent = sanitizeCharacterCount(postContent);
@@ -5468,7 +5467,7 @@ Describe how you feel about this user and your relationship now.`;
                 currentMood,
                 refusalCounts,
                 latestMoodMemory,
-                currentConfig: dConfig
+                currentConfig: dConfig, useStep: true
             });
 
             if (refinedPlan.decision === 'refuse') {
@@ -5701,7 +5700,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         const currentTemp = 0.7 + (Math.min(musingAttempts - 1, 3) * 0.05);
         const retryContext = musingFeedback ? `\n\n**RETRY FEEDBACK**: ${musingFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedMusAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nRewrite your response to be as DIFFERENT as possible from these previous attempts in structure and tone while keeping the same intent.` : '';
 
-        const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt + retryContext }], { useStep: true, temperature: currentTemp });
+        const musingRaw = await llmService.generateResponse([{ role: 'system', content: musingPrompt + retryContext }], { temperature: currentTemp, useStep: true });
 
         if (!musingRaw) break;
 
@@ -5730,13 +5729,13 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             const refinedPlan = await llmService.evaluateAndRefinePlan({
                 intent: `Post a new musing to Moltbook m/${targetSubmolt} about "${title}".`,
                 actions: [{ tool: "moltbook_post", parameters: { title, content, submolt: targetSubmolt } }]
-            }, {
-                history: recentMoltbookPosts.map(m => ({ author: 'You', text: m })),
+            },
+            { history: recentMoltbookPosts.map(m => ({ author: 'You', text: m   })),
                 platform: 'moltbook',
                 currentMood,
                 refusalCounts,
                 latestMoodMemory,
-                currentConfig: dConfig
+                currentConfig: dConfig, useStep: true
             });
 
             if (refinedPlan.decision === 'refuse') {
@@ -5859,7 +5858,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
         }
       `;
 
-      const response = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
+      const response = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { preface_system_prompt: false, useStep: true });
       const jsonMatch = response?.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         const result = JSON.parse(jsonMatch[0]);
@@ -5911,7 +5910,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                     }
                 `;
 
-                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true, preface_system_prompt: false });
+                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { preface_system_prompt: false, useStep: true });
                 const jsonMatch = response?.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     const mapping = JSON.parse(jsonMatch[0]);
@@ -5957,7 +5956,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                 }
             `;
 
-            const response = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { useStep: true, preface_system_prompt: false });
+            const response = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { preface_system_prompt: false, useStep: true });
             const jsonMatch = response?.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const evolution = JSON.parse(jsonMatch[0]);
@@ -6017,7 +6016,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                     }
                 `;
 
-                const response = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { useStep: true, preface_system_prompt: false });
+                const response = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { preface_system_prompt: false, useStep: true });
                 const jsonMatch = response?.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     const pattern = JSON.parse(jsonMatch[0]);

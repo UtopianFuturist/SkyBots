@@ -32,7 +32,7 @@ const defaultData = {
   discord_pending_mirror: null, // { content, topic, timestamp }
   discord_relationship_mode: 'friend', // partner, friend, coworker
   discord_scheduled_times: [], // [ "HH:mm" ]
-  discord_quiet_hours: { start: 21, end: 5 }, // 24h format
+  discord_quiet_hours: { start: 21, end: 6 }, // 24h format
   discord_pending_directives: [], // [ { type: 'directive|persona', platform, instruction, timestamp } ]
   discord_user_facts: {}, // { userId: { facts: [], last_updated } }
   discord_channel_summaries: {}, // { channelId: { summary, vibe, last_updated } }
@@ -192,7 +192,7 @@ class DataStore {
     }
     // Update default quiet hours if still at old default (23-8)
     if (this.db.data.discord_quiet_hours?.start === 23 && this.db.data.discord_quiet_hours?.end === 8) {
-        this.db.data.discord_quiet_hours = { start: 21, end: 5 };
+        this.db.data.discord_quiet_hours = { start: 21, end: 6 };
         migrationChanged = true;
     }
     if (migrationChanged) {
@@ -625,7 +625,7 @@ class DataStore {
   }
 
   getDiscordQuietHours() {
-    return this.db.data.discord_quiet_hours || { start: 23, end: 8 };
+    return this.db.data.discord_quiet_hours || { start: 21, end: 6 };
   }
 
   getLastMemoryCleanupTime() {
@@ -783,7 +783,7 @@ class DataStore {
       post_topics: this.db.data.post_topics || [],
       image_subjects: this.db.data.image_subjects || [],
       discord_relationship_mode: this.db.data.discord_relationship_mode || 'friend',
-      discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 21, end: 5 },
+      discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 21, end: 6 },
       discord_admin_available: this.db.data.discord_admin_available ?? true,
       admin_exhaustion_score: this.db.data.admin_exhaustion_score || 0.0,
       admin_last_emotional_states: this.db.data.admin_last_emotional_states || [],

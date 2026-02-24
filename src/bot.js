@@ -904,8 +904,12 @@ export class Bot {
         if (topics.length === 0) return;
 
         const topic = topics[Math.floor(Math.random() * topics.length)];
-        const humor = await llmService.performDialecticHumor(topic);
-
+        let humor = await llmService.performDialecticHumor(topic);
+        if (humor) {
+            humor = sanitizeThinkingTags(humor);
+            const synthesisMatch = humor.match(/SYNTHESIS(?:\s*\(HUMOR\))?\s*:\s*([\s\S]*)$/i);
+            if (synthesisMatch) humor = synthesisMatch[1].trim();
+        }
         if (humor && memoryService.isEnabled()) {
             console.log(`[Bot] Dialectic humor generated for "${topic}": ${humor}`);
             // Check if we should post it immediately or store as a "Dream/Draft"
@@ -1645,15 +1649,19 @@ export class Bot {
 
             const sleepMentionedAt = dataStore.getAdminSleepMentionedAt();
             const minsSinceSleepMention = (Date.now() - sleepMentionedAt) / (1000 * 60);
+            const currentHour = now.getHours();
             let likelyAsleep = false;
-            if (quietMins > 40) {
-                if (sleepMentionedAt > 0 && minsSinceSleepMention < 180) likelyAsleep = true; // Mentioned sleep in last 3 hours
-                if (inQuietHours) likelyAsleep = true;
-            }
 
-            let needsPresenceOffer = false;
-            if (shouldPoll) {
-                // Item 29: Presence Sensitivity - Offer report after 24h absence
+            if (quietMins > 40) {
+                // Hard reset: If it's between 6 AM and 9 PM, we assume the user is awake
+                // regardless of recent sleep mentions or quiet hours.
+                if (currentHour >= 6 && currentHour < 21) {
+                    likelyAsleep = false;
+                } else {
+                    if (sleepMentionedAt > 0 && minsSinceSleepMention < 180) likelyAsleep = true; // Mentioned sleep in last 3 hours
+                    if (inQuietHours) likelyAsleep = true;
+                }
+            }
                 if (quietMins > 24 * 60 && !isScheduled) {
                     console.log(`[Bot] Discord Presence Ping: Admin absent for >24h. Polling to offer a catch-up report.`);
                     needsPresenceOffer = true;
@@ -1805,10 +1813,11 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                             { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
                         ];
                         // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
-                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: true, openingBlacklist, currentMood });
+                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
+                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
+                        candidates = candidates.map(c => sanitizeThinkingTags(c)).filter(c => c.length > 0);
                         // Also include the original message from the poll
-                        if (!candidates.includes(message)) candidates.unshift(message);
-                    } else {
+                        if (!candidates.includes(message)) candidates.unshift(sanitizeThinkingTags(message));
                         candidates = [message];
                     }
 
@@ -4981,7 +4990,7 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: true, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: false, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
 
           embed = {
             $type: 'app.bsky.embed.images',
@@ -5018,7 +5027,7 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: true, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: false, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
         }
 
         if (postContent) {
@@ -5203,7 +5212,7 @@ Describe how you feel about this user and your relationship now.`;
             EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
-        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, useStep: true, temperature: 0.8, useStep: true, openingBlacklist});
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, useStep: false, temperature: 0.8, useStep: false, openingBlacklist});
         if (postContent) {
           postContent = sanitizeThinkingTags(postContent);
           postContent = sanitizeCharacterCount(postContent);

@@ -1270,7 +1270,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          }
                      }
 
-                 let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning, abortController.signal);
+                 let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning, abortController.signal, true);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  // Confidence Check (Item 9)
@@ -1291,7 +1291,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      refusalCounts,
                      latestMoodMemory,
                      currentConfig: dConfig,
-                     abortSignal: abortController.signal
+                     abortSignal: abortController.signal, useStep: true
                  });
 
                  if (refinedPlan.decision === 'refuse') {

@@ -263,7 +263,7 @@ Vary your structure and tone from recent messages.`
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 300000); // 180s timeout
+    const timeout = setTimeout(() => controller.abort(), 90000); // 90s timeout
 
     // Combine external signal if provided
     if (abortSignal) {
@@ -1039,7 +1039,7 @@ Vary your structure and tone from recent messages.`
     const validatedQuery = query || "No query provided.";
 
     // Internal Inquiry uses the main model (Qwen 3.5) as requested.
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: validatedQuery }], { useStep: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: validatedQuery }], { useQwen: true, preface_system_prompt: false });
   }
 
   async shouldLikePost(postText) {
@@ -1660,7 +1660,7 @@ Vary your structure and tone from recent messages.`
     return prunedLines.join('\n');
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null, abortSignal = null) {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null, abortSignal = null, useStep = false) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = this._formatHistory(conversationHistory, isAdmin);
 
@@ -2044,7 +2044,7 @@ Vary your structure and tone from recent messages.`
     }
 
     const messages = [{ role: 'system', content: finalSystemPrompt }];
-    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
+    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: !useStep, useStep, preface_system_prompt: false, temperature: 0.0, abortSignal });
 
     try {
       if (!response) {
@@ -2067,7 +2067,7 @@ Vary your structure and tone from recent messages.`
   }
 
   async evaluateAndRefinePlan(proposedPlan, context) {
-    const { history, platform, currentMood, refusalCounts, latestMoodMemory, feedback, currentConfig, abortSignal } = context;
+    const { history, platform, currentMood, refusalCounts, latestMoodMemory, feedback, currentConfig, abortSignal, useStep = false } = context;
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const isAdmin = context.isAdmin || platform === 'discord';
 
@@ -2136,7 +2136,7 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: !useStep, useStep, preface_system_prompt: false, temperature: 0.0, abortSignal });
 
     try {
       const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -2359,7 +2359,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     `;
 
     const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], {
-        useQwen: true,
+        useStep: true,
         preface_system_prompt: false,
         temperature: 0.0,
         openingBlacklist
@@ -2498,7 +2498,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Respond directly with the summary.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}\n\nContent:\n${text}` }];
-    return await this.generateResponse(messages, { max_tokens: 1000, useStep: true, preface_system_prompt: false });
+    return await this.generateResponse(messages, { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
   }
 
   async requestConfirmation(action, reason, context = {}) {

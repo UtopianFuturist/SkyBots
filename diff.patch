@@ -1,0 +1,81 @@
+diff --git a/src/bot.js b/src/bot.js
+index 0a0ff5e..ec72292 100644
+--- a/src/bot.js
++++ b/src/bot.js
+@@ -1649,7 +1649,6 @@ export class Bot {
+
+             const sleepMentionedAt = dataStore.getAdminSleepMentionedAt();
+             const minsSinceSleepMention = (Date.now() - sleepMentionedAt) / (1000 * 60);
+-            const currentHour = now.getHours();
+             let likelyAsleep = false;
+
+             if (quietMins > 40) {
+@@ -1667,7 +1666,6 @@ export class Bot {
+                     needsPresenceOffer = true;
+                     // shouldPoll remains true
+                 }
+-            }
+
+             if (shouldPoll) {
+                 console.log(`[Bot] Discord heartbeat polling (Reason: ${pollReason}, Mode: ${relationshipMode}, Quiet: ${Math.round(quietMins)}m)`);
+@@ -1971,24 +1969,26 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
+                                     const points = action.parameters?.conflicting_points || [];
+                                     console.log(`[Bot] Heartbeat Action: resolve_dissonance`);
+                                     await llmService.resolveDissonance(points);
+-                                } else         if (action.tool === 'deep_research') {
+-            const topic = action.parameters?.topic || action.query;
+-            if (topic) {
+-                console.log(`[Bot] Plan Tool: deep_research for "${topic}"`);
+-                const [googleResults, wikiResults, bskyResults] = await Promise.all([
+-                    googleSearchService.search(topic).catch(() => []),
+-                    wikipediaService.searchArticle(topic).catch(() => null),
+-                    blueskyService.searchPosts(topic, { limit: 10 }).catch(() => [])
+-                ]);
+-                const localMatches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(topic.toLowerCase()));
+-                const firehoseContext = [...localMatches.map(m => m.text), ...bskyResults.map(r => r.record.text)];
+-                const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults, firehoseContext);
+-                if (brief) {
+-                    searchContext += `\n--- INTERNAL RESEARCH BRIEF FOR "${topic}" ---\n${brief}\n---`;
+-                }
+-            }
+-        }
+-        if (action.tool === 'search_firehose') {
++                                } else if (action.tool === 'deep_research') {
++                                    const topic = action.parameters?.topic || action.query;
++                                    if (topic) {
++                                        console.log(`[Bot] Plan Tool: deep_research for "${topic}"`);
++                                        const [googleResults, wikiResults, bskyResults] = await Promise.all([
++                                            googleSearchService.search(topic).catch(() => []),
++                                            wikipediaService.searchArticle(topic).catch(() => null),
++                                            blueskyService.searchPosts(topic, { limit: 10 }).catch(() => [])
++                                        ]);
++                                        const localMatches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(topic.toLowerCase()));
++                                        const firehoseContext = [...localMatches.map(m => m.text), ...bskyResults.map(r => r.record.text)];
++                                        const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults, firehoseContext);
++                                        if (brief) {
++                                            searchContext += `
++--- INTERNAL RESEARCH BRIEF FOR "${topic}" ---
++${brief}
++---`;
++                                        }
++                                    }
++                                } else if (action.tool === 'search_firehose') {
+                                     const query = action.query || action.parameters?.query;
+                                     console.log(`[Bot] Heartbeat Action: search_firehose for "${query}"`);
+
+@@ -2015,6 +2015,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
+                                     searchContext += `\n--- BLUESKY FIREHOSE/SEARCH RESULTS FOR "${query}" ---\n${resultsText || 'No recent results found.'}\n---`;
+                                 }
+                             }
++                            }
+
+                             if ((performedInquiry || searchContext) && attempts < MAX_ATTEMPTS) {
+                                 console.log(`[Bot] Heartbeat findings obtained. Retrying generation to incorporate them.`);
+@@ -2027,7 +2028,6 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
+                                 rejectedAttempts.push(responseText);
+                                 continue;
+                             }
+-                        }
+
+                         // Check if discord_message was approved/retained
+                         const messageAction = finalActions.find(a => a.tool === 'discord_message');

@@ -94,7 +94,8 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   IMAGE_GENERATION_MODEL: process.env.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-3-medium',
   QWEN_MODEL: process.env.QWEN_MODEL || 'qwen/qwen3.5-397b-a17b',
   CODER_MODEL: process.env.CODER_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct',
-  VISION_MODEL: process.env.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct',
+  VISION_MODEL: process.env.VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct',
+  STEP_MODEL: process.env.STEP_MODEL || "stepfun-ai/step-3.5-flash",
 
   // Moltbook
   MOLTBOOK_API_KEY: process.env.MOLTBOOK_API_KEY,
@@ -138,6 +139,7 @@ console.log(`[Config] Loaded IMAGE_SUBJECTS: ${config.IMAGE_SUBJECTS ? 'Exists' 
 console.log(`[Config] Loaded LLM_MODEL: ${config.LLM_MODEL}`);
 console.log(`[Config] Loaded QWEN_MODEL: ${config.QWEN_MODEL}`);
 console.log(`[Config] Loaded CODER_MODEL: ${config.CODER_MODEL}`);
+console.log(`[Config] Loaded STEP_MODEL: ${config.STEP_MODEL}`);
 console.log(`[Config] Loaded MOLTBOOK_API_KEY: ${config.MOLTBOOK_API_KEY ? 'Exists' : 'Optional (will register on startup if missing)'}`);
 console.log(`[Config] Loaded DISCORD_BOT_TOKEN: ${config.DISCORD_BOT_TOKEN ? 'Exists' : 'Optional'}`);
 console.log(`[Config] Loaded DISCORD_GUILD_ID: ${config.DISCORD_GUILD_ID || 'Not set'}`);

@@ -1006,7 +1006,7 @@ Vary your structure and tone from recent messages.`
       - Do NOT mention the dialectic process in the final output.
       - Format: A single, punchy social media post (under 280 chars).
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: false, preface_system_prompt: false });
   }
 
   async performInternalInquiry(query, role = "RESEARCHER") {

@@ -143,16 +143,20 @@ export const sanitizeThinkingTags = (text) => {
   sanitized = sanitized.replace(/\[varied\]/gi, '');
 
   // 5. Aggressively remove entire blocks starting with common reasoning labels
-  // Added more patterns for synthesis and draft explanations
   const artifacts = [
-      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*[\s\S]*?\n\n/i,
-      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*[\s\S]*?\n\n/i,
-      /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*/i,
+      /^s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant (self)|user (admin))s*:s*[\s\S]*?\n\n/gi,
+      /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant (self)|user (admin))s*:s*[\s\S]*?\n\n/gi,
+      /^s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant (self)|user (admin))s*:s*/gi,
+      /^DRAFT \d+:\s*/gi,
+      /^\s*Post:\s*/gi,
+      /^\s*Humor:\s*/gi,
+      /^\s*Satire:\s*/gi,
+      /^\s*Observation:\s*/gi,
+      /^\s*Synthesis:\s*/gi,
+      /^\s*Thesis:\s*/gi,
+      /^\s*Antithesis:\s*/gi,
       /\n\s*(this combines|this draft|draft 1|draft 2|here is|i have synthesized)[\s\S]*$/i
   ];
-  for (const pattern of artifacts) {
-      sanitized = sanitized.replace(pattern, '\n\n');
-  }
 
   return sanitized.trim();
 };

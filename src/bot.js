@@ -5711,6 +5711,10 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             const minsSinceSleepMention = (Date.now() - sleepMentionedAt) / (1000 * 60);
             let likelyAsleep = false;
 
+            const workMentionedAt = dataStore.getAdminWorkMentionedAt();
+            const homeMentionedAt = dataStore.getAdminHomeMentionedAt();
+            const isAtWork = workMentionedAt > homeMentionedAt && (Date.now() - workMentionedAt) < 9 * 60 * 60 * 1000;
+
             if (quietMins > 40) {
                 // Hard reset: If it's between 6 AM and 9 PM, we assume the user is awake
                 // regardless of recent sleep mentions or quiet hours.
@@ -5721,11 +5725,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                     if (inQuietHours) likelyAsleep = true;
                 }
             }
-                if (quietMins > 24 * 60 && !isScheduled) {
-                    console.log(`[Bot] Discord Presence Ping: Admin absent for >24h. Polling to offer a catch-up report.`);
-                    needsPresenceOffer = true;
-                    // shouldPoll remains true
-                }
+            let needsPresenceOffer = false;
+            if (quietMins > 24 * 60 && !isScheduled) {
+                console.log(`[Bot] Discord Presence Ping: Admin absent for >24h. Polling to offer a catch-up report.`);
+                needsPresenceOffer = true;
+            }
 
             if (shouldPoll) {
                 console.log(`[Bot] Discord heartbeat polling (Reason: ${pollReason}, Mode: ${relationshipMode}, Quiet: ${Math.round(quietMins)}m)`);
@@ -5853,6 +5857,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         needsPresenceOffer,
                         adminExhaustion,
                         likelyAsleep,
+                        isAtWork,
                         inQuietHours,
                         soulMapping,
                         linguisticPatternsContext
@@ -5867,7 +5872,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                     if (attempts === 1) {
                         console.log(`[Bot] Generating 5 diverse drafts for heartbeat message...`);
                         const draftMessages = [
-                            { role: 'system', content: `Relationship Mode: ${relationshipMode}\nAdmin Availability: ${availability}\nMode: ${isContinuing ? 'CONTINUATION' : 'NEW BRANCH'}` },
+                            { role: 'system', content: `Relationship Mode: ${relationshipMode}\nAdmin Availability: ${availability}\nMode: ${isContinuing ? 'CONTINUATION' : 'NEW BRANCH'}${isAtWork ? '\nAdmin is currently at WORK.' : ''}` },
                             { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
                         ];
                         // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.

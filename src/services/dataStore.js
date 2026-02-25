@@ -42,6 +42,8 @@ const defaultData = {
   admin_exhaustion_score: 0.0,
   admin_last_emotional_states: [], // [ "string" ]
   admin_sleep_mentioned_at: 0,
+  admin_work_mentioned_at: 0,
+  admin_home_mentioned_at: 0,
   last_exhaustion_update: 0,
   scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
   recent_thoughts: [], // [ { platform, content, timestamp } ]
@@ -1277,9 +1279,22 @@ class DataStore {
     return this.db.data.admin_sleep_mentioned_at || 0;
   }
 
-  async setLastRejectionReason(reason) {
-    this.db.data.last_rejection_reason = reason;
+  async setAdminWorkMentionedAt(timestamp) {
+    this.db.data.admin_work_mentioned_at = timestamp;
     await this.db.write();
+  }
+
+  getAdminWorkMentionedAt() {
+    return this.db.data.admin_work_mentioned_at || 0;
+  }
+
+  async setAdminHomeMentionedAt(timestamp) {
+    this.db.data.admin_home_mentioned_at = timestamp;
+    await this.db.write();
+  }
+
+  getAdminHomeMentionedAt() {
+    return this.db.data.admin_home_mentioned_at || 0;
   }
 
   getLastRejectionReason() {

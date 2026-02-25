@@ -147,19 +147,19 @@ class DataStore {
   async init() {
     let currentDbPath = DB_PATH;
     try {
-      console.log(\`[DataStore] Initializing database at \${currentDbPath}\`);
+      console.log(`[DataStore] Initializing database at ${currentDbPath}`);
       const dbDir = path.dirname(currentDbPath);
       if (!fs.existsSync(dbDir)) {
-        console.log(\`[DataStore] Creating data directory at \${dbDir}\`);
+        console.log(`[DataStore] Creating data directory at ${dbDir}`);
         fs.mkdirSync(dbDir, { recursive: true });
       }
       this.db = await JSONFilePreset(currentDbPath, defaultData);
     } catch (err) {
-      console.error(\`[DataStore] Failed to initialize database at \${currentDbPath}:\`, err.message);
+      console.error(`[DataStore] Failed to initialize database at ${currentDbPath}:`, err.message);
       const localPath = path.resolve(DATA_DIR, 'db.json');
       if (currentDbPath !== localPath) {
         currentDbPath = localPath;
-        console.log(\`[DataStore] Falling back to local database at \${currentDbPath}\`);
+        console.log(`[DataStore] Falling back to local database at ${currentDbPath}`);
         const dbDir = path.dirname(currentDbPath);
         if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
         this.db = await JSONFilePreset(currentDbPath, defaultData);
@@ -199,31 +199,31 @@ class DataStore {
         migrationChanged = true;
     }
     if (migrationChanged) {
-        console.log(\`[DataStore] Migrated defaults to new values.\`);
+        console.log(`[DataStore] Migrated defaults to new values.`);
         await this.db.write();
     }
 
-    console.log(\`[DataStore] Database loaded. Found \${this.db.data.repliedPosts.length} replied posts.\`);
+    console.log(`[DataStore] Database loaded. Found ${this.db.data.repliedPosts.length} replied posts.`);
   }
 
   async addRepliedPost(uri) {
     if (!this.db.data.repliedPosts.includes(uri)) {
-      console.log(\`[DataStore] Adding replied post URI: \${uri}\`);
+      console.log(`[DataStore] Adding replied post URI: ${uri}`);
       this.db.data.repliedPosts.push(uri);
       // Keep only last 2000 to prevent file bloat
       if (this.db.data.repliedPosts.length > 2000) {
         this.db.data.repliedPosts.shift();
       }
       await this.db.write();
-      console.log(\`[DataStore] Database write complete. Total replied posts: \${this.db.data.repliedPosts.length}\`);
+      console.log(`[DataStore] Database write complete. Total replied posts: ${this.db.data.repliedPosts.length}`);
     } else {
-      console.log(\`[DataStore] URI already exists, not adding: \${uri}\`);
+      console.log(`[DataStore] URI already exists, not adding: ${uri}`);
     }
   }
 
   hasReplied(uri) {
     const replied = this.db.data.repliedPosts.includes(uri);
-    console.log(\`[DataStore] Checking for URI \${uri}. Found: \${replied}\`);
+    console.log(`[DataStore] Checking for URI ${uri}. Found: ${replied}`);
     return replied;
   }
 
@@ -402,7 +402,7 @@ class DataStore {
 
   getBlueskyInstructions() {
     if (!this.db.data.bluesky_instructions) return '';
-    return this.db.data.bluesky_instructions.map(i => \`- [\${i.timestamp.split('T')[0]}] \${i.text}\`).join('\n');
+    return this.db.data.bluesky_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
   }
 
   async addPersonaUpdate(update) {
@@ -422,7 +422,7 @@ class DataStore {
 
   getPersonaUpdates() {
     if (!this.db.data.persona_updates) return '';
-    return this.db.data.persona_updates.map(u => \`- [\${u.timestamp.split('T')[0]}] \${u.text}\`).join('\n');
+    return this.db.data.persona_updates.map(u => `- [${u.timestamp.split('T')[0]}] ${u.text}`).join('\n');
   }
 
   async updateLastAutonomousPostTime(timestamp) {
@@ -848,7 +848,7 @@ class DataStore {
       this.db.data.mood_history.shift();
     }
     await this.db.write();
-    console.log(\`[DataStore] Mood updated: \${mood.label} (V:\${mood.valence}, A:\${mood.arousal}, S:\${mood.stability})\`);
+    console.log(`[DataStore] Mood updated: ${mood.label} (V:${mood.valence}, A:${mood.arousal}, S:${mood.stability})`);
   }
 
   getMood() {
@@ -858,7 +858,7 @@ class DataStore {
   async setLurkerMode(enabled) {
     this.db.data.lurker_mode = enabled;
     await this.db.write();
-    console.log(\`[DataStore] Lurker mode set to: \${enabled}\`);
+    console.log(`[DataStore] Lurker mode set to: ${enabled}`);
   }
 
   isLurkerMode() {
@@ -868,7 +868,7 @@ class DataStore {
   async setMuteFeedImpactUntil(timestamp) {
     this.db.data.mute_feed_impact_until = timestamp;
     await this.db.write();
-    console.log(\`[DataStore] Feed impact muted until: \${new Date(timestamp).toLocaleString()}\`);
+    console.log(`[DataStore] Feed impact muted until: ${new Date(timestamp).toLocaleString()}`);
   }
 
   isFeedImpactMuted() {
@@ -878,7 +878,7 @@ class DataStore {
   async setEnergyLevel(level) {
     this.db.data.energy_level = Math.max(0, Math.min(1, level));
     await this.db.write();
-    console.log(\`[DataStore] Energy level updated: \${this.db.data.energy_level.toFixed(2)}\`);
+    console.log(`[DataStore] Energy level updated: ${this.db.data.energy_level.toFixed(2)}`);
   }
 
   getEnergyLevel() {
@@ -901,7 +901,7 @@ class DataStore {
         timestamp: Date.now()
     };
     await this.db.write();
-    console.log(\`[DataStore] Current goal set: \${goal}\`);
+    console.log(`[DataStore] Current goal set: ${goal}`);
   }
 
   getCurrentGoal() {
@@ -932,7 +932,7 @@ class DataStore {
     await this.updateMood(newMood);
 
     await this.db.write();
-    console.log(\`[DataStore] Refusal count incremented for \${platform}. Counts: \${JSON.stringify(this.db.data.intentional_refusals)}\`);
+    console.log(`[DataStore] Refusal count incremented for ${platform}. Counts: ${JSON.stringify(this.db.data.intentional_refusals)}`);
   }
 
   async resetRefusalCount(platform) {
@@ -944,7 +944,7 @@ class DataStore {
     // User said "how many refusals they've potentially done in a row", which implies reset on action.
     this.db.data.intentional_refusals.global = 0;
     await this.db.write();
-    console.log(\`[DataStore] Refusal count reset for \${platform}.\`);
+    console.log(`[DataStore] Refusal count reset for ${platform}.`);
   }
 
   getRefusalCounts() {
@@ -977,10 +977,10 @@ class DataStore {
       }
       this.db.data[key] = value;
       await this.db.write();
-      console.log(\`[DataStore] Configuration updated: \${key} = \${JSON.stringify(value)}\`);
+      console.log(`[DataStore] Configuration updated: ${key} = ${JSON.stringify(value)}`);
       return true;
     }
-    console.warn(\`[DataStore] Attempted to update invalid config key: \${key}\`);
+    console.warn(`[DataStore] Attempted to update invalid config key: ${key}`);
     return false;
   }
 
@@ -994,7 +994,7 @@ class DataStore {
 
     // Constraint: Only allow increased cooldowns or decreasing down to the default
     if (minutes < min) {
-        console.warn(\`[DataStore] Attempted to set \${platform} cooldown below default (\${min}m). Capping at default.\`);
+        console.warn(`[DataStore] Attempted to set ${platform} cooldown below default (${min}m). Capping at default.`);
         minutes = min;
     }
 
@@ -1005,7 +1005,7 @@ class DataStore {
     }
 
     await this.db.write();
-    console.log(\`[DataStore] Cooldown updated for \${platform}: \${minutes} minutes.\`);
+    console.log(`[DataStore] Cooldown updated for ${platform}: ${minutes} minutes.`);
     return true;
   }
 
@@ -1015,7 +1015,7 @@ class DataStore {
         timestamp: Date.now()
     };
     await this.db.write();
-    console.log(\`[DataStore] Style mutated to: \${lens}\`);
+    console.log(`[DataStore] Style mutated to: ${lens}`);
   }
 
   getMutatedStyle() {
@@ -1041,7 +1041,7 @@ class DataStore {
         this.db.data.dream_log.shift();
     }
     await this.db.write();
-    console.log(\`[DataStore] Draft archived to Dream Log.\`);
+    console.log(`[DataStore] Draft archived to Dream Log.`);
   }
 
   getDreamLog() {

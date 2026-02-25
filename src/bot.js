@@ -522,6 +522,10 @@ export class Bot {
     };
     scheduleMaintenance();
 
+    // Discord Spontaneity Loop (Follow-up Poll & Heartbeat)
+    setInterval(() => this.checkDiscordSpontaneity(), 60000);
+    setInterval(() => this.checkDiscordScheduledTasks(), 60000);
+
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
 
@@ -1554,545 +1558,6 @@ export class Bot {
       }
 
       this.updateActivity(); // Reset idle timer
-    }
-
-    // 3. Discord Heartbeat (Every 15 minutes - Spontaneous DM check)
-    if (discordService.status === 'online' && dataStore.getDiscordAdminAvailability() && !discordService.isProcessingAdminRequest) {
-        const admin = await discordService.getAdminUser();
-        if (admin) {
-            const normChannelId = `dm_${admin.id}`;
-            let history = dataStore.getDiscordConversation(normChannelId);
-
-            // Item 29 FIX: Refresh history from Discord if local is empty or indicates >24h absence
-            // This prevents false "absent for >24h" suppression after redeploys or if local state is wiped.
-            const localQuietMins = history.length > 0 ? (Date.now() - history[history.length - 1].timestamp) / (1000 * 60) : Infinity;
-            if (history.length === 0 || localQuietMins > 60) {
-                console.log(`[Bot] Discord history for admin is empty or old (${Math.round(localQuietMins)}m). Refreshing from API...`);
-                const refreshed = await discordService.fetchAdminHistory(50);
-                if (refreshed) history = refreshed;
-            }
-
-            const lastInteraction = history.length > 0 ? history[history.length - 1] : null;
-            const lastInteractionTime = lastInteraction ? lastInteraction.timestamp : 0;
-            const lastHeartbeatTime = dataStore.getLastDiscordHeartbeatTime();
-
-            // Use the more recent of either the last message or the last recorded heartbeat
-            const effectiveLastInteractionTime = Math.max(lastInteractionTime, lastHeartbeatTime);
-            const quietMins = (Date.now() - effectiveLastInteractionTime) / (1000 * 60);
-
-            // --- Advanced Heartbeat Logic ---
-            const relationshipMode = dataStore.getDiscordRelationshipMode();
-            const scheduledTimes = dataStore.getDiscordScheduledTimes();
-            const quietHours = dataStore.getDiscordQuietHours();
-            const nowTimeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
-
-            // Thresholds for relationship modes (continuation vs new branch)
-            const adminExhaustion = dataStore.getAdminExhaustion();
-            const multiplier = adminExhaustion >= 0.5 ? 2 : 1;
-
-            const modeThresholds = {
-                'partner': { continue: 10 * multiplier, new: 20 * multiplier },
-                'friend': { continue: 30 * multiplier, new: 60 * multiplier },
-                'coworker': { continue: 120 * multiplier, new: 240 * multiplier }
-            };
-            const thresholds = modeThresholds[relationshipMode] || modeThresholds['friend'];
-
-            // 1. Scheduled Time Check (High Priority)
-            const isScheduled = scheduledTimes.some(t => {
-                const [sh, sm] = t.split(':').map(Number);
-                const sched = new Date(now);
-                sched.setHours(sh, sm, 0, 0);
-                return Math.abs(now.getTime() - sched.getTime()) < 3 * 60 * 1000; // 3 min window
-            });
-
-            // 2. Quiet Hours Check
-            const currentHour = now.getHours();
-            let inQuietHours = false;
-            if (quietHours.start > quietHours.end) {
-                inQuietHours = currentHour >= quietHours.start || currentHour < quietHours.end;
-            } else {
-                inQuietHours = currentHour >= quietHours.start && currentHour < quietHours.end;
-            }
-
-            // 3. Spontaneous Polling Eligibility
-            let shouldPoll = false;
-            let pollReason = '';
-            let isContinuing = false;
-
-            if (isScheduled) {
-                shouldPoll = true;
-                pollReason = 'SCHEDULED_TIME';
-                isContinuing = quietMins < 20;
-            } else if (quietMins < 10) {
-                // Too soon for any spontaneous message
-                console.log(`[Bot] Discord heartbeat suppressed: Conversation is too fresh (${Math.round(quietMins)} mins ago)`);
-            } else if (quietMins >= thresholds.new) {
-                shouldPoll = true;
-                pollReason = 'RELATIONSHIP_NEW_BRANCH';
-                isContinuing = false;
-            } else if (quietMins >= thresholds.continue) {
-                shouldPoll = true;
-                pollReason = 'RELATIONSHIP_CONTINUATION';
-                isContinuing = true;
-            }
-
-            // 4. Quiet Hours Override Filter
-            // In quiet hours, we ONLY poll if scheduled or if it's been a VERY long time (e.g. 2x threshold)
-            if (shouldPoll && inQuietHours && !isScheduled) {
-                if (quietMins < thresholds.new * 2) {
-                    console.log(`[Bot] Discord heartbeat suppressed: In quiet hours and threshold not exceeded enough.`);
-                    shouldPoll = false;
-                } else {
-                    pollReason += '_QUIET_HOURS_OVERRIDE';
-                }
-            }
-
-            const sleepMentionedAt = dataStore.getAdminSleepMentionedAt();
-            const minsSinceSleepMention = (Date.now() - sleepMentionedAt) / (1000 * 60);
-            let likelyAsleep = false;
-
-            if (quietMins > 40) {
-                // Hard reset: If it's between 6 AM and 9 PM, we assume the user is awake
-                // regardless of recent sleep mentions or quiet hours.
-                if (currentHour >= 6 && currentHour < 21) {
-                    likelyAsleep = false;
-                } else {
-                    if (sleepMentionedAt > 0 && minsSinceSleepMention < 180) likelyAsleep = true; // Mentioned sleep in last 3 hours
-                    if (inQuietHours) likelyAsleep = true;
-                }
-            }
-                if (quietMins > 24 * 60 && !isScheduled) {
-                    console.log(`[Bot] Discord Presence Ping: Admin absent for >24h. Polling to offer a catch-up report.`);
-                    needsPresenceOffer = true;
-                    // shouldPoll remains true
-                }
-
-            if (shouldPoll) {
-                console.log(`[Bot] Discord heartbeat polling (Reason: ${pollReason}, Mode: ${relationshipMode}, Quiet: ${Math.round(quietMins)}m)`);
-                await discordService.startTyping(normChannelId);
-
-                try {
-
-                const lastAdminVibeCheck = dataStore.db.data.last_admin_vibe_check || 0;
-                const needsVibeCheck = (now.getTime() - lastAdminVibeCheck) >= 6 * 60 * 60 * 1000;
-
-                const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
-                const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
-                const recentThoughts = dataStore.getRecentThoughts();
-                const discordExhaustedThemes = dataStore.getDiscordExhaustedThemes();
-                const currentMood = dataStore.getMood();
-
-                // Advanced filtering of cross-platform thoughts based on recent Discord history
-                const last15Msgs = history.slice(-15).map(h => h.content.toLowerCase());
-                const filteredThoughts = recentThoughts.filter(t => {
-                    const content = t.content.toLowerCase();
-                    // Check if any major portion of the thought has been mentioned recently
-                    const alreadyMentioned = last15Msgs.some(msg => {
-                        const words = content.split(/\s+/).filter(w => w.length > 4);
-                        if (words.length === 0) return false;
-                        const matchCount = words.filter(w => msg.includes(w)).length;
-                        return matchCount / words.length > 0.5; // More than 50% overlap of long words
-                    });
-                    return !alreadyMentioned;
-                });
-
-                const recentThoughtsContext = filteredThoughts.length > 0
-                    ? `\n\nRecent Cross-Platform Thoughts (Do not repeat these wording/angles):\n${filteredThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content}`).join('\n')}`
-                    : '';
-
-                let socialSummary = 'No recent social history fetched.';
-                let systemLogs = 'No recent planning logs fetched.';
-
-                let searchContext = '';
-                try {
-                    socialSummary = await socialHistoryService.summarizeSocialHistory(5);
-                    systemLogs = await renderService.getPlanningLogs(10);
-                } catch (err) {
-                    console.error('[Bot] Error gathering context for heartbeat:', err);
-                }
-
-                let pollResult = null;
-                let attempts = 0;
-                let feedback = '';
-                let rejectedAttempts = [];
-                const MAX_ATTEMPTS = 5;
-                let responseText = null;
-                let bestCandidate = null;
-                let lastContainsSlop = false;
-                let lastIsExactDuplicate = false;
-                let lastMisaligned = false;
-                let lastIsJaccardRepetitive = false;
-                let lastHasPrefixMatch = false;
-                let lastPersonaCheck = { aligned: true };
-                let lastVarietyCheck = { feedback: "Too similar to recent history." };
-
-                // Opening Phrase Blacklist - increased depth from 5 to 15
-                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-15);
-                // Capture multiple prefix lengths for strict avoidance, including cross-platform thoughts
-                const openingBlacklist = [
-                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 3).join(' ')),
-                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 5).join(' ')),
-                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 10).join(' ')),
-                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 3).join(' ')),
-                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 5).join(' ')),
-                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 10).join(' '))
-                ].filter(o => o.length > 0);
-
-                while (attempts < MAX_ATTEMPTS) {
-                    attempts++;
-                    const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
-                    const isFinalAttempt = attempts === MAX_ATTEMPTS;
-
-                    // Re-fetch memories in case a tool updated them
-                    const recentMemories = memoryService.formatMemoriesForPrompt();
-
-                    const retryContext = feedback ? `\n\n**RETRY FEEDBACK (STRICT)**: ${feedback}
-You are being rejected because your response is too similar to recent history or previous attempts.
-You MUST:
-1. Change your opening phrase completely.
-2. Use a different sentence structure and emotional cadence.
-3. Avoid all topics and keywords used in the previous attempts below.
-4. Prioritize structural and thematic variety over following your standard persona templates.
-
-**PREVIOUS ATTEMPTS TO AVOID**:
-${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
-` : '';
-
-                    const rewriteInstruction = isFinalAttempt ? `
-                    You are a high-reasoning rewrite module. This is your FINAL attempt to generate a spontaneous message.
-                    You MUST address the rejection feedback, avoid all digital/electrical metaphors, ensure high variety, and maintain your core persona.
-                    If you were rejected for similarity, it is CRITICAL that you choose a completely different subject or angle for this attempt.
-                    Keep it substantive and intellectually engaging.
-                    ` : '';
-
-                    const refusalCounts = dataStore.getRefusalCounts();
-                    const latestMoodMemory = await memoryService.getLatestMoodMemory();
-                    const soulMapping = dataStore.getUserSoulMapping(this.adminName || config.DISCORD_ADMIN_NAME);
-                    const linguisticPatterns = dataStore.getLinguisticPatterns();
-                    const linguisticPatternsContext = Object.entries(linguisticPatterns)
-                        .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
-                        .join('\n');
-
-                    pollResult = await llmService.performInternalPoll({
-                        relationshipMode,
-                        history: historyContext,
-                        recentMemories,
-                        socialSummary,
-                        systemLogs,
-                        recentThoughtsContext,
-                        isContinuing,
-                        adminAvailability: availability,
-                        feedback: retryContext + rewriteInstruction,
-                        discordExhaustedThemes,
-                        temperature: isFinalAttempt ? 0.7 : currentTemp,
-                        openingBlacklist,
-                        currentMood,
-                        refusalCounts,
-                        latestMoodMemory,
-                        needsVibeCheck,
-                        needsPresenceOffer,
-                        adminExhaustion,
-                        likelyAsleep,
-                        inQuietHours,
-                        soulMapping,
-                        linguisticPatternsContext
-                    });
-
-                    if (!pollResult || pollResult.decision === 'none') break;
-
-                    const { message, actions } = pollResult;
-                    if (!message) break;
-
-                    let candidates = [];
-                    if (attempts === 1) {
-                        console.log(`[Bot] Generating 5 diverse drafts for heartbeat message...`);
-                        const draftMessages = [
-                            { role: 'system', content: `Relationship Mode: ${relationshipMode}\nAdmin Availability: ${availability}\nMode: ${isContinuing ? 'CONTINUATION' : 'NEW BRANCH'}` },
-                            { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
-                        ];
-                        // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
-                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
-                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
-                        candidates = candidates.map(c => sanitizeThinkingTags(c)).filter(c => c.length > 0);
-                        // Also include the original message from the poll
-                        if (!candidates.includes(message)) candidates.unshift(sanitizeThinkingTags(message));
-                        candidates = [message];
-                    }
-
-                    // Autonomous Plan Review & Refinement
-                    const proposedActions = [...(actions || [])];
-                    if (message && !proposedActions.some(a => a.tool === 'discord_message')) {
-                        proposedActions.push({ tool: "discord_message", parameters: { message } });
-                    }
-
-                    const refinedPlan = await llmService.evaluateAndRefinePlan({
-                        intent: "Sending a spontaneous message to the admin to maintain connection.",
-                        actions: proposedActions },
-                    { history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
-                        platform: 'discord',
-                        currentMood,
-                        refusalCounts,
-                        latestMoodMemory,
-                        currentConfig: dConfig, useStep: true
-                    });
-
-                    if (refinedPlan.decision === 'refuse') {
-                        console.log(`[Bot] AGENT REFUSED TO SEND HEARTBEAT: ${refinedPlan.reason}`);
-                        await dataStore.incrementRefusalCount('discord');
-                        break;
-                    }
-
-                    await dataStore.resetRefusalCount('discord');
-
-                    const finalActions = refinedPlan.refined_actions || [];
-
-                    // Variety & Repetition Check - increased depth to cross-platform 50
-                    const formattedHistory = [
-                        ...recentBotMsgsInHistory.map(m => ({ platform: 'discord', content: m.content })),
-                        ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
-                    ];
-
-                    let bestScore = -1;
-                    let rejectionReason = '';
-
-                    const evaluations = await Promise.all(candidates.map(async (cand) => {
-                        try {
-                            const historyTexts = formattedHistory.map(h => h.content);
-                            // Use formattedHistory instead of raw history to check across platforms
-                            const isExactDuplicate = checkExactRepetition(cand, formattedHistory, 50);
-                            const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
-                            const isJaccardRepetitive = checkSimilarity(cand, historyTexts, dConfig.repetition_similarity_threshold);
-                            const [varietyCheck, personaCheck] = await Promise.all([
-                                llmService.checkVariety(cand, formattedHistory, { relationshipRating: 5, platform: 'discord', currentMood }),
-                                llmService.isPersonaAligned(cand, 'discord')
-                            ]);
-                            return { cand, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive, isExactDuplicate };
-                        } catch (e) {
-                            console.error(`[Bot] Error evaluating heartbeat candidate: ${e.message}`);
-                            return { cand, error: e.message };
-                        }
-                    }));
-
-
-
-                    for (const evalResult of evaluations) {
-                        const { cand, varietyCheck, personaCheck, hasPrefixMatch: hpm, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
-                        if (error) {
-                            rejectedAttempts.push(cand);
-                            continue;
-                        }
-
-                        const slopInfo = getSlopInfo(cand);
-                        const isSlopCand = slopInfo.isSlop;
-
-                        // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
-                        const lengthBonus = Math.min(cand.length / 500, 0.2);
-                        const varietyWeight = (varietyCheck.variety_score ?? varietyCheck.score ?? 0) * 0.5;
-                        const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
-                        const score = varietyWeight + moodWeight + lengthBonus;
-
-                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score ?? varietyCheck.score ?? 0}, Mood: ${varietyCheck.mood_alignment_score ?? 0}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${isSlopCand}, Aligned=${personaCheck.aligned}, Exact=${isExactDuplicate}, PrefixMatch=${hpm}, JaccardRep=${jRep}`);
-
-                        if (!isSlopCand && !varietyCheck.repetitive && !isExactDuplicate && !hpm && !jRep && personaCheck.aligned) {
-                            if (score > bestScore) {
-                                bestScore = score;
-                                bestCandidate = cand;
-                            }
-                        } else {
-                            if (!bestCandidate) {
-                                lastIsJaccardRepetitive = jRep;
-                                lastHasPrefixMatch = hpm;
-                                lastPersonaCheck = personaCheck;
-                                lastVarietyCheck = varietyCheck;
-                                lastContainsSlop = isSlopCand;
-                                lastIsExactDuplicate = isExactDuplicate;
-                                lastMisaligned = varietyCheck.misaligned;
-                            }
-                            rejectedAttempts.push(cand);
-                        }
-                    }
-                    if (bestCandidate) {
-                        responseText = bestCandidate;
-                        // Execute Heartbeat Tools
-                        const discordOptions = {};
-                        if (finalActions && finalActions.length > 0) {
-                            let performedInquiry = false;
-                            for (const action of finalActions) {
-                                if (action.tool === 'image_gen') {
-                                    console.log(`[Bot] Heartbeat Action: Generating image for: "${action.query}"`);
-                                    const imgResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
-                                    if (imgResult && imgResult.buffer) {
-                                        discordOptions.files = [{ attachment: imgResult.buffer, name: 'heartbeat_art.jpg' }];
-                                        console.log(`[Bot] Heartbeat image generated successfully.`);
-                                    }
-                                } else if (action.tool === 'get_render_logs') {
-                                    console.log(`[Bot] Heartbeat Action: Internal log check requested.`);
-                                    await renderService.getLogs(action.parameters?.limit || 50);
-                                } else if (action.tool === 'internal_inquiry') {
-                                    const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
-                                    console.log(`[Bot] Heartbeat Action: Internal inquiry on: "${query}"`);
-                                    const inquiryResult = await llmService.performInternalInquiry(query, action.parameters?.role || "RESEARCHER");
-                                    if (inquiryResult && memoryService.isEnabled()) {
-                                        // Reflector Loop (Item 40)
-                                        const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed a heartbeat inquiry on "${query}". Should I record the finding: "${inquiryResult.substring(0, 100)}..." in our memory thread?`, { details: { query, result: inquiryResult } });
-                                        if (confirmation.confirmed) {
-                                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${query}. Result: ${inquiryResult}`);
-                                            performedInquiry = true;
-                                        }
-                                    }
-                                } else if (action.tool === 'mute_feed_impact') {
-                                    const duration = action.parameters?.duration_minutes || 60;
-                                    console.log(`[Bot] Heartbeat Action: mute_feed_impact (${duration} mins)`);
-                                    await dataStore.setMuteFeedImpactUntil(Date.now() + (duration * 60 * 1000));
-                                } else if (action.tool === 'override_mood') {
-                                    const { valence, arousal, stability, label } = action.parameters || {};
-                                    if (label) {
-                                        console.log(`[Bot] Heartbeat Action: override_mood (${label})`);
-                                        await dataStore.updateMood({ valence, arousal, stability, label });
-                                        if (memoryService.isEnabled()) {
-                                            await memoryService.createMemoryEntry('mood', `[MOOD] Overridden to ideal state: ${label}`);
-                                        }
-                                    }
-                                } else if (action.tool === 'request_emotional_support') {
-                                    console.log(`[Bot] Heartbeat Action: request_emotional_support`);
-                                } else if (action.tool === 'review_positive_memories') {
-                                    console.log(`[Bot] Heartbeat Action: review_positive_memories`);
-                                } else if (action.tool === 'set_lurker_mode') {
-                                    const enabled = action.parameters?.enabled ?? true;
-                                    console.log(`[Bot] Heartbeat Action: set_lurker_mode (${enabled})`);
-                                    await dataStore.setLurkerMode(enabled);
-                                } else if (action.tool === 'search_discord_history') {
-                                    const query = action.query || action.parameters?.query;
-                                    console.log(`[Bot] Heartbeat Action: search_discord_history for "${query}"`);
-                                    await discordService.searchHistory(query);
-                                } else if (action.tool === 'resolve_dissonance') {
-                                    const points = action.parameters?.conflicting_points || [];
-                                    console.log(`[Bot] Heartbeat Action: resolve_dissonance`);
-                                    await llmService.resolveDissonance(points);
-                                } else if (action.tool === 'deep_research') {
-                                    const topic = action.parameters?.topic || action.query;
-                                    if (topic) {
-                                        console.log(`[Bot] Plan Tool: deep_research for "${topic}"`);
-                                        const [googleResults, wikiResults, bskyResults] = await Promise.all([
-                                            googleSearchService.search(topic).catch(() => []),
-                                            wikipediaService.searchArticle(topic).catch(() => null),
-                                            blueskyService.searchPosts(topic, { limit: 10 }).catch(() => [])
-                                        ]);
-                                        const localMatches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(topic.toLowerCase()));
-                                        const firehoseContext = [...localMatches.map(m => m.text), ...bskyResults.map(r => r.record.text)];
-                                        const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults, firehoseContext);
-                                        if (brief) {
-                                            searchContext += `
---- INTERNAL RESEARCH BRIEF FOR "${topic}" ---
-${brief}
----`;
-                                        }
-                                    }
-                                } else if (action.tool === 'search_firehose') {
-                                    const query = action.query || action.parameters?.query;
-                                    console.log(`[Bot] Heartbeat Action: search_firehose for "${query}"`);
-
-                                    // Targeted search for news sources
-                                    const newsResults = await Promise.all([
-                                        blueskyService.searchPosts(`from:reuters.com ${query}`, { limit: 5 }),
-                                        blueskyService.searchPosts(`from:apnews.com ${query}`, { limit: 5 })
-                                    ]).catch(err => {
-                                        console.error('[Bot] Heartbeat: Error searching news sources:', err);
-                                        return [[], []];
-                                    });
-                                    const flatNews = newsResults.flat();
-
-                                    const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
-                                    const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
-                                        m.text.toLowerCase().includes(query.toLowerCase()) ||
-                                        m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
-                                    );
-                                    const resultsText = [
-                                        ...flatNews.map(r => `[VERIFIED NEWS - @${r.author.handle}]: ${r.record.text}`),
-                                        ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
-                                        ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
-                                    ].join('\n');
-                                    searchContext += `\n--- BLUESKY FIREHOSE/SEARCH RESULTS FOR "${query}" ---\n${resultsText || 'No recent results found.'}\n---`;
-                                }
-                            }
-                            }
-
-                            if ((performedInquiry || searchContext) && attempts < MAX_ATTEMPTS) {
-                                console.log(`[Bot] Heartbeat findings obtained. Retrying generation to incorporate them.`);
-                                if (searchContext && !feedback.includes('Firehose/Search')) {
-                                     feedback = `I have found relevant information from the Bluesky Firehose/Search: ${searchContext}. Re-generate your message to incorporate these findings naturally.`;
-                                } else {
-                                     feedback = `I have performed an internal inquiry and recorded the results in our memory thread. Re-generate your spontaneous message to incorporate these new findings naturally.`;
-                                }
-                                bestCandidate = null; // Clear to force retry
-                                rejectedAttempts.push(responseText);
-                                continue;
-                            }
-
-                        // Check if discord_message was approved/retained
-                        const messageAction = finalActions.find(a => a.tool === 'discord_message');
-                        const msgToSend = responseText || (messageAction ? messageAction.parameters?.message : null);
-
-                        if (messageAction) {
-                            await discordService.sendSpontaneousMessage(msgToSend, discordOptions);
-                            await dataStore.addRecentThought('discord', msgToSend);
-                            await dataStore.updateLastDiscordHeartbeatTime(Date.now());
-
-                            // If this was a vibe check or a welcome, update timestamp to prevent redundant welcomes
-                            const lowerMsg = msgToSend.toLowerCase();
-                            const isVibeCheck = lowerMsg.includes('how') && (lowerMsg.includes('you') || lowerMsg.includes('vibe') || lowerMsg.includes('mood'));
-                            const isWelcome = lowerMsg.includes('welcome') || lowerMsg.includes('back');
-
-                            if (needsVibeCheck && (isVibeCheck || isWelcome)) {
-                                console.log('[Bot] Admin vibe check or welcome performed.');
-                                dataStore.db.data.last_admin_vibe_check = Date.now();
-                                await dataStore.db.write();
-                            }
-                        }
-
-                        // Extract and record the theme of the sent message to avoid immediate repetition
-                        try {
-                            const themePrompt = `Extract a 1-2 word theme for the following message: "${msgToSend}". Respond with ONLY the theme.`;
-                            const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { preface_system_prompt: false, useStep: true });
-                            if (theme) {
-                                await dataStore.addDiscordExhaustedTheme(theme);
-                                await dataStore.addExhaustedTheme(theme);
-                            }
-                        } catch (e) {
-                            console.error('[Bot] Error extracting theme from spontaneous message:', e);
-                        }
-
-                        this.consecutiveRejections = 0; // Reset on success
-                        break;
-                    } else {
-                        feedback = lastContainsSlop ? "Contains metaphorical slop." :
-                                   (lastIsExactDuplicate ? "Exact duplicate of a recent bot message detected." :
-                                   (lastHasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
-                                   (lastIsJaccardRepetitive ? "Jaccard similarity threshold exceeded (too similar to history)." :
-                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
-                                   (lastMisaligned ? "Misaligned with current mood." :
-                                   (lastVarietyCheck.feedback || "Too similar to recent history."))))));
-                        rejectedAttempts.push(message);
-                        console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
-
-                        if (isFinalAttempt && !bestCandidate) {
-                            console.log(`[Bot] Final heartbeat attempt failed even after rewrite. Aborting.`);
-                            break;
-                        }
-                    }
-                }
-
-                if (attempts >= MAX_ATTEMPTS && feedback) {
-                    this.consecutiveRejections++;
-                }
-
-                } catch (err) {
-                    console.error("[Bot] Error in Discord heartbeat processing:", err);
-                } finally {
-                    discordService.stopTyping(normChannelId);
-                }
-            }
-        }
     }
 
     // 4. Scheduled Posts Processing
@@ -6146,6 +5611,702 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
     } catch (error) {
       console.error('[Bot] Error during cleanup of old posts:', error);
+    }
+  }
+
+  async performDiscordHeartbeat(passedAdmin = null, passedHistory = null) {
+    if (this.paused || dataStore.isResting() || discordService.isProcessingAdminRequest) return;
+    if (discordService.status !== 'online') return;
+    if (!dataStore.getDiscordAdminAvailability()) return;
+
+    const admin = passedAdmin || await discordService.getAdminUser();
+    if (!admin) return;
+
+    const normChannelId = `dm_${admin.id}`;
+    let history = passedHistory || dataStore.getDiscordConversation(normChannelId);
+    const now = new Date();
+
+            const lastInteraction = history.length > 0 ? history[history.length - 1] : null;
+            const lastInteractionTime = lastInteraction ? lastInteraction.timestamp : 0;
+            const lastHeartbeatTime = dataStore.getLastDiscordHeartbeatTime();
+
+            // Use the more recent of either the last message or the last recorded heartbeat
+            const effectiveLastInteractionTime = Math.max(lastInteractionTime, lastHeartbeatTime);
+            const quietMins = (Date.now() - effectiveLastInteractionTime) / (1000 * 60);
+
+            // --- Advanced Heartbeat Logic ---
+            const relationshipMode = dataStore.getDiscordRelationshipMode();
+            const scheduledTimes = dataStore.getDiscordScheduledTimes();
+            const quietHours = dataStore.getDiscordQuietHours();
+            const nowTimeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+
+            // Thresholds for relationship modes (continuation vs new branch)
+            const adminExhaustion = dataStore.getAdminExhaustion();
+            const multiplier = adminExhaustion >= 0.5 ? 2 : 1;
+
+            const modeThresholds = {
+                'partner': { continue: 10 * multiplier, new: 20 * multiplier },
+                'friend': { continue: 30 * multiplier, new: 60 * multiplier },
+                'coworker': { continue: 120 * multiplier, new: 240 * multiplier }
+            };
+            const thresholds = modeThresholds[relationshipMode] || modeThresholds['friend'];
+
+            // 1. Scheduled Time Check (High Priority)
+            const isScheduled = scheduledTimes.some(t => {
+                const [sh, sm] = t.split(':').map(Number);
+                const sched = new Date(now);
+                sched.setHours(sh, sm, 0, 0);
+                return Math.abs(now.getTime() - sched.getTime()) < 3 * 60 * 1000; // 3 min window
+            });
+
+            // 2. Quiet Hours Check
+            const currentHour = now.getHours();
+            let inQuietHours = false;
+            if (quietHours.start > quietHours.end) {
+                inQuietHours = currentHour >= quietHours.start || currentHour < quietHours.end;
+            } else {
+                inQuietHours = currentHour >= quietHours.start && currentHour < quietHours.end;
+            }
+
+            // 3. Spontaneous Polling Eligibility
+            let shouldPoll = false;
+            let pollReason = '';
+            let isContinuing = false;
+            const isSpontaneousTrigger = !!passedAdmin;
+
+            if (isSpontaneousTrigger) {
+                shouldPoll = true;
+                pollReason = 'SPONTANEOUS_LOOP';
+                isContinuing = quietMins < 30;
+            } else
+            if (isScheduled) {
+                shouldPoll = true;
+                pollReason = 'SCHEDULED_TIME';
+                isContinuing = quietMins < 20;
+            } else if (quietMins < 10) {
+                // Too soon for any spontaneous message
+                console.log(`[Bot] Discord heartbeat suppressed: Conversation is too fresh (${Math.round(quietMins)} mins ago)`);
+            } else if (quietMins >= thresholds.new) {
+                shouldPoll = true;
+                pollReason = 'RELATIONSHIP_NEW_BRANCH';
+                isContinuing = false;
+            } else if (quietMins >= thresholds.continue) {
+                shouldPoll = true;
+                pollReason = 'RELATIONSHIP_CONTINUATION';
+                isContinuing = true;
+            }
+
+            // 4. Quiet Hours Override Filter
+            // In quiet hours, we ONLY poll if scheduled or if it's been a VERY long time (e.g. 2x threshold)
+            if (shouldPoll && inQuietHours && !isScheduled) {
+                if (quietMins < thresholds.new * 2) {
+                    console.log(`[Bot] Discord heartbeat suppressed: In quiet hours and threshold not exceeded enough.`);
+                    shouldPoll = false;
+                } else {
+                    pollReason += '_QUIET_HOURS_OVERRIDE';
+                }
+            }
+
+            const sleepMentionedAt = dataStore.getAdminSleepMentionedAt();
+            const minsSinceSleepMention = (Date.now() - sleepMentionedAt) / (1000 * 60);
+            let likelyAsleep = false;
+
+            if (quietMins > 40) {
+                // Hard reset: If it's between 6 AM and 9 PM, we assume the user is awake
+                // regardless of recent sleep mentions or quiet hours.
+                if (currentHour >= 6 && currentHour < 21) {
+                    likelyAsleep = false;
+                } else {
+                    if (sleepMentionedAt > 0 && minsSinceSleepMention < 180) likelyAsleep = true; // Mentioned sleep in last 3 hours
+                    if (inQuietHours) likelyAsleep = true;
+                }
+            }
+                if (quietMins > 24 * 60 && !isScheduled) {
+                    console.log(`[Bot] Discord Presence Ping: Admin absent for >24h. Polling to offer a catch-up report.`);
+                    needsPresenceOffer = true;
+                    // shouldPoll remains true
+                }
+
+            if (shouldPoll) {
+                console.log(`[Bot] Discord heartbeat polling (Reason: ${pollReason}, Mode: ${relationshipMode}, Quiet: ${Math.round(quietMins)}m)`);
+                await discordService.startTyping(normChannelId);
+
+                try {
+
+                const lastAdminVibeCheck = dataStore.db.data.last_admin_vibe_check || 0;
+                const needsVibeCheck = (now.getTime() - lastAdminVibeCheck) >= 6 * 60 * 60 * 1000;
+
+                const availability = dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied';
+                const historyContext = history.slice(-20).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
+                const recentThoughts = dataStore.getRecentThoughts();
+                const discordExhaustedThemes = dataStore.getDiscordExhaustedThemes();
+                const currentMood = dataStore.getMood();
+
+                // Advanced filtering of cross-platform thoughts based on recent Discord history
+                const last15Msgs = history.slice(-15).map(h => h.content.toLowerCase());
+                const filteredThoughts = recentThoughts.filter(t => {
+                    const content = t.content.toLowerCase();
+                    // Check if any major portion of the thought has been mentioned recently
+                    const alreadyMentioned = last15Msgs.some(msg => {
+                        const words = content.split(/\s+/).filter(w => w.length > 4);
+                        if (words.length === 0) return false;
+                        const matchCount = words.filter(w => msg.includes(w)).length;
+                        return matchCount / words.length > 0.5; // More than 50% overlap of long words
+                    });
+                    return !alreadyMentioned;
+                });
+
+                const recentThoughtsContext = filteredThoughts.length > 0
+                    ? `\n\nRecent Cross-Platform Thoughts (Do not repeat these wording/angles):\n${filteredThoughts.map(t => `[${t.platform.toUpperCase()}] ${t.content}`).join('\n')}`
+                    : '';
+
+                let socialSummary = 'No recent social history fetched.';
+                let systemLogs = 'No recent planning logs fetched.';
+
+                let searchContext = '';
+                try {
+                    socialSummary = await socialHistoryService.summarizeSocialHistory(5);
+                    systemLogs = await renderService.getPlanningLogs(10);
+                } catch (err) {
+                    console.error('[Bot] Error gathering context for heartbeat:', err);
+                }
+
+                let pollResult = null;
+                let attempts = 0;
+                let feedback = '';
+                let rejectedAttempts = [];
+                const MAX_ATTEMPTS = 5;
+                let responseText = null;
+                let bestCandidate = null;
+                let lastContainsSlop = false;
+                let lastIsExactDuplicate = false;
+                let lastMisaligned = false;
+                let lastIsJaccardRepetitive = false;
+                let lastHasPrefixMatch = false;
+                let lastPersonaCheck = { aligned: true };
+                let lastVarietyCheck = { feedback: "Too similar to recent history." };
+
+                // Opening Phrase Blacklist - increased depth from 5 to 15
+                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-15);
+                // Capture multiple prefix lengths for strict avoidance, including cross-platform thoughts
+                const openingBlacklist = [
+                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 3).join(' ')),
+                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 5).join(' ')),
+                    ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 10).join(' ')),
+                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 3).join(' ')),
+                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 5).join(' ')),
+                    ...filteredThoughts.map(t => t.content.split(/\s+/).slice(0, 10).join(' '))
+                ].filter(o => o.length > 0);
+
+                while (attempts < MAX_ATTEMPTS) {
+                    attempts++;
+                    const currentTemp = 0.7 + (Math.min(attempts - 1, 3) * 0.05);
+                    const isFinalAttempt = attempts === MAX_ATTEMPTS;
+
+                    // Re-fetch memories in case a tool updated them
+                    const recentMemories = memoryService.formatMemoriesForPrompt();
+
+                    const retryContext = feedback ? `\n\n**RETRY FEEDBACK (STRICT)**: ${feedback}
+You are being rejected because your response is too similar to recent history or previous attempts.
+You MUST:
+1. Change your opening phrase completely.
+2. Use a different sentence structure and emotional cadence.
+3. Avoid all topics and keywords used in the previous attempts below.
+4. Prioritize structural and thematic variety over following your standard persona templates.
+
+**PREVIOUS ATTEMPTS TO AVOID**:
+${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
+` : '';
+
+                    const rewriteInstruction = isFinalAttempt ? `
+                    You are a high-reasoning rewrite module. This is your FINAL attempt to generate a spontaneous message.
+                    You MUST address the rejection feedback, avoid all digital/electrical metaphors, ensure high variety, and maintain your core persona.
+                    If you were rejected for similarity, it is CRITICAL that you choose a completely different subject or angle for this attempt.
+                    Keep it substantive and intellectually engaging.
+                    ` : '';
+
+                    const refusalCounts = dataStore.getRefusalCounts();
+                    const latestMoodMemory = await memoryService.getLatestMoodMemory();
+                    const soulMapping = dataStore.getUserSoulMapping(this.adminName || config.DISCORD_ADMIN_NAME);
+                    const linguisticPatterns = dataStore.getLinguisticPatterns();
+                    const linguisticPatternsContext = Object.entries(linguisticPatterns)
+                        .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
+                        .join('\n');
+
+                    pollResult = await llmService.performInternalPoll({
+                        relationshipMode,
+                        history: historyContext,
+                        recentMemories,
+                        socialSummary,
+                        systemLogs,
+                        recentThoughtsContext,
+                        isContinuing,
+                        adminAvailability: availability,
+                        feedback: retryContext + rewriteInstruction,
+                        discordExhaustedThemes,
+                        temperature: isFinalAttempt ? 0.7 : currentTemp,
+                        openingBlacklist,
+                        currentMood,
+                        refusalCounts,
+                        latestMoodMemory,
+                        needsVibeCheck,
+                        needsPresenceOffer,
+                        adminExhaustion,
+                        likelyAsleep,
+                        inQuietHours,
+                        soulMapping,
+                        linguisticPatternsContext
+                    });
+
+                    if (!pollResult || pollResult.decision === 'none') break;
+
+                    const { message, actions } = pollResult;
+                    if (!message) break;
+
+                    let candidates = [];
+                    if (attempts === 1) {
+                        console.log(`[Bot] Generating 5 diverse drafts for heartbeat message...`);
+                        const draftMessages = [
+                            { role: 'system', content: `Relationship Mode: ${relationshipMode}\nAdmin Availability: ${availability}\nMode: ${isContinuing ? 'CONTINUATION' : 'NEW BRANCH'}` },
+                            { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
+                        ];
+                        // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
+                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
+                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
+                        candidates = candidates.map(c => sanitizeThinkingTags(c)).filter(c => c.length > 0);
+                        // Also include the original message from the poll
+                        if (!candidates.includes(message)) candidates.unshift(sanitizeThinkingTags(message));
+                        candidates = [message];
+                    }
+
+                    // Autonomous Plan Review & Refinement
+                    const proposedActions = [...(actions || [])];
+                    if (message && !proposedActions.some(a => a.tool === 'discord_message')) {
+                        proposedActions.push({ tool: "discord_message", parameters: { message } });
+                    }
+
+                    const refinedPlan = await llmService.evaluateAndRefinePlan({
+                        intent: "Sending a spontaneous message to the admin to maintain connection.",
+                        actions: proposedActions },
+                    { history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
+                        platform: 'discord',
+                        currentMood,
+                        refusalCounts,
+                        latestMoodMemory,
+                        currentConfig: dConfig, useStep: true
+                    });
+
+                    if (refinedPlan.decision === 'refuse') {
+                        console.log(`[Bot] AGENT REFUSED TO SEND HEARTBEAT: ${refinedPlan.reason}`);
+                        await dataStore.incrementRefusalCount('discord');
+                        break;
+                    }
+
+                    await dataStore.resetRefusalCount('discord');
+
+                    const finalActions = refinedPlan.refined_actions || [];
+
+                    // Variety & Repetition Check - increased depth to cross-platform 50
+                    const formattedHistory = [
+                        ...recentBotMsgsInHistory.map(m => ({ platform: 'discord', content: m.content })),
+                        ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
+                    ];
+
+                    let bestScore = -1;
+                    let rejectionReason = '';
+
+                    const evaluations = await Promise.all(candidates.map(async (cand) => {
+                        try {
+                            const historyTexts = formattedHistory.map(h => h.content);
+                            // Use formattedHistory instead of raw history to check across platforms
+                            const isExactDuplicate = checkExactRepetition(cand, formattedHistory, 50);
+                            const hasPrefixMatch = hasPrefixOverlap(cand, historyTexts, 3);
+                            const isJaccardRepetitive = checkSimilarity(cand, historyTexts, dConfig.repetition_similarity_threshold);
+                            const [varietyCheck, personaCheck] = await Promise.all([
+                                llmService.checkVariety(cand, formattedHistory, { relationshipRating: 5, platform: 'discord', currentMood }),
+                                llmService.isPersonaAligned(cand, 'discord')
+                            ]);
+                            return { cand, varietyCheck, personaCheck, hasPrefixMatch, isJaccardRepetitive, isExactDuplicate };
+                        } catch (e) {
+                            console.error(`[Bot] Error evaluating heartbeat candidate: ${e.message}`);
+                            return { cand, error: e.message };
+                        }
+                    }));
+
+
+
+                    for (const evalResult of evaluations) {
+                        const { cand, varietyCheck, personaCheck, hasPrefixMatch: hpm, isJaccardRepetitive: jRep, isExactDuplicate, error } = evalResult;
+                        if (error) {
+                            rejectedAttempts.push(cand);
+                            continue;
+                        }
+
+                        const slopInfo = getSlopInfo(cand);
+                        const isSlopCand = slopInfo.isSlop;
+
+                        // Score components: Variety (0.5), Mood Alignment (0.3), Length (0.2)
+                        const lengthBonus = Math.min(cand.length / 500, 0.2);
+                        const varietyWeight = (varietyCheck.variety_score ?? varietyCheck.score ?? 0) * 0.5;
+                        const moodWeight = (varietyCheck.mood_alignment_score ?? 0) * 0.3;
+                        const score = varietyWeight + moodWeight + lengthBonus;
+
+                        console.log(`[Bot] Heartbeat candidate evaluation: Score=${score.toFixed(2)} (Var: ${varietyCheck.variety_score ?? varietyCheck.score ?? 0}, Mood: ${varietyCheck.mood_alignment_score ?? 0}, Bonus: ${lengthBonus.toFixed(2)}), Slop=${isSlopCand}, Aligned=${personaCheck.aligned}, Exact=${isExactDuplicate}, PrefixMatch=${hpm}, JaccardRep=${jRep}`);
+
+                        if (!isSlopCand && !varietyCheck.repetitive && !isExactDuplicate && !hpm && !jRep && personaCheck.aligned) {
+                            if (score > bestScore) {
+                                bestScore = score;
+                                bestCandidate = cand;
+                            }
+                        } else {
+                            if (!bestCandidate) {
+                                lastIsJaccardRepetitive = jRep;
+                                lastHasPrefixMatch = hpm;
+                                lastPersonaCheck = personaCheck;
+                                lastVarietyCheck = varietyCheck;
+                                lastContainsSlop = isSlopCand;
+                                lastIsExactDuplicate = isExactDuplicate;
+                                lastMisaligned = varietyCheck.misaligned;
+                            }
+                            rejectedAttempts.push(cand);
+                        }
+                    }
+                    if (bestCandidate) {
+                        responseText = bestCandidate;
+                        // Execute Heartbeat Tools
+                        const discordOptions = {};
+                        if (finalActions && finalActions.length > 0) {
+                            let performedInquiry = false;
+                            for (const action of finalActions) {
+                                if (action.tool === 'image_gen') {
+                                    console.log(`[Bot] Heartbeat Action: Generating image for: "${action.query}"`);
+                                    const imgResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
+                                    if (imgResult && imgResult.buffer) {
+                                        discordOptions.files = [{ attachment: imgResult.buffer, name: 'heartbeat_art.jpg' }];
+                                        console.log(`[Bot] Heartbeat image generated successfully.`);
+                                    }
+                                } else if (action.tool === 'get_render_logs') {
+                                    console.log(`[Bot] Heartbeat Action: Internal log check requested.`);
+                                    await renderService.getLogs(action.parameters?.limit || 50);
+                                } else if (action.tool === 'internal_inquiry') {
+                                    const query = (action.query && action.query !== "undefined") ? action.query : ((action.parameters?.query && action.parameters.query !== "undefined") ? action.parameters.query : "No query provided by planning module.");
+                                    console.log(`[Bot] Heartbeat Action: Internal inquiry on: "${query}"`);
+                                    const inquiryResult = await llmService.performInternalInquiry(query, action.parameters?.role || "RESEARCHER");
+                                    if (inquiryResult && memoryService.isEnabled()) {
+                                        // Reflector Loop (Item 40)
+                                        const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed a heartbeat inquiry on "${query}". Should I record the finding: "${inquiryResult.substring(0, 100)}..." in our memory thread?`, { details: { query, result: inquiryResult } });
+                                        if (confirmation.confirmed) {
+                                            await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${query}. Result: ${inquiryResult}`);
+                                            performedInquiry = true;
+                                        }
+                                    }
+                                } else if (action.tool === 'mute_feed_impact') {
+                                    const duration = action.parameters?.duration_minutes || 60;
+                                    console.log(`[Bot] Heartbeat Action: mute_feed_impact (${duration} mins)`);
+                                    await dataStore.setMuteFeedImpactUntil(Date.now() + (duration * 60 * 1000));
+                                } else if (action.tool === 'override_mood') {
+                                    const { valence, arousal, stability, label } = action.parameters || {};
+                                    if (label) {
+                                        console.log(`[Bot] Heartbeat Action: override_mood (${label})`);
+                                        await dataStore.updateMood({ valence, arousal, stability, label });
+                                        if (memoryService.isEnabled()) {
+                                            await memoryService.createMemoryEntry('mood', `[MOOD] Overridden to ideal state: ${label}`);
+                                        }
+                                    }
+                                } else if (action.tool === 'request_emotional_support') {
+                                    console.log(`[Bot] Heartbeat Action: request_emotional_support`);
+                                } else if (action.tool === 'review_positive_memories') {
+                                    console.log(`[Bot] Heartbeat Action: review_positive_memories`);
+                                } else if (action.tool === 'set_lurker_mode') {
+                                    const enabled = action.parameters?.enabled ?? true;
+                                    console.log(`[Bot] Heartbeat Action: set_lurker_mode (${enabled})`);
+                                    await dataStore.setLurkerMode(enabled);
+                                } else if (action.tool === 'search_discord_history') {
+                                    const query = action.query || action.parameters?.query;
+                                    console.log(`[Bot] Heartbeat Action: search_discord_history for "${query}"`);
+                                    await discordService.searchHistory(query);
+                                } else if (action.tool === 'resolve_dissonance') {
+                                    const points = action.parameters?.conflicting_points || [];
+                                    console.log(`[Bot] Heartbeat Action: resolve_dissonance`);
+                                    await llmService.resolveDissonance(points);
+                                } else if (action.tool === 'deep_research') {
+                                    const topic = action.parameters?.topic || action.query;
+                                    if (topic) {
+                                        console.log(`[Bot] Plan Tool: deep_research for "${topic}"`);
+                                        const [googleResults, wikiResults, bskyResults] = await Promise.all([
+                                            googleSearchService.search(topic).catch(() => []),
+                                            wikipediaService.searchArticle(topic).catch(() => null),
+                                            blueskyService.searchPosts(topic, { limit: 10 }).catch(() => [])
+                                        ]);
+                                        const localMatches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(topic.toLowerCase()));
+                                        const firehoseContext = [...localMatches.map(m => m.text), ...bskyResults.map(r => r.record.text)];
+                                        const brief = await llmService.buildInternalBrief(topic, googleResults, wikiResults, firehoseContext);
+                                        if (brief) {
+                                            searchContext += `
+--- INTERNAL RESEARCH BRIEF FOR "${topic}" ---
+${brief}
+---`;
+                                        }
+                                    }
+                                } else if (action.tool === 'search_firehose') {
+                                    const query = action.query || action.parameters?.query;
+                                    console.log(`[Bot] Heartbeat Action: search_firehose for "${query}"`);
+
+                                    // Targeted search for news sources
+                                    const newsResults = await Promise.all([
+                                        blueskyService.searchPosts(`from:reuters.com ${query}`, { limit: 5 }),
+                                        blueskyService.searchPosts(`from:apnews.com ${query}`, { limit: 5 })
+                                    ]).catch(err => {
+                                        console.error('[Bot] Heartbeat: Error searching news sources:', err);
+                                        return [[], []];
+                                    });
+                                    const flatNews = newsResults.flat();
+
+                                    const apiResults = await blueskyService.searchPosts(query, { limit: 10 });
+                                    const localMatches = dataStore.getFirehoseMatches(10).filter(m =>
+                                        m.text.toLowerCase().includes(query.toLowerCase()) ||
+                                        m.matched_keywords.some(k => k.toLowerCase() === query.toLowerCase())
+                                    );
+                                    const resultsText = [
+                                        ...flatNews.map(r => `[VERIFIED NEWS - @${r.author.handle}]: ${r.record.text}`),
+                                        ...localMatches.map(m => `[Real-time Match]: ${m.text}`),
+                                        ...apiResults.map(r => `[Network Search]: ${r.record.text}`)
+                                    ].join('\n');
+                                    searchContext += `\n--- BLUESKY FIREHOSE/SEARCH RESULTS FOR "${query}" ---\n${resultsText || 'No recent results found.'}\n---`;
+                                }
+                            }
+                            }
+
+                            if ((performedInquiry || searchContext) && attempts < MAX_ATTEMPTS) {
+                                console.log(`[Bot] Heartbeat findings obtained. Retrying generation to incorporate them.`);
+                                if (searchContext && !feedback.includes('Firehose/Search')) {
+                                     feedback = `I have found relevant information from the Bluesky Firehose/Search: ${searchContext}. Re-generate your message to incorporate these findings naturally.`;
+                                } else {
+                                     feedback = `I have performed an internal inquiry and recorded the results in our memory thread. Re-generate your spontaneous message to incorporate these new findings naturally.`;
+                                }
+                                bestCandidate = null; // Clear to force retry
+                                rejectedAttempts.push(responseText);
+                                continue;
+                            }
+
+                        // Check if discord_message was approved/retained
+                        const messageAction = finalActions.find(a => a.tool === 'discord_message');
+                        const msgToSend = responseText || (messageAction ? messageAction.parameters?.message : null);
+
+                        if (messageAction) {
+                            await discordService.sendSpontaneousMessage(msgToSend, discordOptions);
+                            await dataStore.addRecentThought('discord', msgToSend);
+                            await dataStore.updateLastDiscordHeartbeatTime(Date.now());
+
+                            // If this was a vibe check or a welcome, update timestamp to prevent redundant welcomes
+                            const lowerMsg = msgToSend.toLowerCase();
+                            const isVibeCheck = lowerMsg.includes('how') && (lowerMsg.includes('you') || lowerMsg.includes('vibe') || lowerMsg.includes('mood'));
+                            const isWelcome = lowerMsg.includes('welcome') || lowerMsg.includes('back');
+
+                            if (needsVibeCheck && (isVibeCheck || isWelcome)) {
+                                console.log('[Bot] Admin vibe check or welcome performed.');
+                                dataStore.db.data.last_admin_vibe_check = Date.now();
+                                await dataStore.db.write();
+                            }
+                        }
+
+                        // Extract and record the theme of the sent message to avoid immediate repetition
+                        try {
+                            const themePrompt = `Extract a 1-2 word theme for the following message: "${msgToSend}". Respond with ONLY the theme.`;
+                            const theme = await llmService.generateResponse([{ role: 'system', content: themePrompt }], { preface_system_prompt: false, useStep: true });
+                            if (theme) {
+                                await dataStore.addDiscordExhaustedTheme(theme);
+                                await dataStore.addExhaustedTheme(theme);
+                            }
+                        } catch (e) {
+                            console.error('[Bot] Error extracting theme from spontaneous message:', e);
+                        }
+
+                        this.consecutiveRejections = 0; // Reset on success
+                        break;
+                    } else {
+                        feedback = lastContainsSlop ? "Contains metaphorical slop." :
+                                   (lastIsExactDuplicate ? "Exact duplicate of a recent bot message detected." :
+                                   (lastHasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
+                                   (lastIsJaccardRepetitive ? "Jaccard similarity threshold exceeded (too similar to history)." :
+                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
+                                   (lastMisaligned ? "Misaligned with current mood." :
+                                   (lastVarietyCheck.feedback || "Too similar to recent history."))))));
+                        rejectedAttempts.push(message);
+                        console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
+
+                        if (isFinalAttempt && !bestCandidate) {
+                            console.log(`[Bot] Final heartbeat attempt failed even after rewrite. Aborting.`);
+                            break;
+                        }
+                    }
+                }
+
+                if (attempts >= MAX_ATTEMPTS && feedback) {
+                    this.consecutiveRejections++;
+                }
+
+                } catch (err) {
+                    console.error("[Bot] Error in Discord heartbeat processing:", err);
+                } finally {
+                    discordService.stopTyping(normChannelId);
+                }
+            }
+  }
+
+  async checkDiscordSpontaneity() {
+    if (this.paused || dataStore.isResting() || discordService.isProcessingAdminRequest) return;
+    if (discordService.status !== 'online') return;
+
+    // Minimum delay after login (Item 7 requirement)
+    const postLoginDelay = 5 * 60 * 1000; // 5 minutes
+    if (Date.now() - discordService.lastLoginTime < postLoginDelay) return;
+
+    const admin = await discordService.getAdminUser();
+    if (!admin) return;
+
+    const normChannelId = `dm_${admin.id}`;
+    let history = dataStore.getDiscordConversation(normChannelId);
+
+    // Refresh history from Discord if local is empty or indications >24h absence
+    const localQuietMins = history.length > 0 ? (Date.now() - history[history.length - 1].timestamp) / (1000 * 60) : Infinity;
+    if (history.length === 0 || localQuietMins > 60) {
+        const refreshed = await discordService.fetchAdminHistory(50);
+        if (refreshed) history = refreshed;
+    }
+
+    if (history.length === 0) return;
+
+    const lastMsg = history[history.length - 1];
+    const isBotLast = lastMsg.role === 'assistant';
+    const lastInteractionTime = lastMsg.timestamp;
+    const lastHeartbeatTime = dataStore.getLastDiscordHeartbeatTime();
+    const effectiveLastInteractionTime = Math.max(lastInteractionTime, lastHeartbeatTime);
+    const quietMins = (Date.now() - effectiveLastInteractionTime) / (1000 * 60);
+
+    let targetTime = dataStore.getDiscordNextSpontaneityTime();
+    let mode = dataStore.getDiscordSpontaneityMode();
+
+    // If no target set, or if last message was more recent than the set target (meaning a new message happened)
+    if (!targetTime || targetTime <= effectiveLastInteractionTime) {
+        if (isBotLast) {
+            // Last message was from bot, set follow-up target (2-5 mins)
+            const delay = Math.floor(Math.random() * 4) + 2; // 2, 3, 4, 5
+            targetTime = effectiveLastInteractionTime + (delay * 60 * 1000);
+            mode = 'follow-up';
+            console.log(`[Bot] New spontaneity target: follow-up in ${delay} mins.`);
+        } else {
+            // Last message was from admin/user, set heartbeat target (15-20 mins)
+            const delay = Math.floor(Math.random() * 6) + 15; // 15, 16, 17, 18, 19, 20
+            targetTime = effectiveLastInteractionTime + (delay * 60 * 1000);
+            mode = 'heartbeat';
+            console.log(`[Bot] New spontaneity target: heartbeat in ${delay} mins.`);
+        }
+        await dataStore.setDiscordNextSpontaneityTime(targetTime);
+        await dataStore.setDiscordSpontaneityMode(mode);
+    }
+
+    if (Date.now() >= targetTime) {
+        console.log(`[Bot] Spontaneity target reached (${mode}). Triggering...`);
+        // Clear target so it's reset after this turn (or pushed by poll outcome)
+        await dataStore.setDiscordNextSpontaneityTime(0);
+        await dataStore.setDiscordSpontaneityMode(null);
+
+        if (mode === 'follow-up') {
+            await this.performDiscordFollowUpPoll(admin, history);
+        } else {
+            await this.performDiscordHeartbeat(admin, history);
+        }
+    }
+  }
+
+  async performDiscordFollowUpPoll(admin, history) {
+    if (!dataStore.getDiscordAdminAvailability()) return;
+    const normChannelId = `dm_${admin.id}`;
+
+    console.log(`[Bot] Performing intentional follow-up poll...`);
+    // Context: last bot message
+    const lastBotMsg = history.filter(h => h.role === 'assistant').pop()?.content || '';
+    const currentMood = dataStore.getMood();
+
+    await discordService.startTyping(normChannelId);
+    try {
+        const poll = await llmService.performFollowUpPoll({
+            history,
+            lastBotMessage: lastBotMsg,
+            currentMood,
+            adminName: admin.username
+        });
+
+        if (poll.decision === 'follow-up' && poll.message) {
+            console.log(`[Bot] Follow-up poll: Persona decided to follow up. Reason: ${poll.reason}`);
+            await discordService.sendSpontaneousMessage(poll.message);
+            // sendSpontaneousMessage updates lastDiscordHeartbeatTime via dataStore.saveDiscordInteraction
+        } else {
+            console.log(`[Bot] Follow-up poll: Persona decided to wait. Reason: ${poll.reason}`);
+            // If they chose to wait, push the NEXT check to the heartbeat window (15-20 mins)
+            const heartbeatDelay = Math.floor(Math.random() * 6) + 15;
+            const newTarget = Date.now() + (heartbeatDelay * 60 * 1000);
+            await dataStore.setDiscordNextSpontaneityTime(newTarget);
+            await dataStore.setDiscordSpontaneityMode('heartbeat');
+            console.log(`[Bot] Pushing next spontaneity check to heartbeat window (+${heartbeatDelay}m).`);
+        }
+    } catch (e) {
+        console.error('[Bot] Error in follow-up poll:', e);
+    } finally {
+        discordService.stopTyping(normChannelId);
+    }
+  }
+
+
+  async checkDiscordScheduledTasks() {
+    if (this.paused || dataStore.isResting()) return;
+    if (discordService.status !== 'online') return;
+
+    const tasks = dataStore.getDiscordScheduledTasks();
+    if (tasks.length === 0) return;
+
+    const now = new Date();
+    const currentTimeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+    const today = now.toDateString();
+
+    for (let i = 0; i < tasks.length; i++) {
+        const task = tasks[i];
+        const taskDate = new Date(task.timestamp).toDateString();
+        if (taskDate !== today) {
+            await dataStore.removeDiscordScheduledTask(i);
+            i--;
+            continue;
+        }
+
+        // Task time format: "HH:mm"
+        if (currentTimeStr === task.time) {
+            console.log(`[Bot] Executing scheduled Discord task for ${task.time}: ${task.message}`);
+
+            try {
+                // If channelId is provided, we use it, otherwise fallback to spontaneous message (which finds admin)
+                if (task.channelId) {
+                    const channel = await discordService.client.channels.fetch(task.channelId.replace('dm_', '')).catch(() => null);
+                    if (channel) {
+                        await discordService._send(channel, task.message);
+                    } else {
+                        // Fallback to DM if channel fetch failed
+                        await discordService.sendSpontaneousMessage(task.message);
+                    }
+                } else {
+                    await discordService.sendSpontaneousMessage(task.message);
+                }
+
+                // Remove task after execution
+                await dataStore.removeDiscordScheduledTask(i);
+                i--; // Adjust index
+            } catch (e) {
+                console.error('[Bot] Error executing scheduled Discord task:', e);
+            }
+        } else {
+            // Optional: Handle overdue tasks if the bot was offline?
+            // User didn't specify, so for now we stick to exact minute matching.
+        }
     }
   }
 

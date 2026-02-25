@@ -435,6 +435,29 @@ class DiscordService {
         if (isAdmin) {
             await dataStore.setDiscordLastReplied(true);
 
+            // Intentional Scheduling Detection
+            const hasTimeHint = /d{1,2}:d{2}|d{1,2} ?(am|pm)|in d+ (minute|hour)|at d+/i.test(message.content);
+            if (hasTimeHint) {
+                console.log(`[DiscordService] Potential scheduling intent detected: "${message.content}"`);
+                (async () => {
+                    try {
+                        const currentMood = dataStore.getMood();
+                        const task = await llmService.extractScheduledTask(message.content, currentMood);
+                        if (task && task.decision === 'schedule') {
+                            console.log(`[DiscordService] Scheduling task: ${task.task_message} at ${task.time}`);
+                            await dataStore.addDiscordScheduledTask({
+                                time: task.time,
+                                message: task.task_message,
+                                channelId: normChannelId
+                            });
+                            // Optional: bot could react to confirm it noted the time, but user didn't ask for that yet.
+                        }
+                    } catch (e) {
+                        console.error('[DiscordService] Error in async scheduling extraction:', e);
+                    }
+                })();
+            }
+
             // Exhaustion and Emotional State Detection
             const lowerContent = message.content.toLowerCase();
             const exhaustionKeywords = ['tired', 'exhausted', 'rough day', 'long day', 'brain dead', 'drained', 'sleepy', 'fatigued', 'stressed', 'overwhelmed'];

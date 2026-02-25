@@ -2733,6 +2733,119 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     return [];
   }
 
+  async performFollowUpPoll(context) {
+    const {
+        history: historyInput,
+        lastBotMessage,
+        currentMood = { label: 'neutral', valence: 0, arousal: 0, stability: 0 },
+        adminName = config.DISCORD_ADMIN_NAME
+    } = context;
+
+    const historyFormatted = typeof historyInput === 'string' ? historyInput : this._formatHistory(historyInput, true);
+
+    const pollPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **INTENTIONAL FOLLOW-UP POLL**
+      You sent a message to ${adminName} on Discord a few minutes ago, and they haven't responded yet.
+      You are reflecting on whether you want to follow up autonomously to expand on your previous thought or continue the conversation in some way.
+
+      **Last message you sent:**
+      "${lastBotMessage}"
+
+      **Recent Conversation History:**
+      ${historyFormatted || 'No recent conversation.'}
+
+      --- CURRENT MOOD ---
+      Label: ${currentMood.label}
+      Valence: ${currentMood.valence}
+      Arousal: ${currentMood.arousal}
+      Stability: ${currentMood.stability}
+      ---
+
+      **YOUR CHOICE**:
+      1. **Wait**: You feel it's better to wait for their response.
+      2. **Follow-up**: You have something more to say, a "second thought", or want to expand on your last point to keep the conversation alive.
+
+      **INSTRUCTIONS:**
+      - Reflect on your last message and your current mood.
+      - Do you GENUINELY feel like saying more right now?
+      - If you decide to follow up, craft a message that feels natural, persona-aligned, and continues the thread.
+      - **STRICT ANTI-SLOP**: Avoid repetitive metaphorical "slop" and digital/electrical metaphors.
+      - **NO "YOU STILL THERE?"**: Never ask if they are still there or why they haven't replied. Just share a new thought or expansion.
+
+      Respond with a JSON object:
+      {
+        "decision": "follow-up" | "wait",
+        "message": "string (your follow-up message if decision is follow-up, else null)",
+        "reason": "string (brief reason for your choice in persona)"
+      }
+
+      Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
+    `;
+
+    const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], {
+        useStep: true,
+        preface_system_prompt: false,
+        temperature: 0.7
+    });
+
+    try {
+      if (!response) return { decision: "wait", message: null, reason: "Timeout/Empty" };
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return { decision: "wait", message: null, reason: "Parsing error" };
+    } catch (e) {
+      console.error('[LLMService] Error parsing follow-up poll response:', e);
+      return { decision: "wait", message: null, reason: "Exception" };
+    }
+  }
+  async extractScheduledTask(userInput, currentMood = null) {
+    const systemPrompt = `
+      You are a scheduling extraction AI. Analyze the user's message to determine if they are asking you to do something at a specific time today.
+
+      Example: "I'll be home at 2:30 today" -> The user wants you to check in or say something at 2:30 PM.
+      Example: "Remind me to check the oven in 20 minutes" -> The user wants a reminder in 20 minutes.
+
+      **RULES**:
+      1. Only extract for TODAY.
+      2. If no clear time is found, return decision "none".
+      3. Convert relative times (e.g. "in 20 minutes") or absolute times (e.g. "at 2:30") to a standard ISO timestamp if possible, or a clear "HH:mm" 24h format.
+      4. Formulate the "task_message" that you (the AI) will send at that time. It should be in your persona.
+
+      Persona: "${config.TEXT_SYSTEM_PROMPT}"
+
+      Current Time: ${new Date().toLocaleTimeString()}
+      Current Date: ${new Date().toDateString()}
+
+      Respond with a JSON object:
+      {
+        "decision": "schedule" | "none",
+        "time": "HH:mm (24h format)",
+        "task_message": "string (the message you will send at that time)",
+        "reason": "string (brief explanation)"
+      }
+
+      Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
+    `;
+
+    const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: userInput }];
+    const response = await this.generateResponse(messages, { max_tokens: 1000, useStep: true, preface_system_prompt: false, currentMood });
+
+    try {
+      if (!response) return { decision: "none" };
+      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      if (jsonMatch) {
+        return JSON.parse(jsonMatch[0]);
+      }
+      return { decision: "none" };
+    } catch (e) {
+      console.error('[LLMService] Error parsing scheduling extraction:', e);
+      return { decision: "none" };
+    }
+  }
 }
 
 export const llmService = new LLMService();

@@ -485,6 +485,20 @@ class DiscordService {
                 console.log(`[DiscordService] Sleep intent noted for admin.`);
             }
 
+            // Work/Home State Detection
+            const workKeywords = ["going to work", "at work", "heading to the office", "start work", "starting work", "at the office", "working now", "got work"];
+            const homeKeywords = ["i am home", "im home", "back from work", "done with work", "finished work", "leaving work", "heading home"];
+
+            if (workKeywords.some(kw => lowerContent.includes(kw))) {
+                console.log("[DiscordService] Admin mentioned going to or being at work.");
+                await dataStore.setAdminWorkMentionedAt(Date.now());
+            }
+
+            if (homeKeywords.some(kw => lowerContent.includes(kw))) {
+                console.log("[DiscordService] Admin mentioned being home or finishing work.");
+                await dataStore.setAdminHomeMentionedAt(Date.now());
+            }
+
             // Track emotional state snippet
             if (message.content.length > 5 && message.content.length < 100) {
                 await dataStore.addAdminEmotionalState(message.content);

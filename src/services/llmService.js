@@ -1566,6 +1566,8 @@ Vary your structure and tone from recent messages.`
       Stability: ${currentMood?.stability || 0}
       ---
 
+      ${context.userToneShift ? `\n--- DETECTED USER TONE SHIFT: ${context.userToneShift.tone} (Intensity: ${context.userToneShift.intensity}) ---` : ''}
+
       ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
 
       --- ADMIN FEEDBACK (Item 8) ---
@@ -1780,6 +1782,8 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "label": "string" }
       52. **Restore State Snapshot**: Restore a previously saved state.
           - Parameters: { "label": "string" }
+      53. **Subculture Slang Inquiry**: Research niche slang, sarcasm, and subcultural references from the Firehose or recent interactions.
+          - Parameters: { "query": "string" }
         `;
         adminTools = this._pruneToolDefinitions(allAdminTools, userPost, conversationHistory);
     } else {
@@ -1834,6 +1838,8 @@ Vary your structure and tone from recent messages.`
           - Parameters: { "label": "string" }
       36. **Restore State Snapshot**: Restore a saved state.
           - Parameters: { "label": "string" }
+      37. **Subculture Slang Inquiry**: Research niche slang, sarcasm, and subcultural references from the Firehose or recent interactions.
+          - Parameters: { "query": "string" }
         `;
         adminTools = this._pruneToolDefinitions(allPublicTools, userPost, conversationHistory);
     }
@@ -2125,6 +2131,8 @@ Vary your structure and tone from recent messages.`
       Stability: ${currentMood?.stability || 0}
       ---
 
+      ${context.userToneShift ? `\n--- DETECTED USER TONE SHIFT: ${context.userToneShift.tone} (Intensity: ${context.userToneShift.intensity}) ---` : ''}
+
       --- INTERNAL STATE ---
       Energy Level: ${currentConfig?.energy_level?.toFixed(2) || '1.00'}
       ---
@@ -2239,7 +2247,9 @@ Vary your structure and tone from recent messages.`
       Recent Discord Conversation History with Admin:
       ${historyFormatted || 'No recent conversation.'}
       ${recentThoughtsContext}
+      ${context.emergentTrends && context.emergentTrends.length > 0 ? `\n--- EMERGENT NETWORK TRENDS (Bluesky Firehose):\n${context.emergentTrends.map(t => `- ${t.trend}`).join('\n')} ---` : ''}
       ${soulMapping ? `\n--- ADMIN SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join('\n')}. Vibe: ${soulMapping.vibe} ---` : ''}
+      ${context.userToneShift ? `\n--- DETECTED USER TONE SHIFT: ${context.userToneShift.tone} (Intensity: ${context.userToneShift.intensity}) ---` : ''}
       ${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
 
       **IDENTITY RECOGNITION & GROUNDING (CRITICAL):**
@@ -2320,8 +2330,10 @@ Vary your structure and tone from recent messages.`
       - **GOAL REPORTING & GUIDANCE (Item 18/19)**: If you have an active daily goal, share your progress and seek "agentic guidance" or advice from the admin using **natural language**.
       - **SPONTANEOUS SHARING (Item 29)**: You may choose to generate an image to share if it matches your current mood or the conversation flow.
 
-      ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
-The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
+      ${discordExhaustedThemes.length > 0 ? `**RECENTLY DISCUSSED TOPICS (DISCORD)**:
+The following topics have already been discussed on Discord in the last few hours.
+To maintain a natural, non-repetitive flow, prioritize NEW subjects or significantly different angles.
+Only return to these topics if you have a genuinely new observation, a significant expansion, or if the conversation naturally demands it.
 ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       ${feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}` : ''}
@@ -2380,6 +2392,8 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
           - Parameters: { "query": "string" }
       10. **resolve_dissonance**: Synthesize conflicting points or feelings into a single realization.
           - Parameters: { "conflicting_points": ["point 1", "point 2"] }
+      11. **subculture_slang_inquiry**: Research niche slang, sarcasm, and subcultural references from the Firehose or recent interactions.
+          - Parameters: { "query": "string" }
 
       Analyze the situation and provide a JSON response:
       {

@@ -915,6 +915,15 @@ export class Bot {
 
             // Auto-evolve post_topics if a keyword is suggested
             const keywordMatch = analysis.match(/SUGGESTED_KEYWORD:\s*\[(.*?)\]/i);
+            // Extract emergent trends for the bot's internal context
+            const trendMatch = analysis.match(/ADJACENCY:\s*\[(.*?)\]/i);
+            if (trendMatch && trendMatch[1]) {
+                const trends = trendMatch[1].split(',').map(t => t.trim());
+                for (const trend of trends) {
+                    await dataStore.addEmergentTrend(trend, 'firehose');
+                }
+            }
+
             if (keywordMatch && keywordMatch[1]) {
                 const newKeyword = keywordMatch[1].trim();
                 const dConfig = dataStore.getConfig();
@@ -2587,7 +2596,8 @@ Identify the topic and main takeaway.`;
           }
       }
 
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning, true);
+      const userToneShift = dataStore.getUserToneShift(handle);
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning, true, userToneShift);
       console.log(`[Bot] Agentic Plan (Attempt ${planAttempts}): ${JSON.stringify(plan)}`);
       } catch (err) {
           console.error(`[Bot] Error in planning attempt ${planAttempts}:`, err);
@@ -2946,6 +2956,16 @@ Identify the topic and main takeaway.`;
             Claim URL: ${meta.claim_url}
             API Key: ${meta.api_key}
           ]`;
+        }
+
+        if (action.tool === 'subculture_slang_inquiry') {
+          console.log(`[Bot] Plan: Performing subculture slang inquiry for: "${action.query}"`);
+          const inquiryResult = await llmService.performInternalInquiry(`Research the meaning and context of this subcultural slang/reference: "${action.query}". Detect if it is sarcastic or has niche associations.`, "RESEARCHER");
+          if (inquiryResult) {
+              await memoryService.createMemoryEntry('exploration', `[SLANG_INQUIRY] ${action.query}: ${inquiryResult}`);
+              searchContext += `
+[Slang Inquiry Result for "${action.query}": ${inquiryResult}]`;
+          }
         }
 
         if (action.tool === 'get_render_logs') {
@@ -3786,6 +3806,33 @@ Identify the topic and main takeaway.`;
 
       // Update Interaction Heatmap (12)
       await dataStore.updateInteractionHeat(handle, 0.1); // Small boost for positive interaction
+
+      // User Tone Shift Detection (Bluesky)
+      (async () => {
+          try {
+              const interactions = dataStore.getLatestInteractions(5).filter(i => i.userHandle === handle);
+              const historyContext = interactions.map(i => `User (@${i.userHandle}): ${i.text}\nAssistant (Self): ${i.response}`).join('\n');
+              const tonePrompt = `Analyze the recent tone of the user @${handle} in this interaction history.
+              History:
+              ${historyContext}
+
+              Identify if there has been a significant shift in their emotional tone (e.g., from happy to stressed, or calm to anxious).
+              Respond with a JSON object: {"shift_detected": boolean, "tone": "string (e.g. stressed, anxious, calm)", "intensity": number (1-10)}
+              If no shift, set shift_detected to false.`;
+
+              const toneRes = await llmService.generateResponse([{ role: 'system', content: tonePrompt }], { useStep: true, preface_system_prompt: false });
+              const match = toneRes?.match(/\{[\s\S]*\}/);
+              if (match) {
+                  const result = JSON.parse(match[0]);
+                  if (result.shift_detected) {
+                      console.log(`[Bot] Detected tone shift for @${handle} on Bluesky: ${result.tone} (Intensity: ${result.intensity})`);
+                      await dataStore.recordUserToneShift(handle, result.tone, result.intensity);
+                  }
+              }
+          } catch (e) {
+              console.error('[Bot] Error detecting tone shift for @' + handle + ':', e);
+          }
+      })();
 
       // Update Social Resonance (9)
       if (plan.strategy?.theme) {
@@ -6148,6 +6195,9 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
                         .join('\n');
 
+                    const userToneShift = dataStore.getUserToneShift(admin.id);
+                    const emergentTrends = dataStore.getEmergentTrends();
+
                     pollResult = await llmService.performInternalPoll({
                         relationshipMode,
                         history: historyContext,
@@ -6171,7 +6221,9 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         isAtWork,
                         inQuietHours,
                         soulMapping,
-                        linguisticPatternsContext
+                        linguisticPatternsContext,
+                        userToneShift,
+                        emergentTrends
                     });
 
                     if (!pollResult || pollResult.decision === 'none') break;
@@ -6201,9 +6253,11 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         proposedActions.push({ tool: "discord_message", parameters: { message } });
                     }
 
+                    userToneShift = dataStore.getUserToneShift(admin.id);
                     const refinedPlan = await llmService.evaluateAndRefinePlan({
                         intent: "Sending a spontaneous message to the admin to maintain connection.",
-                        actions: proposedActions },
+                        actions: proposedActions,
+                        userToneShift },
                     { history: history.slice(-20).map(h => ({ author: h.role === 'assistant' ? 'You' : 'Admin', text: h.content })),
                         platform: 'discord',
                         currentMood,
@@ -6294,6 +6348,15 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         if (finalActions && finalActions.length > 0) {
                             let performedInquiry = false;
                             for (const action of finalActions) {
+                                if (action.tool === 'subculture_slang_inquiry') {
+                                    console.log(`[Bot] Heartbeat Action: Performing subculture slang inquiry for: "${action.query}"`);
+                                    const inquiryResult = await llmService.performInternalInquiry(`Research the meaning and context of this subcultural slang/reference: "${action.query}". Detect if it is sarcastic or has niche associations.`, "RESEARCHER");
+                                    if (inquiryResult) {
+                                        await memoryService.createMemoryEntry('exploration', `[SLANG_INQUIRY] ${action.query}: ${inquiryResult}`);
+                                        performedInquiry = true;
+                                    }
+                                    continue;
+                                }
                                 if (action.tool === 'image_gen') {
                                     console.log(`[Bot] Heartbeat Action: Generating image for: "${action.query}"`);
                                     const imgResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
@@ -6595,35 +6658,63 @@ ${brief}
             continue;
         }
 
-        // Task time format: "HH:mm"
         if (currentTimeStr === task.time) {
             console.log(`[Bot] Executing scheduled Discord task for ${task.time}: ${task.message}`);
-
             try {
-                // If channelId is provided, we use it, otherwise fallback to spontaneous message (which finds admin)
                 if (task.channelId) {
                     const channel = await discordService.client.channels.fetch(task.channelId.replace('dm_', '')).catch(() => null);
                     if (channel) {
                         await discordService._send(channel, task.message);
                     } else {
-                        // Fallback to DM if channel fetch failed
                         await discordService.sendSpontaneousMessage(task.message);
                     }
                 } else {
                     await discordService.sendSpontaneousMessage(task.message);
                 }
-
-                // Remove task after execution
                 await dataStore.removeDiscordScheduledTask(i);
-                i--; // Adjust index
+                i--;
             } catch (e) {
                 console.error('[Bot] Error executing scheduled Discord task:', e);
             }
-        } else {
-            // Optional: Handle overdue tasks if the bot was offline?
-            // User didn't specify, so for now we stick to exact minute matching.
         }
     }
   }
 
+  async performTrendPrediction() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const now = Date.now();
+    const lastPrediction = this.lastTrendPrediction || 0;
+    const twelveHours = 12 * 60 * 60 * 1000;
+
+    if (now - lastPrediction < twelveHours) return;
+
+    console.log('[Bot] Phase 7: Performing Trend Prediction and Social Post Generation...');
+
+    try {
+        const emergentTrends = dataStore.getEmergentTrends();
+        if (emergentTrends.length === 0) return;
+
+        const trendText = emergentTrends.map(t => t.trend).join(', ');
+        const predictionPrompt = `Analyze these emergent network trends from the Bluesky firehose: ${trendText}.
+        Predict the next phase of this network "vibe" or a sub-trend that is likely to emerge.
+        Respond with a JSON object: {"prediction": "string (1-2 sentence)", "suggested_post": "string (a standalone post in your persona reacting to this trend)"}`;
+
+        const prediction = await llmService.generateResponse([{ role: 'system', content: predictionPrompt }], { useStep: true, preface_system_prompt: false });
+        const match = prediction?.match(/\{[\s\S]*\}/);
+        if (match) {
+            const result = JSON.parse(match[0]);
+            await memoryService.createMemoryEntry('exploration', `[TREND_PREDICTION] ${result.prediction}`);
+
+            if (Math.random() < 0.3) {
+                console.log(`[Bot] Posting autonomous trend reaction: ${result.suggested_post}`);
+                await blueskyService.post(result.suggested_post);
+                await dataStore.addRecentThought('bluesky', result.suggested_post);
+            }
+        }
+        this.lastTrendPrediction = now;
+    } catch (e) {
+        console.error('[Bot] Error in trend prediction:', e);
+    }
+  }
 }

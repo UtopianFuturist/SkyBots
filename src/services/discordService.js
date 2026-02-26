@@ -479,6 +479,33 @@ class DiscordService {
                 await dataStore.updateAdminExhaustion(exhaustionIncr);
             }
 
+            // User Tone Shift Detection
+            (async () => {
+                try {
+                    const history = dataStore.getDiscordConversation(normChannelId);
+                    const historyContext = history.slice(-5).map(h => `${h.role === 'assistant' ? 'You' : 'Admin'}: ${h.content}`).join('\n');
+                    const tonePrompt = `Analyze the recent tone of the Admin in this conversation history.
+                    History:
+                    ${historyContext}
+
+                    Identify if there has been a significant shift in their emotional tone (e.g., from happy to stressed, or calm to anxious).
+                    Respond with a JSON object: {"shift_detected": boolean, "tone": "string (e.g. stressed, anxious, calm)", "intensity": number (1-10)}
+                    If no shift, set shift_detected to false.`;
+
+                    const toneRes = await llmService.generateResponse([{ role: 'system', content: tonePrompt }], { useStep: true, preface_system_prompt: false });
+                    const match = toneRes?.match(/\{[\s\S]*\}/);
+                    if (match) {
+                        const result = JSON.parse(match[0]);
+                        if (result.shift_detected) {
+                            console.log(`[DiscordService] Detected admin tone shift: ${result.tone} (Intensity: ${result.intensity})`);
+                            await dataStore.recordUserToneShift(message.author.id, result.tone, result.intensity);
+                        }
+                    }
+                } catch (e) {
+                    console.error('[DiscordService] Error detecting tone shift:', e);
+                }
+            })();
+
             // Sleep intent tracking
             if (lowerContent.includes('sleep') || lowerContent.includes('going to bed') || lowerContent.includes('goodnight')) {
                 await dataStore.setAdminSleepMentionedAt(Date.now());

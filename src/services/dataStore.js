@@ -49,6 +49,8 @@ const defaultData = {
   recent_thoughts: [], // [ { platform, content, timestamp } ]
   exhausted_themes: [], // [ { theme, timestamp } ]
   discord_exhausted_themes: [], // [ { theme, timestamp } ]
+  emergent_trends: [], // [ { trend, timestamp, source } ]
+  user_tone_shifts: {}, // { userId: { tone, timestamp, intensity } }
   lastMemoryCleanupTime: 0,
   lastMoltfeedSummaryTime: 0,
   lastMentalReflectionTime: 0,
@@ -274,14 +276,47 @@ class DataStore {
   async clearExpiredDiscordExhaustedThemes() {
     if (!this.db.data.discord_exhausted_themes) return;
 
-    const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+    const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
     const initialLength = this.db.data.discord_exhausted_themes.length;
 
-    this.db.data.discord_exhausted_themes = this.db.data.discord_exhausted_themes.filter(t => t.timestamp > fourHoursAgo);
+    this.db.data.discord_exhausted_themes = this.db.data.discord_exhausted_themes.filter(t => t.timestamp > sixHoursAgo);
 
     if (this.db.data.discord_exhausted_themes.length !== initialLength) {
       await this.db.write();
     }
+  }
+
+
+  async recordUserToneShift(userId, tone, intensity = 1) {
+    if (!this.db.data.user_tone_shifts) this.db.data.user_tone_shifts = {};
+    this.db.data.user_tone_shifts[userId] = {
+      tone,
+      intensity,
+      timestamp: Date.now()
+    };
+    await this.db.write();
+  }
+
+  getUserToneShift(userId) {
+    return this.db.data.user_tone_shifts?.[userId] || null;
+  }
+
+  async addEmergentTrend(trend, source = 'firehose') {
+    if (!this.db.data.emergent_trends) this.db.data.emergent_trends = [];
+    this.db.data.emergent_trends.push({
+      trend,
+      source,
+      timestamp: Date.now()
+    });
+    // Keep last 50 trends for deeper analysis
+    if (this.db.data.emergent_trends.length > 50) this.db.data.emergent_trends.shift();
+    await this.db.write();
+  }
+
+  getEmergentTrends() {
+    // Clear trends older than 24 hours
+    const dayAgo = Date.now() - (24 * 60 * 60 * 1000);
+    return (this.db.data.emergent_trends || []).filter(t => t.timestamp > dayAgo);
   }
 
   async unblockUser(handle) {
@@ -777,10 +812,10 @@ class DataStore {
   async clearExpiredExhaustedThemes() {
     if (!this.db.data.exhausted_themes) return;
 
-    const fourHoursAgo = Date.now() - (4 * 60 * 60 * 1000);
+    const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
     const initialLength = this.db.data.exhausted_themes.length;
 
-    this.db.data.exhausted_themes = this.db.data.exhausted_themes.filter(t => t.timestamp > fourHoursAgo);
+    this.db.data.exhausted_themes = this.db.data.exhausted_themes.filter(t => t.timestamp > sixHoursAgo);
 
     if (this.db.data.exhausted_themes.length !== initialLength) {
       await this.db.write();

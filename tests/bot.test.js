@@ -150,6 +150,10 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getUserRating: jest.fn().mockReturnValue(3),
     updateUserSummary: jest.fn(),
     getUserSummary: jest.fn(),
+    getUserToneShift: jest.fn(),
+    getEmergentTrends: jest.fn(),
+    recordUserToneShift: jest.fn(),
+    addEmergentTrend: jest.fn(),
     checkPfpChange: jest.fn().mockResolvedValue({ changed: false }),
     getBlueskyInstructions: jest.fn().mockReturnValue(''),
     getPersonaUpdates: jest.fn().mockReturnValue(''),
@@ -336,6 +340,10 @@ describe('Bot', () => {
     dataStore.getConversationLength.mockReturnValue(1);
     dataStore.getInteractionsByUser.mockReturnValue([]);
     dataStore.getUserSummary.mockReturnValue(null);
+    dataStore.getUserToneShift.mockReturnValue(null);
+    dataStore.getEmergentTrends.mockReturnValue([]);
+    dataStore.recordUserToneShift.mockResolvedValue(undefined);
+    dataStore.addEmergentTrend.mockResolvedValue(undefined);
 
     wikipediaService.searchArticle.mockResolvedValue([]);
     youtubeService.search.mockResolvedValue([]);

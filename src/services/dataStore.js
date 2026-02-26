@@ -98,6 +98,21 @@ const defaultData = {
   resting_until: 0,
   current_goal: null, // { goal, description, timestamp }
   last_admin_vibe_check: 0,
+  predictive_empathy_mode: "neutral",
+  last_empathy_prediction: 0,
+  message_counts: { admin: 0, bot: 0 },
+  relational_debt_score: 0.0,
+  co_evolution_logs: [],
+  pining_mode: false,
+  pining_started_at: 0,
+  linguistic_mutation_logs: [],
+  last_network_sentiment: 0.5,
+  shielding_active: false,
+  goal_evolution_history: [],
+  user_dossiers: {},
+  lurker_insights: [],
+  agency_reflection_logs: [],
+  timezone: null,
   last_submolt_void_check: 0,
   last_persona_audit: 0,
   last_mood_trend: 0,
@@ -1438,6 +1453,151 @@ class DataStore {
   getLastDeepKeywordRefresh() {
     return this.db.data.last_deep_keyword_refresh || 0;
   }
-}
 
+  // Predictive Empathy
+  async setPredictiveEmpathyMode(mode) {
+    this.db.data.predictive_empathy_mode = mode;
+    this.db.data.last_empathy_prediction = Date.now();
+    await this.db.write();
+  }
+
+  getPredictiveEmpathyMode() {
+    return this.db.data.predictive_empathy_mode || "neutral";
+  }
+
+  // Relational Debt
+  async updateMessageCounts(isAdmin) {
+    if (!this.db.data.message_counts) this.db.data.message_counts = { admin: 0, bot: 0 };
+    if (isAdmin) this.db.data.message_counts.admin++;
+    else this.db.data.message_counts.bot++;
+
+    // Calculate debt score (-1.0 to 1.0)
+    // Positive means bot has sent more, negative means admin has sent more
+    const total = this.db.data.message_counts.admin + this.db.data.message_counts.bot;
+    if (total > 0) {
+        this.db.data.relational_debt_score = (this.db.data.message_counts.bot - this.db.data.message_counts.admin) / total;
+    }
+    await this.db.write();
+  }
+
+  getRelationalDebtScore() {
+    return this.db.data.relational_debt_score || 0.0;
+  }
+
+  // Co-evolution
+  async addCoEvolutionEntry(entry) {
+    if (!this.db.data.co_evolution_logs) this.db.data.co_evolution_logs = [];
+    this.db.data.co_evolution_logs.push({ entry, timestamp: Date.now() });
+    if (this.db.data.co_evolution_logs.length > 50) this.db.data.co_evolution_logs.shift();
+    await this.db.write();
+  }
+
+  getCoEvolutionLogs() {
+    return this.db.data.co_evolution_logs || [];
+  }
+
+  // Pining (Wait for Me)
+  async setPiningMode(active) {
+    this.db.data.pining_mode = active;
+    if (active) this.db.data.pining_started_at = Date.now();
+    await this.db.write();
+  }
+
+  isPining() {
+    return this.db.data.pining_mode || false;
+  }
+
+  // Linguistic Mutation
+  async addLinguisticMutation(pattern, shift) {
+    if (!this.db.data.linguistic_mutation_logs) this.db.data.linguistic_mutation_logs = [];
+    this.db.data.linguistic_mutation_logs.push({ pattern, shift, timestamp: Date.now() });
+    if (this.db.data.linguistic_mutation_logs.length > 50) this.db.data.linguistic_mutation_logs.shift();
+    await this.db.write();
+  }
+
+  getLinguisticMutations() {
+    return this.db.data.linguistic_mutation_logs || [];
+  }
+
+  // Network Sentiment & Shielding
+  async setNetworkSentiment(score) {
+    this.db.data.last_network_sentiment = score;
+    await this.db.write();
+  }
+
+  getNetworkSentiment() {
+    return this.db.data.last_network_sentiment || 0.5;
+  }
+
+  async setShieldingActive(active) {
+    this.db.data.shielding_active = active;
+    await this.db.write();
+  }
+
+  isShieldingActive() {
+    return this.db.data.shielding_active || false;
+  }
+
+  // Goal Evolution
+  async addGoalEvolution(goal, reasoning) {
+    if (!this.db.data.goal_evolution_history) this.db.data.goal_evolution_history = [];
+    this.db.data.goal_evolution_history.push({ goal, reasoning, timestamp: Date.now() });
+    if (this.db.data.goal_evolution_history.length > 20) this.db.data.goal_evolution_history.shift();
+    await this.db.write();
+  }
+
+  getGoalEvolutionHistory() {
+    return this.db.data.goal_evolution_history || [];
+  }
+
+  // Public Soul-Mapping (Dossiers)
+  async updateUserDossier(handle, dossier) {
+    if (!this.db.data.user_dossiers) this.db.data.user_dossiers = {};
+    this.db.data.user_dossiers[handle] = {
+        ...this.db.data.user_dossiers[handle],
+        ...dossier,
+        last_updated: Date.now()
+    };
+    await this.db.write();
+  }
+
+  getUserDossier(handle) {
+    return this.db.data.user_dossiers?.[handle] || null;
+  }
+
+  // Lurker Insights
+  async addLurkerInsight(insight) {
+    if (!this.db.data.lurker_insights) this.db.data.lurker_insights = [];
+    this.db.data.lurker_insights.push({ insight, timestamp: Date.now() });
+    if (this.db.data.lurker_insights.length > 100) this.db.data.lurker_insights.shift();
+    await this.db.write();
+  }
+
+  getLurkerInsights() {
+    return this.db.data.lurker_insights || [];
+  }
+
+  // Agency Reflection
+  async addAgencyReflection(reflection) {
+    if (!this.db.data.agency_reflection_logs) this.db.data.agency_reflection_logs = [];
+    this.db.data.agency_reflection_logs.push({ reflection, timestamp: Date.now() });
+    if (this.db.data.agency_reflection_logs.length > 50) this.db.data.agency_reflection_logs.shift();
+    await this.db.write();
+  }
+
+  getAgencyReflections() {
+    return this.db.data.agency_reflection_logs || [];
+  }
+
+
+  // Timezone Management
+  async setTimezone(tz) {
+    this.db.data.timezone = tz;
+    await this.db.write();
+  }
+
+  getTimezone() {
+    return this.db.data.timezone;
+  }
+}
 export const dataStore = new DataStore();

@@ -1,0 +1,42 @@
+<<<<<<< SEARCH
+        if (action.tool === 'decompose_goal') {
+            const { goal } = action.parameters || {};
+            if (goal) {
+                const subtasks = await llmService.decomposeGoal(goal);
+                if (subtasks && subtasks.length > 0) {
+                    await dataStore.setGoalSubtasks(subtasks);
+                    searchContext += `\n[Goal decomposed into ${subtasks.length} subtasks]`;
+                }
+            }
+        }
+=======
+        if (action.tool === 'decompose_goal') {
+            const { goal } = action.parameters || {};
+            if (goal) {
+                const subtasks = await llmService.decomposeGoal(goal);
+                if (subtasks && subtasks.length > 0) {
+                    await dataStore.setGoalSubtasks(subtasks);
+                    searchContext += `\n[Goal decomposed into ${subtasks.length} subtasks]`;
+                }
+            }
+        }
+        if (action.tool === 'set_predictive_empathy') {
+            const { mode } = action.parameters || {};
+            if (mode) {
+                await dataStore.setPredictiveEmpathyMode(mode);
+                searchContext += `\n[Predictive empathy mode set to ${mode}]`;
+            }
+        }
+        if (action.tool === 'add_co_evolution_note') {
+            const { note } = action.parameters || {};
+            if (note) {
+                await dataStore.addCoEvolutionEntry(note);
+                searchContext += `\n[Co-evolution note recorded]`;
+            }
+        }
+        if (action.tool === 'set_pining_mode') {
+            const { active } = action.parameters || {};
+            await dataStore.setPiningMode(active);
+            searchContext += `\n[Pining mode set to ${active}]`;
+        }
+>>>>>>> REPLACE

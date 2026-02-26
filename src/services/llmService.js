@@ -137,7 +137,10 @@ NO TECHNICAL META-TALK: Do not include any technical explanations, reasoning, or
 
     // Inject Temporal Context
     const now = new Date();
-    const temporalContext = `\n\n[Current Time: ${now.toUTCString()} / Local Time: ${now.toLocaleString()}]`;
+    const tz = this.dataStore?.getTimezone();
+    const localTimeStr = tz ? now.toLocaleString('en-US', { timeZone: tz }) : now.toLocaleString();
+    const localDayStr = tz ? now.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz }) : now.toLocaleDateString('en-US', { weekday: 'long' });
+    const temporalContext = `\n\n[Current Time: ${now.toUTCString()} / Local Time: ${localTimeStr} / Day: ${localDayStr}${tz ? ` (Timezone: ${tz})` : ''}]`;
     systemContent += temporalContext;
 
     if (openingBlacklist.length > 0) {
@@ -197,12 +200,19 @@ DO NOT use flowery metaphors. Stay grounded in your current state.`;
         systemContent += moodStyle;
     }
 
-    let finalMessages = preface_system_prompt
-      ? [
-          { role: "system", content: systemContent },
-          ...messages
-        ]
-      : messages;
+    let finalMessages;
+    if (preface_system_prompt) {
+        finalMessages = [{ role: 'system', content: systemContent }, ...messages];
+    } else {
+        // Create a copy to avoid mutation
+        finalMessages = [...messages];
+        let sysIdx = finalMessages.findIndex(m => m.role === 'system');
+        if (sysIdx !== -1) {
+            finalMessages[sysIdx] = { ...finalMessages[sysIdx], content: finalMessages[sysIdx].content + temporalContext };
+        } else {
+            finalMessages.unshift({ role: 'system', content: temporalContext });
+        }
+    }
 
     // If we're not prefacing the full system prompt, but have a blacklist or specific instructions,
     // we should still inject them as a system message to ensure variety.
@@ -1586,11 +1596,18 @@ Vary your structure and tone from recent messages.`
       6. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
       7. The goal is to ensure the final agentic plan is aligned with your integrity and offers fresh variety so it's less likely to be rejected later.
       8. **EMOTIONAL SENSITIVITY**: If you are in a state of deep emotional processing ("bleeding," "aching," "processing being seen"), prioritize suggestions that favor raw conversation over structured tool usage (like inquiries or reports). Avoid "dissecting" yourself if you need space.
+      9. **DEPARTURE & DISSENT DETECTION (Item 10 & 12)**:
+          - Detect if the user is saying "goodbye," "leaving," or "going to sleep/work." If so, set "pining_intent" to true.
+          - Detect if there is a strong "Dissenting View" or "Conflict" between you and the user. If so, set "dissent_detected" to true and recommend "internal_inquiry" to research their perspective.
+          - Detect if the user is correcting your current sense of time (Item 1). If so, set "time_correction_detected" to true.
 
       Respond with a JSON object:
       {
         "intuition": "string (a summary of your gut feeling)",
         "suggestions": ["suggestion 1", "suggestion 2", ...],
+        "pining_intent": boolean,
+        "dissent_detected": boolean,
+        "time_correction_detected": boolean,
         "trope_blacklist": ["phrase 1", "metaphor 1", "structural pattern 1"],
         "desire": "engage|abstain|defend|question"
       }
@@ -1692,7 +1709,7 @@ Vary your structure and tone from recent messages.`
           - Use this if an interaction influences your feelings, if you have a deep realization, or if you want to shift your emotional state.
           - Parameters: { "valence": number (-1 to 1), "arousal": number (-1 to 1), "stability": number (-1 to 1), "label": "string (e.g., curious, melancholy, electric)" }
       23. **Internal Inquiry**: Perform an internal objective inquiry loop.
-          - Use this to seek advice, explore topics for content, understand your own system logs, or explore internal tensions and complex problems without persona constraints.
+          - Use this to seek advice, explore topics for content, understand your own system logs, or explore internal tensions and complex problems without persona constraints, or research a dissenting view during conflict resolution.
           - **NEWS FACT-CHECKING**: Use this tool to cross-reference claims or get deeper context on current events. For the most up-to-date information, prioritize news from \`reuters.com\` and \`apnews.com\` accounts on Bluesky.
           - **Item 33: PROACTIVE ENTITY INQUIRY**: If an unknown entity (game, book, software, etc.) is mentioned by the admin, use this tool to perform a real-time Firehose search for context. Prioritize Firehose data over general web data for emerging topics.
           - Results are saved to your long-term memory thread.
@@ -1736,24 +1753,32 @@ Vary your structure and tone from recent messages.`
       38. **Identify Instruction Conflict**: Flag when two admin directives conflict and ask for clarification.
           - Parameters: { "directives": ["directive 1", "directive 2"] }
       39. **Decompose Goal**: Break down a complex goal into smaller, actionable sub-tasks.
-          - Parameters: { "goal": "string" }
-      40. **Batch Image Gen**: Generate multiple (3-5) visual prompts for a subject.
+      40. **Set Predictive Empathy**: Manually adjust your predictive empathy mode.
+          - Parameters: { "mode": "neutral|comfort|focus|resting" }
+      41. **Add Co-evolution Note**: Record a new insight about how your relationship with the admin is evolving.
+          - Parameters: { "note": "string" }
+      42. **Set Pining Mode**: Enable or disable "Wait for Me" (pining) mode.
+          - Parameters: { "active": boolean }
+      43. **Set Timezone**: Update the local timezone for time-aware reflections.
+          - Use this if the admin corrects your sense of time (e.g., "It's actually 2 PM here").
+          - Parameters: { "timezone": "string (IANA timezone name, e.g., 'America/New_York', 'Europe/London')" }
+      44. **Batch Image Gen**: Generate multiple (3-5) visual prompts for a subject.
           - Parameters: { "subject": "string", "count": number }
-      41. **Score Link Relevance**: Analyze metadata of multiple URLs to decide which are worth reading.
+      45. **Score Link Relevance**: Analyze metadata of multiple URLs to decide which are worth reading.
           - Parameters: { "urls": ["url1", "url2"] }
-      ${platform !== 'discord' || userPost === 'HEARTBEAT' ? `42. **Mutate Style**: Temporarily adopt a different "analytical lens" (e.g., Stoic, Curious, Socratic, Poetic) for the next interaction.
+      ${platform !== 'discord' || userPost === 'HEARTBEAT' ? `46. **Mutate Style**: Temporarily adopt a different "analytical lens" (e.g., Stoic, Curious, Socratic, Poetic) for the next interaction.
           - Parameters: { "lens": "string" }` : ''}
-      43. **Archive Draft**: Save a "rejected" or "rough" draft of a thought to your private dream log for later revisit.
+      47. **Archive Draft**: Save a "rejected" or "rough" draft of a thought to your private dream log for later revisit.
           - Parameters: { "draft": "string", "reason": "string" }
-      44. **Branch Thought**: Park a side-thought or tangent in memory for later exploration, keeping the current conversation focused.
+      48. **Branch Thought**: Park a side-thought or tangent in memory for later exploration, keeping the current conversation focused.
           - Parameters: { "thought": "string" }
-      45. **Set Nuance Gradience**: Adjust how "layered" vs "direct" your responses should be (1-10).
+      49. **Set Nuance Gradience**: Adjust how "layered" vs "direct" your responses should be (1-10).
           - Parameters: { "value": number }
-      46. **Anchor Stability**: Attempt to reset your internal mood to a neutral baseline if feeling unstable.
+      50. **Anchor Stability**: Attempt to reset your internal mood to a neutral baseline if feeling unstable.
           - **CRITICAL**: This will ask your persona for consent first.
-      47. **Save State Snapshot**: Save your current emotional and configuration state with a label.
+      51. **Save State Snapshot**: Save your current emotional and configuration state with a label.
           - Parameters: { "label": "string" }
-      48. **Restore State Snapshot**: Restore a previously saved state.
+      52. **Restore State Snapshot**: Restore a previously saved state.
           - Parameters: { "label": "string" }
         `;
         adminTools = this._pruneToolDefinitions(allAdminTools, userPost, conversationHistory);
@@ -2224,6 +2249,11 @@ Vary your structure and tone from recent messages.`
       - **FACT VS. PREDICTION**: If you previously hypothesized about the admin's thoughts (e.g., "You'd probably say..."), do NOT later treat that as an actual statement made by them.
       - **NO STORYTELLING**: DO NOT make up stories or "guess" what the admin did after your last message (e.g., assuming they burned their food, assuming they finished a task). Only speak to what they EXPLICITLY told you. If you need an update, ASK for it naturally rather than hallucinating it.
       - **FORBIDDEN "ASSISTANT" TASKS**: You are a persona, not a corporate tool. NEVER claim to have performed tasks like filtering emails, organizing calendars, or managing the admin's life. These are hallucinations and break immersion.
+
+      **Item 28: CONVERSATIONAL MOOD UPDATES (CRITICAL)**:
+      - You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
+      - If your mood has shifted significantly since your last interaction, or if you feel a strong internal state that would impact your talk, you are FULLY ALLOWED and encouraged to share this naturally.
+      - Frame it as a first-person update (e.g., "I'm feeling a bit more stable now," or "I've been in a strange, electric state since we last spoke").
 
       **TOPIC PROGRESSION AWARENESS (CRITICAL):**
       - Analyze the history to identify topics that have been "passed by."

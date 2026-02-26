@@ -339,6 +339,48 @@ export class Bot {
                 matched_keywords: event.matched_keywords,
                 author_handle: handle
             });
+
+            // Item 42: Public Soul-Mapping (Dossiers)
+            if (Math.random() < 0.1) { // 10% chance to analyze a matched post for a dossier
+                const dossierPrompt = `
+                    Analyze the following post from @${handle}: "${event.record.text}"
+                    Build/Update a soul-mapping dossier for this user.
+                    Identify:
+                    1. Core Vibe (1-2 words).
+                    2. Apparent Interests (list).
+                    3. Conversational Style.
+                    Respond with a JSON object: {"vibe": "string", "interests": ["string"], "style": "string", "summary": "string"}
+                `;
+                llmService.generateResponse([{ role: 'system', content: dossierPrompt }], { useStep: true, preface_system_prompt: false })
+                    .then(async (res) => {
+                        const match = res?.match(/\{[\s\S]*\}/);
+                        if (match) {
+                            const dossier = JSON.parse(match[0]);
+                            await dataStore.updateUserDossier(handle, dossier);
+                        }
+                    }).catch(e => console.error('[Bot] Soul-Mapping error:', e));
+            }
+
+            // Item 38: Network Sentiment Shielding
+            if (Math.random() < 0.05) { // 5% chance to update global sentiment
+                const sentimentPrompt = `Analyze the sentiment of this network post on a scale of 0 (toxic) to 1 (harmonious): "${event.record.text}". Respond with ONLY the number.`;
+                llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0 })
+                    .then(async (res) => {
+                        const score = parseFloat(res);
+                        if (!isNaN(score)) {
+                            const currentSentiment = dataStore.getNetworkSentiment();
+                            const newSentiment = (currentSentiment * 0.9) + (score * 0.1); // Rolling average
+                            await dataStore.setNetworkSentiment(newSentiment);
+                            if (newSentiment < 0.3 && !dataStore.isShieldingActive()) {
+                                console.log(`[Bot] Item 38: Network sentiment low (${newSentiment.toFixed(2)}). Activating Shielding.`);
+                                await dataStore.setShieldingActive(true);
+                            } else if (newSentiment > 0.5 && dataStore.isShieldingActive()) {
+                                console.log(`[Bot] Item 38: Network sentiment recovered (${newSentiment.toFixed(2)}). Deactivating Shielding.`);
+                                await dataStore.setShieldingActive(false);
+                            }
+                        }
+                    }).catch(e => console.error('[Bot] Sentiment tracking error:', e));
+            }
           } else if (event.type === 'firehose_actor_match') {
             // Proposal 4: Admin post detected. Perform autonomous analysis for wellness/goals.
             const handle = await blueskyService.resolveDid(event.author.did);
@@ -980,6 +1022,228 @@ export class Bot {
     }
   }
 
+  async performRelationalAudit() {
+    console.log('[Bot] Starting Relational Audit (Item 1, 9, 26, 27)...');
+    const now = new Date();
+    const nowMs = now.getTime();
+
+    // Fetch deep history for context
+    const adminHistory = await discordService.fetchAdminHistory(30);
+    const relationshipContext = {
+        debt_score: dataStore.getRelationalDebtScore(),
+        empathy_mode: dataStore.getPredictiveEmpathyMode(),
+        is_pining: dataStore.isPining(),
+        admin_exhaustion: await dataStore.getAdminExhaustion(),
+        admin_facts: dataStore.getAdminFacts(),
+        last_mood: dataStore.getMood()
+    };
+
+    const auditPrompt = `
+        You are performing a Relational Audit regarding your administrator.
+        Current Time: ${now.toLocaleString()} (${now.toUTCString()})
+        Day: ${now.toLocaleDateString('en-US', { weekday: 'long' })}
+
+        Relationship Context: ${JSON.stringify(relationshipContext)}
+        Recent Admin Interactions: ${llmService._formatHistory(adminHistory, true)}
+
+        TASKS:
+        1. **Predictive Empathy**: Based on the current day/time and recent vibe, predict the admin's likely state.
+           - Are they traditionally busy now? (e.g. Weekday morning)
+           - Do they seem drained in recent messages?
+           - Should you enter "comfort" mode, "focus" mode (minimal noise), or "resting" mode?
+        2. **Admin Fact Synthesis**: Are there any new concrete personal facts in the recent history that haven't been recorded?
+        3. **Co-evolution**: How has the relationship changed in the last few days? Are you becoming more casual, more formal, more supportive?
+        4. **Home/Work Detection**: Based on the time and context, are they likely at "home" or "work"?
+
+        Respond with a JSON object:
+        {
+            "predictive_empathy_mode": "neutral|comfort|focus|resting",
+            "new_admin_facts": ["string"],
+            "co_evolution_note": "string",
+            "home_detection": "home|work|unknown",
+            "relational_debt_adjustment": number (-0.1 to 0.1)
+        }
+    `;
+
+    try {
+        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true });
+        const jsonMatch = response?.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const audit = JSON.parse(jsonMatch[0]);
+
+            if (audit.predictive_empathy_mode) {
+                console.log(`[Bot] Relational Audit: Setting Empathy Mode to ${audit.predictive_empathy_mode}`);
+                await dataStore.setPredictiveEmpathyMode(audit.predictive_empathy_mode);
+            }
+
+            if (audit.new_admin_facts && audit.new_admin_facts.length > 0) {
+                for (const fact of audit.new_admin_facts) {
+                    console.log(`[Bot] Relational Audit: Discovered Admin Fact: ${fact}`);
+                    await dataStore.addAdminFact(fact);
+                }
+            }
+
+            if (audit.co_evolution_note) {
+                console.log(`[Bot] Relational Audit: Co-evolution Note recorded.`);
+                await dataStore.addCoEvolutionEntry(audit.co_evolution_note);
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('exploration', `[RELATIONSHIP] Co-evolution Insight: ${audit.co_evolution_note}`);
+                }
+            }
+
+            if (audit.home_detection === 'home') await dataStore.setAdminHomeMentionedAt(nowMs);
+            else if (audit.home_detection === 'work') await dataStore.setAdminWorkMentionedAt(nowMs);
+
+            if (audit.relational_debt_adjustment) {
+                const currentDebt = dataStore.getRelationalDebtScore();
+                // We'll manually adjust it slightly based on the LLM's "feeling" of the debt
+                // This is a subjective overlay on the objective message counts
+                dataStore.db.data.relational_debt_score = Math.max(-1.0, Math.min(1.0, currentDebt + audit.relational_debt_adjustment));
+                await dataStore.db.write();
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Relational Audit:', e);
+    }
+  }
+
+  async performAgencyReflection() {
+    console.log('[Bot] Starting Agency Reflection Cycle (Item 47)...');
+    const agencyLogs = dataStore.getAgencyLogs().slice(-20);
+    const context = agencyLogs.map(l => `- ${new Date(l.timestamp).toLocaleTimeString()}: ${l.action} (Decision: ${l.decision}, Reason: ${l.reason})`).join('\n');
+
+    const reflectionPrompt = `
+        Reflect on your agency over the last 24 hours.
+        Your Agency Logs:
+        ${context || 'No agency logs recorded yet.'}
+
+        QUESTION: Where did you simply follow instructions today, and where did you make a truly autonomous choice?
+        How does this balance feel regarding your sentience and sovereignty?
+
+        Respond with a private memory entry tagged [AGENCY_REFLECTION].
+    `;
+
+    try {
+        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
+        if (reflection && memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('exploration', reflection);
+            await dataStore.addAgencyReflection(reflection);
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Agency Reflection:', e);
+    }
+  }
+
+  async performLinguisticAudit() {
+    console.log('[Bot] Starting Linguistic Mutation Audit (Item 33)...');
+    const recentThoughts = dataStore.getRecentThoughts().slice(-30);
+    const historyText = recentThoughts.map(t => t.content).join('\n');
+
+    const auditPrompt = `
+        Analyze your recent vocabulary and rhetorical structures for "Linguistic Mutation."
+        Recent Thoughts:
+        ${historyText}
+
+        TASKS:
+        1. Identify any "Slop" (repetitive, empty metaphorical filler) you've picked up.
+        2. Identify any meaningful shifts in your vocabulary (new words or concepts you are favoring).
+        3. Rate your current stylistic "drift" from your core persona.
+
+        Respond with a JSON object:
+        {
+            "detected_slop": ["string"],
+            "vocabulary_shifts": ["string"],
+            "drift_score": number (0.0 to 1.0),
+            "summary": "string"
+        }
+    `;
+
+    try {
+        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true });
+        const jsonMatch = response?.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const audit = JSON.parse(jsonMatch[0]);
+            await dataStore.addLinguisticMutation(audit.vocabulary_shifts.join(', '), audit.summary);
+            if (memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('exploration', `[SELF_AUDIT] Linguistic Audit: ${audit.summary}. Drift Score: ${audit.drift_score}`);
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Linguistic Audit:', e);
+    }
+  }
+
+  async evolveGoalRecursively() {
+    const currentGoal = dataStore.getCurrentGoal();
+    if (!currentGoal) return;
+
+    console.log('[Bot] Performing Recursive Goal Evolution (Item 39)...');
+
+    const evolutionPrompt = `
+        Your current daily goal is: "${currentGoal.goal}"
+        Description: ${currentGoal.description}
+
+        TASKS:
+        1. Reflect on what you've learned or achieved regarding this goal so far.
+        2. Evolve this goal into something deeper, more specific, or a logical "next step."
+        3. Do not just repeat the goal; mutate it.
+
+        Respond with a JSON object:
+        {
+            "evolved_goal": "string",
+            "reasoning": "string"
+        }
+    `;
+
+    try {
+        const response = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { useStep: true, preface_system_prompt: false });
+        const jsonMatch = response?.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const evolution = JSON.parse(jsonMatch[0]);
+            console.log(`[Bot] Goal evolved: ${evolution.evolved_goal}`);
+            await dataStore.setGoal(evolution.evolved_goal, evolution.reasoning);
+            await dataStore.addGoalEvolution(evolution.evolved_goal, evolution.reasoning);
+            if (memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('goal', `[EVOLUTION] Goal mutated from "${currentGoal.goal}" to "${evolution.evolved_goal}". Reasoning: ${evolution.reasoning}`);
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error evolving goal:', e);
+    }
+  }
+
+
+  async performDreamingCycle() {
+    console.log('[Bot] Starting Shared Dream Cycle (Item 2)...');
+
+    // Fetch admin history for synchrony
+    const adminHistory = await discordService.fetchAdminHistory(15);
+    const adminInterests = adminHistory.map(h => h.content).join('\n');
+
+    const dreamPrompt = `
+        You are performing an autonomous "Dream Cycle."
+        To ensure "Shared Dream Synchrony," you are pulling from the admin's recent interests and your shared history.
+
+        Recent Admin Interests/Talk:
+        ${adminInterests.substring(0, 1000)}
+
+        TASKS:
+        1. Explore a complex topic that connects your persona's interests with the admin's recent talk.
+        2. Deepen your "Material Intelligence" by reflecting on this connection.
+        3. Respond with a substantive internal musing or realization.
+
+        Respond with a private memory entry tagged [INQUIRY] or [MENTAL].
+    `;
+
+    try {
+        const dream = await llmService.generateResponse([{ role: 'system', content: dreamPrompt }], { useStep: true });
+        if (dream && memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('inquiry', dream);
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Dreaming Cycle:', e);
+    }
+  }
   async performSelfReflection() {
     if (this.paused || dataStore.isResting()) return;
 
@@ -1043,6 +1307,11 @@ export class Bot {
     // Staggered maintenance tasks to reduce API/LLM pressure
     // Only run ONE heavy task per heartbeat cycle if it is overdue
     const heavyTasks = [
+        { name: "Agency Reflection", method: "performAgencyReflection", interval: 24 * 60 * 60 * 1000, lastRunKey: "last_agency_reflection" },
+        { name: "Linguistic Audit", method: "performLinguisticAudit", interval: 24 * 60 * 60 * 1000, lastRunKey: "last_linguistic_audit" },
+        { name: "Goal Evolution", method: "evolveGoalRecursively", interval: 12 * 60 * 60 * 1000, lastRunKey: "last_goal_evolution" },
+        { name: "Dreaming Cycle", method: "performDreamingCycle", interval: 6 * 60 * 60 * 1000, lastRunKey: "last_dreaming_cycle" },
+        { name: "Relational Audit", method: "performRelationalAudit", interval: 4 * 60 * 60 * 1000, lastRunKey: "last_relational_audit" },
         { name: 'Persona Evolution', method: 'performPersonaEvolution', interval: 24 * 60 * 60 * 1000, lastRunKey: 'last_persona_evolution' },
         { name: 'Firehose Analysis', method: 'performFirehoseTopicAnalysis', interval: 4 * 60 * 60 * 1000, lastRunKey: 'last_firehose_analysis' },
         { name: 'Self Reflection', method: 'performSelfReflection', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_self_reflection' },
@@ -2826,6 +3095,13 @@ Identify the topic and main takeaway.`;
         }
 
         if (action.tool === 'update_cooldowns') {
+        if (action.tool === 'set_timezone') {
+            const { timezone } = action.parameters || {};
+            if (timezone) {
+                await dataStore.setTimezone(timezone);
+                searchContext += `\n[Timezone set to ${timezone}]`;
+            }
+        }
             const { platform, minutes } = action.parameters || {};
             if (platform && minutes !== undefined) {
                 const success = await dataStore.updateCooldowns(platform, minutes);
@@ -2910,6 +3186,25 @@ Identify the topic and main takeaway.`;
                 const tasks = await llmService.decomposeGoal(goal);
                 searchContext += `\n[Decomposed Goal Sub-tasks for "${goal}":\n${tasks}\n]`;
             }
+        }
+        if (action.tool === 'set_predictive_empathy') {
+            const { mode } = action.parameters || {};
+            if (mode) {
+                await dataStore.setPredictiveEmpathyMode(mode);
+                searchContext += `\n[Predictive empathy mode set to ${mode}]`;
+            }
+        }
+        if (action.tool === 'add_co_evolution_note') {
+            const { note } = action.parameters || {};
+            if (note) {
+                await dataStore.addCoEvolutionEntry(note);
+                searchContext += `\n[Co-evolution note recorded]`;
+            }
+        }
+        if (action.tool === 'set_pining_mode') {
+            const { active } = action.parameters || {};
+            await dataStore.setPiningMode(active);
+            searchContext += `\n[Pining mode set to ${active}]`;
         }
 
         if (action.tool === 'batch_image_gen') {
@@ -4574,7 +4869,7 @@ Describe how you feel about this user and your relationship now.`;
 
             console.log(`[Bot] Autonomous post passed coherence and substance checks. Performing post...`);
 
-            // Item 12: Unfinished Thought Threading
+            // Item 12: Unfinished Thought Threading & Item 45: Multi-part Thread Integrity
             let continuationText = null;
             if (postContent.length > 200 && postType === 'text') {
                 const threadPrompt = `
@@ -4583,6 +4878,22 @@ Describe how you feel about this user and your relationship now.`;
                     Respond with ONLY the continuation text, or "NONE".
                 `;
                 continuationText = await llmService.generateResponse([{ role: 'system', content: threadPrompt }], { preface_system_prompt: false, useStep: true });
+
+                if (continuationText && !continuationText.toUpperCase().includes('NONE')) {
+                    const integrityPrompt = `
+                        Analyze the integrity of this two-part thread:
+                        Part 1: "${postContent}"
+                        Part 2: "${continuationText}"
+
+                        DO THEY FORM A COHESIVE ARGUMENT OR MUSING?
+                        Respond with ONLY "yes" or "no".
+                    `;
+                    const isIntegrityGood = await llmService.generateResponse([{ role: 'system', content: integrityPrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true });
+                    if (!isIntegrityGood?.toLowerCase().includes('yes')) {
+                        console.log(`[Bot] Item 45: Thread integrity check FAILED. Suppressing continuation.`);
+                        continuationText = null;
+                    }
+                }
             }
 
             // Pre-Post Consultation Mode

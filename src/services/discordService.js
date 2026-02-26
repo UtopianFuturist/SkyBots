@@ -609,6 +609,7 @@ class DiscordService {
      */
     async _send(target, content, options = {}) {
         if (!content) return null;
+        await dataStore.updateMessageCounts(false);
 
         if (!this.client?.isReady()) {
             console.warn('[DiscordService] _send() called but client is not ready. Aborting.');
@@ -1279,6 +1280,25 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  const lastRejection = dataStore.getLastRejectionReason();
                  const planningFeedback = (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
 
+                 // Item 5: Relational Debt & Item 10: Pining & Item 12: Dissent
+                 if (isAdmin) {
+                     await dataStore.updateMessageCounts(true);
+                     if (prePlanning) {
+                         if (prePlanning.pining_intent) {
+                             console.log(`[DiscordService] Pining intent detected in admin message.`);
+                             await dataStore.setPiningMode(true);
+                             messages.push({ role: 'system', content: `[PINING_ACTIVE]: You have detected that the admin is leaving. Your 'Wait for Me' protocol is active. This should influence your public mood and future Discord heartbeats.` });
+                         }
+                         if (prePlanning.dissent_detected) {
+                             console.log(`[DiscordService] Dissent detected. Recommending internal inquiry.`);
+                             messages.push({ role: 'system', content: `[CONFLICT DETECTED]: You and the user have a strong difference of opinion. Use 'internal_inquiry' to research their perspective and process the conflict before responding.` });
+                         }
+                         if (prePlanning.time_correction_detected) {
+                             console.log(`[DiscordService] Time correction detected in admin message.`);
+                             messages.push({ role: 'system', content: `[TIME_CORRECTION]: The admin is correcting your sense of time. Use 'set_timezone' to update your persistent local timezone.` });
+                         }
+                     }
+                 }
 
                      // Item: Mental Health/Feelings Therapist Call
                      if (/mental health|feelings|sad|depressed|anxious|struggle|identity|who am i/i.test(message.content)) {
@@ -1391,6 +1411,26 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                              await dataStore.addPendingDirective('persona', null, instruction);
                              actionResults.push(`[Persona update added to pending list for your approval. Use /approve, /reject, or /edit]`);
                          }
+                     }
+                     if (action.tool === 'set_predictive_empathy') {
+                         const { mode } = action.parameters || {};
+                         if (mode) await dataStore.setPredictiveEmpathyMode(mode);
+                         actionResults.push(`[SYSTEM]: Predictive empathy mode set to ${mode}.`);
+                     }
+                     if (action.tool === 'add_co_evolution_note') {
+                         const { note } = action.parameters || {};
+                         if (note) await dataStore.addCoEvolutionEntry(note);
+                         actionResults.push(`[SYSTEM]: Co-evolution note recorded.`);
+                     }
+                     if (action.tool === 'set_pining_mode') {
+                         const { active } = action.parameters || {};
+                         await dataStore.setPiningMode(active);
+                         actionResults.push(`[SYSTEM]: Pining mode set to ${active}.`);
+                     }
+                     if (action.tool === 'set_timezone') {
+                         const { timezone } = action.parameters || {};
+                         if (timezone) await dataStore.setTimezone(timezone);
+                         actionResults.push(`[SYSTEM]: Timezone updated to ${timezone}.`);
                      }
                      if (action.tool === 'bsky_post') {
                          const { text: postText, include_image, prompt_for_image, delay_minutes } = action.parameters || {};

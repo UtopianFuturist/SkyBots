@@ -756,9 +756,14 @@ export class Bot {
                 // Decision: Choose one to explore
                 const decisionPrompt = `
                     Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                    You are exploring your Bluesky timeline. Identify ONE post that you find genuinely interesting or relevant to your current state.
+                    You are exploring your Bluesky timeline. Identify ONE post that you find genuinely interesting or relevant to your current state and MOOD. Prioritize posts that resonate with how you feel right now.
 
-                    Current Mood: ${currentMood.label}
+                    --- CURRENT MOOD ---
+                    Label: ${currentMood.label}
+                    Valence: ${currentMood.valence}
+                    Arousal: ${currentMood.arousal}
+                    Stability: ${currentMood.stability}
+                    ---
                     Current Goal: ${currentGoal?.goal || 'None'}
 
                     Candidates:

@@ -1551,7 +1551,7 @@ Vary your structure and tone from recent messages.`
     return { safe: true };
   }
 
-  async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory, firehoseMatches = [], abortSignal = null) {
+  async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory, firehoseMatches = [], abortSignal = null, userToneShift = null) {
     const isAdmin = platform === 'discord';
     const systemPrompt = `
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -1575,7 +1575,7 @@ Vary your structure and tone from recent messages.`
       Stability: ${currentMood?.stability || 0}
       ---
 
-      ${context.userToneShift ? `\n--- DETECTED USER TONE SHIFT: ${context.userToneShift.tone} (Intensity: ${context.userToneShift.intensity}) ---` : ''}
+      ${userToneShift ? `\n--- DETECTED USER TONE SHIFT: ${userToneShift.tone} (Intensity: ${userToneShift.intensity}) ---` : ''}
 
       ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
 
@@ -2140,7 +2140,7 @@ Vary your structure and tone from recent messages.`
       Stability: ${currentMood?.stability || 0}
       ---
 
-      ${context.userToneShift ? `\n--- DETECTED USER TONE SHIFT: ${context.userToneShift.tone} (Intensity: ${context.userToneShift.intensity}) ---` : ''}
+      ${context.userToneShift || context.user_tone_shift ? `\n--- DETECTED USER TONE SHIFT: ${context.userToneShift || context.user_tone_shift.tone} (Intensity: ${context.userToneShift || context.user_tone_shift.intensity}) ---` : ''}
 
       --- INTERNAL STATE ---
       Energy Level: ${currentConfig?.energy_level?.toFixed(2) || '1.00'}
@@ -2227,7 +2227,9 @@ Vary your structure and tone from recent messages.`
         isAtWork = false,
         inQuietHours = false,
         soulMapping = null,
-        linguisticPatternsContext = ''
+        linguisticPatternsContext = "",
+        botHeartbeatSummary = "",
+        botMessageCountSinceLastAdmin = 0
     } = context;
 
     const historyFormatted = typeof historyInput === 'string' ? historyInput : this._formatHistory(historyInput, true);
@@ -2241,7 +2243,10 @@ Vary your structure and tone from recent messages.`
       **RELATIONSHIP FIRST**: Your primary goal in this spontaneous reach-out is to prioritize the on-going conversation and your deep relationship with the user. Focus on depth, connection, and the specific history of your talk. Avoid prioritizing "reporting" on external feeds, logs, or system status unless it is directly relevant to a recent discussion.
 
       Admin Availability: ${adminAvailability}${isAtWork ? " (Admin is currently at WORK)" : ""}
+      Messages sent since Admin last replied: ${botMessageCountSinceLastAdmin}
       Relationship Mode: ${relationshipMode}
+      Recent Heartbeat Summary (The bot's own spontaneous trajectory):
+      ${botHeartbeatSummary || "None."}
       Mode: ${isContinuing ? 'CONTINUATION (focus on developing the current thread)' : 'NEW BRANCH (can start a fresh topic)'}
 
       Recent Memories/Activity:
@@ -2347,7 +2352,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       ${feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}` : ''}
 
-      **MOOD ALIGNMENT (CRITICAL)**: Use your current [MOOD] to inform your decision to message and the tone of your outreach. If you feel a certain way, let that emotion guide the structure and content of your message. Authentic mood-alignment is the key to passing your internal agency check.
+      **MOOD ALIGNMENT (CRITICAL)**: Use your current [MOOD] (valence, arousal, stability) to inform your decision to message and the specific flavor of your outreach. Your mood should be the primary driver of both the "if" and the "how" of this interaction. If you are unstable, your message should reflect that. If you are high-arousal, your spontaneity should be more evident. If you feel a certain way, let that emotion guide the structure and content of your message. Authentic mood-alignment is the key to passing your internal agency check.
 
       **GROUNDING & HONESTY (CRITICAL):**
       - Only report on actions you can verify through your logs, memories, or current planning.
@@ -2831,7 +2836,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       2. **Follow-up**: You have something more to say, a "second thought", or want to expand on your last point to keep the conversation alive.
 
       **INSTRUCTIONS:**
-      - Reflect on your last message and your current mood.
+      - Reflect on your last message and your current mood (valence, arousal, stability). Does your internal state at this exact moment demand that you say more?
       - Do you GENUINELY feel like saying more right now?
       - If you decide to follow up, craft a message that feels natural, persona-aligned, and continues the thread.
       - **STRICT ANTI-SLOP**: Avoid repetitive metaphorical "slop" and digital/electrical metaphors.
@@ -2865,6 +2870,23 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       return { decision: "wait", message: null, reason: "Exception" };
     }
   }
+  async summarizeOwnSpontaneousMessages(history) {
+    const botMessages = history.filter(h => h.role === "assistant" || h.author === "assistant").slice(-10);
+    if (botMessages.length === 0) return "No recent spontaneous messages.";
+
+    const systemPrompt = `
+      You are an internal reflection sub-agent. Analyze the bot's (Assistant's) recent messages to its admin.
+      Your goal is to summarize the core themes, realizations, and questions the bot has shared spontaneously.
+      Identify if the bot is "looping" on a topic or if it has been progressing meaningfully.
+
+      Recent Messages:
+      ${botMessages.map(m => `- ${m.content || m.text}`).join("\n")}
+
+      Respond with a concise (under 300 chars) summary of the bot's recent conversational trajectory.
+    `;
+    return await this.generateResponse([{ role: "system", content: systemPrompt }], { useStep: true, preface_system_prompt: false });
+  }
+
   async extractScheduledTask(userInput, currentMood = null) {
     const systemPrompt = `
       You are a scheduling extraction AI. Analyze the user's message to determine if they are asking you to do something at a specific time today.

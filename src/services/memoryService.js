@@ -251,7 +251,7 @@ class MemoryService {
     } else if (type === 'persona_update') {
         finalEntry = `[PERSONA] ${context}`;
     } else {
-        const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useStep: true, preface_system_prompt: false });
+        const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useStep: false, preface_system_prompt: false });
 
         if (!entry) {
             console.warn(`[MemoryService] Failed to generate memory entry content.`);
@@ -281,6 +281,7 @@ class MemoryService {
             console.warn(`[MemoryService] Memory entry rejected: ${evaluation}`);
             return null;
         }
+        console.log(`[MemoryService] Memory entry passed evaluation.`);
 
         finalEntry = entry;
     }

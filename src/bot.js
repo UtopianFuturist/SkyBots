@@ -3751,8 +3751,16 @@ Identify the topic and main takeaway.`;
     if (!responseText) {
       console.warn(`[Bot] Failed to generate a response text for @${handle} after planning attempts.`);
       this.consecutiveRejections++;
+      if (rejectionReason && rejectionReason.toLowerCase().includes("leakage")) {
+          console.log(`[Bot] Internal leakage detected for @${handle}. Initiating 2-minute silence before retry...`);
+          await dataStore.removeRepliedPost(notif.uri);
+          setTimeout(() => {
+              console.log(`[Bot] Retrying notification ${notif.uri} after silence period.`);
+              this.processNotification(notif).catch(e => console.error(`[Bot] Error in delayed retry for ${notif.uri}:`, e));
+          }, 120000);
+          return;
+      }
     }
-
     if (responseText) {
       this.consecutiveRejections = 0; // Reset on success
 

@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import https from 'https';
 import config from '../../config.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters, isLeakage } from '../utils/textUtils.js';
 import { moltbookService } from './moltbookService.js';
 import { openClawService } from './openClawService.js';
 
@@ -1048,8 +1048,17 @@ Vary your structure and tone from recent messages.`
 
     const validatedQuery = query || "No query provided.";
 
-    // Internal Inquiry uses the main model (Qwen 3.5) as requested.
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: validatedQuery }], { useQwen: true, preface_system_prompt: false });
+    let response = await this.generateResponse([{ role: "system", content: systemPrompt }, { role: "user", content: validatedQuery }], { useQwen: true, preface_system_prompt: false });
+
+    if (isLeakage(response)) {
+        console.warn(`[LLMService] Internal leakage detected in performInternalInquiry result. Retrying...`);
+        response = await this.generateResponse([
+            { role: "system", content: systemPrompt },
+            { role: "user", content: validatedQuery },
+            { role: "system", content: "STRICT: Your previous response was rejected for containing internal meta-talk leakage (e.g., SYSTEM INTERVENTION DETECTED). YOU MUST rewrite the findings to be purely factual and objective without any meta-commentary or system-level analysis." }
+        ], { useQwen: true, preface_system_prompt: false });
+    }
+    return response;
   }
 
   async shouldLikePost(postText) {
@@ -1063,8 +1072,8 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: `Post content: "${postText}"` }
+      { role: "system", content: systemPrompt },
+      { role: "user", content: `Post content: "${postText}"` }
     ];
     const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     return response?.toLowerCase().includes('yes') || false;

@@ -1,4 +1,4 @@
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap, stripWrappingQuotes, checkExactRepetition, cleanKeywords } from '../src/utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, sanitizeCjkCharacters, hasPrefixOverlap, stripWrappingQuotes, checkExactRepetition, cleanKeywords, isLeakage } from '../src/utils/textUtils.js';
 
 describe('textUtils - sanitizeCjkCharacters', () => {
   it('should remove Chinese characters', () => {
@@ -278,5 +278,24 @@ describe('textUtils - cleanKeywords', () => {
     const input = ["ethics", "ethics", "ETHICS"];
     const result = cleanKeywords(input);
     expect(result).toEqual(['ethics']);
+  });
+});
+
+describe('textUtils - isLeakage', () => {
+  it('should detect forbidden meta-talk', () => {
+    expect(isLeakage('SYSTEM INTERVENTION DETECTED: Rewriting response.')).toBe(true);
+    expect(isLeakage('REWRITE PROTOCOL ENGAGED for variety.')).toBe(true);
+    expect(isLeakage('Here is a FAILURE ANALYSIS of the previous attempt.')).toBe(true);
+    expect(isLeakage('CORRECTED RESPONSE: Hello world.')).toBe(true);
+  });
+
+  it('should return false for normal text', () => {
+    expect(isLeakage('Hello there, how are you today?')).toBe(false);
+    expect(isLeakage('I am working on a system update.')).toBe(false);
+  });
+
+  it('should be case-insensitive', () => {
+    expect(isLeakage('system intervention detected')).toBe(true);
+    expect(isLeakage('REWRITE ENGAGED')).toBe(true);
   });
 });

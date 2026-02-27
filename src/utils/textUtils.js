@@ -505,3 +505,28 @@ export const reconstructTextWithFullUrls = (text, facets) => {
     return text;
   }
 };
+
+export const isLeakage = (text) => {
+    const result = getLeakageInfo(text);
+    return result.hasLeakage;
+};
+
+export const getLeakageInfo = (text) => {
+    if (!text) return { hasLeakage: false, reason: null };
+    // These are phrases that indicate the LLM is leaking its internal reasoning or protocols
+    const forbidden = [
+        "system intervention detected",
+        "rewrite protocol engaged",
+        "failure analysis",
+        "corrected response",
+        "internal response",
+        "rewrite engaged",
+        "system protocol",
+        "intervention detected"
+    ];
+    const lower = text.toLowerCase().trim();
+    for (const f of forbidden) {
+        if (lower.includes(f)) return { hasLeakage: true, reason: `Contains internal meta-talk: "${f}"` };
+    }
+    return { hasLeakage: false, reason: null };
+};

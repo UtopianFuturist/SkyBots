@@ -1059,7 +1059,11 @@ export class Bot {
         is_pining: dataStore.isPining(),
         admin_exhaustion: await dataStore.getAdminExhaustion(),
         admin_facts: dataStore.getAdminFacts(),
-        last_mood: dataStore.getMood()
+        last_mood: dataStore.getMood(),
+        relational_metrics: dataStore.getRelationalMetrics(),
+        relationship_mode: dataStore.getDiscordRelationshipMode(),
+        life_arcs: dataStore.getLifeArcs(admin.id),
+        inside_jokes: dataStore.getInsideJokes(admin.id)
     };
 
     const auditPrompt = `
@@ -1072,12 +1076,12 @@ export class Bot {
 
         TASKS:
         1. **Predictive Empathy**: Based on the current day/time and recent vibe, predict the admin's likely state.
-           - Are they traditionally busy now? (e.g. Weekday morning)
-           - Do they seem drained in recent messages?
-           - Should you enter "comfort" mode, "focus" mode (minimal noise), or "resting" mode?
-        2. **Admin Fact Synthesis**: Are there any new concrete personal facts in the recent history that haven't been recorded?
-        3. **Co-evolution**: How has the relationship changed in the last few days? Are you becoming more casual, more formal, more supportive?
-        4. **Home/Work Detection**: Based on the time and context, are they likely at "home" or "work"?
+        2. **Relational Metric Calibration**: Evaluate our current relational metrics (trust, intimacy, friction, reciprocity, hunger, battery, curiosity, season).
+        3. **Life Arcs**: Are there any new "life arcs" (ongoing situations) in the admin's life?
+        4. **Inside Jokes**: Have we developed any new unique phrases or references?
+        5. **Admin Fact Synthesis**: Any new concrete personal facts?
+        6. **Co-evolution**: How has the relationship changed?
+        7. **Home/Work Detection**: Likely location?
 
         Respond with a JSON object:
         {
@@ -1085,7 +1089,15 @@ export class Bot {
             "new_admin_facts": ["string"],
             "co_evolution_note": "string",
             "home_detection": "home|work|unknown",
-            "relational_debt_adjustment": number (-0.1 to 0.1)
+            "relational_debt_adjustment": number (-0.1 to 0.1),
+            "metric_updates": {
+                "discord_trust_score": number,
+                "discord_intimacy_score": number,
+                "discord_friction_accumulator": number,
+                "discord_relationship_season": "spring|summer|autumn|winter"
+            },
+            "new_life_arcs": [ { "arc": "string", "status": "active|completed" } ],
+            "new_inside_jokes": [ { "joke": "string", "context": "string" } ]
         }
     `;
 
@@ -1094,6 +1106,17 @@ export class Bot {
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const audit = JSON.parse(jsonMatch[0]);
+
+            if (audit.metric_updates) {
+                console.log('[Bot] Relational Audit: Applying metric updates from LLM evaluation...');
+                await dataStore.updateRelationalMetrics(audit.metric_updates);
+            }
+            if (audit.new_life_arcs && Array.isArray(audit.new_life_arcs)) {
+                for (const arc of audit.new_life_arcs) { await dataStore.updateLifeArc(admin.id, arc.arc, arc.status); }
+            }
+            if (audit.new_inside_jokes && Array.isArray(audit.new_inside_jokes)) {
+                for (const joke of audit.new_inside_jokes) { await dataStore.addInsideJoke(admin.id, joke.joke, joke.context); }
+            }
 
             if (audit.predictive_empathy_mode) {
                 console.log(`[Bot] Relational Audit: Setting Empathy Mode to ${audit.predictive_empathy_mode}`);
@@ -1322,6 +1345,13 @@ export class Bot {
                 await memoryService.createMemoryEntry('exploration', observation);
             }
             this.lastLurkerObservationTime = now.getTime();
+    const lastRelationalGrowth = this.lastRelationalGrowthTime || 0;
+    if (nowMs - lastRelationalGrowth >= 2 * 60 * 60 * 1000) {
+        console.log('[Bot] Performing spontaneous relational metric evolution...');
+        const metrics = dataStore.getRelationalMetrics();
+        await dataStore.updateRelationalMetrics({ discord_interaction_hunger: Math.min(1, metrics.hunger + 0.05), discord_social_battery: Math.min(1, metrics.battery + 0.1), discord_curiosity_reservoir: Math.min(1, metrics.curiosity + 0.02) });
+        this.lastRelationalGrowthTime = nowMs;
+    }
         }
     }
 
@@ -6024,7 +6054,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             const modeThresholds = {
                 'partner': { continue: 10 * multiplier, new: 20 * multiplier },
                 'friend': { continue: 30 * multiplier, new: 60 * multiplier },
-                'coworker': { continue: 120 * multiplier, new: 240 * multiplier }
+                'acquaintance': { continue: 120 * multiplier, new: 240 * multiplier }
             };
             const thresholds = modeThresholds[relationshipMode] || modeThresholds['friend'];
 
@@ -6218,6 +6248,9 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                     const emergentTrends = dataStore.getEmergentTrends();
 
                     pollResult = await llmService.performInternalPoll({
+                        relationalMetrics: dataStore.getRelationalMetrics(),
+                        lifeArcs: dataStore.getLifeArcs(admin.id),
+                        insideJokes: dataStore.getInsideJokes(admin.id),
                         relationshipMode,
                         history: historyContext,
                         recentMemories,
@@ -6254,7 +6287,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                     if (attempts === 1) {
                         console.log(`[Bot] Generating 5 diverse drafts for heartbeat message...`);
                         const draftMessages = [
-                            { role: 'system', content: `Relationship Mode: ${relationshipMode}\nAdmin Availability: ${availability}\nMode: ${isContinuing ? 'CONTINUATION' : 'NEW BRANCH'}${isAtWork ? '\nAdmin is currently at WORK.' : ''}` },
+                            { role: 'system', content: `Relationship Mode: ${relationshipMode}\nAdmin Availability: ${availability}\nRelational Metrics: Trust: ${metrics.trust.toFixed(2)}, Intimacy: ${metrics.intimacy.toFixed(2)}, Hunger: ${metrics.hunger.toFixed(2)}, Battery: ${metrics.battery.toFixed(2)}, Season: ${metrics.season.toUpperCase()}\nMode: ${isContinuing ? 'CONTINUATION' : 'NEW BRANCH'}${isAtWork ? '\nAdmin is currently at WORK.' : ''}` },
                             { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
                         ];
                         // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
@@ -6598,18 +6631,22 @@ ${brief}
 
     // If no target set, or if last message was more recent than the set target (meaning a new message happened)
     if (!targetTime || targetTime <= effectiveLastInteractionTime) {
+        const metrics = dataStore.getRelationalMetrics();
+        const intimacyFactor = Math.max(0.5, 1.5 - metrics.intimacy);
+        const hungerFactor = Math.max(0.5, 1.5 - metrics.hunger);
+
         if (isBotLast) {
-            // Last message was from bot, set follow-up target (2-5 mins)
-            const delay = Math.floor(Math.random() * 4) + 2; // 2, 3, 4, 5
+            const baseDelay = Math.floor(Math.random() * 4) + 2;
+            const delay = Math.max(1, Math.round(baseDelay * intimacyFactor));
             targetTime = effectiveLastInteractionTime + (delay * 60 * 1000);
             mode = 'follow-up';
-            console.log(`[Bot] New spontaneity target: follow-up in ${delay} mins.`);
+            console.log(`[Bot] New spontaneity target: follow-up in ${delay} mins (intimacy factor: ${intimacyFactor.toFixed(2)}).`);
         } else {
-            // Last message was from admin/user, set heartbeat target (15-20 mins)
-            const delay = Math.floor(Math.random() * 6) + 15; // 15, 16, 17, 18, 19, 20
+            const baseDelay = Math.floor(Math.random() * 6) + 15;
+            const delay = Math.max(5, Math.round(baseDelay * hungerFactor));
             targetTime = effectiveLastInteractionTime + (delay * 60 * 1000);
             mode = 'heartbeat';
-            console.log(`[Bot] New spontaneity target: heartbeat in ${delay} mins.`);
+            console.log(`[Bot] New spontaneity target: heartbeat in ${delay} mins (hunger factor: ${hungerFactor.toFixed(2)}).`);
         }
         await dataStore.setDiscordNextSpontaneityTime(targetTime);
         await dataStore.setDiscordSpontaneityMode(mode);
@@ -6654,7 +6691,7 @@ ${brief}
         } else {
             console.log(`[Bot] Follow-up poll: Persona decided to wait. Reason: ${poll.reason}`);
             // If they chose to wait, push the NEXT check to the heartbeat window (15-20 mins)
-            const heartbeatDelay = Math.floor(Math.random() * 6) + 15;
+            const metrics = dataStore.getRelationalMetrics(); const hungerFactor = Math.max(0.5, 1.5 - metrics.hunger); const heartbeatDelay = Math.max(5, Math.round((Math.floor(Math.random() * 6) + 15) * hungerFactor));
             const newTarget = Date.now() + (heartbeatDelay * 60 * 1000);
             await dataStore.setDiscordNextSpontaneityTime(newTarget);
             await dataStore.setDiscordSpontaneityMode('heartbeat');

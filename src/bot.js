@@ -679,23 +679,6 @@ export class Bot {
         return;
     }
 
-    // --- THE MINDER: Nuanced Safety Agent ---
-    const safetyReport = await llmService.performSafetyAnalysis(notif.record.text || "", { platform: 'bluesky', user: notif.author.handle });
-    if (safetyReport.violation_detected) {
-        console.log(`[Bot] Nuanced violation detected from ${notif.author.handle}. Requesting persona consent...`);
-        const consent = await llmService.requestBoundaryConsent(safetyReport, notif.author.handle, 'Bluesky Notification');
-
-        if (!consent.consent_to_engage) {
-            console.log(`[Bot] PERSONA REFUSED to engage with query: ${consent.reason}`);
-            await dataStore.incrementRefusalCount('bluesky');
-            if (memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('mood', `[MENTAL] I chose to protect my boundaries and refuse a notification from @${notif.author.handle}. Reason: ${consent.reason}`);
-            }
-            return; // Silent abort
-        }
-        console.log(`[Bot] Persona consented to engage despite nuanced safety alert.`);
-    }
-
 
     console.log('[Bot] Starting autonomous timeline and firehose exploration...');
     try {
@@ -706,7 +689,12 @@ export class Bot {
 
         // --- 1. FIREHOSE SENTIMENT ANALYSIS ---
         console.log('[Bot] Performing sentiment analysis on recent Firehose matches...');
-        const recentMatches = dataStore.getFirehoseMatches(50);
+        let rawMatches = dataStore.getFirehoseMatches(50);
+
+        // --- THE WALL: Bulk Filter for Firehose ---
+        const filteredMatches = rawMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
+        const recentMatches = filteredMatches;
+
         if (recentMatches.length > 0) {
             const topicsToAnalyze = [...new Set([...(dConfig.post_topics || []), ...config.TEXT_SYSTEM_PROMPT.match(new RegExp(`\\b(AI|${config.BOT_NAME}|alignment|ethics|agency|consciousness|sentience)\\b`, "gi")) || []])];
 
@@ -757,9 +745,12 @@ export class Bot {
 
         // --- 2. TIMELINE EXPLORATION ---
         if (timeline.length > 0) {
+            // --- THE WALL: Bulk Filter for Timeline ---
+            const sanitizedTimeline = timeline.filter(item => !checkHardCodedBoundaries(item.post.record.text || "").blocked);
+
             // Identification: Find interesting images or links
             const candidates = [];
-            for (const item of timeline) {
+            for (const item of sanitizedTimeline) {
                 const post = item.post;
                 const text = post.record.text || '';
                 const images = this._extractImages(post);
@@ -901,7 +892,8 @@ export class Bot {
     console.log('[Bot] Phase 5: Performing Firehose "Thematic Void" and Topic Adjacency Analysis...');
 
     try {
-        const matches = dataStore.getFirehoseMatches(100);
+        const rawMatches = dataStore.getFirehoseMatches(100);
+        const matches = rawMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
         if (matches.length < 5) return;
 
         const matchText = matches.map(m => m.text).join('\n');
@@ -2136,6 +2128,23 @@ Identify the topic and main takeaway.`;
         return;
     }
 
+    // --- THE MINDER: Nuanced Safety Agent ---
+    const safetyReport = await llmService.performSafetyAnalysis(notif.record.text || "", { platform: 'bluesky', user: notif.author.handle });
+    if (safetyReport.violation_detected) {
+        console.log(`[Bot] Nuanced violation detected from ${notif.author.handle}. Requesting persona consent...`);
+        const consent = await llmService.requestBoundaryConsent(safetyReport, notif.author.handle, 'Bluesky Notification');
+
+        if (!consent.consent_to_engage) {
+            console.log(`[Bot] PERSONA REFUSED to engage with query: ${consent.reason}`);
+            await dataStore.incrementRefusalCount('bluesky');
+            if (memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('mood', `[MENTAL] I chose to protect my boundaries and refuse a notification from @${notif.author.handle}. Reason: ${consent.reason}`);
+            }
+            return; // Silent abort
+        }
+        console.log(`[Bot] Persona consented to engage despite nuanced safety alert.`);
+    }
+
     try {
       let plan = null;
       // Self-reply loop prevention
@@ -2228,7 +2237,6 @@ Identify the topic and main takeaway.`;
             Summary (be brief, objective, and conversational):
         `;
         historicalSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 2000, useStep: true});
-
     }
 
     if (notif.reason === 'quote') {
@@ -2554,7 +2562,8 @@ Identify the topic and main takeaway.`;
       const retryContext = planFeedback ? `\n\n**RETRY FEEDBACK**: ${planFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedPlanAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nAdjust your planning and strategy to be as DIFFERENT as possible from these previous failures.` : '';
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
-      const firehoseMatches = dataStore.getFirehoseMatches(10);
+      const rawFirehoseMatches = dataStore.getFirehoseMatches(10);
+      const firehoseMatches = rawFirehoseMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
 
       try {
 
@@ -4228,7 +4237,8 @@ Describe how you feel about this user and your relationship now.`;
       const timeline = await blueskyService.getTimeline(40);
       const timelineText = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 30).join('\n');
 
-      const firehoseMatches = dataStore.getFirehoseMatches(20);
+      const rawFirehoseMatches = dataStore.getFirehoseMatches(20);
+      const firehoseMatches = rawFirehoseMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
       const firehoseText = firehoseMatches.map(m => `[Real-time Match (${m.matched_keywords.join(',')})]: ${m.text}`).join('\n');
 
       const recentInteractions = dataStore.getLatestInteractions(20);
@@ -5767,7 +5777,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
   async performKeywordEvolution() {
     console.log('[Bot] Starting Recursive Keyword Evolution task...');
     try {
-        const recentMatches = dataStore.getFirehoseMatches(100);
+        const rawRecentMatches = dataStore.getFirehoseMatches(100);
+        const recentMatches = rawRecentMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
         const currentTopics = dataStore.getConfig().post_topics;
 
         if (recentMatches.length > 10) {
@@ -5822,7 +5833,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
     try {
         // Item 15: Linguistic Pattern Adaptation from High-Resonance Posts
         const timeline = await blueskyService.getTimeline(50);
-        const firehoseMatches = dataStore.getFirehoseMatches(20);
+        const rawFirehoseMatches = dataStore.getFirehoseMatches(20);
+      const firehoseMatches = rawFirehoseMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
 
         const follows = [...new Set([
             ...timeline.map(item => item.post.author.handle),

@@ -109,21 +109,6 @@ class DiscordService {
             return;
         }
 
-        // --- THE MINDER: Nuanced Safety Agent ---
-        const safetyReport = await llmService.performSafetyAnalysis(message.content, { platform: 'discord', user: message.author.username });
-        if (safetyReport.violation_detected) {
-            console.log(`[DiscordService] Nuanced violation detected from ${message.author.username}. Requesting persona consent...`);
-            const consent = await llmService.requestBoundaryConsent(safetyReport, message.author.username, message.channel.name || 'DM');
-
-            if (!consent.consent_to_engage) {
-                console.log(`[DiscordService] PERSONA REFUSED to engage with query: ${consent.reason}`);
-                await dataStore.incrementRefusalCount('discord');
-                if (memoryService.isEnabled()) {
-                    await memoryService.createMemoryEntry('mood', `[MENTAL] I chose to protect my boundaries and refuse a query from @${message.author.username}. Reason: ${consent.reason}`);
-                }
-                return; // Silent abort
-            }
-            console.log(`[DiscordService] Persona consented to engage despite nuanced safety alert.`);
         }
 
 
@@ -406,6 +391,22 @@ class DiscordService {
             return;
         }
 
+        // --- THE MINDER: Nuanced Safety Agent ---
+        const safetyReport = await llmService.performSafetyAnalysis(message.content, { platform: 'discord', user: message.author.username });
+        if (safetyReport.violation_detected) {
+            console.log(`[DiscordService] Nuanced violation detected from ${message.author.username}. Requesting persona consent...`);
+            const consent = await llmService.requestBoundaryConsent(safetyReport, message.author.username, message.channel.name || 'DM');
+
+            if (!consent.consent_to_engage) {
+                console.log(`[DiscordService] PERSONA REFUSED to engage with query: ${consent.reason}`);
+                await dataStore.incrementRefusalCount('discord');
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('mood', `[MENTAL] I chose to protect my boundaries and refuse a query from @${message.author.username}. Reason: ${consent.reason}`);
+                }
+                return; // Silent abort
+            }
+            console.log(`[DiscordService] Persona consented to engage despite nuanced safety alert.`);
+        }
 
         // Social Battery / Rate Limiting in public channels
         if (message.channel.type !== ChannelType.DM) {

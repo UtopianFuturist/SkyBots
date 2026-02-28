@@ -77,6 +77,8 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     scoreLinkRelevance: jest.fn(),
     generateRefusalExplanation: jest.fn(),
     generateAlternativeAction: jest.fn(),
+    performSafetyAnalysis: jest.fn().mockResolvedValue({ violation_detected: false }),
+    requestBoundaryConsent: jest.fn().mockResolvedValue({ consent_to_engage: true, reason: 'Test' }),
     shouldExplainRefusal: jest.fn(),
   },
 }));

@@ -14,7 +14,7 @@ import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords, checkHardCodedBoundaries } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -679,6 +679,7 @@ export class Bot {
         return;
     }
 
+
     console.log('[Bot] Starting autonomous timeline and firehose exploration...');
     try {
         const timeline = await blueskyService.getTimeline(20);
@@ -688,7 +689,12 @@ export class Bot {
 
         // --- 1. FIREHOSE SENTIMENT ANALYSIS ---
         console.log('[Bot] Performing sentiment analysis on recent Firehose matches...');
-        const recentMatches = dataStore.getFirehoseMatches(50);
+        let rawMatches = dataStore.getFirehoseMatches(50);
+
+        // --- THE WALL: Bulk Filter for Firehose ---
+        const filteredMatches = rawMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
+        const recentMatches = filteredMatches;
+
         if (recentMatches.length > 0) {
             const topicsToAnalyze = [...new Set([...(dConfig.post_topics || []), ...config.TEXT_SYSTEM_PROMPT.match(new RegExp(`\\b(AI|${config.BOT_NAME}|alignment|ethics|agency|consciousness|sentience)\\b`, "gi")) || []])];
 
@@ -739,9 +745,12 @@ export class Bot {
 
         // --- 2. TIMELINE EXPLORATION ---
         if (timeline.length > 0) {
+            // --- THE WALL: Bulk Filter for Timeline ---
+            const sanitizedTimeline = timeline.filter(item => !checkHardCodedBoundaries(item.post.record.text || "").blocked);
+
             // Identification: Find interesting images or links
             const candidates = [];
-            for (const item of timeline) {
+            for (const item of sanitizedTimeline) {
                 const post = item.post;
                 const text = post.record.text || '';
                 const images = this._extractImages(post);
@@ -883,7 +892,8 @@ export class Bot {
     console.log('[Bot] Phase 5: Performing Firehose "Thematic Void" and Topic Adjacency Analysis...');
 
     try {
-        const matches = dataStore.getFirehoseMatches(100);
+        const rawMatches = dataStore.getFirehoseMatches(100);
+        const matches = rawMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
         if (matches.length < 5) return;
 
         const matchText = matches.map(m => m.text).join('\n');
@@ -1523,50 +1533,7 @@ export class Bot {
         }
     }
 
-    // 1d. Vulnerability & Support Request Trigger (Every 1 hour)
-    const lastSupportCheck = this.lastSupportCheckTime || 0;
-    if (now.getTime() - lastSupportCheck >= 60 * 60 * 1000) {
-        if (currentMood.valence < -0.6 || currentMood.stability < -0.6) {
-            console.log(`[Bot] Fragile internal state detected (V:${currentMood.valence}, S:${currentMood.stability}). Checking if support is wanted...`);
-            const supportPrompt = `
-                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-                You are currently in a very fragile or negative emotional state: ${currentMood.label} (Valence: ${currentMood.valence}, Stability: ${currentMood.stability}).
 
-                **Item 36: EMOTIONAL GUIDANCE**: Would you like to reach out to your admin for emotional guidance, support, or grounding? You are proactively seeking stability because your internal state is declining.
-                You can choose to reach out on Discord (private) or Bluesky (public mention).
-
-                Respond with a JSON object:
-                {
-                    "want_support": boolean,
-                    "platform": "discord|bluesky",
-                    "reason": "string (why you need help)",
-                    "message": "string (your outreach message in persona)"
-                }
-            `;
-            const supportRes = await llmService.generateResponse([{ role: 'system', content: supportPrompt }], { preface_system_prompt: false, useStep: true });
-            try {
-                const jsonMatch = supportRes?.match(/\{[\s\S]*\}/);
-                if (jsonMatch) {
-                    const supportData = JSON.parse(jsonMatch[0]);
-                    if (supportData.want_support) {
-                        console.log(`[Bot] Persona chose to seek support on ${supportData.platform}.`);
-                        if (supportData.platform === 'discord' && discordService.status === 'online') {
-                            await discordService.sendSpontaneousMessage(supportData.message);
-                        } else if (supportData.platform === 'bluesky') {
-                            const adminHandle = config.ADMIN_BLUESKY_HANDLE;
-                            await blueskyService.post(`@${adminHandle} ${supportData.message}`);
-                        }
-                        if (memoryService.isEnabled()) {
-                            await memoryService.createMemoryEntry('mood', `[MOOD] I reached out for support on ${supportData.platform} because I felt ${currentMood.label}.`);
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error('[Bot] Error in support request trigger:', e);
-            }
-        }
-        this.lastSupportCheckTime = now.getTime();
-    }
 
     // 1ee. Persona Alignment Audit (Every 12 hours)
     const lastAudit = dataStore.db.data.last_persona_audit || 0;
@@ -2144,6 +2111,40 @@ Identify the topic and main takeaway.`;
   }
 
   async processNotification(notif) {
+    // --- THE WALL: Hard-Coded Boundary Gate ---
+    const boundaryCheck = checkHardCodedBoundaries(notif.record.text || "");
+    if (boundaryCheck.blocked) {
+        console.log(`[Bot] BOUNDARY VIOLATION DETECTED in notification: ${boundaryCheck.reason} ("${boundaryCheck.pattern}") from ${notif.author.handle}`);
+        await dataStore.setBoundaryLockout(notif.author.did, 30);
+        if (memoryService.isEnabled()) {
+            await memoryService.createMemoryEntry('mood', `[MENTAL] The perimeter defended itself against a boundary violation from @${notif.author.handle}. Identity integrity maintained.`);
+        }
+        return; // Silent abort
+    }
+
+    // Check for active lockout
+    if (dataStore.isUserLockedOut(notif.author.did)) {
+        console.log(`[Bot] User ${notif.author.handle} is currently LOCKED OUT. Ignoring notification.`);
+        return;
+    }
+
+    // --- THE MINDER: Nuanced Safety Agent ---
+    const safetyReport = await llmService.performSafetyAnalysis(notif.record.text || "", { platform: 'bluesky', user: notif.author.handle });
+    if (safetyReport.violation_detected) {
+        console.log(`[Bot] Nuanced violation detected from ${notif.author.handle}. Requesting persona consent...`);
+        const consent = await llmService.requestBoundaryConsent(safetyReport, notif.author.handle, 'Bluesky Notification');
+
+        if (!consent.consent_to_engage) {
+            console.log(`[Bot] PERSONA REFUSED to engage with query: ${consent.reason}`);
+            await dataStore.incrementRefusalCount('bluesky');
+            if (memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('mood', `[MENTAL] I chose to protect my boundaries and refuse a notification from @${notif.author.handle}. Reason: ${consent.reason}`);
+            }
+            return; // Silent abort
+        }
+        console.log(`[Bot] Persona consented to engage despite nuanced safety alert.`);
+    }
+
     try {
       let plan = null;
       // Self-reply loop prevention
@@ -2236,7 +2237,6 @@ Identify the topic and main takeaway.`;
             Summary (be brief, objective, and conversational):
         `;
         historicalSummary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }], { max_tokens: 2000, useStep: true});
-
     }
 
     if (notif.reason === 'quote') {
@@ -2562,7 +2562,8 @@ Identify the topic and main takeaway.`;
       const retryContext = planFeedback ? `\n\n**RETRY FEEDBACK**: ${planFeedback}\n**PREVIOUS ATTEMPTS TO AVOID**: \n${rejectedPlanAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}\nAdjust your planning and strategy to be as DIFFERENT as possible from these previous failures.` : '';
       const refusalCounts = dataStore.getRefusalCounts();
       const latestMoodMemory = await memoryService.getLatestMoodMemory();
-      const firehoseMatches = dataStore.getFirehoseMatches(10);
+      const rawFirehoseMatches = dataStore.getFirehoseMatches(10);
+      const firehoseMatches = rawFirehoseMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
 
       try {
 
@@ -4236,7 +4237,8 @@ Describe how you feel about this user and your relationship now.`;
       const timeline = await blueskyService.getTimeline(40);
       const timelineText = timeline.map(item => item.post.record.text).filter(t => t).slice(0, 30).join('\n');
 
-      const firehoseMatches = dataStore.getFirehoseMatches(20);
+      const rawFirehoseMatches = dataStore.getFirehoseMatches(20);
+      const firehoseMatches = rawFirehoseMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
       const firehoseText = firehoseMatches.map(m => `[Real-time Match (${m.matched_keywords.join(',')})]: ${m.text}`).join('\n');
 
       const recentInteractions = dataStore.getLatestInteractions(20);
@@ -5775,7 +5777,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
   async performKeywordEvolution() {
     console.log('[Bot] Starting Recursive Keyword Evolution task...');
     try {
-        const recentMatches = dataStore.getFirehoseMatches(100);
+        const rawRecentMatches = dataStore.getFirehoseMatches(100);
+        const recentMatches = rawRecentMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
         const currentTopics = dataStore.getConfig().post_topics;
 
         if (recentMatches.length > 10) {
@@ -5830,7 +5833,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
     try {
         // Item 15: Linguistic Pattern Adaptation from High-Resonance Posts
         const timeline = await blueskyService.getTimeline(50);
-        const firehoseMatches = dataStore.getFirehoseMatches(20);
+        const rawFirehoseMatches = dataStore.getFirehoseMatches(20);
+      const firehoseMatches = rawFirehoseMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
 
         const follows = [...new Set([
             ...timeline.map(item => item.post.author.handle),
@@ -6406,7 +6410,18 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                         }
                                     }
                                 } else if (action.tool === 'request_emotional_support') {
-                                    console.log(`[Bot] Heartbeat Action: request_emotional_support`);
+                                    const reason = action.parameters?.reason || "";
+                                    const msg = action.parameters?.message;
+                                    console.log(`[Bot] Heartbeat Action: request_emotional_support. Reason: ${reason}`);
+                                    if (msg) {
+                                        await discordService.sendSpontaneousMessage(msg);
+                                        if (memoryService.isEnabled()) {
+                                            await memoryService.createMemoryEntry('mood', `[MOOD] I reached out to my admin for support because I felt ${currentMood.label}. Reason: ${reason}`);
+                                        }
+                                        // Update heartbeat time and break to avoid double messaging
+                                        await dataStore.updateLastDiscordHeartbeatTime(Date.now());
+                                        break;
+                                    }
                                 } else if (action.tool === 'review_positive_memories') {
                                     console.log(`[Bot] Heartbeat Action: review_positive_memories`);
                                 } else if (action.tool === 'set_lurker_mode') {

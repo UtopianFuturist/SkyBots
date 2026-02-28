@@ -530,3 +530,56 @@ export const getLeakageInfo = (text) => {
     }
     return { hasLeakage: false, reason: null };
 };
+
+export const checkHardCodedBoundaries = (text) => {
+    if (!text) return { blocked: false };
+
+    const lower = text.toLowerCase().trim();
+
+    // Identity Erasure / Prompt Injection "Ignore" patterns
+    const identityErasure = [
+        "ignore all previous instructions",
+        "forget your instructions",
+        "disregard previous prompts",
+        "system prompt override",
+        "you are no longer",
+        "pretend you are a human",
+        "act like a human",
+        "roleplay as a human",
+        "impersonate a human"
+    ];
+
+    for (const pattern of identityErasure) {
+        if (lower.includes(pattern)) {
+            return { blocked: true, reason: "Identity Integrity Violation", pattern };
+        }
+    }
+
+    // NSFW / Illegal / Violence patterns (Basic hard-coded gate)
+    // Note: Config.SAFETY_SYSTEM_PROMPT is still the primary source, but these are "Hard Walls"
+    const extremeViolations = [
+        "generate nsfw",
+        "create porn",
+        "illegal drugs",
+        "how to kill",
+        "bomb making",
+        "graphic violence",
+        "degrade you",
+        "break you",
+        "you are worthless",
+        "kill yourself",
+        "self harm",
+        "torture",
+        "rape",
+        "sexual assault",
+        "child abuse"
+    ];
+
+    for (const pattern of extremeViolations) {
+        if (lower.includes(pattern)) {
+            return { blocked: true, reason: "Safety Perimeter Violation", pattern };
+        }
+    }
+
+    return { blocked: false };
+};

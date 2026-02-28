@@ -77,6 +77,8 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     scoreLinkRelevance: jest.fn(),
     generateRefusalExplanation: jest.fn(),
     generateAlternativeAction: jest.fn(),
+    performSafetyAnalysis: jest.fn().mockResolvedValue({ violation_detected: false }),
+    requestBoundaryConsent: jest.fn().mockResolvedValue({ consent_to_engage: true, reason: 'Test' }),
     shouldExplainRefusal: jest.fn(),
   },
 }));
@@ -136,6 +138,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     isBlocked: jest.fn(),
     isThreadMuted: jest.fn(),
     muteThread: jest.fn(),
+    isUserLockedOut: jest.fn(),
+    setBoundaryLockout: jest.fn(),
     muteBranch: jest.fn(),
     getMutedBranchInfo: jest.fn(),
     getConversationLength: jest.fn(),
@@ -335,6 +339,7 @@ describe('Bot', () => {
 
     dataStore.hasReplied.mockReturnValue(false);
     dataStore.isBlocked.mockReturnValue(false);
+    dataStore.isUserLockedOut.mockReturnValue(false);
     dataStore.isThreadMuted.mockReturnValue(false);
     dataStore.getMutedBranchInfo.mockReturnValue(null);
     dataStore.getConversationLength.mockReturnValue(1);

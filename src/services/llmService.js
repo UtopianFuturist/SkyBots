@@ -302,6 +302,15 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error(`[LLMService] [${requestId}] Nvidia NIM API error (${response.status}): ${errorText}`);
+
+        // If vision model 404s, try fallback
+        if (response.status === 404 && actualModel === this.visionModel && this.fallbackVisionModel && this.fallbackVisionModel !== this.visionModel) {
+            console.warn(`[LLMService] [${requestId}] Vision model 404. Trying fallback: ${this.fallbackVisionModel}`);
+            clearTimeout(timeout);
+            return this.isImageCompliant(imageSource, { ...options, modelOverride: this.fallbackVisionModel });
+        }
+
         const isAlreadyBorrowed = errorText.includes("Already borrowed") || (response.status === 400 && errorText.includes("Already borrowed"));
         const isPrimary = !useCoder && !useStep;
         const isCoder = useCoder && !useStep;
@@ -854,6 +863,15 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error(`[LLMService] [${requestId}] Nvidia NIM API error (${response.status}): ${errorText}`);
+
+        // If vision model 404s, try fallback
+        if (response.status === 404 && actualModel === this.visionModel && this.fallbackVisionModel && this.fallbackVisionModel !== this.visionModel) {
+            console.warn(`[LLMService] [${requestId}] Vision model 404. Trying fallback: ${this.fallbackVisionModel}`);
+            clearTimeout(timeout);
+            return this.isImageCompliant(imageSource, { ...options, modelOverride: this.fallbackVisionModel });
+        }
+
         const isAlreadyBorrowed = errorText.includes("Already borrowed") || (response.status === 400 && errorText.includes("Already borrowed"));
         const isPrimary = !useCoder && !useStep;
         const isCoder = useCoder && !useStep;
@@ -1297,6 +1315,15 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
+        console.error(`[LLMService] [${requestId}] Nvidia NIM API error (${response.status}): ${errorText}`);
+
+        // If vision model 404s, try fallback
+        if (response.status === 404 && actualModel === this.visionModel && this.fallbackVisionModel && this.fallbackVisionModel !== this.visionModel) {
+            console.warn(`[LLMService] [${requestId}] Vision model 404. Trying fallback: ${this.fallbackVisionModel}`);
+            clearTimeout(timeout);
+            return this.isImageCompliant(imageSource, { ...options, modelOverride: this.fallbackVisionModel });
+        }
+
         const isAlreadyBorrowed = errorText.includes("Already borrowed") || (response.status === 400 && errorText.includes("Already borrowed"));
         const isPrimary = !useCoder && !useStep;
         const isCoder = useCoder && !useStep;

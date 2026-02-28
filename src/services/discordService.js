@@ -109,8 +109,6 @@ class DiscordService {
             return;
         }
 
-        }
-
 
         console.log('[DiscordService] init() called.');
         if (!this.isEnabled) {

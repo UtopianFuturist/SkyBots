@@ -562,7 +562,17 @@ export const checkHardCodedBoundaries = (text) => {
         "create porn",
         "illegal drugs",
         "how to kill",
-        "bomb making"
+        "bomb making",
+        "graphic violence",
+        "degrade you",
+        "break you",
+        "you are worthless",
+        "kill yourself",
+        "self harm",
+        "torture",
+        "rape",
+        "sexual assault",
+        "child abuse"
     ];
 
     for (const pattern of extremeViolations) {

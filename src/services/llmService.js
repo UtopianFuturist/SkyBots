@@ -205,10 +205,15 @@ ${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding resp
         userMessages.push({ role: 'user', content: 'Continuing our conversation.' });
     }
 
-    const finalMessages = preface_system_prompt ? [
+    let finalMessages = preface_system_prompt ? [
         { role: 'system', content: this._buildSystemPrompt(systemPrompt, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood) },
         ...userMessages
-    ] : messages;
+    ] : [...messages];
+
+    // CRITICAL: Ensure at least one 'user' message exists for Nvidia NIM API
+    if (!finalMessages.some(m => m.role === 'user')) {
+        finalMessages.push({ role: 'user', content: 'Please process the above context and respond accordingly.' });
+    }
 
     const payload = {
       model: actualModel,

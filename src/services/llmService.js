@@ -175,6 +175,32 @@ ${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding resp
         systemContent += `\n\n**STYLISTIC MUTATION**: You are temporarily adopting the following "analytical lens" for this interaction: ${mutatedStyle}. Filter your perspective and vocabulary through this lens while remaining grounded in your persona.`;
     }
 
+
+    if (this.dataStore) {
+        const rm = this.dataStore.getRelationalMetrics();
+        const mode = this.dataStore.getDiscordRelationshipMode();
+        systemContent += `\n\n--- INTERNAL STATE & RELATIONAL CONTEXT ---
+INTERNAL DRIVES:
+- Interaction Hunger: ${rm.hunger.toFixed(2)}/1.0
+- Social Battery: ${rm.battery.toFixed(2)}/1.0
+- Curiosity Reservoir: ${rm.curiosity.toFixed(2)}/1.0
+
+RELATIONAL HISTORY (ADMIN):
+- Life Arcs: ${this.dataStore.getLifeArcs(this.adminDid || config.DISCORD_ADMIN_NAME).map(a => `${a.arc} (${a.status})`).join(', ') || 'None.'}
+- Inside Jokes/Shared References: ${this.dataStore.getInsideJokes(this.adminDid || config.DISCORD_ADMIN_NAME).map(j => `"${j.joke}"`).join(', ') || 'None.'}
+
+RELATIONAL METRICS (ADMIN):
+- Mode: ${mode.toUpperCase()}
+- Trust: ${rm.trust.toFixed(2)}/1.0
+- Intimacy: ${rm.intimacy.toFixed(2)}/1.0
+- Reciprocity Balance: ${rm.reciprocity.toFixed(2)}
+- Season: ${rm.season.toUpperCase()}
+
+VULNERABILITY LEAK: If Trust > 0.6, share brief internal reflections.
+LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
+---`;
+    }
+
     if (currentMood) {
         // Mood-Based Cognitive Biases
         let bias = "";
@@ -2138,6 +2164,17 @@ ${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding resp
 
       Admin Availability: ${adminAvailability}${isAtWork ? " (Admin is currently at WORK)" : ""}
       Messages sent since Admin last replied: ${botMessageCountSinceLastAdmin}
+            Relational History:
+      - Life Arcs: ${context.lifeArcs?.map(a => `${a.arc} (${a.status})`).join(', ') || 'None.'}
+      - Inside Jokes/References: ${context.insideJokes?.map(j => `"${j.joke}"`).join(', ') || 'None.'}
+      Relational Metrics:
+      - Trust: ${context.relationalMetrics?.trust.toFixed(2)}/1.0
+      - Intimacy: ${context.relationalMetrics?.intimacy.toFixed(2)}/1.0
+      - Hunger: ${context.relationalMetrics?.hunger.toFixed(2)}/1.0
+      - Battery: ${context.relationalMetrics?.battery.toFixed(2)}/1.0
+      - Curiosity: ${context.relationalMetrics?.curiosity.toFixed(2)}/1.0
+      - Season: ${context.relationalMetrics?.season.toUpperCase()}
+
       Relationship Mode: ${relationshipMode}
       Recent Heartbeat Summary (The bot's own spontaneous trajectory):
       ${botHeartbeatSummary || "None."}

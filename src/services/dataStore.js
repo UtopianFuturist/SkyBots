@@ -30,7 +30,17 @@ const defaultData = {
   lastDiscordHeartbeatTime: 0,
   discord_conversations: {}, // { channelId: [ { role, content, timestamp } ] }
   discord_pending_mirror: null, // { content, topic, timestamp }
-  discord_relationship_mode: 'friend', // partner, friend, coworker
+  discord_relationship_mode: 'acquaintance', // partner, friend, acquaintance
+  discord_trust_score: 0.1,
+  discord_intimacy_score: 0.0,
+  discord_friction_accumulator: 0.0,
+  discord_reciprocity_balance: 0.5,
+  discord_interaction_hunger: 0.0,
+  discord_social_battery: 1.0,
+  discord_curiosity_reservoir: 0.5,
+  discord_relationship_season: 'spring',
+  discord_life_arcs: {}, // { userId: [ { arc, status, last_updated } ] }
+  discord_inside_jokes: {}, // { userId: [ { joke, context, count } ] }
   discord_scheduled_times: [], // [ "HH:mm" ]
   discord_quiet_hours: { start: 21, end: 6 }, // 24h format
   discord_pending_directives: [], // [ { type: 'directive|persona', platform, instruction, timestamp } ]
@@ -543,6 +553,7 @@ class DataStore {
           this.db.data.interaction_count_since_audit = (this.db.data.interaction_count_since_audit || 0) + 1;
           // Update last heartbeat time to prevent immediate spontaneous messages after any bot response
           this.db.data.lastDiscordHeartbeatTime = Date.now();
+          await this._applyRelationalMetricUpdate(role, content);
       }
 
       await this.db.write();
@@ -846,7 +857,15 @@ class DataStore {
       current_goal: this.db.data.current_goal,
       energy_level: this.db.data.energy_level ?? 1.0,
       lurker_mode: this.db.data.lurker_mode ?? false,
-      mute_feed_impact_until: this.db.data.mute_feed_impact_until ?? 0
+      mute_feed_impact_until: this.db.data.mute_feed_impact_until ?? 0,
+      discord_trust_score: this.db.data.discord_trust_score ?? 0.1,
+      discord_intimacy_score: this.db.data.discord_intimacy_score ?? 0.0,
+      discord_friction_accumulator: this.db.data.discord_friction_accumulator ?? 0.0,
+      discord_reciprocity_balance: this.db.data.discord_reciprocity_balance ?? 0.5,
+      discord_interaction_hunger: this.db.data.discord_interaction_hunger ?? 0.0,
+      discord_social_battery: this.db.data.discord_social_battery ?? 1.0,
+      discord_curiosity_reservoir: this.db.data.discord_curiosity_reservoir ?? 0.5,
+      discord_relationship_season: this.db.data.discord_relationship_season || 'spring'
     };
   }
 
@@ -1633,6 +1652,109 @@ class DataStore {
 
   getTimezone() {
     return this.db.data.timezone;
+  }
+
+  async updateRelationalMetrics(updates) {
+    const metrics = [
+      'discord_trust_score', 'discord_intimacy_score', 'discord_friction_accumulator',
+      'discord_reciprocity_balance', 'discord_interaction_hunger', 'discord_social_battery',
+      'discord_curiosity_reservoir', 'discord_relationship_season'
+    ];
+    for (const [key, value] of Object.entries(updates)) {
+      if (metrics.includes(key)) {
+        if (typeof value === 'number' && key !== 'discord_relationship_season') {
+          this.db.data[key] = Math.max(0, Math.min(1, value));
+        } else {
+          this.db.data[key] = value;
+        }
+      }
+    }
+    await this.db.write();
+  }
+
+  getRelationalMetrics() {
+    return {
+      trust: this.db.data.discord_trust_score || 0.1,
+      intimacy: this.db.data.discord_intimacy_score || 0.0,
+      friction: this.db.data.discord_friction_accumulator || 0.0,
+      reciprocity: this.db.data.discord_reciprocity_balance || 0.5,
+      hunger: this.db.data.discord_interaction_hunger || 0.0,
+      battery: this.db.data.discord_social_battery || 1.0,
+      curiosity: this.db.data.discord_curiosity_reservoir || 0.5,
+      season: this.db.data.discord_relationship_season || 'spring'
+    };
+  }
+
+  async updateLifeArc(userId, arc, status = 'active') {
+    if (!this.db.data.discord_life_arcs) this.db.data.discord_life_arcs = {};
+    if (!this.db.data.discord_life_arcs[userId]) this.db.data.discord_life_arcs[userId] = [];
+
+    const existing = this.db.data.discord_life_arcs[userId].find(a => a.arc === arc);
+    if (existing) {
+      existing.status = status;
+      existing.last_updated = Date.now();
+    } else {
+      this.db.data.discord_life_arcs[userId].push({ arc, status, last_updated: Date.now() });
+    }
+    await this.db.write();
+  }
+
+  getLifeArcs(userId) {
+    return this.db.data.discord_life_arcs?.[userId] || [];
+  }
+
+  async addInsideJoke(userId, joke, context) {
+    if (!this.db.data.discord_inside_jokes) this.db.data.discord_inside_jokes = {};
+    if (!this.db.data.discord_inside_jokes[userId]) this.db.data.discord_inside_jokes[userId] = [];
+
+    const existing = this.db.data.discord_inside_jokes[userId].find(j => j.joke === joke);
+    if (existing) {
+      existing.count++;
+    } else {
+      this.db.data.discord_inside_jokes[userId].push({ joke, context, count: 1 });
+    }
+    await this.db.write();
+  }
+
+  getInsideJokes(userId) {
+    return this.db.data.discord_inside_jokes?.[userId] || [];
+  }
+
+  async _applyRelationalMetricUpdate(role, content) {
+    const metrics = this.getRelationalMetrics();
+    const updates = {};
+
+    if (role === 'user') {
+      updates.discord_interaction_hunger = metrics.hunger * 0.5;
+      updates.discord_social_battery = Math.min(1, metrics.battery + 0.05);
+      updates.discord_reciprocity_balance = Math.max(0, metrics.reciprocity - 0.02);
+    } else {
+      updates.discord_social_battery = Math.max(0, metrics.battery - 0.03);
+      updates.discord_interaction_hunger = Math.min(1, metrics.hunger + 0.01);
+      updates.discord_reciprocity_balance = Math.min(1, metrics.reciprocity + 0.02);
+    }
+
+    updates.discord_trust_score = Math.min(1, metrics.trust + 0.001);
+    updates.discord_intimacy_score = Math.min(1, metrics.intimacy + 0.0005);
+
+    const currentMode = this.getDiscordRelationshipMode();
+    let newMode = currentMode;
+    if (currentMode === 'acquaintance' && metrics.trust > 0.4 && metrics.intimacy > 0.3) {
+      newMode = 'friend';
+    } else if (currentMode === 'friend' && metrics.trust > 0.8 && metrics.intimacy > 0.7) {
+      newMode = 'partner';
+    } else if (currentMode === 'partner' && (metrics.trust < 0.6 || metrics.intimacy < 0.5)) {
+      newMode = 'friend';
+    } else if (currentMode === 'friend' && (metrics.trust < 0.2 || metrics.intimacy < 0.1)) {
+      newMode = 'acquaintance';
+    }
+
+    if (newMode !== currentMode) {
+      console.log(`[DataStore] Relationship MODE SHIFT: ${currentMode} -> ${newMode}`);
+      this.db.data.discord_relationship_mode = newMode;
+    }
+
+    await this.updateRelationalMetrics(updates);
   }
   // Boundary Lockout
   async setBoundaryLockout(userId, durationMinutes = 30) {

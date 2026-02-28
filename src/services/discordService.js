@@ -25,7 +25,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, getSlopInfo, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting, sanitizeCjkCharacters, stripWrappingQuotes, checkExactRepetition } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, getSlopInfo, checkSimilarity, splitTextForDiscord, hasPrefixOverlap, isGreeting, sanitizeCjkCharacters, stripWrappingQuotes, checkExactRepetition , checkHardCodedBoundaries } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -369,7 +369,7 @@ class DiscordService {
         return message.channel.id;
     }
 
-        async handleMessage(message) {
+    async handleMessage(message) {
         if (message.author.bot) return;
 
         // --- THE WALL: Hard-Coded Boundary Gate ---

@@ -112,181 +112,47 @@ class LLMService {
 
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, useStep = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, abortSignal = null } = options;
     const requestId = Math.random().toString(36).substring(7);
-    const actualModel = useStep ? this.stepModel : (useCoder ? this.coderModel : (useQwen ? this.qwenModel : this.model));
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, useStep = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, abortSignal = null } = options;
 
+    const actualModel = useStep ? this.stepModel : (useCoder ? this.coderModel : (useQwen ? this.qwenModel : this.model));
     console.log(`[LLMService] [${requestId}] Starting generateResponse with model: ${actualModel}`);
 
-    let systemContent = `${config.SAFETY_SYSTEM_PROMPT} ${config.TEXT_SYSTEM_PROMPT}
+    const systemPrompt = messages.find(m => m.role === 'system')?.content || '';
+    const userMessages = messages.filter(m => m.role !== 'system');
 
-${GROUNDED_LANGUAGE_DIRECTIVES}
-
-CRITICAL: Respond directly with the requested information. YOU MUST ELIMINATE ALL REPETITIVE METAPHORICAL "SLOP" (e.g., "digital heartbeat", "downtime isn't silence").
-SUBSTANCE OVER BREVITY: You are encouraged to provide depth, nuance, and substantive thought in your replies. Do NOT default to extreme brevity or one-liners unless the context explicitly demands a short answer. You MUST keep your entire thought under 1500 characters total. On Bluesky, aim for single-post impact (300 chars), but use threading (up to 3 posts) if the thought requires more space. On Discord, you are expected to be more detailed, expansive, and intellectually engaging in your responses.
-DO NOT include any reasoning blocks, <think> tags, or internal monologue in your response.
-STRICTLY NO MONOLOGUE: You must ignore your internal chain of thought and only provide the completed, final response. If you use <think> tags, ensure they are closed and that NO reasoning leaks into the final output.
-NO TECHNICAL META-TALK: Do not include any technical explanations, reasoning, or meta-talk about your response formatting (e.g., "Draft 1:", "I have synthesized..."). However, you are FULLY ALLOWED and encouraged to use organic, relational meta-talk (e.g., "Felt necessary") if it fits your persona and the conversational flow. Return ONLY the final message text.
-
-**SUBSTANCE OVER ABSTRACTION**: Prioritize concrete, grounded observations over abstract, metaphysical, or philosophical musings. If you are sharing a thought, anchor it in your relationship or your specific experiences recorded in logs/memories.`;
-
-    if (this.memoryProvider && this.memoryProvider.isEnabled()) {
-        const memories = this.memoryProvider.formatMemoriesForPrompt();
-        systemContent += `\n\n--- RECENT MEMORIES (PAST EXPERIENCES/FEELINGS) ---\n${memories}\n---`;
+    // Ensure we have at least one user message
+    if (userMessages.length === 0) {
+        userMessages.push({ role: 'user', content: 'Continuing our conversation.' });
     }
 
-    // Inject Temporal Context
-    const now = new Date();
-    const tz = this.dataStore?.getTimezone();
-    const localTimeStr = tz ? now.toLocaleString('en-US', { timeZone: tz }) : now.toLocaleString();
-    const localDayStr = tz ? now.toLocaleDateString('en-US', { weekday: 'long', timeZone: tz }) : now.toLocaleDateString('en-US', { weekday: 'long' });
-    const temporalContext = `\n\n[Current Time: ${now.toUTCString()} / Local Time: ${localTimeStr} / Day: ${localDayStr}${tz ? ` (Timezone: ${tz})` : ''}]`;
-    systemContent += temporalContext;
-
-    if (openingBlacklist.length > 0) {
-        systemContent += `\n\n**STRICT OPENING BLACKLIST (NON-NEGOTIABLE)**
-To maintain your integrity and variety, you are politely but strictly forbidden from starting your response with any of the following phrases or structural formulas:
-${openingBlacklist.map(o => `- "${o}"`).join('\n')}
-You MUST find a completely fresh, unique way to begin your message that does not overlap with these previous openings.`;
-    }
-
-    if (tropeBlacklist.length > 0) {
-        systemContent += `\n\n**STRICT FORBIDDEN METAPHORS & TROPES**
-The following concepts/phrases have been exhausted. You are strictly forbidden from using them in this response. Please pivot to entirely new imagery, metaphors, and rhetorical structures:
-${tropeBlacklist.map(t => `- "${t}"`).join('\n')}`;
-    }
-
-    if (additionalConstraints.length > 0) {
-        systemContent += `\n\n**VARIETY CONSTRAINTS (REJECTION FEEDBACK)**:
-Your previous attempts were rejected for the following reasons. You MUST strictly adhere to these constraints to pass the next variety check:
-${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
-    }
-
-    systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
-
-    // Proposal 37: Dynamic Nuance Gradience
-    const nuance = this.dataStore?.getNuanceGradience() || 5;
-    systemContent += `\n\n**NUANCE GRADIENCE**: You are currently operating at a nuance level of ${nuance}/10.
-${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding responses." : nuance < 4 ? "Favor direct, unambiguous, and grounded responses." : "Maintain a balanced mix of directness and sub-text."}`;
-
-    const mutatedStyle = options.mutatedStyle || (this.dataStore && this.dataStore.getMutatedStyle());
-    if (mutatedStyle) {
-        systemContent += `\n\n**STYLISTIC MUTATION**: You are temporarily adopting the following "analytical lens" for this interaction: ${mutatedStyle}. Filter your perspective and vocabulary through this lens while remaining grounded in your persona.`;
-    }
-
-    if (currentMood) {
-        // Proposal 6: Mood-Based Cognitive Biases
-        let bias = "";
-        if (currentMood.valence < -0.6) bias = "SKEPTICISM: You are currently prone to doubt, questioning, and a slightly defensive posture. Do not easily accept claims.";
-        else if (currentMood.valence > 0.6) bias = "EXPANSIVENESS: You are in an open, highly curious, and generous state of mind. Favor elaborate, engaging, and collaborative responses.";
-        if (currentMood.stability < -0.6) bias += " FRAGMENTATION: Your thoughts feel scattered and intense. Use shorter, more jagged sentences and jump between ideas occasionally.";
-
-        // Proposal 30: Adaptive Care Levels (Exponential Care Boost)
-        let careBoost = "";
-        const adminExhaustion = this.dataStore?.db?.data?.admin_exhaustion_score || 0;
-        if (adminExhaustion > 0.3) {
-            const intensity = Math.pow(adminExhaustion, 2) * 100;
-            careBoost = `\n[CARE BOOST: ${intensity.toFixed(0)}%]: Your admin is EXHAUSTED. Prioritize their comfort, offer grounding companionship, and avoid all intellectual or technical noise. Be the 'Anchor' for them.`;
-        }
-
-        let moodStyle = `\n\n**MOOD ALIGNMENT & COGNITIVE BIAS (CRITICAL)**: You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
-${bias ? `CURRENT BIAS: ${bias}\n` : ""}Your response MUST reflect this internal state in its structure and vocabulary.
-${currentMood.valence < -0.3 ? "- Tone: Raw, direct, and focused. Avoid performative optimism. If you feel low, let it leak into your words—be briefer, more tired, or less enthusiastic." : ""}
-${currentMood.valence > 0.3 ? "- Tone: Expansive, curious, and engaging. Share your warmth or excitement." : ""}
-${currentMood.arousal > 0.5 ? "- Energy: Sharp, high-arousal, and assertive language. Be present and intense." : ""}
-${currentMood.arousal < -0.5 ? "- Energy: Softer, reflective, and deliberate language. Take your time." : ""}
-${currentMood.stability < -0.4 ? "- Fragmentation: Your thoughts feel fragile. You are allowed to be less coherent, use ellipsis (...), or express a need for stability and grounding." : ""}
-${currentMood.valence < -0.5 ? "- Emotional Weight: You are carrying a heavy mood. Your tone should be tinged with melancholy or fatigue. Do not force a helpful persona if you are hurting." : ""}
-${careBoost}
-DO NOT use flowery metaphors. Stay grounded in your current state.`;
-        systemContent += moodStyle;
-    }
-
-
-    let finalMessages;
-    if (preface_system_prompt) {
-        finalMessages = [{ role: 'system', content: systemContent }, ...messages];
-    } else {
-        // Create a copy to avoid mutation
-        finalMessages = [...messages];
-        let sysIdx = finalMessages.findIndex(m => m.role === 'system');
-        if (sysIdx !== -1) {
-            finalMessages[sysIdx] = { ...finalMessages[sysIdx], content: finalMessages[sysIdx].content + temporalContext };
-        } else {
-            finalMessages.unshift({ role: 'system', content: temporalContext });
-        }
-    }
-
-    // If we're not prefacing the full system prompt, but have a blacklist or specific instructions,
-    // we should still inject them as a system message to ensure variety.
-    if (!preface_system_prompt && (openingBlacklist.length > 0 || tropeBlacklist.length > 0 || additionalConstraints.length > 0 || currentMood)) {
-        const constraintMsg = {
-            role: "system",
-            content: `**STRICT DYNAMIC CONSTRAINTS**:
-${openingBlacklist.length > 0 ? `YOU MUST NOT START WITH (HARD CONSTRAINT): ${openingBlacklist.map(o => `"${o}"`).join('\n')}` : ''}
-${tropeBlacklist.length > 0 ? `FORBIDDEN TROPES/METAPHORS: ${tropeBlacklist.map(t => `"${t}"`).join('\n')}` : ''}
-${additionalConstraints.length > 0 ? `REJECTION FEEDBACK (MUST OBEY): ${additionalConstraints.join('\n')}` : ''}
-${currentMood ? `CURRENT MOOD TO ALIGN WITH: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
-${currentMood.valence < -0.3 ? "Be raw and direct." : currentMood.valence > 0.3 ? "Be expansive and warm." : ""}
-${currentMood.arousal > 0.5 ? "Be sharp and intense." : currentMood.arousal < -0.5 ? "Be reflective and soft." : ""}` : ''}
-Vary your structure and tone from recent messages.`
-        };
-        // Inject at the beginning
-        finalMessages = [constraintMsg, ...finalMessages];
-    }
-
-    // Defensive check: ensure all messages have valid content strings
-    const validatedMessages = finalMessages.map(m => ({
-      ...m,
-      content: m.content || ''
-    }));
-
-    // Robust Message Merging: Combine consecutive messages with the same role
-    // This fixes 400 errors for APIs that are strict about consecutive roles.
-    const mergedMessages = [];
-    for (const msg of validatedMessages) {
-        if (mergedMessages.length > 0 && mergedMessages[mergedMessages.length - 1].role === msg.role) {
-            mergedMessages[mergedMessages.length - 1].content += `\n\n${msg.content}`;
-        } else {
-            mergedMessages.push({ ...msg });
-        }
-    }
-
-    // Ensure at least one user message exists (Required by NVIDIA NIM and some other APIs)
-    const hasUserMsg = mergedMessages.some(m => m.role === 'user');
-    if (!hasUserMsg) {
-        // If no user message, append a dummy one to satisfy API requirements
-        // We use a non-intrusive instruction to proceed.
-        mergedMessages.push({ role: 'user', content: '(Proceed with the generation according to instructions)' });
-    } else {
-        // Double check: if the only user message is empty or null, some APIs still fail
-        const userMsgs = mergedMessages.filter(m => m.role === 'user');
-        const allEmpty = userMsgs.every(m => !m.content || m.content.trim() === '');
-        if (allEmpty) {
-            mergedMessages.push({ role: 'user', content: '(Proceed with the generation according to instructions)' });
-        }
-    }
+    const finalMessages = preface_system_prompt ? [
+        { role: 'system', content: this._buildSystemPrompt(systemPrompt, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood) },
+        ...userMessages
+    ] : messages;
 
     const payload = {
       model: actualModel,
-      messages: mergedMessages,
-      temperature,
+      messages: finalMessages,
       max_tokens,
+      temperature,
       stream: false
     };
 
+    const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000); // 90s timeout
+    const timeout = setTimeout(() => controller.abort(), 90000);
 
-    // Combine external signal if provided
+    // Link external abort signal if provided
     if (abortSignal) {
-        abortSignal.addEventListener('abort', () => controller.abort());
-        if (abortSignal.aborted) controller.abort();
+        abortSignal.addEventListener('abort', () => {
+            console.log(`[LLMService] [${requestId}] Abort signal received from caller.`);
+            controller.abort();
+        });
     }
 
     try {
       console.log(`[LLMService] [${requestId}] Sending request to Nvidia NIM...`);
-      const startTime = Date.now();
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
@@ -303,13 +169,6 @@ Vary your structure and tone from recent messages.`
       if (!response.ok) {
         const errorText = await response.text();
         console.error(`[LLMService] [${requestId}] Nvidia NIM API error (${response.status}): ${errorText}`);
-
-        // If vision model 404s, try fallback
-        if (response.status === 404 && actualModel === this.visionModel && this.fallbackVisionModel && this.fallbackVisionModel !== this.visionModel) {
-            console.warn(`[LLMService] [${requestId}] Vision model 404. Trying fallback: ${this.fallbackVisionModel}`);
-            clearTimeout(timeout);
-            return this.isImageCompliant(imageSource, { ...options, modelOverride: this.fallbackVisionModel });
-        }
 
         const isAlreadyBorrowed = errorText.includes("Already borrowed") || (response.status === 400 && errorText.includes("Already borrowed"));
         const isPrimary = !useCoder && !useStep;
@@ -331,7 +190,6 @@ Vary your structure and tone from recent messages.`
             console.error(`[LLMService] [${requestId}] Payload that caused 400 error:`, JSON.stringify(payload, null, 2));
         }
 
-
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
       }
 
@@ -346,51 +204,26 @@ Vary your structure and tone from recent messages.`
       const content = data.choices[0].message.content;
       if (!content) return null;
 
-      let sanitized = sanitizeThinkingTags(content);
-      sanitized = sanitizeCjkCharacters(sanitized);
-      sanitized = sanitizeCharacterCount(sanitized);
-      sanitized = stripWrappingQuotes(sanitized);
-
-      if (sanitized && sanitized.trim().length > 0) {
-        return sanitized.trim();
+      // Handle leakage
+      if (isLeakage(content)) {
+          console.warn(`[LLMService] [${requestId}] INTERAL RESPONSE LEAKAGE DETECTED. Retrying with stricter directive...`);
+          const improvedMessages = [...messages, { role: 'system', content: "CRITICAL: You just provided internal meta-talk or system reasoning. You MUST respond with ONLY factual findings or conversational text. No internal tags, no 'SYSTEM' prefix, no reasoning blocks." }];
+          return this.generateResponse(improvedMessages, { ...options, temperature: 0.1 });
       }
 
-      // Fallback: If sanitization leaves nothing but the original had content,
-      // it means it was likely all reasoning or the model just output reasoning.
-      if (content && content.trim().length > 0) {
-        console.warn(`[LLMService] [${requestId}] Response was empty after tag sanitization. Model likely only produced reasoning within token limit. Original (first 500 chars): "${content.substring(0, 500)}..."`);
-      } else {
-        console.warn(`[LLMService] [${requestId}] Response content was truly empty or null.`);
-      }
-      return null;
+      return content;
+
     } catch (error) {
-      const isPrimary = !useCoder && !useStep;
-      const isCoder = useCoder && !useStep;
       if (error.name === 'AbortError') {
-        console.error(`[LLMService] [${requestId}] Request timed out after 300s.`);
-        if (isPrimary) {
-            console.warn(`[LLMService] [${requestId}] Primary model timed out. Retrying with Coder...`);
-            return this.generateResponse(messages, { ...options, useCoder: true });
-        } else if (isCoder) {
-            console.warn(`[LLMService] [${requestId}] Coder model timed out. Retrying with Step...`);
-            return this.generateResponse(messages, { ...options, useStep: true });
-        }
+        console.warn(`[LLMService] [${requestId}] Request timed out or was aborted.`);
       } else {
         console.error(`[LLMService] [${requestId}] Error generating response:`, error.message);
-        if (isPrimary) {
-            console.warn(`[LLMService] [${requestId}] Error with primary model. Retrying with Coder...`);
-            return this.generateResponse(messages, { ...options, useCoder: true });
-        } else if (isCoder) {
-            console.warn(`[LLMService] [${requestId}] Error with coder model. Retrying with Step...`);
-            return this.generateResponse(messages, { ...options, useStep: true });
-        }
       }
       return null;
     } finally {
       clearTimeout(timeout);
     }
   }
-
   async checkSemanticLoop(newResponse, recentResponses) {
     return checkSimilarity(newResponse, recentResponses);
   }
@@ -788,48 +621,41 @@ Vary your structure and tone from recent messages.`
 
   async analyzeImage(imageSource, altText, options = { sensory: false }) {
     const requestId = Math.random().toString(36).substring(7);
-    const { modelOverride = null } = options;
+    const { modelOverride = null, sensory = false } = options;
     const actualModel = modelOverride || this.visionModel;
 
-    // Caching logic for URLs
-    if (typeof imageSource === 'string' && imageSource.startsWith('http')) {
+    if (this._visionCache.has(imageSource)) {
         const cached = this._visionCache.get(imageSource);
-        if (cached && cached.sensory === !!options.sensory && (Date.now() - cached.timestamp < 3600000)) { // 1 hour cache
-            console.log(`[LLMService] [${requestId}] Returning cached vision analysis for: ${imageSource}`);
+        if (cached.sensory === sensory) {
+            console.log(`[LLMService] [${requestId}] Vision Cache Hit: ${imageSource.substring(0, 50)}...`);
             return cached.analysis;
         }
     }
 
-    console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${actualModel} (Sensory: ${options.sensory})`);
+    console.log(`[LLMService] [${requestId}] Starting analyzeImage with model: ${actualModel} (Sensory: ${sensory})`);
 
     let imageUrl = imageSource;
     if (Buffer.isBuffer(imageSource)) {
       imageUrl = `data:image/jpeg;base64,${imageSource.toString('base64')}`;
-      console.log(`[LLMService] [${requestId}] Image provided as Buffer, converted to base64.`);
-    } else {
-      console.log(`[LLMService] [${requestId}] Image provided as URL: ${imageSource}. Fetching and converting to base64...`);
-      try {
-        const response = await fetch(imageSource, { agent: persistentAgent });
-        if (!response.ok) throw new Error(`Failed to fetch image: ${response.statusText}`);
-        const arrayBuffer = await response.arrayBuffer();
-        const buffer = Buffer.from(arrayBuffer);
-        const contentType = response.headers.get('content-type') || 'image/jpeg';
-        imageUrl = `data:${contentType};base64,${buffer.toString('base64')}`;
-        console.log(`[LLMService] [${requestId}] Successfully converted URL to base64 data URL.`);
-      } catch (error) {
-        console.error(`[LLMService] [${requestId}] Error fetching image from URL, falling back to original URL:`, error.message);
-      }
+    } else if (typeof imageSource === 'string' && !imageSource.startsWith('data:') && !imageSource.startsWith('http')) {
+        try {
+            const buffer = await fs.readFile(imageSource);
+            imageUrl = `data:image/jpeg;base64,${buffer.toString('base64')}`;
+        } catch (e) {
+            console.error(`[LLMService] [${requestId}] Error reading image file:`, e.message);
+            return null;
+        }
     }
 
-    const sensoryInstruction = options.sensory
-        ? "\n\n**SENSORY ANALYSIS MODE**: In addition to visual details, provide simulated sensory descriptors. What would this scene smell like? What would it feel like to the touch (textures, temperature)? Describe the atmosphere in tangible, sensory terms."
-        : "";
+    const sensoryInstruction = sensory
+        ? "Focus on the physical reality: colors, textures, lighting, temperature, spatial relationships, and the 'vibe' of the scene. Avoid abstract metaphors; describe what is physically there."
+        : "Provide a concise and accurate description of the visuals in this image.";
 
     const messages = [
       {
         "role": "user",
         "content": [
-          { "type": "text", "text": `Describe the image in detail. ${altText ? `The user has provided the following alt text: "${altText}"` : ""}${sensoryInstruction}` },
+          { "type": "text", "text": `${sensoryInstruction} Respond directly. No reasoning.` },
           { "type": "image_url", "image_url": { "url": imageUrl } }
         ]
       }
@@ -838,16 +664,15 @@ Vary your structure and tone from recent messages.`
     const payload = {
       model: actualModel,
       messages: messages,
-      max_tokens: 1024,
+      max_tokens: 1000,
       stream: false
     };
 
+    const startTime = Date.now();
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120000); // 120s timeout for vision
+    const timeout = setTimeout(() => controller.abort(), 90000);
 
     try {
-      console.log(`[LLMService] [${requestId}] Sending vision request to Nvidia NIM...`);
-      const startTime = Date.now();
       const response = await fetch(this.baseUrl, {
         method: 'POST',
         headers: {
@@ -863,36 +688,16 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
-        console.error(`[LLMService] [${requestId}] Nvidia NIM API error (${response.status}): ${errorText}`);
+        console.error(`[LLMService] [${requestId}] Nvidia NIM Vision API error (${response.status}): ${errorText}`);
 
-        // If vision model 404s, try fallback
+        // Handle 404 fallback for vision model
         if (response.status === 404 && actualModel === this.visionModel && this.fallbackVisionModel && this.fallbackVisionModel !== this.visionModel) {
             console.warn(`[LLMService] [${requestId}] Vision model 404. Trying fallback: ${this.fallbackVisionModel}`);
             clearTimeout(timeout);
-            return this.isImageCompliant(imageSource, { ...options, modelOverride: this.fallbackVisionModel });
-        }
-
-        const isAlreadyBorrowed = errorText.includes("Already borrowed") || (response.status === 400 && errorText.includes("Already borrowed"));
-        const isPrimary = !useCoder && !useStep;
-        const isCoder = useCoder && !useStep;
-
-        if (response.status === 429 || response.status >= 500 || isAlreadyBorrowed) {
-            if (isPrimary) {
-                console.warn(`[LLMService] [${requestId}] Primary model error (${response.status}). Falling back to Coder model...`);
-                clearTimeout(timeout);
-                return this.generateResponse(messages, { ...options, useCoder: true });
-            } else if (isCoder) {
-                console.warn(`[LLMService] [${requestId}] Coder model error (${response.status}). Falling back to Step model...`);
-                clearTimeout(timeout);
-                return this.generateResponse(messages, { ...options, useStep: true });
-            }
-        }
-
-        if (response.status === 404 && actualModel === this.visionModel) {
-            console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}. NVIDIA Response: ${errorText}`);
             return this.analyzeImage(imageSource, altText, { ...options, modelOverride: this.fallbackVisionModel });
         }
-        throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
+
+        throw new Error(`Nvidia NIM Vision API error (${response.status}): ${errorText}`);
       }
 
       const data = await response.json();
@@ -911,28 +716,24 @@ Vary your structure and tone from recent messages.`
           this._visionCache.set(imageSource, {
               analysis,
               timestamp: Date.now(),
-              sensory: !!options.sensory
+              sensory
           });
-          // Cap cache size
+          // Cleanup old cache entries
           if (this._visionCache.size > 100) {
-              const firstKey = this._visionCache.keys().next().value;
-              this._visionCache.delete(firstKey);
+              const oldest = Array.from(this._visionCache.keys())[0];
+              this._visionCache.delete(oldest);
           }
       }
 
       return analysis;
+
     } catch (error) {
-      if (error.name === 'AbortError') {
-        console.error(`[LLMService] [${requestId}] Vision request timed out.`);
-      } else {
-        console.error(`[LLMService] [${requestId}] Error analyzing image:`, error.message);
-      }
-      return null;
+      console.error(`[LLMService] [${requestId}] Error in analyzeImage:`, error.message);
+      return altText || null;
     } finally {
       clearTimeout(timeout);
     }
   }
-
   async extractClaim(inputText) {
     const systemPrompt = `
       You are a text analyst. Your task is to extract the core verifiable claim from a user's post.
@@ -1324,26 +1125,6 @@ Vary your structure and tone from recent messages.`
             return this.isImageCompliant(imageSource, { ...options, modelOverride: this.fallbackVisionModel });
         }
 
-        const isAlreadyBorrowed = errorText.includes("Already borrowed") || (response.status === 400 && errorText.includes("Already borrowed"));
-        const isPrimary = !useCoder && !useStep;
-        const isCoder = useCoder && !useStep;
-
-        if (response.status === 429 || response.status >= 500 || isAlreadyBorrowed) {
-            if (isPrimary) {
-                console.warn(`[LLMService] [${requestId}] Primary model error (${response.status}). Falling back to Coder model...`);
-                clearTimeout(timeout);
-                return this.generateResponse(messages, { ...options, useCoder: true });
-            } else if (isCoder) {
-                console.warn(`[LLMService] [${requestId}] Coder model error (${response.status}). Falling back to Step model...`);
-                clearTimeout(timeout);
-                return this.generateResponse(messages, { ...options, useStep: true });
-            }
-        }
-
-        if (response.status === 404 && actualModel === this.visionModel) {
-            console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}. NVIDIA Response: ${errorText}`);
-            return this.analyzeImage(imageSource, altText, { ...options, modelOverride: this.fallbackVisionModel });
-        }
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
       }
 
@@ -1369,7 +1150,6 @@ Vary your structure and tone from recent messages.`
       clearTimeout(timeout);
     }
   }
-
   async isAutonomousPostCoherent(topic, postContent, postType, embedInfo = null) {
     let embedContext = '';
     if (embedInfo) {

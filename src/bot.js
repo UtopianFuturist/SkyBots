@@ -1984,8 +1984,10 @@ Identify the topic and main takeaway.`;
         const history = dataStore.getDiscordConversation(normChannelId);
         if (history.length === 0) return false;
 
-        const lastInteraction = history[history.length - 1];
-        const quietMins = (Date.now() - lastInteraction.timestamp) / (1000 * 60);
+        const lastUserMessage = [...history].reverse().find(m => m.role === 'user');
+        if (!lastUserMessage) return false;
+
+        const quietMins = (Date.now() - lastUserMessage.timestamp) / (1000 * 60);
 
         return quietMins < 10;
     } catch (e) {

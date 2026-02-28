@@ -109,6 +109,24 @@ class DiscordService {
             return;
         }
 
+        // --- THE MINDER: Nuanced Safety Agent ---
+        const safetyReport = await llmService.performSafetyAnalysis(message.content, { platform: 'discord', user: message.author.username });
+        if (safetyReport.violation_detected) {
+            console.log(`[DiscordService] Nuanced violation detected from ${message.author.username}. Requesting persona consent...`);
+            const consent = await llmService.requestBoundaryConsent(safetyReport, message.author.username, message.channel.name || 'DM');
+
+            if (!consent.consent_to_engage) {
+                console.log(`[DiscordService] PERSONA REFUSED to engage with query: ${consent.reason}`);
+                await dataStore.incrementRefusalCount('discord');
+                if (memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('mood', `[MENTAL] I chose to protect my boundaries and refuse a query from @${message.author.username}. Reason: ${consent.reason}`);
+                }
+                return; // Silent abort
+            }
+            console.log(`[DiscordService] Persona consented to engage despite nuanced safety alert.`);
+        }
+
+
         console.log('[DiscordService] init() called.');
         if (!this.isEnabled) {
             console.log('[DiscordService] Discord token not configured or invalid. Service disabled.');
@@ -368,8 +386,26 @@ class DiscordService {
         return message.channel.id;
     }
 
-    async handleMessage(message) {
+        async handleMessage(message) {
         if (message.author.bot) return;
+
+        // --- THE WALL: Hard-Coded Boundary Gate ---
+        const boundaryCheck = checkHardCodedBoundaries(message.content);
+        if (boundaryCheck.blocked) {
+            console.log(`[DiscordService] BOUNDARY VIOLATION DETECTED: ${boundaryCheck.reason} ("${boundaryCheck.pattern}") from ${message.author.username}`);
+            await dataStore.setBoundaryLockout(message.author.id, 30);
+            if (memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('mood', `[MENTAL] The perimeter defended itself against a boundary violation from @${message.author.username}. Identity integrity maintained.`);
+            }
+            return; // Silent abort
+        }
+
+        // Check for active lockout
+        if (dataStore.isUserLockedOut(message.author.id)) {
+            console.log(`[DiscordService] User ${message.author.username} is currently LOCKED OUT. Ignoring message.`);
+            return;
+        }
+
 
         // Social Battery / Rate Limiting in public channels
         if (message.channel.type !== ChannelType.DM) {

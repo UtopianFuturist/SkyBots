@@ -1634,5 +1634,21 @@ class DataStore {
   getTimezone() {
     return this.db.data.timezone;
   }
+  // Boundary Lockout
+  async setBoundaryLockout(userId, durationMinutes = 30) {
+    if (!this.db.data.boundary_lockouts) this.db.data.boundary_lockouts = {};
+    this.db.data.boundary_lockouts[userId] = Date.now() + (durationMinutes * 60 * 1000);
+    await this.db.write();
+  }
+
+  isUserLockedOut(userId) {
+    if (!this.db.data.boundary_lockouts || !this.db.data.boundary_lockouts[userId]) return false;
+    const expiry = this.db.data.boundary_lockouts[userId];
+    if (Date.now() > expiry) {
+        delete this.db.data.boundary_lockouts[userId];
+        return false;
+    }
+    return true;
+  }
 }
 export const dataStore = new DataStore();

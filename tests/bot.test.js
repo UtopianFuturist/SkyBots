@@ -136,6 +136,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     isBlocked: jest.fn(),
     isThreadMuted: jest.fn(),
     muteThread: jest.fn(),
+    isUserLockedOut: jest.fn(),
+    setBoundaryLockout: jest.fn(),
     muteBranch: jest.fn(),
     getMutedBranchInfo: jest.fn(),
     getConversationLength: jest.fn(),
@@ -335,6 +337,7 @@ describe('Bot', () => {
 
     dataStore.hasReplied.mockReturnValue(false);
     dataStore.isBlocked.mockReturnValue(false);
+    dataStore.isUserLockedOut.mockReturnValue(false);
     dataStore.isThreadMuted.mockReturnValue(false);
     dataStore.getMutedBranchInfo.mockReturnValue(null);
     dataStore.getConversationLength.mockReturnValue(1);

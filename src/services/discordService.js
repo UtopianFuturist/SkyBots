@@ -884,7 +884,7 @@ class DiscordService {
                         files: [{ attachment: result.buffer, name: 'art.jpg' }]
                     });
                 } else {
-                    await this._send(message.channel, "I'm sorry, I couldn't generate that image right now.");
+                    await this._send(message.channel, "I'm sorry, I encountered an issue while generating that image. It might be a temporary API error or a content filter mismatch.");
                 }
             } catch (error) {
                 console.error('[DiscordService] Error generating art:', error);
@@ -1806,6 +1806,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      // Add missing tools for admin
                      if (action.tool === 'image_gen') {
                          const prompt = action.query || action.parameters?.prompt;
+                         console.log(`[DiscordService] Tool: image_gen for prompt: "${prompt}"`);
                          if (prompt) {
                              const imgResult = await imageService.generateImage(prompt, { allowPortraits: true, mood: currentMood });
                              if (imgResult && imgResult.buffer) {
@@ -1814,7 +1815,9 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                  });
                                  actionResults.push(`[Successfully generated image for prompt: "${prompt}"]`);
                              } else {
-                                 actionResults.push(`[Failed to generate image]`);
+                                 const errorMsg = "I'm sorry, I encountered an issue while generating that image. It might be a temporary API error or a content filter mismatch.";
+                                 await this._send(message.channel, errorMsg);
+                                 actionResults.push(`[Failed to generate image: API error or safety filter mismatch]`);
                              }
                          }
                      }

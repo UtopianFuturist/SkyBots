@@ -2776,6 +2776,9 @@ Identify the topic and main takeaway.`;
               imageAltText: imageResult.finalPrompt
             });
             imageGenFulfilled = true;
+          } else {
+            currentActionFeedback = "IMAGE_GENERATION_FAILED: The image generation API returned an error or blocked the prompt.";
+            console.warn(`[Bot] Image generation failed for prompt: "${action.query}"`);
           }
         }
 

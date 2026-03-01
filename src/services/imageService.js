@@ -7,7 +7,7 @@ class ImageService {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.model = config.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-3-medium';
     // Align with Nvidia NIM standard endpoint
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1/images/generations';
+    this.baseUrl = 'https://ai.api.nvidia.com/v1/genai/stabilityai/stable-diffusion-3-medium';
   }
 
   async generateImage(prompt, options = { allowPortraits: true, feedback: null, mood: null }) {
@@ -74,11 +74,9 @@ class ImageService {
 
       // Align payload with Nvidia NIM standards
       const payload = {
-        model: this.model,
         prompt: finalPrompt,
-        n: 1,
-        size: "1024x1024", // Defaulting to 1024x1024 as it is standard for newer models
-        response_format: "b64_json" // Prefer base64 to avoid extra network calls if possible
+        aspect_ratio: "1:1",
+        mode: "text-to-image"
       };
 
       console.log('[ImageService] Sending request to Nvidia NIM API with payload:', JSON.stringify(payload, null, 2));
@@ -102,8 +100,7 @@ class ImageService {
 
       const data = await response.json();
       
-      // Standard OpenAI/NIM response format: data[0].b64_json or data[0].url
-      const imageAsset = data.data?.[0]?.b64_json || data.data?.[0]?.url || data.image || data.artifacts?.[0]?.base64;
+      const imageAsset = data.b64_json || data.image || (data.data && data.data[0] && (data.data[0].b64_json || data.data[0].url));
 
       if (!imageAsset) {
         console.error('[ImageService] No image data in API response:', JSON.stringify(data, null, 2));
@@ -121,7 +118,6 @@ class ImageService {
         const arrayBuffer = await imageResponse.arrayBuffer();
         buffer = Buffer.from(arrayBuffer);
       } else {
-        // Assume base64 string
         buffer = Buffer.from(imageAsset, 'base64');
       }
 

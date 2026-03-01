@@ -4158,6 +4158,7 @@ Describe how you feel about this user and your relationship now.`;
   }
 
   async performAutonomousPost() {
+    let pivoted = false;
     if (this.paused) return;
 
     // Item 31: Prioritize admin Discord requests
@@ -4991,7 +4992,7 @@ Describe how you feel about this user and your relationship now.`;
             }
 
             // Item 48: Pivot personal messages to Discord DMs
-            const isAdminMention = useMention && mentionHandle.replace(/^@/, "") === config.ADMIN_BLUESKY_HANDLE;
+            const isAdminMention = (useMention && mentionHandle.replace(/^@/, "") === config.ADMIN_BLUESKY_HANDLE) || postContent.includes("@" + config.ADMIN_BLUESKY_HANDLE);
             if (isAdminMention) {
                 const classificationPrompt = `Analyze the following content generated for a Bluesky post:
 \n"${postContent}"\n\nIs this a "personal message" intended directly for the admin (e.g., "You're here", "I've been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
@@ -5003,6 +5004,7 @@ Describe how you feel about this user and your relationship now.`;
                         discordOptions.files = [{ attachment: imageBuffer, name: "autonomous_art.jpg" }];
                     }
                     await discordService.sendSpontaneousMessage(postContent, discordOptions);
+                    pivoted = true;
                     await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                     await dataStore.addRecentThought("discord", postContent);
                     await dataStore.addExhaustedTheme(topic);
@@ -5075,7 +5077,7 @@ Describe how you feel about this user and your relationship now.`;
         }
       }
 
-      if (postType === 'image') {
+      if (!pivoted && postType === 'image') {
         if (textOnlyPostsToday.length >= dConfig.bluesky_daily_text_limit) {
             console.log(`[Bot] All ${MAX_POST_ATTEMPTS} image attempts failed. Cannot fall back to text post (limit reached). Aborting.`);
             return;

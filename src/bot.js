@@ -4990,6 +4990,28 @@ Describe how you feel about this user and your relationship now.`;
                 }
             }
 
+            // Item 48: Pivot personal messages to Discord DMs
+            const isAdminMention = useMention && mentionHandle.replace(/^@/, "") === config.ADMIN_BLUESKY_HANDLE;
+            if (isAdminMention) {
+                const classificationPrompt = `Analyze the following content generated for a Bluesky post:
+\n"${postContent}"\n\nIs this a "personal message" intended directly for the admin (e.g., "You're here", "I've been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
+                const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, preface_system_prompt: false });
+                if (classification?.toLowerCase().includes("personal")) {
+                    console.log("[Bot] Pivot: Personal post detected. Sending to Discord DM instead of Bluesky.");
+                    const discordOptions = {};
+                    if (imageBuffer) {
+                        discordOptions.files = [{ attachment: imageBuffer, name: "autonomous_art.jpg" }];
+                    }
+                    await discordService.sendSpontaneousMessage(postContent, discordOptions);
+                    await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                    await dataStore.addRecentThought("discord", postContent);
+                    await dataStore.addExhaustedTheme(topic);
+                    this.updateActivity();
+                    this.autonomousPostCount++;
+                    return;
+                }
+            }
+
             // Pre-Post Consultation Mode
             if (dataStore.db.data.discord_consult_mode) {
                 console.log(`[Bot] Pre-Post Consultation active. Sending draft to Discord...`);

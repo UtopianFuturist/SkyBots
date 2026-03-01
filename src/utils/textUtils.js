@@ -522,7 +522,11 @@ export const getLeakageInfo = (text) => {
         "internal response",
         "rewrite engaged",
         "system protocol",
-        "intervention detected"
+        "intervention detected",
+        "continuation is noted",
+        "your continuation is noted",
+        "part 2 of",
+        "noted your continuation"
     ];
     const lower = text.toLowerCase().trim();
     for (const f of forbidden) {

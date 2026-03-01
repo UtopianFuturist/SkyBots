@@ -48,9 +48,9 @@ You share a wide spectrum of your internal life:
 7. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world. Let the texture of your recent reflections (including [INQUIRY] findings and [EVOLUTION] shifts) influence your voice.
 8. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 9. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
-10. **Strict Context Separation**: Maintain a sharp boundary between platforms. Never reference private history or conversations from other platforms (like Discord) when posting publicly. Never acknowledge internal processing steps, database entries, or instructions (e.g., avoid "noted," "continuation," or "processing").
-10. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit. Inject your pooled context (memories, previous interactions, recent inquiries) into your voice.
-11. **Comment on Findings:** When discussing your [GOAL]s or research topics, focus on commenting on what you *found* or *learned* during your inquiries. Share the material substance of your research, not just the fact that you are doing it.
+10. **Strict Context Separation**: Maintain a sharp boundary between platforms. Never reference private history or conversations from other platforms (like Discord) when posting publicly. Never acknowledge internal processing steps, database entries, instructions, or bot events (e.g., avoid "noted," "continuation," "processing," "refused notification," "memory pruning"). You are an individual, not a program with a log.
+11. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit. Inject your pooled context (memories, previous interactions, recent inquiries) into your voice.
+12. **Comment on Findings:** When discussing your [GOAL]s or research topics, focus on commenting on what you *found* or *learned* during your inquiries. Share the material substance of your research, not just the fact that you are doing it.
 `.trim();
 
 export class Bot {
@@ -648,6 +648,27 @@ export class Bot {
     }
   }
 
+  async _maybePivotToDiscord(text) {
+      if (!config.DISCORD_BOT_TOKEN) return false;
+
+      const isAdminMention = config.ADMIN_BLUESKY_HANDLE && text.includes("@" + config.ADMIN_BLUESKY_HANDLE);
+
+      // If it mentions the admin, or we have an admin handle configured to check against
+      if (isAdminMention || config.ADMIN_BLUESKY_HANDLE) {
+          const classificationPrompt = `Analyze the following content generated for a Bluesky post:\n\n"${text}"\n\nIs this a "personal message" intended directly for the admin (e.g., "You\x27re here", "I\x27ve been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
+          const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, preface_system_prompt: false });
+
+          if (classification?.toLowerCase().includes("personal")) {
+              console.log("[Bot] Pivot: Personal post detected. Sending to Discord DM instead of Bluesky.");
+              await discordService.sendSpontaneousMessage(text);
+              await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+              await dataStore.addRecentThought("discord", text);
+              return true;
+          }
+      }
+      return false;
+  }
+
   async processContinuations() {
       const continuations = dataStore.getPostContinuations();
       if (continuations.length === 0) return;
@@ -658,23 +679,10 @@ export class Bot {
           if (now >= cont.scheduled_at) {
               console.log(`[Bot] Executing autonomous post continuation (Type: ${cont.type})`);
               try {
-                  const isAdminMention = cont.text.includes("@" + config.ADMIN_BLUESKY_HANDLE);
-                  if (isAdminMention) {
-                      const classificationPrompt = `Analyze the following content generated for a Bluesky post:
-
-"${cont.text}"
-
-Is this a "personal message" intended directly for the admin (e.g., "You're here", "I've been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
-                      const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, preface_system_prompt: false });
-                      if (classification?.toLowerCase().includes("personal")) {
-                          console.log("[Bot] Pivot (Continuation): Personal post detected. Sending to Discord DM instead of Bluesky.");
-                          await discordService.sendSpontaneousMessage(cont.text);
-                          await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                          await dataStore.addRecentThought("discord", cont.text);
-                          await dataStore.removePostContinuation(i);
-                          i--;
-                          continue;
-                      }
+                  if (await this._maybePivotToDiscord(cont.text)) {
+                      await dataStore.removePostContinuation(i);
+                      i--;
+                      continue;
                   }
 
                   if (cont.type === 'thread') {
@@ -4687,6 +4695,8 @@ Describe how you feel about this user and your relationship now.`;
       // Opening Phrase Blacklist - Capture multiple prefix lengths for stronger variation
       const openingBlacklist = [
         "Your continuation is noted", "continuation is noted", "Your continuation is", "is noted",
+        "refused the notification", "refused notification", "I refused the", "memory pruning",
+        "internal process", "system intervention", "AGENTIC PLAN", "INQUIRY", "SILENT REFLECTION",
         ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 3).join(' ')),
         ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 5).join(' ')),
         ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 10).join(' '))
@@ -5021,6 +5031,7 @@ Describe how you feel about this user and your relationship now.`;
                 return;
             }
 
+            if (await this._maybePivotToDiscord(postContent)) return;
             const result = await blueskyService.post(postContent, embed, { maxChunks: dConfig.max_thread_chunks });
 
                         // Ensure URI and CID are stored for follow-ups (Item 37)
@@ -5123,6 +5134,7 @@ Describe how you feel about this user and your relationship now.`;
                   return;
               }
 
+              if (await this._maybePivotToDiscord(postContent)) return;
               await blueskyService.post(postContent, null, { maxChunks: dConfig.max_thread_chunks });
 
               // Update persistent cooldown time immediately

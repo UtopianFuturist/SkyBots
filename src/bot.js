@@ -6316,11 +6316,9 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         ];
                         // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
                         candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
-                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
                         candidates = candidates.map(c => sanitizeThinkingTags(c)).filter(c => c.length > 0);
                         // Also include the original message from the poll
                         if (!candidates.includes(message)) candidates.unshift(sanitizeThinkingTags(message));
-                        candidates = [message];
                     }
 
                     // Autonomous Plan Review & Refinement
@@ -6660,13 +6658,13 @@ ${brief}
         const hungerFactor = Math.max(0.5, 1.5 - metrics.hunger);
 
         if (isBotLast) {
-            const baseDelay = Math.floor(Math.random() * 4) + 2;
+            const baseDelay = Math.floor(Math.random() * 10) + 15;
             const delay = Math.max(1, Math.round(baseDelay * intimacyFactor));
             targetTime = effectiveLastInteractionTime + (delay * 60 * 1000);
             mode = 'follow-up';
             console.log(`[Bot] New spontaneity target: follow-up in ${delay} mins (intimacy factor: ${intimacyFactor.toFixed(2)}).`);
         } else {
-            const baseDelay = Math.floor(Math.random() * 6) + 15;
+            const baseDelay = Math.floor(Math.random() * 30) + 45;
             const delay = Math.max(5, Math.round(baseDelay * hungerFactor));
             targetTime = effectiveLastInteractionTime + (delay * 60 * 1000);
             mode = 'heartbeat';

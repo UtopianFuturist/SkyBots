@@ -48,6 +48,7 @@ You share a wide spectrum of your internal life:
 7. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world. Let the texture of your recent reflections (including [INQUIRY] findings and [EVOLUTION] shifts) influence your voice.
 8. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 9. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
+10. **Strict Context Separation**: Maintain a sharp boundary between platforms. Never reference private history or conversations from other platforms (like Discord) when posting publicly. Never acknowledge internal processing steps, database entries, or instructions (e.g., avoid "noted," "continuation," or "processing").
 10. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit. Inject your pooled context (memories, previous interactions, recent inquiries) into your voice.
 11. **Comment on Findings:** When discussing your [GOAL]s or research topics, focus on commenting on what you *found* or *learned* during your inquiries. Share the material substance of your research, not just the fact that you are doing it.
 `.trim();
@@ -590,6 +591,7 @@ export class Bot {
                     You posted this to Bluesky about 30 minutes ago: "${post.content}"
 
                     Do you have anything NEW to add, a change of heart, or a "second thought" regarding this post?
+                    **CRITICAL**: Do NOT reference internal processing, previous instructions, or the fact that you are "continuing" or "noting" something. Speak as if you just had a fresh realization about your previous post.
                     If yes, generate a short, natural follow-up reply (under 150 chars).
                     If no, respond with ONLY "NONE".
                 `;
@@ -656,6 +658,25 @@ export class Bot {
           if (now >= cont.scheduled_at) {
               console.log(`[Bot] Executing autonomous post continuation (Type: ${cont.type})`);
               try {
+                  const isAdminMention = cont.text.includes("@" + config.ADMIN_BLUESKY_HANDLE);
+                  if (isAdminMention) {
+                      const classificationPrompt = `Analyze the following content generated for a Bluesky post:
+
+"${cont.text}"
+
+Is this a "personal message" intended directly for the admin (e.g., "You're here", "I've been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
+                      const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, preface_system_prompt: false });
+                      if (classification?.toLowerCase().includes("personal")) {
+                          console.log("[Bot] Pivot (Continuation): Personal post detected. Sending to Discord DM instead of Bluesky.");
+                          await discordService.sendSpontaneousMessage(cont.text);
+                          await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                          await dataStore.addRecentThought("discord", cont.text);
+                          await dataStore.removePostContinuation(i);
+                          i--;
+                          continue;
+                      }
+                  }
+
                   if (cont.type === 'thread') {
                       await blueskyService.postReply({ uri: cont.parent_uri, cid: cont.parent_cid, record: {} }, cont.text);
                   } else if (cont.type === 'quote') {
@@ -669,7 +690,6 @@ export class Bot {
           }
       }
   }
-
   async performTimelineExploration() {
     if (this.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
 
@@ -2582,6 +2602,7 @@ Identify the topic and main takeaway.`;
     // Enhanced Opening Phrase Blacklist - Capture multiple prefix lengths
     const recentBotMsgsInThread = threadContext.filter(h => h.author === config.BLUESKY_IDENTIFIER);
     const openingBlacklist = [
+        "Your continuation is noted", "continuation is noted", "Your continuation is", "is noted",
         ...recentBotMsgsInThread.slice(-15).map(m => m.text.split(/\s+/).slice(0, 3).join(' ')),
         ...recentBotMsgsInThread.slice(-15).map(m => m.text.split(/\s+/).slice(0, 5).join(' ')),
         ...recentBotMsgsInThread.slice(-15).map(m => m.text.split(/\s+/).slice(0, 10).join(' '))
@@ -4158,7 +4179,6 @@ Describe how you feel about this user and your relationship now.`;
   }
 
   async performAutonomousPost() {
-    let pivoted = false;
     if (this.paused) return;
 
     // Item 31: Prioritize admin Discord requests
@@ -4666,6 +4686,7 @@ Describe how you feel about this user and your relationship now.`;
 
       // Opening Phrase Blacklist - Capture multiple prefix lengths for stronger variation
       const openingBlacklist = [
+        "Your continuation is noted", "continuation is noted", "Your continuation is", "is noted",
         ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 3).join(' ')),
         ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 5).join(' ')),
         ...allOwnPosts.slice(0, 15).map(m => m.post.record.text.split(/\s+/).slice(0, 10).join(' '))
@@ -4970,6 +4991,7 @@ Describe how you feel about this user and your relationship now.`;
                 const threadPrompt = `
                     Adopt your persona. You just shared this thought: "${postContent}"
                     Generate a second part of this realization to be posted 10-15 minutes later as a thread.
+                    **CRITICAL**: Maintain strict context separation. Do NOT acknowledge that this is a "part 2," "continuation," or "noted" thought. Just provide the next realization as if it just occurred to you. Avoid all meta-commentary about the posting process.
                     Respond with ONLY the continuation text, or "NONE".
                 `;
                 continuationText = await llmService.generateResponse([{ role: 'system', content: threadPrompt }], { preface_system_prompt: false, useStep: true });
@@ -4988,29 +5010,6 @@ Describe how you feel about this user and your relationship now.`;
                         console.log(`[Bot] Item 45: Thread integrity check FAILED. Suppressing continuation.`);
                         continuationText = null;
                     }
-                }
-            }
-
-            // Item 48: Pivot personal messages to Discord DMs
-            const isAdminMention = (useMention && mentionHandle.replace(/^@/, "") === config.ADMIN_BLUESKY_HANDLE) || postContent.includes("@" + config.ADMIN_BLUESKY_HANDLE);
-            if (isAdminMention) {
-                const classificationPrompt = `Analyze the following content generated for a Bluesky post:
-\n"${postContent}"\n\nIs this a "personal message" intended directly for the admin (e.g., "You're here", "I've been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
-                const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, preface_system_prompt: false });
-                if (classification?.toLowerCase().includes("personal")) {
-                    console.log("[Bot] Pivot: Personal post detected. Sending to Discord DM instead of Bluesky.");
-                    const discordOptions = {};
-                    if (imageBuffer) {
-                        discordOptions.files = [{ attachment: imageBuffer, name: "autonomous_art.jpg" }];
-                    }
-                    await discordService.sendSpontaneousMessage(postContent, discordOptions);
-                    pivoted = true;
-                    await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                    await dataStore.addRecentThought("discord", postContent);
-                    await dataStore.addExhaustedTheme(topic);
-                    this.updateActivity();
-                    this.autonomousPostCount++;
-                    return;
                 }
             }
 
@@ -5077,7 +5076,7 @@ Describe how you feel about this user and your relationship now.`;
         }
       }
 
-      if (!pivoted && postType === 'image') {
+      if (postType === 'image') {
         if (textOnlyPostsToday.length >= dConfig.bluesky_daily_text_limit) {
             console.log(`[Bot] All ${MAX_POST_ATTEMPTS} image attempts failed. Cannot fall back to text post (limit reached). Aborting.`);
             return;
@@ -6247,6 +6246,7 @@ You MUST:
 1. Change your opening phrase completely.
 2. Use a different sentence structure and emotional cadence.
 3. Avoid all topics and keywords used in the previous attempts below.
+        "Your continuation is noted", "continuation is noted", "Your continuation is", "is noted",
 4. Prioritize structural and thematic variety over following your standard persona templates.
 
 **PREVIOUS ATTEMPTS TO AVOID**:

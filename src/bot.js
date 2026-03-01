@@ -356,8 +356,14 @@ export class Bot {
                     .then(async (res) => {
                         const match = res?.match(/\{[\s\S]*\}/);
                         if (match) {
-                            const dossier = JSON.parse(match[0]);
-                            await dataStore.updateUserDossier(handle, dossier);
+                            try {
+                                // Robust cleanup: remove any non-JSON prefix/suffix
+                                let jsonStr = match[0];
+                                const dossier = JSON.parse(jsonStr);
+                                await dataStore.updateUserDossier(handle, dossier);
+                            } catch (parseErr) {
+                                console.error('[Bot] Soul-Mapping JSON parse error:', parseErr.message, 'Raw response snippet:', res?.substring(0, 100));
+                            }
                         }
                     }).catch(e => console.error('[Bot] Soul-Mapping error:', e));
             }

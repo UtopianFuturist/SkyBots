@@ -356,8 +356,14 @@ export class Bot {
                     .then(async (res) => {
                         const match = res?.match(/\{[\s\S]*\}/);
                         if (match) {
-                            const dossier = JSON.parse(match[0]);
-                            await dataStore.updateUserDossier(handle, dossier);
+                            try {
+                                // Robust cleanup: remove any non-JSON prefix/suffix
+                                let jsonStr = match[0];
+                                const dossier = JSON.parse(jsonStr);
+                                await dataStore.updateUserDossier(handle, dossier);
+                            } catch (parseErr) {
+                                console.error('[Bot] Soul-Mapping JSON parse error:', parseErr.message, 'Raw response snippet:', res?.substring(0, 100));
+                            }
                         }
                     }).catch(e => console.error('[Bot] Soul-Mapping error:', e));
             }
@@ -2776,6 +2782,9 @@ Identify the topic and main takeaway.`;
               imageAltText: imageResult.finalPrompt
             });
             imageGenFulfilled = true;
+          } else {
+            currentActionFeedback = "IMAGE_GENERATION_FAILED: The image generation API returned an error or blocked the prompt.";
+            console.warn(`[Bot] Image generation failed for prompt: "${action.query}"`);
           }
         }
 

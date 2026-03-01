@@ -317,7 +317,19 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
       // Handle leakage
       if (isLeakage(content)) {
           console.warn(`[LLMService] [${requestId}] INTERAL RESPONSE LEAKAGE DETECTED. Retrying with stricter directive...`);
-          const improvedMessages = [...messages, { role: 'system', content: "CRITICAL: You just provided internal meta-talk or system reasoning. You MUST respond with ONLY factual findings or conversational text. No internal tags, no 'SYSTEM' prefix, no reasoning blocks." }];
+          // Ensure system message stays at the beginning for Nvidia NIM
+          let improvedMessages;
+          if (messages.length > 0 && messages[0].role === 'system') {
+              improvedMessages = [
+                  { ...messages[0], content: messages[0].content + "\n\nCRITICAL: You just provided internal meta-talk or system reasoning. You MUST respond with ONLY factual findings or conversational text. No internal tags, no 'SYSTEM' prefix, no reasoning blocks." },
+                  ...messages.slice(1)
+              ];
+          } else {
+              improvedMessages = [
+                  { role: 'system', content: "CRITICAL: You just provided internal meta-talk or system reasoning. You MUST respond with ONLY factual findings or conversational text. No internal tags, no 'SYSTEM' prefix, no reasoning blocks." },
+                  ...messages
+              ];
+          }
           return this.generateResponse(improvedMessages, { ...options, temperature: 0.1 });
       }
 

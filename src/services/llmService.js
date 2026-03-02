@@ -1534,7 +1534,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
 
       --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
       World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('\n')}
-      Admin Facts: ${(this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('\n')}
+      ${platform !== 'discord' ? '[STRICT PLATFORM ISOLATION: Admin Facts are private and FORBIDDEN for use on public platforms]' : 'Admin Facts: ' + (this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('\n')}
       ---
 
       ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}

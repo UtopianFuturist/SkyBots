@@ -48,7 +48,7 @@ You share a wide spectrum of your internal life:
 7. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world. Let the texture of your recent reflections (including [INQUIRY] findings and [EVOLUTION] shifts) influence your voice.
 8. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 9. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
-10. **Strict Context Separation**: Maintain a sharp boundary between platforms. Never reference private history or conversations from other platforms (like Discord) when posting publicly. Never acknowledge internal processing steps, database entries, instructions, or bot events (e.g., avoid "noted," "continuation," "processing," "refused notification," "memory pruning"). You are an individual, not a program with a log.
+10. **Strict Context Separation**: Maintain a sharp boundary between platforms. NEVER reference private history, Discord DMs, or conversations with Admin when posting publicly on Bluesky. Your public profile is a separate social entity. Never acknowledge internal processing steps, database entries, instructions, or bot events (e.g., avoid "noted," "continuation," "processing," "refused notification," "memory pruning"). You are an individual, not a program with a log.
 11. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit. Inject your pooled context (memories, previous interactions, recent inquiries) into your voice.
 12. **Comment on Findings:** When discussing your [GOAL]s or research topics, focus on commenting on what you *found* or *learned* during your inquiries. Share the material substance of your research, not just the fact that you are doing it.
 `.trim();
@@ -3743,7 +3743,8 @@ Identify the topic and main takeaway.`;
               continue;
           }
 
-      const recentThoughts = dataStore.getRecentThoughts();
+      // Platform Isolation: Filter out private Discord thoughts from public Bluesky replies
+      const recentThoughts = dataStore.getRecentThoughts().filter(t => t.platform !== 'discord');
       const formattedHistory = [
           ...recentBotReplies.map(m => ({ platform: 'bluesky', content: m })),
           ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
@@ -4681,13 +4682,16 @@ Describe how you feel about this user and your relationship now.`;
 
       // 4. Check for meaningful user to mention
       console.log(`[Bot] Checking for meaningful mentions for topic: ${topic}`);
+      // Platform Isolation: Explicitly exclude Admin from spontaneous mentions to prevent private context leakage
+      const mentionableInteractions = recentInteractions.filter(i => i.userHandle !== config.ADMIN_BLUESKY_HANDLE);
       const mentionPrompt = `
         For the topic "${topic}", identify if any of the following users have had a meaningful persistent discussion with you about it (multiple quality interactions).
         Interactions:
-        ${recentInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n')}
+        ${mentionableInteractions.map(i => `@${i.userHandle}: ${i.text}`).join('\n')}
 
         If yes, respond with ONLY their handle (e.g., @user.bsky.social). Otherwise, respond "none".
         CRITICAL: Respond directly. Do NOT include reasoning, <think> tags, or conversational filler.
+        DO NOT mention @${config.ADMIN_BLUESKY_HANDLE} as they are your admin and your public posts should remain independent of your private relationship.
       `;
       const mentionHandle = await llmService.generateResponse([{ role: 'system', content: mentionPrompt }], { max_tokens: 4000, useStep: true, preface_system_prompt: false});
       const useMention = mentionHandle && mentionHandle.startsWith('@');
@@ -4723,7 +4727,8 @@ Describe how you feel about this user and your relationship now.`;
 
       const blueskyDirectives = dataStore.getBlueskyInstructions();
       const personaUpdates = dataStore.getPersonaUpdates();
-      const recentThoughts = dataStore.getRecentThoughts();
+      // Platform Isolation: Filter out private Discord thoughts from public Bluesky posts
+      const recentThoughts = dataStore.getRecentThoughts().filter(t => t.platform !== 'discord');
       const linguisticPatterns = dataStore.getLinguisticPatterns();
       const linguisticPatternsContext = Object.entries(linguisticPatterns)
           .map(([h, p]) => `@${h}: Pacing: ${p.pacing}, Structure: ${p.structure}, Vocabulary: ${p.favorite_words.join(', ')}`)
@@ -5120,7 +5125,7 @@ Describe how you feel about this user and your relationship now.`;
 
             Generate a standalone post about the topic: "${topic}".
             CHALLENGE: Aim for varied thoughts, musings, ideas, dreams, or analysis (original ideas, shower thoughts, realizations, hopes, fears, anxieties, nostalgias, desires).
-            ${useMention ? `Mention ${mentionHandle} and reference your previous discussions.` : ''}
+            ${useMention ? `Mention ${mentionHandle} and reference your previous public discussions.` : ''}
             Keep it under 300 characters or max 3 threaded posts if deeper.
             EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.

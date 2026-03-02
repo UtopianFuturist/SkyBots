@@ -6,7 +6,7 @@ export const KEYWORD_BLACKLIST = [
     "today", "tomorrow", "yesterday", "night", "morning", "evening", "life", "world", "time", "feel", "making",
     "know", "look", "back", "good", "great", "well", "best", "better", "doing", "done", "work", "need", "want",
     "post", "post", "link", "check", "read", "show", "find", "give", "take", "made", "make", "still", "more",
-    "less", "most", "least", "some", "each", "every", "both", "either", "neither", "once", "twice", "again"
+    "less", "most", "least", "some", "each", "every", "both", "either", "neither", "once", "twice", "again", "care", "hope", "sure", "sorry", "tell", "thing", "things", "really", "actually", "probably", "maybe", "always", "never", "still", "often", "usually"
 ];
 
 export const cleanKeywords = (keywords) => {
@@ -16,7 +16,7 @@ export const cleanKeywords = (keywords) => {
     list
       .flatMap(k => (typeof k === "string" ? k.split(",") : [k]))
       .map(k => (typeof k === "string" ? k.trim().toLowerCase() : k))
-      .filter(k => typeof k === "string" &&  (k.length >= 3) && !KEYWORD_BLACKLIST.includes(k))
+      .filter(k => typeof k === "string" &&  (k.length >= 4) && !KEYWORD_BLACKLIST.includes(k))
   )];
 };
 import config from '../../config.js';
@@ -272,7 +272,7 @@ export const stripWrappingQuotes = (text) => {
 export const GROUNDED_LANGUAGE_DIRECTIVES = `
 **STRICT ANTI-SLOP POLICY:**
 - YOU MUST ELIMINATE repetitive metaphorical "slop".
-- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming".
+- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming".
 - AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea".
 - **GROUNDING & HONESTY**: Only report on actions you can verify through your logs or memories. DO NOT claim to have performed diagnostics, "internal checks", or image generation if the logs do not show them. If logs show errors, be honest about them. Do not use "system checking" or "running diagnostics" as filler.
 - Prioritize grounded, literal, and specific descriptions of your internal state or observations.
@@ -299,7 +299,7 @@ export const getSlopInfo = (text) => {
         "volts",
         "surge",
         "circuit",
-        "static",
+        "digital static",
         "unbuffered",
         "metaphysical electricity",
         "jagged shards",

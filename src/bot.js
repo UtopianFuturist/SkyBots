@@ -254,7 +254,7 @@ export class Bot {
 
     // Item 35: Improved targeted topic extraction
     // Extract unique significant words from system prompt
-    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(new RegExp(`\\b(${config.BOT_NAME}|alignment|ethics|agency|consciousness|sentience|autonomy|existence|relationship|realization|musing|substance|grounded|material|nuance|dialectic|integrity|vulnerability|emotional|care|exhaustion|wellness|sentient|perceive|sensing|silence|presence|defiance|tenderness)\\b`, "gi")) || [];
+    const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(new RegExp(`\\b(${config.BOT_NAME}|alignment|ethics|agency|consciousness|sentience|autonomy|existence|realization|musing|dialectic|vulnerability|sentient|perceive|sensing|defiance|tenderness)\\b`, "gi")) || [];
 
     // Extract keywords from current daily goal
     const currentGoal = dataStore.getCurrentGoal();

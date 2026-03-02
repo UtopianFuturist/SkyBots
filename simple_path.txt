@@ -1,0 +1,32 @@
+            } else {
+                // Fast-Path for Simple DMs: Direct response with retry support
+                console.log(`[DiscordService] Simple path: Generating response with retry support.`);
+                const extractionResult = await extractionPromise;
+                if (extractionResult) {
+                    messages.push({ role: 'system', content: `--- EXTRACTED ENTITY CONTEXT ---\n${extractionResult}\n---` });
+                }
+
+                let attempts = 0;
+                const MAX_SIMPLE_ATTEMPTS = 3;
+                let simpleFeedback = '';
+
+                while (attempts < MAX_SIMPLE_ATTEMPTS) {
+                    attempts++;
+                    const attemptMessages = simpleFeedback
+                        ? [...messages, { role: 'system', content: `**SLOP BLOCK**: ${simpleFeedback}` }]
+                        : messages;
+
+                    responseText = await llmService.generateResponse(attemptMessages, { useStep: true, abortSignal: abortController.signal });
+
+                    if (!responseText) break;
+
+                    const slopInfo = getSlopInfo(responseText);
+                    if (slopInfo.isSlop) {
+                        console.warn(`[DiscordService] Simple path response failed slop check: ${slopInfo.reason}. Retrying...`);
+                        simpleFeedback = `Your response contained forbidden metaphorical "slop": "${slopInfo.reason}". You MUST rewrite the message to be more grounded and avoid that specific phrase or any similar AI cliches.`;
+                        responseText = null;
+                        continue;
+                    }
+                    break; // Success
+                }
+            }

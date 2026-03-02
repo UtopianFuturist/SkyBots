@@ -665,6 +665,16 @@ class DiscordService {
         ];
         return directivePatterns.some(regex => regex.test(text));
     }
+    requiresTool(text) {
+        if (!text) return false;
+        const toolPatterns = [
+            /\b(picture|art|draw|image|gen|generate|create)\b/i,
+            /\b(search|find|lookup|research|google|wikipedia|wiki|youtube)\b/i,
+            /\b(logs?|render|planning|history)\b/i,
+            /\b(link|url|website|read)\b/i
+        ];
+        return toolPatterns.some(regex => regex.test(text));
+    }
 
     /**
      * Centralized sending logic to ensure all messages are sanitized and logged consistently.
@@ -1092,8 +1102,9 @@ class DiscordService {
         // Moved to background/parallel to avoid blocking initial response latency
         const extractionPromise = (async () => {
             const extractionPrompt = `
-                Identify any unique titles (video games, books, movies, software, specific people) mentioned in the following message: "${message.content}"
-                Respond with a comma-separated list of ONLY the titles/entities. If none, respond "NONE".
+                Identify any highly specific unique titles (video games, books, movies, software, specific people) or niche technical concepts mentioned in the following message: "${message.content}"
+                Ignore common words, emotions, or generic terms (e.g., "care", "love", "life", "work", "games").
+                Respond with a comma-separated list of ONLY the specific titles/entities. If none are found, respond "NONE".
             `;
             try {
                 const entitiesRaw = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0, abortSignal: abortController.signal });
@@ -1274,7 +1285,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
             const isSimple = (message.content.split(/\s+/).length <= 10 || isGreeting(message.content)) &&
                             !this.isDirectiveHint(message.content) &&
                             !message.content.startsWith('/') &&
-                            message.attachments.size === 0;
+                            message.attachments.size === 0 && !this.requiresTool(message.content);
 
             if (isAdmin && !isSimple) {
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
@@ -2258,12 +2269,35 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  }
             } else {
                 // Fast-Path for Simple DMs: Direct response
-                console.log(`[DiscordService] Simple path: Generating single response.`);
+                console.log(`[DiscordService] Simple path: Generating response with retry support.`);
                 const extractionResult = await extractionPromise;
                 if (extractionResult) {
-                    messages.push({ role: 'system', content: `--- EXTRACTED ENTITY CONTEXT ---\n${extractionResult}\n---` });
+                    messages.push({ role: "system", content: `--- EXTRACTED ENTITY CONTEXT ---\n${extractionResult}\n---` });
                 }
-                responseText = await llmService.generateResponse(messages, { useStep: true, abortSignal: abortController.signal });
+
+                let attempts = 0;
+                const MAX_SIMPLE_ATTEMPTS = 3;
+                let simpleFeedback = "";
+
+                while (attempts < MAX_SIMPLE_ATTEMPTS) {
+                    attempts++;
+                    const attemptMessages = simpleFeedback
+                        ? [...messages, { role: "system", content: `**SLOP BLOCK**: ${simpleFeedback}` }]
+                        : messages;
+
+                    responseText = await llmService.generateResponse(attemptMessages, { useStep: true, abortSignal: abortController.signal });
+
+                    if (!responseText) break;
+
+                    const slopInfo = getSlopInfo(responseText);
+                    if (slopInfo.isSlop) {
+                        console.warn(`[DiscordService] Simple path response failed slop check: ${slopInfo.reason}. Retrying...`);
+                        simpleFeedback = `Your response contained forbidden metaphorical "slop": "${slopInfo.reason}". You MUST rewrite the message to be more grounded and avoid that specific phrase or any similar AI cliches.`;
+                        responseText = null;
+                        continue;
+                    }
+                    break; // Success
+                }
             }
 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);

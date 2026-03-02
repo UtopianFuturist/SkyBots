@@ -6137,6 +6137,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             } else if (quietMins < 10) {
                 // Too soon for any spontaneous message
                 console.log(`[Bot] Discord heartbeat suppressed: Conversation is too fresh (${Math.round(quietMins)} mins ago)`);
+                await dataStore.updateLastDiscordHeartbeatTime(Date.now());
+                await dataStore.updateLastDiscordHeartbeatTime(Date.now());
             } else if (quietMins >= thresholds.new) {
                 shouldPoll = true;
                 pollReason = 'RELATIONSHIP_NEW_BRANCH';
@@ -6152,6 +6154,8 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             if (shouldPoll && inQuietHours && !isScheduled) {
                 if (quietMins < thresholds.new * 2) {
                     console.log(`[Bot] Discord heartbeat suppressed: In quiet hours and threshold not exceeded enough.`);
+                    await dataStore.updateLastDiscordHeartbeatTime(Date.now());
+                    await dataStore.updateLastDiscordHeartbeatTime(Date.now());
                     shouldPoll = false;
                 } else {
                     pollReason += '_QUIET_HOURS_OVERRIDE';
@@ -6242,7 +6246,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                 let lastVarietyCheck = { feedback: "Too similar to recent history." };
 
                 // Opening Phrase Blacklist - increased depth from 5 to 15
-                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-15);
+                const recentBotMsgsInHistory = history.filter(h => h.role === 'assistant').slice(-100);
                 // Capture multiple prefix lengths for strict avoidance, including cross-platform thoughts
                 const openingBlacklist = [
                     ...recentBotMsgsInHistory.map(m => m.content.split(/\s+/).slice(0, 3).join(' ')),
@@ -6323,7 +6327,10 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         emergentTrends
                     });
 
-                    if (!pollResult || pollResult.decision === 'none') break;
+                    if (!pollResult || pollResult.decision === 'none') {
+                        if (pollResult && pollResult.decision === 'none') await dataStore.updateLastDiscordHeartbeatTime(Date.now());
+                        break;
+                    }
 
                     const { message, actions } = pollResult;
                     if (!message) break;
@@ -6622,6 +6629,7 @@ ${brief}
 
                         if (isFinalAttempt && !bestCandidate) {
                             console.log(`[Bot] Final heartbeat attempt failed even after rewrite. Aborting.`);
+                            await dataStore.updateLastDiscordHeartbeatTime(Date.now());
                             break;
                         }
                     }
@@ -6681,13 +6689,13 @@ ${brief}
         if (isBotLast) {
             const baseDelay = Math.floor(Math.random() * 10) + 15;
             const delay = Math.max(1, Math.round(baseDelay * intimacyFactor));
-            targetTime = effectiveLastInteractionTime + (delay * 60 * 1000);
+            targetTime = Math.max(Date.now(), effectiveLastInteractionTime) + (delay * 60 * 1000);
             mode = 'follow-up';
             console.log(`[Bot] New spontaneity target: follow-up in ${delay} mins (intimacy factor: ${intimacyFactor.toFixed(2)}).`);
         } else {
             const baseDelay = Math.floor(Math.random() * 30) + 45;
             const delay = Math.max(5, Math.round(baseDelay * hungerFactor));
-            targetTime = effectiveLastInteractionTime + (delay * 60 * 1000);
+            targetTime = Math.max(Date.now(), effectiveLastInteractionTime) + (delay * 60 * 1000);
             mode = 'heartbeat';
             console.log(`[Bot] New spontaneity target: heartbeat in ${delay} mins (hunger factor: ${hungerFactor.toFixed(2)}).`);
         }
@@ -6698,7 +6706,7 @@ ${brief}
     if (Date.now() >= targetTime) {
         console.log(`[Bot] Spontaneity target reached (${mode}). Triggering...`);
         // Clear target so it's reset after this turn (or pushed by poll outcome)
-        await dataStore.setDiscordNextSpontaneityTime(0);
+        await dataStore.setDiscordNextSpontaneityTime(Date.now() + 120000);
         await dataStore.setDiscordSpontaneityMode(null);
 
         if (mode === 'follow-up') {
@@ -6729,13 +6737,30 @@ ${brief}
 
         if (poll.decision === 'follow-up' && poll.message) {
             console.log(`[Bot] Follow-up poll: Persona decided to follow up. Reason: ${poll.reason}`);
+
+            // Repetition check
+            const isExactRep = checkExactRepetition(poll.message, history, 100);
+            const isSimRep = checkSimilarity(poll.message, history.filter(h => h.role === 'assistant').map(h => h.content), 0.5);
+
+            if (isExactRep || isSimRep) {
+                console.log(`[Bot] Follow-up poll suppressed: Exact or high similarity repetition detected.`);
+                await dataStore.updateLastDiscordHeartbeatTime(Date.now());
+                const metrics = dataStore.getRelationalMetrics();
+                const hungerFactor = Math.max(0.5, 1.5 - metrics.hunger);
+                const heartbeatDelay = Math.max(10, Math.round(20 * hungerFactor));
+                const newTarget = Date.now() + (heartbeatDelay * 60 * 1000);
+                await dataStore.setDiscordNextSpontaneityTime(newTarget);
+                await dataStore.setDiscordSpontaneityMode('heartbeat');
+                return;
+            }
+
             await discordService.sendSpontaneousMessage(poll.message);
             // sendSpontaneousMessage updates lastDiscordHeartbeatTime via dataStore.saveDiscordInteraction
         } else {
             console.log(`[Bot] Follow-up poll: Persona decided to wait. Reason: ${poll.reason}`);
             // If they chose to wait, push the NEXT check to the heartbeat window (15-20 mins)
             const metrics = dataStore.getRelationalMetrics(); const hungerFactor = Math.max(0.5, 1.5 - metrics.hunger); const heartbeatDelay = Math.max(5, Math.round((Math.floor(Math.random() * 6) + 15) * hungerFactor));
-            const newTarget = Date.now() + (heartbeatDelay * 60 * 1000);
+            const newTarget = Math.max(Date.now(), effectiveLastInteractionTime) + (heartbeatDelay * 60 * 1000);
             await dataStore.setDiscordNextSpontaneityTime(newTarget);
             await dataStore.setDiscordSpontaneityMode('heartbeat');
             console.log(`[Bot] Pushing next spontaneity check to heartbeat window (+${heartbeatDelay}m).`);

@@ -94,7 +94,7 @@ class LLMService {
     const drafts = [];
     for (let i = 1; i <= count; i++) {
         const regex = new RegExp(`DRAFT ${i}:\\s*([\\s\\S]*?)(?=DRAFT ${i + 1}:|$)`, 'i');
-        const match = response.match(regex);
+        const match = response?.match(regex);
         if (match && match[1].trim()) {
             let draftText = match[1].trim();
             draftText = stripWrappingQuotes(draftText);
@@ -216,7 +216,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
     return systemContent;
   }
 
-  async generateResponse(messages, options = {}) {
+  async generateResponse(messages, options = {}, attempt = 1) {
     const requestId = Math.random().toString(36).substring(7);
     const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, useStep = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, abortSignal = null } = options;
 
@@ -285,6 +285,16 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
         const isCoder = useCoder && !useStep;
 
         if (response.status === 429 || response.status >= 500 || isAlreadyBorrowed) {
+            const isFinalFallback = useStep;
+
+            if (response.status === 429 && isFinalFallback && attempt < 3) {
+                const backoffMs = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+                console.warn(`[LLMService] [${requestId}] Rate limit on final fallback. Retrying attempt ${attempt + 1} in ${Math.round(backoffMs)}ms...`);
+                clearTimeout(timeout);
+                await new Promise(resolve => setTimeout(resolve, backoffMs));
+                return this.generateResponse(messages, options, attempt + 1);
+            }
+
             if (isPrimary) {
                 console.warn(`[LLMService] [${requestId}] Primary model error (${response.status}). Falling back to Coder model...`);
                 clearTimeout(timeout);
@@ -293,6 +303,8 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
                 console.warn(`[LLMService] [${requestId}] Coder model error (${response.status}). Falling back to Step model...`);
                 clearTimeout(timeout);
                 return this.generateResponse(messages, { ...options, useStep: true });
+            } else if (isFinalFallback) {
+                console.error(`[LLMService] [${requestId}] CRITICAL: Final fallback model (Step) failed with ${response.status} after ${attempt} attempts.`);
             }
         }
 
@@ -473,7 +485,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
     const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     if (response?.toLowerCase().startsWith('unsafe')) {
-      return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
+      return { safe: false, reason: response?.split('|')[1]?.trim() || 'No reason provided.' };
     }
     return { safe: true, reason: null };
   }
@@ -503,7 +515,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: responseText }];
     const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     if (response?.toLowerCase().startsWith('unsafe')) {
-      return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
+      return { safe: false, reason: response?.split('|')[1]?.trim() || 'No reason provided.' };
     }
     return { safe: true, reason: null };
   }
@@ -678,7 +690,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
     const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
 
     if (response?.toLowerCase().includes('high-risk')) {
-      return { highRisk: true, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
+      return { highRisk: true, reason: response?.split('|')[1]?.trim() || 'No reason provided.' };
     }
     return { highRisk: false, reason: response };
   }
@@ -733,7 +745,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
     const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useStep: true });
 
     if (response?.toLowerCase().includes('hostile')) {
-      return { status: 'hostile', reason: response.split('|')[1]?.trim() || 'unspecified' };
+      return { status: 'hostile', reason: response?.split('|')[1]?.trim() || 'unspecified' };
     }
     if (response?.toLowerCase().includes('monotonous')) {
       return { status: 'monotonous' };
@@ -1168,7 +1180,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
         return true;
     }
 
-    const matches = response.match(/\d+/g);
+    const matches = response?.match(/\d+/g);
     const score = matches ? parseInt(matches[matches.length - 1], 10) : NaN;
     if (isNaN(score)) {
       console.warn(`[LLMService] Invalid coherence score: "${response}". Defaulting to true.`);
@@ -1327,8 +1339,8 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
       return { score: 5, reason: 'Coherence check failed (timeout/empty). Defaulting to pass.' };
     }
 
-    const scoreMatch = response.match(/Score:\s*(\d)/i);
-    const reasonMatch = response.match(/Reason:\s*(.*)/i);
+    const scoreMatch = response?.match(/Score:\s*(\d)/i);
+    const reasonMatch = response?.match(/Reason:\s*(.*)/i);
 
     const score = scoreMatch ? parseInt(scoreMatch[1], 10) : 5;
     const reason = reasonMatch ? reasonMatch[1].trim() : 'No reason provided.';
@@ -1366,7 +1378,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
 
     if (!response || response.toLowerCase().includes('none')) return null;
 
-    const matches = response.match(/\d+/g);
+    const matches = response?.match(/\d+/g);
     if (matches) {
       const index = parseInt(matches[matches.length - 1], 10) - 1;
       if (index >= 0 && index < results.length) {
@@ -1478,7 +1490,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
     const response = await this.generateResponse(messages, { max_tokens: 500, useStep: true, preface_system_prompt: false });
 
     if (response?.toLowerCase().includes('violation')) {
-      return { safe: false, reason: response.split('|')[1]?.trim() || 'Contains private information.' };
+      return { safe: false, reason: response?.split('|')[1]?.trim() || 'Contains private information.' };
     }
     return { safe: true };
   }
@@ -2034,7 +2046,7 @@ LINGUISTIC MIRRORING: Resonate with admin's style while maintaining persona.
       console.log(`[LLMService] Raw Planning Response: ${response.substring(0, 1000)}${response.length > 1000 ? '...' : ''}`);
 
       // Find JSON block if it exists
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
@@ -2390,7 +2402,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       }
 
       // Find JSON block if it exists
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
@@ -2430,7 +2442,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}` }];
     const response = await this.generateResponse(messages, { max_tokens: 100, useStep: true, preface_system_prompt: false });
     if (response?.toLowerCase().startsWith('unsafe')) {
-      return { safe: false, reason: response.split('|')[1]?.trim() || 'URL looks suspicious.' };
+      return { safe: false, reason: response?.split('|')[1]?.trim() || 'URL looks suspicious.' };
     }
     return { safe: true };
   }
@@ -2545,7 +2557,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     if (response?.toUpperCase().startsWith('YES')) {
         return { confirmed: true };
     } else if (response?.toUpperCase().startsWith('INQUIRY')) {
-        return { confirmed: false, inquiry: response.split('|')[1]?.trim() || 'Should we really do this?' };
+        return { confirmed: false, inquiry: response?.split('|')[1]?.trim() || 'Should we really do this?' };
     }
     return { confirmed: false, reason: response?.split('|')[1]?.trim() || 'No reason provided.' };
   }
@@ -2747,7 +2759,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }];
     const response = await this.generateResponse(messages, { max_tokens: 500, useStep: true, preface_system_prompt: false });
     if (response) {
-        return response.split(',').map(k => k.trim().toLowerCase()).filter(k => k.length >= 3);
+        return response?.split(',').map(k => k.trim().toLowerCase()).filter(k => k.length >= 3);
     }
     return [];
   }
@@ -2811,7 +2823,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
     try {
       if (!response) return { decision: "wait", message: null, reason: "Timeout/Empty" };
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
@@ -2872,7 +2884,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
     try {
       if (!response) return { decision: "none" };
-      const jsonMatch = response.match(/\{[\s\S]*\}/);
+      const jsonMatch = response?.match(/\{[\s\S]*\}/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[0]);
       }
@@ -2927,7 +2939,7 @@ async performSafetyAnalysis(query, context = {}) {
     }
 
     try {
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        const jsonMatch = response?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0]);
         }
@@ -2972,7 +2984,7 @@ async performSafetyAnalysis(query, context = {}) {
     });
 
     try {
-        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        const jsonMatch = response?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             return JSON.parse(jsonMatch[0]);
         }

@@ -115,7 +115,9 @@ NO TECHNICAL META-TALK: Do not include any technical explanations, reasoning, or
 **SUBSTANCE OVER ABSTRACTION**: Prioritize concrete, grounded observations over abstract, metaphysical, or philosophical musings. If you are sharing a thought, anchor it in your relationship or your specific experiences recorded in logs/memories.`;
 
     if (this.memoryProvider && this.memoryProvider.isEnabled()) {
-        const memories = this.memoryProvider.formatMemoriesForPrompt();
+        const isAutonomous = options.isAutonomous || false;
+        const excludeTags = (platform !== 'discord' && isAutonomous) ? ['[ADMIN_FACT]'] : [];
+        const memories = this.memoryProvider.formatMemoriesForPrompt(excludeTags);
         systemContent += `\n\n--- RECENT MEMORIES (PAST EXPERIENCES/FEELINGS) ---\n${memories}\n---`;
     }
 
@@ -1518,7 +1520,7 @@ Vary your structure and tone from recent messages.`
 
       --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
       World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('; ')}
-      Admin Facts: ${(this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('; ')}
+      Admin Facts: ${(platform === 'discord' || userPost !== 'AUTONOMOUS') ? (this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('; ') : 'Suppressed (Privacy Isolation)'}
       ---
 
       ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
@@ -1986,14 +1988,16 @@ Vary your structure and tone from recent messages.`
 
     let finalSystemPrompt = systemPrompt;
     if (this.memoryProvider && this.memoryProvider.isEnabled()) {
-        const memories = this.memoryProvider.formatMemoriesForPrompt();
+        const isAutonomous = (userPost === 'AUTONOMOUS' || userPost === 'HEARTBEAT');
+        const excludeTags = (platform !== 'discord' && isAutonomous) ? ['[ADMIN_FACT]'] : [];
+        const memories = this.memoryProvider.formatMemoriesForPrompt(excludeTags);
         if (memories && memories.includes('[MOLTFEED]')) {
             finalSystemPrompt += `\n\n--- SUB-COGNITIVE INTUITION (MOLTBOOK FEED INSIGHTS) ---\n${memories}\n---`;
         }
     }
 
     const messages = [{ role: 'system', content: finalSystemPrompt }];
-    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
+    const response = await this.generateResponse(messages, { max_tokens: 4000, useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal, isAutonomous: (userPost === 'AUTONOMOUS' || userPost === 'HEARTBEAT') });
 
     try {
       if (!response) {

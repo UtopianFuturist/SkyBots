@@ -459,10 +459,10 @@ class MemoryService {
     }
   }
 
-  formatMemoriesForPrompt() {
+  formatMemoriesForPrompt(excludeTags = []) {
     if (!this.isEnabled() || this.recentMemories.length === 0) return "No recent memories available.";
     // Strip the hashtag from memories before injecting them into prompts to prevent leakage
-    return this.recentMemories.map(m => {
+    return this.recentMemories.filter(m => !excludeTags.some(tag => m.text.includes(tag))).map(m => {
         let cleanText = m.text;
         if (this.hashtag) {
             cleanText = cleanText.replace(new RegExp(this.hashtag, 'g'), '').trim();

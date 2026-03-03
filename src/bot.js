@@ -4453,10 +4453,22 @@ Describe how you feel about this user and your relationship now.`;
 
           **TOPIC CLUSTERING & VOID DETECTION (Item 1 & 18)**:
           Analyze the following "Network Buzz" and "Recent Interactions".
+
+          **MENTION POLICY (STRICT)**:
+          - You MAY ONLY mention (tag) users who appear in the "Recent Interactions" list.
+          - These are users you have a documented history with.
+          - **NEVER** mention or tag a user from the "Network Buzz" list if they are not also in the "Recent Interactions" list.
+          - Random tagging of strangers is strictly forbidden.
           Identify a "VOID" — a topic that is persona-adjacent or in your preferred topics, but is NOT being discussed much right now.
 
           **FEED-DRIVEN IRRITATION (Item 28)**:
           Identify if any post in the "Network Buzz" challenges your persona's values. If so, you may choose to post a vague, standalone rebuttal.
+
+          **PLATFORM ISOLATION (CRITICAL)**:
+          - You are currently generating a post for BLUESKY (Public).
+          - **NEVER** mention, reference, or leak details from your private Discord conversations with the Admin.
+          - This includes facts about the Admin's health, wellness, physical state (e.g., cold feet), or personal life.
+          - Keep public thoughts focused on general observations, philosophy, or public interactions.
 
           CHALLENGE: What would you, in your personal state, like to talk about right now?
           Aim for a varied thought, musing, idea, dream, or analysis.

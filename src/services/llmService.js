@@ -22,6 +22,9 @@ class LLMService {
     this.visionModel = config.VISION_MODEL || "meta/llama-4-scout-17b-16e-instruct";
     this.fallbackVisionModel = "meta/llama-3.2-11b-vision-instruct";
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    this.adminDid = null;
+    this.botDid = null;
+    this.skillsContent = '';
     this._sensoryPreferenceCache = null;
     this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
   }
@@ -32,6 +35,17 @@ class LLMService {
 
   setDataStore(store) {
     this.dataStore = store;
+  }
+
+  setIdentities(adminDid, botDid) {
+    this.adminDid = adminDid;
+    this.botDid = botDid;
+    console.log(`[LLMService] Identities configured. Admin: ${adminDid}, Bot: ${botDid}`);
+  }
+
+  setSkillsContent(content) {
+    this.skillsContent = content;
+    console.log(`[LLMService] Skills documentation updated (${content.length} chars).`);
   }
 
   _formatHistory(history, isAdmin = false) {

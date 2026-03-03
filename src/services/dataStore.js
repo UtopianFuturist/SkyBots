@@ -98,6 +98,7 @@ const defaultData = {
     comment: true,
     feed: true
   },
+  deep_keywords: [],
   system_performance: {
     tool_success_rates: {},
     average_latency: {},
@@ -243,6 +244,29 @@ class DataStore {
     this.db.data.interactions = [];
     await this.db.write();
   }
+
+
+  getDeepKeywords() {
+    return this.db.data.deep_keywords || [];
+  }
+
+
+  async mergeDiscordHistory(channelId, messages) {
+    if (!this.db.data.discord_conversations[channelId]) {
+      this.db.data.discord_conversations[channelId] = [];
+    }
+
+    const currentHistory = this.db.data.discord_conversations[channelId];
+    const newMessages = messages.filter(m => !currentHistory.some(ch => ch.timestamp === m.timestamp && ch.content === m.content));
+
+    this.db.data.discord_conversations[channelId] = [...currentHistory, ...newMessages]
+      .sort((a, b) => a.timestamp - b.timestamp)
+      .slice(-100); // Keep last 100 messages
+
+    await this.db.write();
+    return this.db.data.discord_conversations[channelId];
+  }
+
 
   getBlueskyInstructions() { return this.db.data.bluesky_instructions || []; }
   async addBlueskyInstruction(instruction) {

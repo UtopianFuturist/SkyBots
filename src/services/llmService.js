@@ -21,6 +21,7 @@ class LLMService {
     this.coderModel = config.CODER_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || "meta/llama-4-scout-17b-16e-instruct";
     this.fallbackVisionModel = "meta/llama-3.2-11b-vision-instruct";
+    this.stepModel = config.STEP_MODEL || "stepfun-ai/step-3.5-flash";
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
     this.adminDid = null;
     this.botDid = null;
@@ -110,9 +111,9 @@ class LLMService {
 
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, abortSignal = null } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, useStep = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, platform = "unknown", abortSignal = null } = options;
     const requestId = Math.random().toString(36).substring(7);
-    const actualModel = useCoder ? this.coderModel : (useQwen ? this.qwenModel : this.model);
+    const actualModel = useStep ? this.stepModel : (useCoder ? this.coderModel : (useQwen ? this.qwenModel : this.model));
 
     console.log(`[LLMService] [${requestId}] Starting generateResponse with model: ${actualModel}`);
 
@@ -303,7 +304,7 @@ Vary your structure and tone from recent messages.`
         if (!useQwen && (response.status === 429 || response.status >= 500) && this.model !== this.qwenModel) {
             console.warn(`[LLMService] [${requestId}] Primary model error (${response.status}). Falling back to Qwen...`);
             clearTimeout(timeout);
-            return this.generateResponse(messages, { ...options, useQwen: true });
+            return this.generateResponse(messages, { ...options, useQwen: true, platform });
         }
 
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
@@ -350,7 +351,7 @@ Vary your structure and tone from recent messages.`
         console.error(`[LLMService] [${requestId}] Request timed out after 300s.`);
         if (!useQwen && this.model !== this.qwenModel) {
             console.warn(`[LLMService] [${requestId}] Primary model timed out. Retrying with Qwen...`);
-            return this.generateResponse(messages, { ...options, useQwen: true });
+            return this.generateResponse(messages, { ...options, useQwen: true, platform });
         }
       } else {
         console.error(`[LLMService] [${requestId}] Error generating response:`, error.message);
@@ -1568,7 +1569,7 @@ Vary your structure and tone from recent messages.`
         { role: 'user', content: `User Post: "${userPost}"\n\nContext (Last 15 interactions):\n${this._formatHistory(conversationHistory.slice(-15), isAdmin)}` }
     ];
 
-    const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
+    const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0, platform, abortSignal });
 
     try {
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -2329,7 +2330,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
         useQwen: true,
         preface_system_prompt: false,
         temperature: 0.0,
-        openingBlacklist
+        platform: "discord", openingBlacklist
     });
 
     try {
@@ -2731,7 +2732,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       preface_system_prompt: false,
       temperature: 0.0,
       max_tokens: 500
-    });
+    , platform });
 
     try {
       const match = response?.match(/\{[\s\S]*\}/);

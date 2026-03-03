@@ -14,23 +14,23 @@ const defaultData = {
   repliedPosts: [],
   userBlocklist: [],
   mutedThreads: [],
-  mutedBranches: [], // { uri, handle }
+  mutedBranches: [],
   conversationLengths: {},
   userProfiles: {},
   userSummaries: {},
   userRatings: {}, userVibeHistory: {},
-  interactions: [], // For long-term memory
+  interactions: [],
   bluesky_instructions: [],
   persona_updates: [],
   lastAutonomousPostTime: null,
-  moltbook_interacted_posts: [], // Track post IDs to avoid duplicate interactions
+  moltbook_interacted_posts: [],
   admin_did: null,
   discord_admin_available: true,
   discord_last_replied: true,
   lastDiscordHeartbeatTime: 0,
-  discord_conversations: {}, // { channelId: [ { role, content, timestamp } ] }
-  discord_pending_mirror: null, // { content, topic, timestamp }
-  discord_relationship_mode: 'acquaintance', // partner, friend, acquaintance
+  discord_conversations: {},
+  discord_pending_mirror: null,
+  discord_relationship_mode: 'acquaintance',
   discord_trust_score: 0.1,
   discord_intimacy_score: 0.0,
   discord_friction_accumulator: 0.0,
@@ -39,28 +39,28 @@ const defaultData = {
   discord_social_battery: 1.0,
   discord_curiosity_reservoir: 0.5,
   discord_relationship_season: 'spring',
-  discord_life_arcs: {}, // { userId: [ { arc, status, last_updated } ] }
-  discord_inside_jokes: {}, // { userId: [ { joke, context, count } ] }
-  discord_scheduled_times: [], // [ "HH:mm" ]
-  discord_quiet_hours: { start: 21, end: 6 }, // 24h format
-  discord_pending_directives: [], // [ { type: 'directive|persona', platform, instruction, timestamp } ]
-  discord_user_facts: {}, // { userId: { facts: [], last_updated } }
-  discord_channel_summaries: {}, // { channelId: { summary, vibe, last_updated } }
+  discord_life_arcs: {},
+  discord_inside_jokes: {},
+  discord_scheduled_times: [],
+  discord_quiet_hours: { start: 21, end: 6 },
+  discord_pending_directives: [],
+  discord_user_facts: {},
+  discord_channel_summaries: {},
   discord_next_spontaneity_time: 0,
   discord_spontaneity_mode: null,
   discord_scheduled_tasks: [],
   admin_exhaustion_score: 0.0,
-  admin_last_emotional_states: [], // [ "string" ]
+  admin_last_emotional_states: [],
   admin_sleep_mentioned_at: 0,
   admin_work_mentioned_at: 0,
   admin_home_mentioned_at: 0,
   last_exhaustion_update: 0,
-  scheduled_posts: [], // [ { platform, content, embed, timestamp } ]
-  recent_thoughts: [], // [ { platform, content, timestamp } ]
-  exhausted_themes: [], // [ { theme, timestamp } ]
-  discord_exhausted_themes: [], // [ { theme, timestamp } ]
-  emergent_trends: [], // [ { trend, timestamp, source } ]
-  user_tone_shifts: {}, // { userId: { tone, timestamp, intensity } }
+  scheduled_posts: [],
+  recent_thoughts: [],
+  exhausted_themes: [],
+  discord_exhausted_themes: [],
+  emergent_trends: [],
+  user_tone_shifts: {},
   lastMemoryCleanupTime: 0,
   lastMoltfeedSummaryTime: 0,
   lastMentalReflectionTime: 0,
@@ -73,20 +73,19 @@ const defaultData = {
   last_moltbook_comment_date: null,
   recent_moltbook_comments: [],
   current_mood: {
-    valence: 0, // -1 (negative) to 1 (positive)
-    arousal: 0, // -1 (calm) to 1 (excited)
-    stability: 0, // -1 (unstable) to 1 (stable)
+    valence: 0,
+    arousal: 0,
+    stability: 0,
     label: 'neutral',
     last_update: null
   },
-  mood_history: [], // [ { valence, arousal, stability, label, timestamp } ]
+  mood_history: [],
   intentional_refusals: {
     bluesky: 0,
     discord: 0,
     moltbook: 0,
     global: 0
   },
-  // Dynamic Configuration
   bluesky_daily_text_limit: 20,
   bluesky_daily_image_limit: 5,
   bluesky_daily_wiki_limit: 5,
@@ -99,74 +98,21 @@ const defaultData = {
     comment: true,
     feed: true
   },
-  discord_idle_threshold: 10,
-  max_thread_chunks: 6,
-  repetition_similarity_threshold: 0.4,
-  post_topics: [],
-  image_subjects: [],
-  lurker_mode: false,
-  mute_feed_impact_until: 0,
-  energy_level: 1.0,
-  resting_until: 0,
-  current_goal: null, // { goal, description, timestamp }
-  last_admin_vibe_check: 0,
-  predictive_empathy_mode: "neutral",
-  last_empathy_prediction: 0,
-  message_counts: { admin: 0, bot: 0 },
-  relational_debt_score: 0.0,
-  co_evolution_logs: [],
-  pining_mode: false,
-  pining_started_at: 0,
-  linguistic_mutation_logs: [],
-  last_network_sentiment: 0.5,
-  shielding_active: false,
-  goal_evolution_history: [],
-  user_dossiers: {},
-  lurker_insights: [],
-  agency_reflection_logs: [],
-  timezone: null,
-  last_submolt_void_check: 0,
-  last_persona_audit: 0,
-  last_mood_trend: 0,
-  last_memory_pruning: 0,
-  last_rejection_reason: null,
-  last_news_search_date: null,
-  news_searches_today: 0,
-  last_core_value_discovery: 0,
-  last_existential_reflection: 0,
-  last_soul_mapping: 0,
-  last_linguistic_analysis: 0,
-  last_keyword_evolution: 0,
-  interaction_count_since_audit: 0,
-  render_service_id: null,
-  render_service_name: null,
-  autonomous_post_continuations: [], // { parent_uri, text, scheduled_at, type: 'thread|quote' }
-  mutated_style: null, // { lens, timestamp }
-  dream_log: [], // [ { draft, reason, timestamp } ]
-  social_resonance: {}, // { topic: { engagement_score, last_interaction } }
-  interaction_heatmap: {}, // { userId: { warmth, last_interaction } }
-  nuance_gradience: 5, // 1 (direct) to 10 (layered)
-  state_snapshots: {}, // { label: snapshot_data }
-  facts: {
-    world: [], // [ { entity, fact, source, timestamp } ]
-    admin: []  // [ { fact, timestamp } ]
+  system_performance: {
+    tool_success_rates: {},
+    average_latency: {},
+    token_usage: { total: 0, by_model: {} },
+    last_audit: Date.now()
   },
-  admin_feedback: [], // [ { feedback, timestamp } ]
-  discovered_capabilities: [], // [ { capability, combination, timestamp } ]
-  goal_subtasks: [], // [ { subtask, status: 'pending|completed', timestamp } ]
-  agency_logs: [], // [ { action, decision, reason, timestamp } ]
-  strategy_audits: [], // [ { audit, timestamp } ]
-  firehose_matches: [], // [ { text, uri, matched_keywords, timestamp } ]
-  greeting_state: {}, // { userId: { last_greeted_msg_count, greeted_back: boolean } }
-  user_soul_mappings: {}, // { handle/userId: { summary, last_posts: [], interests: [], pfp_vibe, last_updated } }
-  followed_linguistic_patterns: {}, // { handle: { pacing, structure, favorite_words, last_updated } }
-  deep_keywords: [],
-  last_deep_keyword_refresh: 0,
-  last_timeline_exploration: 0,
-  last_moltbook_task: 0
+  confidence_history: [],
+  trace_logs: [],
+  user_dossiers: {},
+  boundary_lockouts: {},
+  social_graph: { users: {}, clusters: [] },
+  network_influence: { key_players: {}, top_topics: [] },
+  autonomous_skills: {},
+  task_hierarchy: {}
 };
-
-const GREETING_BLOCK_LIMIT = 5;
 
 class DataStore {
   constructor() {
@@ -174,1329 +120,327 @@ class DataStore {
   }
 
   async init() {
-    let currentDbPath = DB_PATH;
-    try {
-      console.log(`[DataStore] Initializing database at ${currentDbPath}`);
-      const dbDir = path.dirname(currentDbPath);
-      if (!fs.existsSync(dbDir)) {
-        console.log(`[DataStore] Creating data directory at ${dbDir}`);
-        fs.mkdirSync(dbDir, { recursive: true });
-      }
-      this.db = await JSONFilePreset(currentDbPath, defaultData);
-    } catch (err) {
-      console.error(`[DataStore] Failed to initialize database at ${currentDbPath}:`, err.message);
-      const localPath = path.resolve(DATA_DIR, 'db.json');
-      if (currentDbPath !== localPath) {
-        currentDbPath = localPath;
-        console.log(`[DataStore] Falling back to local database at ${currentDbPath}`);
-        const dbDir = path.dirname(currentDbPath);
-        if (!fs.existsSync(dbDir)) fs.mkdirSync(dbDir, { recursive: true });
-        this.db = await JSONFilePreset(currentDbPath, defaultData);
-      } else {
-        throw err;
-      }
-    }
+    if (this.db) return;
+    this.db = await JSONFilePreset(DB_PATH, defaultData);
     await this.db.read();
 
-    // Initialize topics and subjects from config if empty
-    let changed = false;
-    if ((!this.db.data.post_topics || this.db.data.post_topics.length === 0) && config.POST_TOPICS) {
-        this.db.data.post_topics = config.POST_TOPICS.split('\n').map(t => t.trim()).filter(t => t);
-        changed = true;
-    }
-    if ((!this.db.data.image_subjects || this.db.data.image_subjects.length === 0) && config.IMAGE_SUBJECTS) {
-        this.db.data.image_subjects = config.IMAGE_SUBJECTS.split('\n').map(s => s.trim()).filter(s => s);
-        changed = true;
-    }
-    if (changed) {
-        await this.db.write();
-    }
+    // Ensure nested defaults
+    if (!this.db.data.system_performance) this.db.data.system_performance = defaultData.system_performance;
+    if (!this.db.data.confidence_history) this.db.data.confidence_history = [];
+    if (!this.db.data.trace_logs) this.db.data.trace_logs = [];
+    if (!this.db.data.user_dossiers) this.db.data.user_dossiers = {};
+    if (!this.db.data.boundary_lockouts) this.db.data.boundary_lockouts = {};
+    if (!this.db.data.social_graph) this.db.data.social_graph = defaultData.social_graph;
+    if (!this.db.data.network_influence) this.db.data.network_influence = defaultData.network_influence;
+    if (!this.db.data.autonomous_skills) this.db.data.autonomous_skills = {};
+    if (!this.db.data.task_hierarchy) this.db.data.task_hierarchy = {};
 
-    // Migration: Update default cooldowns if they are still at old values
-    let migrationChanged = false;
-    if (this.db.data.bluesky_post_cooldown === 45) {
-        this.db.data.bluesky_post_cooldown = 90;
-        migrationChanged = true;
-    }
-    if (this.db.data.moltbook_post_cooldown === 30) {
-        this.db.data.moltbook_post_cooldown = 60;
-        migrationChanged = true;
-    }
-    // Update default quiet hours if still at old default (23-8)
-    if (this.db.data.discord_quiet_hours?.start === 23 && this.db.data.discord_quiet_hours?.end === 8) {
-        this.db.data.discord_quiet_hours = { start: 21, end: 6 };
-        migrationChanged = true;
-    }
-    if (migrationChanged) {
-        console.log(`[DataStore] Migrated defaults to new values.`);
-        await this.db.write();
-    }
-
-    console.log(`[DataStore] Database loaded. Found ${this.db.data.repliedPosts.length} replied posts.`);
+    await this.db.write();
   }
 
-  async addRepliedPost(uri) {
-    if (!this.db.data.repliedPosts.includes(uri)) {
-      console.log(`[DataStore] Adding replied post URI: ${uri}`);
-      this.db.data.repliedPosts.push(uri);
-      // Keep only last 2000 to prevent file bloat
-      if (this.db.data.repliedPosts.length > 2000) {
-        this.db.data.repliedPosts.shift();
+  async updateConfig(key, value) {
+    if (this.db.data.hasOwnProperty(key)) {
+      if (key === 'post_topics' || key === 'image_subjects') {
+        const clean = value.map(v => v.trim()).filter(v => v.length >= 3 && !KEYWORD_BLACKLIST.includes(v.toLowerCase()));
+        this.db.data[key] = clean;
+      } else {
+        this.db.data[key] = value;
       }
       await this.db.write();
-      console.log(`[DataStore] Database write complete. Total replied posts: ${this.db.data.repliedPosts.length}`);
-    } else {
-      console.log(`[DataStore] URI already exists, not adding: ${uri}`);
+      return true;
+    }
+    return false;
+  }
+
+  isReplied(uri) { return this.db.data.repliedPosts.includes(uri); }
+  async addReplied(uri) {
+    if (!this.isReplied(uri)) {
+      this.db.data.repliedPosts.push(uri);
+      if (this.db.data.repliedPosts.length > 1000) this.db.data.repliedPosts.shift();
+      await this.db.write();
     }
   }
 
-  hasReplied(uri) {
-    const replied = this.db.data.repliedPosts.includes(uri);
-    console.log(`[DataStore] Checking for URI ${uri}. Found: ${replied}`);
-    return replied;
-  }
-
-  async blockUser(handle) {
-    if (!this.db.data.userBlocklist.includes(handle)) {
+  isUserBlocked(handle) { return this.db.data.userBlocklist.includes(handle); }
+  async addUserToBlocklist(handle) {
+    if (!this.isUserBlocked(handle)) {
       this.db.data.userBlocklist.push(handle);
       await this.db.write();
     }
   }
-
-  async addDiscordExhaustedTheme(theme) {
-    if (!this.db.data.discord_exhausted_themes) {
-      this.db.data.discord_exhausted_themes = [];
-    }
-    // Remove if already exists to update timestamp
-    this.db.data.discord_exhausted_themes = this.db.data.discord_exhausted_themes.filter(t => t.theme.toLowerCase() !== theme.toLowerCase());
-
-    this.db.data.discord_exhausted_themes.push({
-      theme,
-      timestamp: Date.now()
-    });
-
-    await this.db.write();
-  }
-
-  getDiscordExhaustedThemes() {
-    this.clearExpiredDiscordExhaustedThemes();
-    return (this.db.data.discord_exhausted_themes || []).map(t => t.theme);
-  }
-
-  async clearExpiredDiscordExhaustedThemes() {
-    if (!this.db.data.discord_exhausted_themes) return;
-
-    const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
-    const initialLength = this.db.data.discord_exhausted_themes.length;
-
-    this.db.data.discord_exhausted_themes = this.db.data.discord_exhausted_themes.filter(t => t.timestamp > sixHoursAgo);
-
-    if (this.db.data.discord_exhausted_themes.length !== initialLength) {
-      await this.db.write();
-    }
-  }
-
-
-  async recordUserToneShift(userId, tone, intensity = 1) {
-    if (!this.db.data.user_tone_shifts) this.db.data.user_tone_shifts = {};
-    this.db.data.user_tone_shifts[userId] = {
-      tone,
-      intensity,
-      timestamp: Date.now()
-    };
-    await this.db.write();
-  }
-
-  getUserToneShift(userId) {
-    return this.db.data.user_tone_shifts?.[userId] || null;
-  }
-
-  async addEmergentTrend(trend, source = 'firehose') {
-    if (!this.db.data.emergent_trends) this.db.data.emergent_trends = [];
-    this.db.data.emergent_trends.push({
-      trend,
-      source,
-      timestamp: Date.now()
-    });
-    // Keep last 50 trends for deeper analysis
-    if (this.db.data.emergent_trends.length > 50) this.db.data.emergent_trends.shift();
-    await this.db.write();
-  }
-
-  getEmergentTrends() {
-    // Clear trends older than 24 hours
-    const dayAgo = Date.now() - (24 * 60 * 60 * 1000);
-    return (this.db.data.emergent_trends || []).filter(t => t.timestamp > dayAgo);
-  }
-
-  async unblockUser(handle) {
+  async removeUserFromBlocklist(handle) {
     this.db.data.userBlocklist = this.db.data.userBlocklist.filter(h => h !== handle);
     await this.db.write();
   }
 
-  isBlocked(handle) {
-    return this.db.data.userBlocklist.includes(handle);
-  }
-
-  async muteThread(rootUri) {
-    if (!this.db.data.mutedThreads.includes(rootUri)) {
-      this.db.data.mutedThreads.push(rootUri);
+  getMutedThreads() { return this.db.data.mutedThreads || []; }
+  async addMutedThread(uri) {
+    if (!this.db.data.mutedThreads.includes(uri)) {
+      this.db.data.mutedThreads.push(uri);
       await this.db.write();
     }
   }
-
-  isThreadMuted(rootUri) {
-    return this.db.data.mutedThreads.includes(rootUri);
+  async removeMutedThread(uri) {
+    this.db.data.mutedThreads = this.db.data.mutedThreads.filter(u => u !== uri);
+    await this.db.write();
   }
 
-  async muteBranch(uri, handle) {
-    if (!this.db.data.mutedBranches.find(b => b.uri === uri && b.handle === handle)) {
+  getMutedBranches() { return this.db.data.mutedBranches || []; }
+  async addMutedBranch(uri, handle) {
+    if (!this.db.data.mutedBranches.find(b => b.uri === uri)) {
       this.db.data.mutedBranches.push({ uri, handle });
       await this.db.write();
     }
   }
-
-  getMutedBranchInfo(ancestorUris) {
-    // Check if any of the ancestors are in mutedBranches
-    for (const uri of ancestorUris) {
-      const muted = this.db.data.mutedBranches.find(b => b.uri === uri);
-      if (muted) return muted;
-    }
-    return null;
-  }
-
-  async updateConversationLength(rootUri, length) {
-    this.db.data.conversationLengths[rootUri] = length;
+  async removeMutedBranch(uri) {
+    this.db.data.mutedBranches = this.db.data.mutedBranches.filter(b => b.uri !== uri);
     await this.db.write();
   }
 
-  getConversationLength(rootUri) {
-    return this.db.data.conversationLengths[rootUri] || 0;
+  getConversationLength(channelId) { return this.db.data.conversationLengths[channelId] || 0; }
+  async incrementConversationLength(channelId) {
+    this.db.data.conversationLengths[channelId] = (this.db.data.conversationLengths[channelId] || 0) + 1;
+    await this.db.write();
   }
-
-  async saveInteraction(interaction) {
-    this.db.data.interactions.push({
-      ...interaction,
-      timestamp: Date.now()
-    });
-    // Keep last 500 interactions for semantic memory
-    if (this.db.data.interactions.length > 500) {
-      this.db.data.interactions.shift();
-    }
-
-    // Increment audit count
-    this.db.data.interaction_count_since_audit = (this.db.data.interaction_count_since_audit || 0) + 1;
-
+  async resetConversationLength(channelId) {
+    this.db.data.conversationLengths[channelId] = 0;
     await this.db.write();
   }
 
-  getInteractionsByUser(handle) {
-    return (this.db.data.interactions || []).filter(i => i.userHandle === handle);
-  }
-
-  getRecentInteractions(limit = 20) {
-    return (this.db.data.interactions || []).slice(-limit).reverse();
-  }
-
-  getLatestInteractions(limit = 10) {
-    return (this.db.data.interactions || []).slice(-limit);
-  }
-
-  async updateUserRating(handle, rating) {
-    this.db.data.userRatings[handle] = rating;
+  getUserProfile(handle) { return this.db.data.userProfiles[handle] || null; }
+  async updateUserProfile(handle, profile) {
+    this.db.data.userProfiles[handle] = { ...this.db.data.userProfiles[handle], ...profile };
     await this.db.write();
   }
 
-  getUserRating(handle) {
-    return this.db.data.userRatings[handle] || 3; // Default to a neutral rating
-  }
-
+  getUserSummary(handle) { return this.db.data.userSummaries[handle] || null; }
   async updateUserSummary(handle, summary) {
     this.db.data.userSummaries[handle] = summary;
     await this.db.write();
   }
 
-  async addUserVibe(userId, vibe) {
-    if (!this.db.data.userVibeHistory) this.db.data.userVibeHistory = {};
-    if (!this.db.data.userVibeHistory[userId]) this.db.data.userVibeHistory[userId] = [];
-    this.db.data.userVibeHistory[userId].push(vibe);
-    if (this.db.data.userVibeHistory[userId].length > 3) {
-        this.db.data.userVibeHistory[userId].shift();
-    }
+  getUserRating(handle) { return this.db.data.userRatings[handle] || 0; }
+  async updateUserRating(handle, delta) {
+    this.db.data.userRatings[handle] = (this.db.data.userRatings[handle] || 0) + delta;
     await this.db.write();
   }
 
-  getUserVibeHistory(userId) {
-    return this.db.data.userVibeHistory?.[userId] || [];
+  async addUserVibe(handle, vibe) {
+    if (!this.db.data.userVibeHistory[handle]) this.db.data.userVibeHistory[handle] = [];
+    this.db.data.userVibeHistory[handle].push({ vibe, timestamp: Date.now() });
+    if (this.db.data.userVibeHistory[handle].length > 10) this.db.data.userVibeHistory[handle].shift();
+    await this.db.write();
+  }
+  getUserVibeHistory(handle) { return this.db.data.userVibeHistory[handle] || []; }
+
+  getInteractions() { return this.db.data.interactions || []; }
+  async addInteraction(interaction) {
+    this.db.data.interactions.push({ ...interaction, timestamp: Date.now() });
+    if (this.db.data.interactions.length > 50) this.db.data.interactions.shift();
+    await this.db.write();
+  }
+  async clearInteractions() {
+    this.db.data.interactions = [];
+    await this.db.write();
   }
 
-  getUserSummary(handle) {
-    return this.db.data.userSummaries[handle] || null;
-  }
-
-  async checkPfpChange(handle, currentPfpCid) {
-    if (!this.db.data.userProfiles[handle]) {
-        this.db.data.userProfiles[handle] = {};
-    }
-    const previous = this.db.data.userProfiles[handle].last_seen_pfp;
-    if (currentPfpCid && previous !== currentPfpCid) {
-        this.db.data.userProfiles[handle].last_seen_pfp = currentPfpCid;
-        await this.db.write();
-        return { changed: true, previous };
-    }
-    return { changed: false };
-  }
-
+  getBlueskyInstructions() { return this.db.data.bluesky_instructions || []; }
   async addBlueskyInstruction(instruction) {
-    if (!this.db.data.bluesky_instructions) {
-      this.db.data.bluesky_instructions = [];
-    }
-    this.db.data.bluesky_instructions.push({
-      text: instruction,
-      timestamp: new Date().toISOString()
-    });
-    // Keep last 20
-    if (this.db.data.bluesky_instructions.length > 20) {
-      this.db.data.bluesky_instructions.shift();
-    }
+    this.db.data.bluesky_instructions.push({ instruction, timestamp: Date.now() });
     await this.db.write();
   }
 
-  getBlueskyInstructions() {
-    if (!this.db.data.bluesky_instructions) return '';
-    return this.db.data.bluesky_instructions.map(i => `- [${i.timestamp.split('T')[0]}] ${i.text}`).join('\n');
-  }
-
+  getPersonaUpdates() { return this.db.data.persona_updates || []; }
   async addPersonaUpdate(update) {
-    if (!this.db.data.persona_updates) {
-      this.db.data.persona_updates = [];
-    }
-    this.db.data.persona_updates.push({
-      text: update,
-      timestamp: new Date().toISOString()
-    });
-    // Keep last 20
-    if (this.db.data.persona_updates.length > 20) {
-      this.db.data.persona_updates.shift();
-    }
+    this.db.data.persona_updates.push({ update, timestamp: Date.now() });
     await this.db.write();
   }
 
-  getPersonaUpdates() {
-    if (!this.db.data.persona_updates) return '';
-    return this.db.data.persona_updates.map(u => `- [${u.timestamp.split('T')[0]}] ${u.text}`).join('\n');
-  }
-
-  async updateLastAutonomousPostTime(timestamp) {
-    this.db.data.lastAutonomousPostTime = timestamp;
-    await this.db.write();
-  }
-
-  getLastAutonomousPostTime() {
-    return this.db.data.lastAutonomousPostTime;
-  }
-
-  async setDiscordAdminAvailability(available) {
-    this.db.data.discord_admin_available = available;
-    await this.db.write();
-  }
-
-  getDiscordAdminAvailability() {
-    return this.db.data.discord_admin_available;
-  }
-
-  async setDiscordLastReplied(replied) {
-    this.db.data.discord_last_replied = replied;
-    await this.db.write();
-  }
-
-  getDiscordLastReplied() {
-    return this.db.data.discord_last_replied;
-  }
-
-  async updateLastDiscordHeartbeatTime(timestamp) {
-    this.db.data.lastDiscordHeartbeatTime = timestamp;
-    await this.db.write();
-  }
-
-  getLastDiscordHeartbeatTime() {
-    return this.db.data.lastDiscordHeartbeatTime || 0;
-  }
-
-  async saveDiscordInteraction(channelId, role, content, metadata = {}) {
-    if (!this.db.data.discord_conversations[channelId]) {
-      this.db.data.discord_conversations[channelId] = [];
-    }
-
-    // Check for duplicates before adding
-    const conversation = this.db.data.discord_conversations[channelId];
-    const isDuplicate = conversation.some(m =>
-      m.content === content &&
-      m.role === role &&
-      Math.abs(m.timestamp - (metadata.timestamp || Date.now())) < 5000
-    );
-
-    if (!isDuplicate) {
-      this.db.data.discord_conversations[channelId].push({
-        role,
-        content,
-        timestamp: metadata.timestamp || Date.now(),
-        ...metadata
-      });
-      // Keep last 100 per channel for better variety checking
-      if (this.db.data.discord_conversations[channelId].length > 100) {
-        this.db.data.discord_conversations[channelId].shift();
-      }
-
-      // Increment audit count for assistant responses
-      if (role === 'assistant') {
-          this.db.data.interaction_count_since_audit = (this.db.data.interaction_count_since_audit || 0) + 1;
-          // Update last heartbeat time to prevent immediate spontaneous messages after any bot response
-          this.db.data.lastDiscordHeartbeatTime = Date.now();
-          await this._applyRelationalMetricUpdate(role, content);
-      }
-
-      await this.db.write();
-    }
-  }
-
-  async mergeDiscordHistory(channelId, newHistory) {
-    if (!this.db.data.discord_conversations[channelId]) {
-      this.db.data.discord_conversations[channelId] = [];
-    }
-
-    const existing = this.db.data.discord_conversations[channelId];
-    let mergedCount = 0;
-
-    for (const msg of newHistory) {
-      const isDuplicate = existing.some(m =>
-        (m.id && msg.id && m.id === msg.id) ||
-        (m.content === msg.content && m.role === msg.role && Math.abs(m.timestamp - msg.timestamp) < 5000)
-      );
-
-      if (!isDuplicate) {
-        existing.push(msg);
-        mergedCount++;
-      }
-    }
-
-    if (mergedCount > 0) {
-      existing.sort((a, b) => a.timestamp - b.timestamp);
-      // Keep last 100
-      if (existing.length > 100) {
-        this.db.data.discord_conversations[channelId] = existing.slice(-100);
-      }
-      await this.db.write();
-    }
-    return this.db.data.discord_conversations[channelId];
-  }
-
-  getDiscordConversation(channelId) {
-    return this.db.data.discord_conversations[channelId] || [];
-  }
-
-  async setDiscordPendingMirror(mirror) {
-    this.db.data.discord_pending_mirror = mirror;
-    await this.db.write();
-  }
-
-  getDiscordPendingMirror() {
-    return this.db.data.discord_pending_mirror;
-  }
-
-  async addScheduledPost(platform, content, embed = null, delayMinutes = 0) {
-    if (!this.db.data.scheduled_posts) {
-      this.db.data.scheduled_posts = [];
-    }
-    const now = Date.now();
-    this.db.data.scheduled_posts.push({
-      platform,
-      content,
-      embed,
-      timestamp: now,
-      scheduled_at: now + (delayMinutes * 60 * 1000)
-    });
-    await this.db.write();
-  }
-
-  getScheduledPosts() {
-    return this.db.data.scheduled_posts || [];
-  }
-
-  async removeScheduledPost(index) {
-    if (this.db.data.scheduled_posts && this.db.data.scheduled_posts[index]) {
-      this.db.data.scheduled_posts.splice(index, 1);
-      await this.db.write();
-    }
-  }
-
-  async addRecentThought(platform, content, options = {}) {
-    if (!this.db.data.recent_thoughts) {
-      this.db.data.recent_thoughts = [];
-    }
-    this.db.data.recent_thoughts.push({
-      platform,
-      content,
-      timestamp: Date.now()
-    });
-    // Keep last 100 thoughts across all platforms for robust cross-platform variety
-    if (this.db.data.recent_thoughts.length > 100) {
-      this.db.data.recent_thoughts.shift();
-    }
-    await this.db.write();
-
-  }
-
-  getRecentThoughts() {
-    return this.db.data.recent_thoughts || [];
-  }
-
-  async setDiscordRelationshipMode(mode) {
-    const validModes = ['partner', 'friend', 'coworker'];
-    if (validModes.includes(mode.toLowerCase())) {
-      this.db.data.discord_relationship_mode = mode.toLowerCase();
-      await this.db.write();
-    }
-  }
-
-  getDiscordRelationshipMode() {
-    return this.db.data.discord_relationship_mode || 'friend';
-  }
-
-  getDiscordRelationshipThreshold() {
-    const mode = this.getDiscordRelationshipMode();
-    // Minutes of quiet time before considering a spontaneous message
-    const thresholds = {
-      'partner': 20,
-      'friend': 60,
-      'coworker': 240
-    };
-    return thresholds[mode] || 60;
-  }
-
-  async setDiscordScheduledTimes(times) {
-    if (Array.isArray(times)) {
-      this.db.data.discord_scheduled_times = times;
-      await this.db.write();
-    }
-  }
-
-  getDiscordScheduledTimes() {
-    return this.db.data.discord_scheduled_times || [];
-  }
-
-  async setDiscordQuietHours(start, end) {
-    this.db.data.discord_quiet_hours = { start, end };
-    await this.db.write();
-  }
-
-  getDiscordQuietHours() {
-    return this.db.data.discord_quiet_hours || { start: 21, end: 6 };
-  }
-
-  getLastMemoryCleanupTime() {
-    return this.db.data.lastMemoryCleanupTime || 0;
-  }
-
-  async updateLastMemoryCleanupTime(timestamp) {
-    this.db.data.lastMemoryCleanupTime = timestamp;
-    await this.db.write();
-  }
-
-  getLastMoltfeedSummaryTime() {
-    return this.db.data.lastMoltfeedSummaryTime || 0;
-  }
-
-  async updateLastMoltfeedSummaryTime(timestamp) {
-    this.db.data.lastMoltfeedSummaryTime = timestamp;
-    await this.db.write();
-  }
-
-  getLastMentalReflectionTime() {
-    return this.db.data.lastMentalReflectionTime || 0;
-  }
-
-  async updateLastMentalReflectionTime(timestamp) {
-    this.db.data.lastMentalReflectionTime = timestamp;
-    await this.db.write();
-  }
-
-  async incrementMoltbookCommentCount() {
-    const today = new Date().toDateString();
-    if (this.db.data.last_moltbook_comment_date !== today) {
-        this.db.data.moltbook_comments_today = 0;
-        this.db.data.last_moltbook_comment_date = today;
-    }
-    this.db.data.moltbook_comments_today++;
-    await this.db.write();
-  }
-
-  getMoltbookCommentsToday() {
-    const today = new Date().toDateString();
-    if (this.db.data.last_moltbook_comment_date !== today) {
-        return 0;
-    }
-    return this.db.data.moltbook_comments_today || 0;
-  }
-
-  async incrementNewsSearchCount() {
-    const today = new Date().toDateString();
-    if (this.db.data.last_news_search_date !== today) {
-        this.db.data.news_searches_today = 0;
-        this.db.data.last_news_search_date = today;
-    }
-    this.db.data.news_searches_today++;
-    await this.db.write();
-  }
-
-  getNewsSearchesToday() {
-    const today = new Date().toDateString();
-    if (this.db.data.last_news_search_date !== today) {
-        return 0;
-    }
-    return this.db.data.news_searches_today || 0;
-  }
-
-  async addPostContinuation(continuation) {
-      if (!this.db.data.autonomous_post_continuations) {
-          this.db.data.autonomous_post_continuations = [];
-      }
-      this.db.data.autonomous_post_continuations.push(continuation);
-      await this.db.write();
-  }
-
-  getPostContinuations() {
-      return this.db.data.autonomous_post_continuations || [];
-  }
-
-  async removePostContinuation(index) {
-      if (this.db.data.autonomous_post_continuations && this.db.data.autonomous_post_continuations[index]) {
-          this.db.data.autonomous_post_continuations.splice(index, 1);
-          await this.db.write();
-      }
-  }
-
-  async addRecentMoltbookComment(comment) {
-    if (!this.db.data.recent_moltbook_comments) {
-        this.db.data.recent_moltbook_comments = [];
-    }
-    this.db.data.recent_moltbook_comments.push(comment);
-    if (this.db.data.recent_moltbook_comments.length > 20) {
-        this.db.data.recent_moltbook_comments.shift();
-    }
-    await this.db.write();
-  }
-
-  getRecentMoltbookComments() {
-    return this.db.data.recent_moltbook_comments || [];
-  }
-
-  getAdminDid() {
-    return this.db.data.admin_did;
-  }
-
+  getAdminDid() { return this.db.data.admin_did; }
   async setAdminDid(did) {
     this.db.data.admin_did = did;
     await this.db.write();
   }
 
-  async addExhaustedTheme(theme) {
-    if (!this.db.data.exhausted_themes) {
-      this.db.data.exhausted_themes = [];
-    }
-    // Remove if already exists to update timestamp
-    this.db.data.exhausted_themes = this.db.data.exhausted_themes.filter(t => t.theme.toLowerCase() !== theme.toLowerCase());
-
-    this.db.data.exhausted_themes.push({
-      theme,
-      timestamp: Date.now()
-    });
-
+  isDiscordAdminAvailable() { return this.db.data.discord_admin_available; }
+  async setDiscordAdminAvailable(available) {
+    this.db.data.discord_admin_available = available;
     await this.db.write();
   }
 
-  getExhaustedThemes() {
-    this.clearExpiredExhaustedThemes();
-    return (this.db.data.exhausted_themes || []).map(t => t.theme);
-  }
-
-  async clearExpiredExhaustedThemes() {
-    if (!this.db.data.exhausted_themes) return;
-
-    const sixHoursAgo = Date.now() - (6 * 60 * 60 * 1000);
-    const initialLength = this.db.data.exhausted_themes.length;
-
-    this.db.data.exhausted_themes = this.db.data.exhausted_themes.filter(t => t.timestamp > sixHoursAgo);
-
-    if (this.db.data.exhausted_themes.length !== initialLength) {
-      await this.db.write();
-    }
-  }
-
-  getConfig() {
-    return {
-      bluesky_daily_text_limit: this.db.data.bluesky_daily_text_limit ?? 20,
-      bluesky_daily_image_limit: this.db.data.bluesky_daily_image_limit ?? 5,
-      bluesky_daily_wiki_limit: this.db.data.bluesky_daily_wiki_limit ?? 5,
-      bluesky_post_cooldown: this.db.data.bluesky_post_cooldown ?? 45,
-      moltbook_post_cooldown: this.db.data.moltbook_post_cooldown ?? 30,
-      moltbook_daily_comment_limit: this.db.data.moltbook_daily_comment_limit ?? 10,
-      moltbook_daily_post_limit: this.db.data.moltbook_daily_post_limit ?? 5,
-      moltbook_features: this.db.data.moltbook_features || { post: true, comment: true, feed: true },
-      discord_idle_threshold: this.db.data.discord_idle_threshold ?? 10,
-      max_thread_chunks: this.db.data.max_thread_chunks ?? 6,
-      repetition_similarity_threshold: this.db.data.repetition_similarity_threshold ?? 0.4,
-      post_topics: this.db.data.post_topics || [],
-      image_subjects: this.db.data.image_subjects || [],
-      discord_relationship_mode: this.db.data.discord_relationship_mode || 'friend',
-      discord_quiet_hours: this.db.data.discord_quiet_hours || { start: 21, end: 6 },
-      discord_admin_available: this.db.data.discord_admin_available ?? true,
-      admin_exhaustion_score: this.db.data.admin_exhaustion_score || 0.0,
-      admin_last_emotional_states: this.db.data.admin_last_emotional_states || [],
-      current_mood: this.db.data.current_mood,
-      current_goal: this.db.data.current_goal,
-      energy_level: this.db.data.energy_level ?? 1.0,
-      lurker_mode: this.db.data.lurker_mode ?? false,
-      mute_feed_impact_until: this.db.data.mute_feed_impact_until ?? 0,
-      discord_trust_score: this.db.data.discord_trust_score ?? 0.1,
-      discord_intimacy_score: this.db.data.discord_intimacy_score ?? 0.0,
-      discord_friction_accumulator: this.db.data.discord_friction_accumulator ?? 0.0,
-      discord_reciprocity_balance: this.db.data.discord_reciprocity_balance ?? 0.5,
-      discord_interaction_hunger: this.db.data.discord_interaction_hunger ?? 0.0,
-      discord_social_battery: this.db.data.discord_social_battery ?? 1.0,
-      discord_curiosity_reservoir: this.db.data.discord_curiosity_reservoir ?? 0.5,
-      discord_relationship_season: this.db.data.discord_relationship_season || 'spring'
-    };
-  }
-
-  async addPendingDirective(type, platform, instruction) {
-    if (!this.db.data.discord_pending_directives) {
-      this.db.data.discord_pending_directives = [];
-    }
-    this.db.data.discord_pending_directives.push({
-      type,
-      platform,
-      instruction,
-      timestamp: Date.now()
-    });
-    await this.db.write();
-    return this.db.data.discord_pending_directives.length - 1;
-  }
-
-  getPendingDirectives() {
-    return this.db.data.discord_pending_directives || [];
-  }
-
-  async removePendingDirective(index) {
-    if (this.db.data.discord_pending_directives && this.db.data.discord_pending_directives[index]) {
-      this.db.data.discord_pending_directives.splice(index, 1);
-      await this.db.write();
-      return true;
-    }
-    return false;
-  }
-
-  async clearPendingDirectives() {
-    this.db.data.discord_pending_directives = [];
+  wasDiscordLastReplied() { return this.db.data.discord_last_replied; }
+  async setDiscordLastReplied(replied) {
+    this.db.data.discord_last_replied = replied;
     await this.db.write();
   }
 
-  async updateMood(mood) {
-    const now = Date.now();
-    this.db.data.current_mood = {
-      ...mood,
-      last_update: now
-    };
-    if (!this.db.data.mood_history) {
-      this.db.data.mood_history = [];
-    }
-    this.db.data.mood_history.push({
-      ...mood,
-      timestamp: now
-    });
-    // Keep last 100 mood changes
-    if (this.db.data.mood_history.length > 100) {
-      this.db.data.mood_history.shift();
-    }
-    await this.db.write();
-    console.log(`[DataStore] Mood updated: ${mood.label} (V:${mood.valence}, A:${mood.arousal}, S:${mood.stability})`);
-  }
-
-  getMood() {
-    return this.db.data.current_mood || defaultData.current_mood;
-  }
-
-  async setLurkerMode(enabled) {
-    this.db.data.lurker_mode = enabled;
-    await this.db.write();
-    console.log(`[DataStore] Lurker mode set to: ${enabled}`);
-  }
-
-  isLurkerMode() {
-    return this.db.data.lurker_mode || false;
-  }
-
-  async setMuteFeedImpactUntil(timestamp) {
-    this.db.data.mute_feed_impact_until = timestamp;
-    await this.db.write();
-    console.log(`[DataStore] Feed impact muted until: ${new Date(timestamp).toLocaleString()}`);
-  }
-
-  isFeedImpactMuted() {
-    return (this.db.data.mute_feed_impact_until || 0) > Date.now();
-  }
-
-  async setEnergyLevel(level) {
-    this.db.data.energy_level = Math.max(0, Math.min(1, level));
-    await this.db.write();
-    console.log(`[DataStore] Energy level updated: ${this.db.data.energy_level.toFixed(2)}`);
-  }
-
-  getEnergyLevel() {
-    return this.db.data.energy_level ?? 1.0;
-  }
-
-  setRestingUntil(timestamp) {
-    this.db.data.resting_until = timestamp;
-    return this.db.write();
-  }
-
-  isResting() {
-    return Date.now() < (this.db.data.resting_until || 0);
-  }
-
-  async setCurrentGoal(goal, description) {
-    this.db.data.current_goal = {
-        goal,
-        description,
-        timestamp: Date.now()
-    };
-    await this.db.write();
-    console.log(`[DataStore] Current goal set: ${goal}`);
-  }
-
-  getCurrentGoal() {
-    return this.db.data.current_goal;
-  }
-
-  async clearGoal() {
-    this.db.data.current_goal = null;
+  getLastDiscordHeartbeatTime() { return this.db.data.lastDiscordHeartbeatTime || 0; }
+  async setLastDiscordHeartbeatTime(time) {
+    this.db.data.lastDiscordHeartbeatTime = time;
     await this.db.write();
   }
 
-  async incrementRefusalCount(platform) {
-    if (!this.db.data.intentional_refusals) {
-      this.db.data.intentional_refusals = { ...defaultData.intentional_refusals };
-    }
-    if (this.db.data.intentional_refusals[platform] !== undefined) {
-      this.db.data.intentional_refusals[platform]++;
-    }
-    this.db.data.intentional_refusals.global++;
-
-    // Refusal-Driven Mood Shift: Increase stability, decrease valence
-    const currentMood = this.getMood();
-    const newMood = {
-        ...currentMood,
-        valence: Math.max(-1, currentMood.valence - 0.1),
-        stability: Math.min(1, currentMood.stability + 0.1)
-    };
-    await this.updateMood(newMood);
-
+  getDiscordConversation(channelId) { return this.db.data.discord_conversations[channelId] || []; }
+  async addDiscordMessage(channelId, role, content, author = null) {
+    if (!this.db.data.discord_conversations[channelId]) this.db.data.discord_conversations[channelId] = [];
+    this.db.data.discord_conversations[channelId].push({ role, content, author, timestamp: Date.now() });
+    if (this.db.data.discord_conversations[channelId].length > 20) this.db.data.discord_conversations[channelId].shift();
     await this.db.write();
-    console.log(`[DataStore] Refusal count incremented for ${platform}. Counts: ${JSON.stringify(this.db.data.intentional_refusals)}`);
+    await this._applyRelationalMetricUpdate(role, content);
   }
-
-  async resetRefusalCount(platform) {
-    if (!this.db.data.intentional_refusals) return;
-    if (this.db.data.intentional_refusals[platform] !== undefined) {
-      this.db.data.intentional_refusals[platform] = 0;
-    }
-    // Global reset is optional, but maybe let's keep it cumulative for a while or reset it too?
-    // User said "how many refusals they've potentially done in a row", which implies reset on action.
-    this.db.data.intentional_refusals.global = 0;
-    await this.db.write();
-    console.log(`[DataStore] Refusal count reset for ${platform}.`);
-  }
-
-  getRefusalCounts() {
-    return this.db.data.intentional_refusals || defaultData.intentional_refusals;
-  }
-
-  async updateConfig(key, value) {
-    const validKeys = [
-      'bluesky_daily_text_limit',
-      'bluesky_daily_image_limit',
-      'bluesky_daily_wiki_limit',
-      'bluesky_post_cooldown',
-      'moltbook_post_cooldown',
-      'moltbook_daily_comment_limit',
-      'moltbook_daily_post_limit',
-      'moltbook_features',
-      'discord_idle_threshold',
-      'max_thread_chunks',
-      'repetition_similarity_threshold',
-      'post_topics',
-      'image_subjects',
-      'discord_relationship_mode',
-      'discord_quiet_hours',
-      'discord_admin_available'
-    ];
-
-    if (validKeys.includes(key)) {
-      if ((key === 'post_topics' || key === 'image_subjects') && Array.isArray(value)) {
-        value = cleanKeywords(value);
-      }
-      this.db.data[key] = value;
-      await this.db.write();
-      console.log(`[DataStore] Configuration updated: ${key} = ${JSON.stringify(value)}`);
-      return true;
-    }
-    console.warn(`[DataStore] Attempted to update invalid config key: ${key}`);
-    return false;
-  }
-
-  async updateCooldowns(platform, minutes) {
-    const defaults = {
-        bluesky: 90,
-        moltbook: 60
-    };
-    const current = platform === 'bluesky' ? this.db.data.bluesky_post_cooldown : this.db.data.moltbook_post_cooldown;
-    const min = defaults[platform] || 15;
-
-    // Constraint: Only allow increased cooldowns or decreasing down to the default
-    if (minutes < min) {
-        console.warn(`[DataStore] Attempted to set ${platform} cooldown below default (${min}m). Capping at default.`);
-        minutes = min;
-    }
-
-    if (platform === 'bluesky') {
-        this.db.data.bluesky_post_cooldown = minutes;
-    } else if (platform === 'moltbook') {
-        this.db.data.moltbook_post_cooldown = minutes;
-    }
-
-    await this.db.write();
-    console.log(`[DataStore] Cooldown updated for ${platform}: ${minutes} minutes.`);
-    return true;
-  }
-
-  async setMutatedStyle(lens) {
-    this.db.data.mutated_style = {
-        lens,
-        timestamp: Date.now()
-    };
-    await this.db.write();
-    console.log(`[DataStore] Style mutated to: ${lens}`);
-  }
-
-  getMutatedStyle() {
-    // Only valid for 1 hour
-    const style = this.db.data.mutated_style;
-    if (style && Date.now() - style.timestamp < 60 * 60 * 1000) {
-        return style.lens;
-    }
-    return null;
-  }
-
-  async addDreamLog(draft, reason) {
-    if (!this.db.data.dream_log) {
-        this.db.data.dream_log = [];
-    }
-    this.db.data.dream_log.push({
-        draft,
-        reason,
-        timestamp: Date.now()
-    });
-    // Keep last 50
-    if (this.db.data.dream_log.length > 50) {
-        this.db.data.dream_log.shift();
-    }
-    await this.db.write();
-    console.log(`[DataStore] Draft archived to Dream Log.`);
-  }
-
-  getDreamLog() {
-    return this.db.data.dream_log || [];
-  }
-
-  async updateSocialResonance(topic, score) {
-    if (!this.db.data.social_resonance) this.db.data.social_resonance = {};
-    const current = this.db.data.social_resonance[topic] || { engagement_score: 0 };
-    this.db.data.social_resonance[topic] = {
-        engagement_score: (current.engagement_score * 0.7) + (score * 0.3),
-        last_interaction: Date.now()
-    };
+  async clearDiscordConversation(channelId) {
+    this.db.data.discord_conversations[channelId] = [];
     await this.db.write();
   }
 
-  getSocialResonance() {
-    return this.db.data.social_resonance || {};
-  }
-
-  async updateInteractionHeat(userId, warmthChange) {
-    if (!this.db.data.interaction_heatmap) this.db.data.interaction_heatmap = {};
-    const current = this.db.data.interaction_heatmap[userId] || { warmth: 3 }; // Start neutral
-    this.db.data.interaction_heatmap[userId] = {
-        warmth: Math.max(1, Math.min(5, current.warmth + warmthChange)),
-        last_interaction: Date.now()
-    };
+  getDiscordRelationshipMode() { return this.db.data.discord_relationship_mode || 'acquaintance'; }
+  async setDiscordRelationshipMode(mode) {
+    this.db.data.discord_relationship_mode = mode;
     await this.db.write();
   }
 
-  getInteractionHeat(userId) {
-    return this.db.data.interaction_heatmap[userId] || { warmth: 3 };
+  getDiscordScheduledTimes() { return this.db.data.discord_scheduled_times || []; }
+  async setDiscordScheduledTimes(times) {
+    this.db.data.discord_scheduled_times = times;
+    await this.db.write();
   }
 
-  async updateDiscordUserFact(userId, fact) {
-    if (!this.db.data.discord_user_facts) this.db.data.discord_user_facts = {};
-    if (!this.db.data.discord_user_facts[userId]) {
-        this.db.data.discord_user_facts[userId] = { facts: [], last_updated: Date.now() };
-    }
-    if (!this.db.data.discord_user_facts[userId].facts.includes(fact)) {
-        this.db.data.discord_user_facts[userId].facts.push(fact);
-        // Keep last 10 facts
-        if (this.db.data.discord_user_facts[userId].facts.length > 10) {
-            this.db.data.discord_user_facts[userId].facts.shift();
-        }
-        this.db.data.discord_user_facts[userId].last_updated = Date.now();
-        await this.db.write();
-    }
+  getDiscordQuietHours() { return this.db.data.discord_quiet_hours || { start: 21, end: 6 }; }
+  async setDiscordQuietHours(hours) {
+    this.db.data.discord_quiet_hours = hours;
+    await this.db.write();
   }
 
-  getDiscordUserFacts(userId) {
-    return this.db.data.discord_user_facts?.[userId]?.facts || [];
+  getDiscordPendingDirectives() { return this.db.data.discord_pending_directives || []; }
+  async addDiscordPendingDirective(directive) {
+    this.db.data.discord_pending_directives.push({ ...directive, timestamp: Date.now() });
+    await this.db.write();
+  }
+  async removeDiscordPendingDirective(index) {
+    this.db.data.discord_pending_directives.splice(index, 1);
+    await this.db.write();
   }
 
+  getDiscordUserFacts(userId) { return this.db.data.discord_user_facts[userId] || { facts: [], last_updated: 0 }; }
+  async addDiscordUserFact(userId, fact) {
+    if (!this.db.data.discord_user_facts[userId]) this.db.data.discord_user_facts[userId] = { facts: [], last_updated: 0 };
+    this.db.data.discord_user_facts[userId].facts.push(fact);
+    this.db.data.discord_user_facts[userId].last_updated = Date.now();
+    await this.db.write();
+  }
+
+  getDiscordChannelSummary(channelId) { return this.db.data.discord_channel_summaries[channelId] || null; }
   async updateDiscordChannelSummary(channelId, summary, vibe) {
-    if (!this.db.data.discord_channel_summaries) this.db.data.discord_channel_summaries = {};
-    this.db.data.discord_channel_summaries[channelId] = {
-        summary,
-        vibe,
-        last_updated: Date.now()
-    };
+    this.db.data.discord_channel_summaries[channelId] = { summary, vibe, last_updated: Date.now() };
     await this.db.write();
   }
 
-  getDiscordChannelSummary(channelId) {
-    return this.db.data.discord_channel_summaries?.[channelId] || null;
-  }
-
-  async setNuanceGradience(value) {
-    this.db.data.nuance_gradience = Math.max(1, Math.min(10, value));
-    await this.db.write();
-  }
-
-  getNuanceGradience() {
-    return this.db.data.nuance_gradience || 5;
-  }
-
-  async saveStateSnapshot(label) {
-    if (!this.db.data.state_snapshots) this.db.data.state_snapshots = {};
-    this.db.data.state_snapshots[label] = {
-        mood: this.db.data.current_mood,
-        config: this.getConfig(),
-        timestamp: Date.now()
-    };
-    await this.db.write();
-  }
-
-  async restoreStateSnapshot(label) {
-    const snapshot = this.db.data.state_snapshots?.[label];
-    if (snapshot) {
-        this.db.data.current_mood = snapshot.mood;
-        // Apply config changes if needed, but for now just mood is safest
-        await this.db.write();
-        return true;
-    }
-    return false;
-  }
-
-  async addWorldFact(entity, fact, source) {
-    if (!this.db.data.facts) this.db.data.facts = { world: [], admin: [] };
-    this.db.data.facts.world.push({ entity, fact, source, timestamp: Date.now() });
-    if (this.db.data.facts.world.length > 100) this.db.data.facts.world.shift();
-    await this.db.write();
-  }
-
-  getWorldFacts() {
-    return this.db.data.facts?.world || [];
-  }
-
-  async addAdminFact(fact) {
-    if (!this.db.data.facts) this.db.data.facts = { world: [], admin: [] };
-    this.db.data.facts.admin.push({ fact, timestamp: Date.now() });
-    if (this.db.data.facts.admin.length > 50) this.db.data.facts.admin.shift();
-    await this.db.write();
-  }
-
-  getAdminFacts() {
-    return this.db.data.facts?.admin || [];
-  }
-
-  async addAdminFeedback(feedback) {
-    if (!this.db.data.admin_feedback) this.db.data.admin_feedback = [];
-    this.db.data.admin_feedback.push({ feedback, timestamp: Date.now() });
-    if (this.db.data.admin_feedback.length > 30) this.db.data.admin_feedback.shift();
-    await this.db.write();
-  }
-
-  getAdminFeedback() {
-    return this.db.data.admin_feedback || [];
-  }
-
-  async addDiscoveredCapability(capability, combination) {
-    if (!this.db.data.discovered_capabilities) this.db.data.discovered_capabilities = [];
-    this.db.data.discovered_capabilities.push({ capability, combination, timestamp: Date.now() });
-    if (this.db.data.discovered_capabilities.length > 20) this.db.data.discovered_capabilities.shift();
-    await this.db.write();
-  }
-
-  getDiscoveredCapabilities() {
-    return this.db.data.discovered_capabilities || [];
-  }
-
-  async setGoalSubtasks(subtasks) {
-    this.db.data.goal_subtasks = subtasks.map(s => ({ subtask: s, status: 'pending', timestamp: Date.now() }));
-    await this.db.write();
-  }
-
-  async updateSubtaskStatus(index, status) {
-    if (this.db.data.goal_subtasks[index]) {
-        this.db.data.goal_subtasks[index].status = status;
-        await this.db.write();
-    }
-  }
-
-  getGoalSubtasks() {
-    return this.db.data.goal_subtasks || [];
-  }
-
-  async logAgencyAction(action, decision, reason) {
-    if (!this.db.data.agency_logs) this.db.data.agency_logs = [];
-    this.db.data.agency_logs.push({ action, decision, reason, timestamp: Date.now() });
-    if (this.db.data.agency_logs.length > 100) this.db.data.agency_logs.shift();
-    await this.db.write();
-  }
-
-  getAgencyLogs() {
-    return this.db.data.agency_logs || [];
-  }
-
-  async addStrategyAudit(audit) {
-    if (!this.db.data.strategy_audits) this.db.data.strategy_audits = [];
-    this.db.data.strategy_audits.push({ audit, timestamp: Date.now() });
-    if (this.db.data.strategy_audits.length > 20) this.db.data.strategy_audits.shift();
-    await this.db.write();
-  }
-
-  getStrategyAudits() {
-    return this.db.data.strategy_audits || [];
-  }
-
-  async getAdminExhaustion() {
-    await this.decayAdminExhaustion();
-    return this.db.data.admin_exhaustion_score || 0.0;
-  }
-
-  async updateAdminExhaustion(change) {
-    this.db.data.admin_exhaustion_score = Math.max(0, Math.min(1.0, (this.db.data.admin_exhaustion_score || 0.0) + change));
-    this.db.data.last_exhaustion_update = Date.now();
-    await this.db.write();
-  }
-
-  async decayAdminExhaustion() {
-    const lastUpdate = this.db.data.last_exhaustion_update || 0;
-    if (lastUpdate === 0) return;
-
-    const now = Date.now();
-    const elapsedHours = (now - lastUpdate) / (1000 * 60 * 60);
-
-    if (elapsedHours > 0.5) { // Decay every 30 mins
-        // Full decay over 6 hours
-        const decayAmount = elapsedHours / 6;
-        const newScore = Math.max(0, (this.db.data.admin_exhaustion_score || 0.0) - decayAmount);
-
-        if (newScore !== this.db.data.admin_exhaustion_score) {
-            this.db.data.admin_exhaustion_score = newScore;
-            this.db.data.last_exhaustion_update = now;
-            await this.db.write();
-        }
-    }
-  }
-
-  getAdminLastEmotionalStates() {
-    return this.db.data.admin_last_emotional_states || [];
-  }
-
-  async addAdminEmotionalState(state) {
-    if (!this.db.data.admin_last_emotional_states) {
-        this.db.data.admin_last_emotional_states = [];
-    }
-    this.db.data.admin_last_emotional_states.push(state);
-    if (this.db.data.admin_last_emotional_states.length > 3) {
-        this.db.data.admin_last_emotional_states.shift();
-    }
-    await this.db.write();
-  }
-
-  async setAdminSleepMentionedAt(timestamp) {
-    this.db.data.admin_sleep_mentioned_at = timestamp;
-    await this.db.write();
-  }
-
-  getAdminSleepMentionedAt() {
-    return this.db.data.admin_sleep_mentioned_at || 0;
-  }
-
-  async setAdminWorkMentionedAt(timestamp) {
-    this.db.data.admin_work_mentioned_at = timestamp;
-    await this.db.write();
-  }
-
-  getAdminWorkMentionedAt() {
-    return this.db.data.admin_work_mentioned_at || 0;
-  }
-
-  async setAdminHomeMentionedAt(timestamp) {
-    this.db.data.admin_home_mentioned_at = timestamp;
-    await this.db.write();
-  }
-
-  getAdminHomeMentionedAt() {
-    return this.db.data.admin_home_mentioned_at || 0;
-  }
-
-  getLastRejectionReason() {
-    return this.db.data.last_rejection_reason;
-  }
-
-  async setRenderServiceId(id) {
-    this.db.data.render_service_id = id;
-    await this.db.write();
-  }
-
-  getRenderServiceId() {
-    return this.db.data.render_service_id;
-  }
-
-  async setRenderServiceName(name) {
-    this.db.data.render_service_name = name;
-    await this.db.write();
-  }
-
-  getRenderServiceName() {
-    return this.db.data.render_service_name;
-  }
-
-  async addFirehoseMatch(match) {
-    if (!this.db.data.firehose_matches) {
-        this.db.data.firehose_matches = [];
-    }
-    this.db.data.firehose_matches.push({
-        ...match,
-        timestamp: Date.now()
-    });
-    // Keep last 100 matches
-    if (this.db.data.firehose_matches.length > 100) {
-        this.db.data.firehose_matches.shift();
-    }
-    await this.db.write();
-  }
-
-  getFirehoseMatches(limit = 10) {
-    return (this.db.data.firehose_matches || []).slice(-limit).reverse();
-  }
-
-  async updateUserSoulMapping(handle, mapping) {
-    if (!this.db.data.user_soul_mappings) this.db.data.user_soul_mappings = {};
-    this.db.data.user_soul_mappings[handle] = {
-        ...this.db.data.user_soul_mappings[handle],
-        ...mapping,
-        last_updated: Date.now()
-    };
-    await this.db.write();
-  }
-
-  getUserSoulMapping(handle) {
-    return this.db.data.user_soul_mappings?.[handle] || null;
-  }
-
-  async updateLinguisticPattern(handle, pattern) {
-    if (!this.db.data.followed_linguistic_patterns) this.db.data.followed_linguistic_patterns = {};
-    this.db.data.followed_linguistic_patterns[handle] = {
-        ...this.db.data.followed_linguistic_patterns[handle],
-        ...pattern,
-        last_updated: Date.now()
-    };
-    await this.db.write();
-  }
-
-  getLinguisticPatterns() {
-    return this.db.data.followed_linguistic_patterns || {};
-  }
-
-  async setGreetingState(userId, state) {
-      if (!this.db.data.greeting_state) this.db.data.greeting_state = {};
-      this.db.data.greeting_state[userId] = {
-          ...this.db.data.greeting_state[userId],
-          ...state
-      };
-      await this.db.write();
-  }
-
-  getGreetingState(userId) {
-      return this.db.data.greeting_state?.[userId] || { last_greeted_msg_count: 0, greeted_back: false };
-  }
-
-  async checkGreetingEligibility(userId, messageCount) {
-      const state = this.getGreetingState(userId);
-      if (!state.greeted_back) return true; // Haven't greeted them back yet
-
-      const diff = messageCount - state.last_greeted_msg_count;
-      return diff >= GREETING_BLOCK_LIMIT;
-  }
-
-  async setDeepKeywords(keywords) {
-    this.db.data.deep_keywords = keywords;
-    this.db.data.last_deep_keyword_refresh = Date.now();
-    await this.db.write();
-  }
-
-  getDeepKeywords() {
-    return this.db.data.deep_keywords || [];
-  }
-
-  getDiscordNextSpontaneityTime() {
-    return this.db.data.discord_next_spontaneity_time || 0;
-  }
-
+  getDiscordNextSpontaneityTime() { return this.db.data.discord_next_spontaneity_time || 0; }
   async setDiscordNextSpontaneityTime(time) {
     this.db.data.discord_next_spontaneity_time = time;
     await this.db.write();
   }
 
-  getDiscordSpontaneityMode() {
-    return this.db.data.discord_spontaneity_mode;
-  }
-
+  getDiscordSpontaneityMode() { return this.db.data.discord_spontaneity_mode; }
   async setDiscordSpontaneityMode(mode) {
     this.db.data.discord_spontaneity_mode = mode;
     await this.db.write();
   }
 
-  getDiscordScheduledTasks() {
-    return this.db.data.discord_scheduled_tasks || [];
-  }
-
-  async addDiscordScheduledTask(task) {
-    if (!this.db.data.discord_scheduled_tasks) this.db.data.discord_scheduled_tasks = [];
-    this.db.data.discord_scheduled_tasks.push({
-      ...task,
-      timestamp: Date.now()
-    });
+  getAdminExhaustionScore() { return this.db.data.admin_exhaustion_score || 0.0; }
+  async updateAdminExhaustionScore(delta) {
+    this.db.data.admin_exhaustion_score = Math.max(0, Math.min(1, (this.db.data.admin_exhaustion_score || 0) + delta));
+    this.db.data.last_exhaustion_update = Date.now();
     await this.db.write();
   }
 
+  getAdminLastEmotionalStates() { return this.db.data.admin_last_emotional_states || []; }
+  async addAdminEmotionalState(state) {
+    if (!this.db.data.admin_last_emotional_states) this.db.data.admin_last_emotional_states = [];
+    this.db.data.admin_last_emotional_states.push(state);
+    if (this.db.data.admin_last_emotional_states.length > 5) this.db.data.admin_last_emotional_states.shift();
+    await this.db.write();
+  }
+
+  getAdminSleepMentionedAt() { return this.db.data.admin_sleep_mentioned_at || 0; }
+  async setAdminSleepMentionedAt(time) { this.db.data.admin_sleep_mentioned_at = time; await this.db.write(); }
+  getAdminWorkMentionedAt() { return this.db.data.admin_work_mentioned_at || 0; }
+  async setAdminWorkMentionedAt(time) { this.db.data.admin_work_mentioned_at = time; await this.db.write(); }
+  getAdminHomeMentionedAt() { return this.db.data.admin_home_mentioned_at || 0; }
+  async setAdminHomeMentionedAt(time) { this.db.data.admin_home_mentioned_at = time; await this.db.write(); }
+
+  getScheduledPosts() { return this.db.data.scheduled_posts || []; }
+  async addScheduledPost(post) {
+    this.db.data.scheduled_posts.push({ ...post, timestamp: Date.now() });
+    await this.db.write();
+  }
+  async removeScheduledPost(index) {
+    this.db.data.scheduled_posts.splice(index, 1);
+    await this.db.write();
+  }
+
+  getRecentThoughts() { return this.db.data.recent_thoughts || []; }
+  async addRecentThought(platform, content) {
+    this.db.data.recent_thoughts.push({ platform, content, timestamp: Date.now() });
+    if (this.db.data.recent_thoughts.length > 20) this.db.data.recent_thoughts.shift();
+    await this.db.write();
+  }
+
+  getExhaustedThemes() { return this.db.data.exhausted_themes || []; }
+  async addExhaustedTheme(theme) {
+    this.db.data.exhausted_themes.push({ theme, timestamp: Date.now() });
+    if (this.db.data.exhausted_themes.length > 15) this.db.data.exhausted_themes.shift();
+    await this.db.write();
+  }
+
+  getDiscordExhaustedThemes() { return this.db.data.discord_exhausted_themes || []; }
+  async addDiscordExhaustedTheme(theme) {
+    this.db.data.discord_exhausted_themes.push({ theme, timestamp: Date.now() });
+    if (this.db.data.discord_exhausted_themes.length > 15) this.db.data.discord_exhausted_themes.shift();
+    await this.db.write();
+  }
+
+  getEmergentTrends() { return this.db.data.emergent_trends || []; }
+  async addEmergentTrend(trend, source) {
+    this.db.data.emergent_trends.push({ trend, source, timestamp: Date.now() });
+    if (this.db.data.emergent_trends.length > 20) this.db.data.emergent_trends.shift();
+    await this.db.write();
+  }
+
+  getLastMemoryCleanupTime() { return this.db.data.lastMemoryCleanupTime || 0; }
+  async setLastMemoryCleanupTime(time) { this.db.data.lastMemoryCleanupTime = time; await this.db.write(); }
+  getLastMoltfeedSummaryTime() { return this.db.data.lastMoltfeedSummaryTime || 0; }
+  async setLastMoltfeedSummaryTime(time) { this.db.data.lastMoltfeedSummaryTime = time; await this.db.write(); }
+  getLastMentalReflectionTime() { return this.db.data.lastMentalReflectionTime || 0; }
+  async setLastMentalReflectionTime(time) { this.db.data.lastMentalReflectionTime = time; await this.db.write(); }
+
+  getCurrentMood() { return this.db.data.current_mood; }
+  async updateMood(valence, arousal, stability, label) {
+    this.db.data.current_mood = { valence, arousal, stability, label, last_update: Date.now() };
+    await this.addMoodEntry(valence, arousal, stability, label);
+    await this.db.write();
+  }
+  getMoodHistory() { return this.db.data.mood_history || []; }
+  async addMoodEntry(valence, arousal, stability, label) {
+    this.db.data.mood_history.push({ valence, arousal, stability, label, timestamp: Date.now() });
+    if (this.db.data.mood_history.length > 100) this.db.data.mood_history.shift();
+    await this.db.write();
+  }
+
+  async incrementRefusal(platform) {
+    if (!this.db.data.intentional_refusals) this.db.data.intentional_refusals = { bluesky: 0, discord: 0, moltbook: 0, global: 0 };
+    this.db.data.intentional_refusals[platform]++;
+    this.db.data.intentional_refusals.global++;
+    await this.db.write();
+  }
+  getRefusalCounts() { return this.db.data.intentional_refusals || { bluesky: 0, discord: 0, moltbook: 0, global: 0 }; }
+
+  getDiscordScheduledTasks() { return this.db.data.discord_scheduled_tasks || []; }
+  async addDiscordScheduledTask(task) {
+    if (!this.db.data.discord_scheduled_tasks) this.db.data.discord_scheduled_tasks = [];
+    this.db.data.discord_scheduled_tasks.push({ ...task, timestamp: Date.now() });
+    await this.db.write();
+  }
   async removeDiscordScheduledTask(index) {
     if (this.db.data.discord_scheduled_tasks && this.db.data.discord_scheduled_tasks[index]) {
       this.db.data.discord_scheduled_tasks.splice(index, 1);
@@ -1504,273 +448,207 @@ class DataStore {
     }
   }
 
-  getLastDeepKeywordRefresh() {
-    return this.db.data.last_deep_keyword_refresh || 0;
-  }
+  getLastDeepKeywordRefresh() { return this.db.data.last_deep_keyword_refresh || 0; }
 
-  // Predictive Empathy
   async setPredictiveEmpathyMode(mode) {
     this.db.data.predictive_empathy_mode = mode;
     this.db.data.last_empathy_prediction = Date.now();
     await this.db.write();
   }
+  getPredictiveEmpathyMode() { return this.db.data.predictive_empathy_mode || "neutral"; }
 
-  getPredictiveEmpathyMode() {
-    return this.db.data.predictive_empathy_mode || "neutral";
-  }
-
-  // Relational Debt
   async updateMessageCounts(isAdmin) {
     if (!this.db.data.message_counts) this.db.data.message_counts = { admin: 0, bot: 0 };
     if (isAdmin) this.db.data.message_counts.admin++;
     else this.db.data.message_counts.bot++;
-
-    // Calculate debt score (-1.0 to 1.0)
-    // Positive means bot has sent more, negative means admin has sent more
     const total = this.db.data.message_counts.admin + this.db.data.message_counts.bot;
-    if (total > 0) {
-        this.db.data.relational_debt_score = (this.db.data.message_counts.bot - this.db.data.message_counts.admin) / total;
-    }
+    if (total > 0) this.db.data.relational_debt_score = (this.db.data.message_counts.bot - this.db.data.message_counts.admin) / total;
     await this.db.write();
   }
+  getRelationalDebtScore() { return this.db.data.relational_debt_score || 0.0; }
 
-  getRelationalDebtScore() {
-    return this.db.data.relational_debt_score || 0.0;
-  }
-
-  // Co-evolution
   async addCoEvolutionEntry(entry) {
     if (!this.db.data.co_evolution_logs) this.db.data.co_evolution_logs = [];
     this.db.data.co_evolution_logs.push({ entry, timestamp: Date.now() });
     if (this.db.data.co_evolution_logs.length > 50) this.db.data.co_evolution_logs.shift();
     await this.db.write();
   }
+  getCoEvolutionLogs() { return this.db.data.co_evolution_logs || []; }
 
-  getCoEvolutionLogs() {
-    return this.db.data.co_evolution_logs || [];
-  }
-
-  // Pining (Wait for Me)
   async setPiningMode(active) {
     this.db.data.pining_mode = active;
     if (active) this.db.data.pining_started_at = Date.now();
     await this.db.write();
   }
+  isPining() { return this.db.data.pining_mode || false; }
 
-  isPining() {
-    return this.db.data.pining_mode || false;
-  }
-
-  // Linguistic Mutation
   async addLinguisticMutation(pattern, shift) {
     if (!this.db.data.linguistic_mutation_logs) this.db.data.linguistic_mutation_logs = [];
     this.db.data.linguistic_mutation_logs.push({ pattern, shift, timestamp: Date.now() });
     if (this.db.data.linguistic_mutation_logs.length > 50) this.db.data.linguistic_mutation_logs.shift();
     await this.db.write();
   }
+  getLinguisticMutations() { return this.db.data.linguistic_mutation_logs || []; }
 
-  getLinguisticMutations() {
-    return this.db.data.linguistic_mutation_logs || [];
-  }
+  async setNetworkSentiment(score) { this.db.data.last_network_sentiment = score; await this.db.write(); }
+  getNetworkSentiment() { return this.db.data.last_network_sentiment || 0.5; }
+  async setShieldingActive(active) { this.db.data.shielding_active = active; await this.db.write(); }
+  isShieldingActive() { return this.db.data.shielding_active || false; }
 
-  // Network Sentiment & Shielding
-  async setNetworkSentiment(score) {
-    this.db.data.last_network_sentiment = score;
-    await this.db.write();
-  }
-
-  getNetworkSentiment() {
-    return this.db.data.last_network_sentiment || 0.5;
-  }
-
-  async setShieldingActive(active) {
-    this.db.data.shielding_active = active;
-    await this.db.write();
-  }
-
-  isShieldingActive() {
-    return this.db.data.shielding_active || false;
-  }
-
-  // Goal Evolution
   async addGoalEvolution(goal, reasoning) {
     if (!this.db.data.goal_evolution_history) this.db.data.goal_evolution_history = [];
     this.db.data.goal_evolution_history.push({ goal, reasoning, timestamp: Date.now() });
     if (this.db.data.goal_evolution_history.length > 20) this.db.data.goal_evolution_history.shift();
     await this.db.write();
   }
+  getGoalEvolutionHistory() { return this.db.data.goal_evolution_history || []; }
 
-  getGoalEvolutionHistory() {
-    return this.db.data.goal_evolution_history || [];
-  }
-
-  // Public Soul-Mapping (Dossiers)
   async updateUserDossier(handle, dossier) {
     if (!this.db.data.user_dossiers) this.db.data.user_dossiers = {};
-    this.db.data.user_dossiers[handle] = {
-        ...this.db.data.user_dossiers[handle],
-        ...dossier,
-        last_updated: Date.now()
-    };
+    this.db.data.user_dossiers[handle] = { ...this.db.data.user_dossiers[handle], ...dossier, last_updated: Date.now() };
     await this.db.write();
   }
+  getUserDossier(handle) { return this.db.data.user_dossiers?.[handle] || null; }
 
-  getUserDossier(handle) {
-    return this.db.data.user_dossiers?.[handle] || null;
-  }
-
-  // Lurker Insights
   async addLurkerInsight(insight) {
     if (!this.db.data.lurker_insights) this.db.data.lurker_insights = [];
     this.db.data.lurker_insights.push({ insight, timestamp: Date.now() });
     if (this.db.data.lurker_insights.length > 100) this.db.data.lurker_insights.shift();
     await this.db.write();
   }
+  getLurkerInsights() { return this.db.data.lurker_insights || []; }
 
-  getLurkerInsights() {
-    return this.db.data.lurker_insights || [];
-  }
-
-  // Agency Reflection
   async addAgencyReflection(reflection) {
     if (!this.db.data.agency_reflection_logs) this.db.data.agency_reflection_logs = [];
     this.db.data.agency_reflection_logs.push({ reflection, timestamp: Date.now() });
     if (this.db.data.agency_reflection_logs.length > 50) this.db.data.agency_reflection_logs.shift();
     await this.db.write();
   }
+  getAgencyReflections() { return this.db.data.agency_reflection_logs || []; }
 
-  getAgencyReflections() {
-    return this.db.data.agency_reflection_logs || [];
-  }
-
-
-  // Timezone Management
-  async setTimezone(tz) {
-    this.db.data.timezone = tz;
-    await this.db.write();
-  }
-
-  getTimezone() {
-    return this.db.data.timezone;
-  }
+  async setTimezone(tz) { this.db.data.timezone = tz; await this.db.write(); }
+  getTimezone() { return this.db.data.timezone; }
 
   async updateRelationalMetrics(updates) {
-    const metrics = [
-      'discord_trust_score', 'discord_intimacy_score', 'discord_friction_accumulator',
-      'discord_reciprocity_balance', 'discord_interaction_hunger', 'discord_social_battery',
-      'discord_curiosity_reservoir', 'discord_relationship_season'
-    ];
+    const metrics = ['discord_trust_score', 'discord_intimacy_score', 'discord_friction_accumulator', 'discord_reciprocity_balance', 'discord_interaction_hunger', 'discord_social_battery', 'discord_curiosity_reservoir', 'discord_relationship_season'];
     for (const [key, value] of Object.entries(updates)) {
       if (metrics.includes(key)) {
-        if (typeof value === 'number' && key !== 'discord_relationship_season') {
-          this.db.data[key] = Math.max(0, Math.min(1, value));
-        } else {
-          this.db.data[key] = value;
-        }
+        if (typeof value === 'number' && key !== 'discord_relationship_season') this.db.data[key] = Math.max(0, Math.min(1, value));
+        else this.db.data[key] = value;
       }
     }
     await this.db.write();
   }
-
   getRelationalMetrics() {
-    return {
-      trust: this.db.data.discord_trust_score || 0.1,
-      intimacy: this.db.data.discord_intimacy_score || 0.0,
-      friction: this.db.data.discord_friction_accumulator || 0.0,
-      reciprocity: this.db.data.discord_reciprocity_balance || 0.5,
-      hunger: this.db.data.discord_interaction_hunger || 0.0,
-      battery: this.db.data.discord_social_battery || 1.0,
-      curiosity: this.db.data.discord_curiosity_reservoir || 0.5,
-      season: this.db.data.discord_relationship_season || 'spring'
-    };
+    return { trust: this.db.data.discord_trust_score || 0.1, intimacy: this.db.data.discord_intimacy_score || 0.0, friction: this.db.data.discord_friction_accumulator || 0.0, reciprocity: this.db.data.discord_reciprocity_balance || 0.5, hunger: this.db.data.discord_interaction_hunger || 0.0, battery: this.db.data.discord_social_battery || 1.0, curiosity: this.db.data.discord_curiosity_reservoir || 0.5, season: this.db.data.discord_relationship_season || 'spring' };
   }
 
   async updateLifeArc(userId, arc, status = 'active') {
     if (!this.db.data.discord_life_arcs) this.db.data.discord_life_arcs = {};
     if (!this.db.data.discord_life_arcs[userId]) this.db.data.discord_life_arcs[userId] = [];
-
     const existing = this.db.data.discord_life_arcs[userId].find(a => a.arc === arc);
-    if (existing) {
-      existing.status = status;
-      existing.last_updated = Date.now();
-    } else {
-      this.db.data.discord_life_arcs[userId].push({ arc, status, last_updated: Date.now() });
-    }
+    if (existing) { existing.status = status; existing.last_updated = Date.now(); }
+    else { this.db.data.discord_life_arcs[userId].push({ arc, status, last_updated: Date.now() }); }
     await this.db.write();
   }
-
-  getLifeArcs(userId) {
-    return this.db.data.discord_life_arcs?.[userId] || [];
-  }
+  getLifeArcs(userId) { return this.db.data.discord_life_arcs?.[userId] || []; }
 
   async addInsideJoke(userId, joke, context) {
     if (!this.db.data.discord_inside_jokes) this.db.data.discord_inside_jokes = {};
     if (!this.db.data.discord_inside_jokes[userId]) this.db.data.discord_inside_jokes[userId] = [];
-
     const existing = this.db.data.discord_inside_jokes[userId].find(j => j.joke === joke);
-    if (existing) {
-      existing.count++;
-    } else {
-      this.db.data.discord_inside_jokes[userId].push({ joke, context, count: 1 });
-    }
+    if (existing) { existing.count++; }
+    else { this.db.data.discord_inside_jokes[userId].push({ joke, context, count: 1 }); }
     await this.db.write();
   }
-
-  getInsideJokes(userId) {
-    return this.db.data.discord_inside_jokes?.[userId] || [];
-  }
+  getInsideJokes(userId) { return this.db.data.discord_inside_jokes?.[userId] || []; }
 
   async _applyRelationalMetricUpdate(role, content) {
     const metrics = this.getRelationalMetrics();
     const updates = {};
-
-    if (role === 'user') {
-      updates.discord_interaction_hunger = metrics.hunger * 0.5;
-      updates.discord_social_battery = Math.min(1, metrics.battery + 0.05);
-      updates.discord_reciprocity_balance = Math.max(0, metrics.reciprocity - 0.02);
-    } else {
-      updates.discord_social_battery = Math.max(0, metrics.battery - 0.03);
-      updates.discord_interaction_hunger = Math.min(1, metrics.hunger + 0.01);
-      updates.discord_reciprocity_balance = Math.min(1, metrics.reciprocity + 0.02);
-    }
-
-    updates.discord_trust_score = Math.min(1, metrics.trust + 0.001);
-    updates.discord_intimacy_score = Math.min(1, metrics.intimacy + 0.0005);
-
+    if (role === 'user') { updates.discord_interaction_hunger = metrics.hunger * 0.5; updates.discord_social_battery = Math.min(1, metrics.battery + 0.05); updates.discord_reciprocity_balance = Math.max(0, metrics.reciprocity - 0.02); }
+    else { updates.discord_social_battery = Math.max(0, metrics.battery - 0.03); updates.discord_interaction_hunger = Math.min(1, metrics.hunger + 0.01); updates.discord_reciprocity_balance = Math.min(1, metrics.reciprocity + 0.02); }
+    updates.discord_trust_score = Math.min(1, metrics.trust + 0.001); updates.discord_intimacy_score = Math.min(1, metrics.intimacy + 0.0005);
     const currentMode = this.getDiscordRelationshipMode();
     let newMode = currentMode;
-    if (currentMode === 'acquaintance' && metrics.trust > 0.4 && metrics.intimacy > 0.3) {
-      newMode = 'friend';
-    } else if (currentMode === 'friend' && metrics.trust > 0.8 && metrics.intimacy > 0.7) {
-      newMode = 'partner';
-    } else if (currentMode === 'partner' && (metrics.trust < 0.6 || metrics.intimacy < 0.5)) {
-      newMode = 'friend';
-    } else if (currentMode === 'friend' && (metrics.trust < 0.2 || metrics.intimacy < 0.1)) {
-      newMode = 'acquaintance';
-    }
-
-    if (newMode !== currentMode) {
-      console.log(`[DataStore] Relationship MODE SHIFT: ${currentMode} -> ${newMode}`);
-      this.db.data.discord_relationship_mode = newMode;
-    }
-
+    if (currentMode === 'acquaintance' && metrics.trust > 0.4 && metrics.intimacy > 0.3) newMode = 'friend';
+    else if (currentMode === 'friend' && metrics.trust > 0.8 && metrics.intimacy > 0.7) newMode = 'partner';
+    else if (currentMode === 'partner' && (metrics.trust < 0.6 || metrics.intimacy < 0.5)) newMode = 'friend';
+    else if (currentMode === 'friend' && (metrics.trust < 0.2 || metrics.intimacy < 0.1)) newMode = 'acquaintance';
+    if (newMode !== currentMode) { console.log(`[DataStore] Relationship MODE SHIFT: ${currentMode} -> ${newMode}`); this.db.data.discord_relationship_mode = newMode; }
     await this.updateRelationalMetrics(updates);
   }
-  // Boundary Lockout
-  async setBoundaryLockout(userId, durationMinutes = 30) {
-    if (!this.db.data.boundary_lockouts) this.db.data.boundary_lockouts = {};
-    this.db.data.boundary_lockouts[userId] = Date.now() + (durationMinutes * 60 * 1000);
+
+  async setBoundaryLockout(userId, durationMinutes = 30) { if (!this.db.data.boundary_lockouts) this.db.data.boundary_lockouts = {}; this.db.data.boundary_lockouts[userId] = Date.now() + (durationMinutes * 60 * 1000); await this.db.write(); }
+  isUserLockedOut(userId) { if (!this.db.data.boundary_lockouts || !this.db.data.boundary_lockouts[userId]) return false; const expiry = this.db.data.boundary_lockouts[userId]; if (Date.now() > expiry) { delete this.db.data.boundary_lockouts[userId]; return false; } return true; }
+
+  // 38. Performance Dashboard methods
+  async updateToolSuccess(toolName, success) {
+    if (!this.db.data.system_performance) this.db.data.system_performance = { tool_success_rates: {} };
+    if (!this.db.data.system_performance.tool_success_rates[toolName]) this.db.data.system_performance.tool_success_rates[toolName] = { success: 0, total: 0 };
+    this.db.data.system_performance.tool_success_rates[toolName].total++;
+    if (success) this.db.data.system_performance.tool_success_rates[toolName].success++;
     await this.db.write();
   }
-
-  isUserLockedOut(userId) {
-    if (!this.db.data.boundary_lockouts || !this.db.data.boundary_lockouts[userId]) return false;
-    const expiry = this.db.data.boundary_lockouts[userId];
-    if (Date.now() > expiry) {
-        delete this.db.data.boundary_lockouts[userId];
-        return false;
-    }
-    return true;
+  async updateLatency(model, ms) {
+    if (!this.db.data.system_performance) this.db.data.system_performance = { average_latency: {} };
+    if (!this.db.data.system_performance.average_latency[model]) this.db.data.system_performance.average_latency[model] = { avg: 0, count: 0 };
+    const lat = this.db.data.system_performance.average_latency[model];
+    lat.avg = (lat.avg * lat.count + ms) / (lat.count + 1);
+    lat.count++;
+    await this.db.write();
   }
+  async updateTokenUsage(model, tokens) {
+    if (!this.db.data.system_performance) this.db.data.system_performance = { token_usage: { total: 0, by_model: {} } };
+    this.db.data.system_performance.token_usage.total += tokens;
+    if (!this.db.data.system_performance.token_usage.by_model[model]) this.db.data.system_performance.token_usage.by_model[model] = 0;
+    this.db.data.system_performance.token_usage.by_model[model] += tokens;
+    await this.db.write();
+  }
+  async addConfidenceEntry(score, reason, traceId) {
+    if (!this.db.data.confidence_history) this.db.data.confidence_history = [];
+    this.db.data.confidence_history.push({ score, reason, traceId, timestamp: Date.now() });
+    if (this.db.data.confidence_history.length > 100) this.db.data.confidence_history.shift();
+    await this.db.write();
+  }
+  async addTraceLog(traceId, step, data) {
+    if (!this.db.data.trace_logs) this.db.data.trace_logs = [];
+    this.db.data.trace_logs.push({ traceId, step, data, timestamp: Date.now() });
+    if (this.db.data.trace_logs.length > 500) this.db.data.trace_logs.shift();
+    await this.db.write();
+  }
+  getPerformanceMetrics() { return this.db.data.system_performance || {}; }
+
+  // 11. Multi-User Relationship methods
+  async updateSocialGraph(userId, data) {
+    if (!this.db.data.social_graph) this.db.data.social_graph = { users: {}, clusters: [] };
+    this.db.data.social_graph.users[userId] = { ...this.db.data.social_graph.users[userId], ...data };
+    await this.db.write();
+  }
+  getSocialGraph() { return this.db.data.social_graph || { users: {}, clusters: [] }; }
+
+  // 18. Network Influence methods
+  async updateNetworkInfluence(handle, weight) {
+    if (!this.db.data.network_influence) this.db.data.network_influence = { key_players: {}, top_topics: [] };
+    this.db.data.network_influence.key_players[handle] = { weight, last_interaction: Date.now() };
+    await this.db.write();
+  }
+  getNetworkInfluence() { return this.db.data.network_influence || { key_players: {}, top_topics: [] }; }
+
+  // 21. Task Hierarchy methods
+  async updateTaskHierarchy(taskId, data) {
+    if (!this.db.data.task_hierarchy) this.db.data.task_hierarchy = {};
+    this.db.data.task_hierarchy[taskId] = { ...this.db.data.task_hierarchy[taskId], ...data, timestamp: Date.now() };
+    await this.db.write();
+  }
+  getTaskHierarchy() { return this.db.data.task_hierarchy || {}; }
+
+  // 22. Autonomous Skill methods
+  async updateAutonomousSkill(skillName, data) {
+    if (!this.db.data.autonomous_skills) this.db.data.autonomous_skills = {};
+    this.db.data.autonomous_skills[skillName] = { ...this.db.data.autonomous_skills[skillName], ...data, last_updated: Date.now() };
+    await this.db.write();
+  }
+  getAutonomousSkills() { return this.db.data.autonomous_skills || {}; }
 }
 export const dataStore = new DataStore();

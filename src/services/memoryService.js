@@ -266,7 +266,7 @@ class MemoryService {
           Type: ${type}
 
           CRITICAL RULES:
-          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED], [MOOD], [INQUIRY], [MENTAL], [GOAL], [EXPLORE], [FACT], [ADMIN_FACT].
+          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED], [MOOD], [INQUIRY], [MENTAL], [GOAL], [EXPLORE], [FACT], [ADMIN_FACT], [SKILL].
           2. **VALID TAGS**: [MOLTFEED], [MOOD], [INQUIRY], [MENTAL], [GOAL], [EXPLORE], [FACT], and [ADMIN_FACT] are PRIMARY allowed tags. DO NOT reject entries for using them.
           3. **Meaningful Substance**: Does this entry contain substance regarding the bot's functioning, memory, persona, or insights?
           4. **ADMIN FACTS**: Entries tagged [ADMIN_FACT] that record the administrator's wellness, goals, health, or personal state ARE considered meaningful substance, as they inform the bot's "Adaptive Care" and relational functioning. DO NOT reject these for being "personal human information".

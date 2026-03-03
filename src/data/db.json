@@ -1,0 +1,26 @@
+{
+  "system_performance": {
+    "tool_success_rates": {},
+    "average_latency": {},
+    "token_usage": {
+      "total": 0,
+      "by_model": {}
+    },
+    "last_audit": 1772498190374
+  },
+  "confidence_history": [],
+  "trace_logs": [],
+  "discord_life_arcs": {},
+  "discord_inside_jokes": {},
+  "user_dossiers": {},
+  "social_graph": {
+    "users": {},
+    "clusters": []
+  },
+  "network_influence": {
+    "key_players": {},
+    "top_topics": []
+  },
+  "autonomous_skills": {},
+  "task_hierarchy": {}
+}

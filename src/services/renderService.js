@@ -33,7 +33,14 @@ class RenderService {
     }
   }
 
+
   async findSelf() {
+    if (!this.isEnabled()) return null;
+    if (this._lastDiscoveryAttempt && (Date.now() - this._lastDiscoveryAttempt < 3600000)) {
+        return this.serviceId ? { id: this.serviceId, name: this.serviceName } : null;
+    }
+    this._lastDiscoveryAttempt = Date.now();
+
     if (!this.isEnabled()) return null;
 
     // Check dataStore first for persisted ID

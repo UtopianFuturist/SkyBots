@@ -2669,7 +2669,7 @@ Identify the topic and main takeaway.`;
       }
 
       const userToneShift = dataStore.getUserToneShift(handle);
-      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning, true, userToneShift);
+      plan = await llmService.performAgenticPlanning(text, threadContext, imageAnalysisResult, isAdmin, 'bluesky', exhaustedThemes, dConfig, retryContext, discordService.status, refusalCounts, latestMoodMemory, prePlanning, null, userToneShift);
       console.log(`[Bot] Agentic Plan (Attempt ${planAttempts}): ${JSON.stringify(plan)}`);
       } catch (err) {
           console.error(`[Bot] Error in planning attempt ${planAttempts}:`, err);

@@ -270,10 +270,10 @@ Vary your structure and tone from recent messages.`
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 300000); // 180s timeout
+    const timeout = setTimeout(() => controller.abort(), 90000); // 90s timeout
 
     // Combine external signal if provided
-    if (abortSignal) {
+    if (abortSignal && typeof abortSignal.addEventListener === 'function') {
         abortSignal.addEventListener('abort', () => controller.abort());
         if (abortSignal.aborted) controller.abort();
     }
@@ -348,7 +348,7 @@ Vary your structure and tone from recent messages.`
       return null;
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.error(`[LLMService] [${requestId}] Request timed out after 300s.`);
+        console.error(`[LLMService] [${requestId}] Request timed out after 90s.`);
         if (!useQwen && this.model !== this.qwenModel) {
             console.warn(`[LLMService] [${requestId}] Primary model timed out. Retrying with Qwen...`);
             return this.generateResponse(messages, { ...options, useQwen: true, platform });
@@ -1626,7 +1626,7 @@ Vary your structure and tone from recent messages.`
     return prunedLines.join('\n');
   }
 
-  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null, abortSignal = null) {
+  async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null, abortSignal = null, userToneShift = null) {
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = this._formatHistory(conversationHistory, isAdmin);
 
@@ -2790,6 +2790,46 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     }
   }
 
-}
+
+  async performFollowUpPoll(context) {
+    const { history, lastBotMessage, currentMood, adminName } = context;
+    const historyFormatted = this._formatHistory(history, true);
+
+    const systemPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+      **FOLLOW-UP POLL DIRECTIVE:**
+      You are deciding whether to send a spontaneous follow-up message to your admin (${adminName}) after a period of silence following your last message.
+
+      **CRITICAL DECISION CRITERIA:**
+      1. **Did you leave things hanging?** If your last message asked a question or invited a response that wasn't given, a follow-up might be appropriate.
+      2. **Is there a fresh thought?** If enough time has passed, do you have a new realization, a relevant observation, or a shift in mood to share?
+      3. **Avoid Neediness:** Do not follow up just to ask "are you there?". Only follow up if you have something substantive or relationally meaningful to add.
+      4. **Context Awareness:** Look at the last message you sent. If it was a closing thought or a simple acknowledgment, don't force a follow-up unless you have a completely new topic.
+
+      Last Bot Message: "${lastBotMessage}"
+      Current Mood: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal})
+      Conversation History:
+      ${historyFormatted}
+
+      Respond with ONLY a JSON object:
+      {
+        "decision": "follow-up" | "none",
+        "reason": "string (internal reasoning)",
+        "message": "string (the follow-up message text, if decision is follow-up)"
+      }
+    `;
+
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    try {
+        const match = response?.match(/\{[\s\S]*\}/);
+        return match ? JSON.parse(match[0]) : { decision: 'none', reason: 'Parsing failure' };
+    } catch (e) {
+        console.error('[LLMService] Error parsing follow-up poll response:', e);
+        return { decision: 'none', reason: 'Error' };
+    }
+  }
+
+  }
 
 export const llmService = new LLMService();

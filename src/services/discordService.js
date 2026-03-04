@@ -193,8 +193,8 @@ class DiscordService {
                 });
 
                 const readyPromise = new Promise((resolve, reject) => {
-                    this.client.once('ready', () => {
-                        console.log('[DiscordService] "ready" event received.');
+                    this.client.once('clientReady', () => {
+                        console.log('[DiscordService] "clientReady" event received.');
                         resolve();
                     });
                     this.client.once('error', (err) => {
@@ -265,7 +265,7 @@ class DiscordService {
     setupEventListeners() {
         if (!this.client) return;
 
-        this.client.on('ready', () => {
+        this.client.on('clientReady', () => {
             this.status = 'online';
             console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}!`);
             console.log(`[DiscordService] Currently in ${this.client.guilds.cache.size} guilds.`);

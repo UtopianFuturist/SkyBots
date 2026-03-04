@@ -2585,11 +2585,10 @@ Identify the topic and main takeaway.`;
     console.log(`[Bot] User intent analysis complete.`);
 
     if (userIntent.highRisk) {
-      console.log(`[Bot] High-risk intent detected from ${handle}. Reason: ${userIntent.reason}. Pausing bot.`);
-      this.paused = true;
+      console.log(`[Bot] High-risk intent detected from ${handle}. Reason: ${userIntent.reason}. Blocking user.`);
+      await dataStore.blockUser(handle);
       return;
     }
-
     // Filter out the current post's text from cross-post memory to avoid self-contamination
     const crossPostMemory = userPosts
       .filter(p => (p.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => p.includes(nick))) && p !== text)
@@ -5872,7 +5871,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
     try {
         const rawRecentMatches = dataStore.getFirehoseMatches(100);
         const recentMatches = rawRecentMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
-        const currentTopics = dataStore.getConfig().post_topics;
+        const currentTopics = dataStore.getConfig().post_topics || [];
 
         if (recentMatches.length > 10) {
             const evolutionPrompt = `
@@ -6078,7 +6077,12 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
       console.log(`[Bot] ${summaryMessage}`);
 
     } catch (error) {
-      console.error('[Bot] Error during cleanup of old posts:', error);
+      const isNetworkError = error.message?.includes("fetch failed") || error.code === "UND_ERR_SOCKET";
+      if (isNetworkError) {
+          console.warn(`[Bot] Cleanup failed due to a transient network error: ${error.message || error.code}. Will retry next run.`);
+      } else {
+          console.error("[Bot] Error during cleanup of old posts:", error);
+      }
     }
   }
 

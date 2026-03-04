@@ -1030,5 +1030,8 @@ class DataStore {
     await this.db.write();
   }
   getUserDossier(handle) { return this.db.data.user_dossiers?.[handle] || null; }
+  getAdminFeedback() { return this.db.data.admin_feedback || []; }
+  getNuanceGradience() { return this.db.data.nuance_gradience || 5; }
+  getWorldFacts() { return this.db.data.world_facts || []; }
 }
 export const dataStore = new DataStore();

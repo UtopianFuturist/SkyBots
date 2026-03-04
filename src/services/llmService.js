@@ -111,7 +111,7 @@ class LLMService {
 
 
   async generateResponse(messages, options = {}) {
-    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, useStep = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, platform = "unknown", abortSignal = null } = options;
+    const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, useStep = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, platform = "unknown", traceId = null, abortSignal = null } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useStep ? this.stepModel : (useCoder ? this.coderModel : (useQwen ? this.qwenModel : this.model));
 
@@ -2731,8 +2731,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       useStep: true,
       preface_system_prompt: false,
       temperature: 0.0,
-      max_tokens: 500
-    , platform });
+      max_tokens: 500, platform });
 
     try {
       const match = response?.match(/\{[\s\S]*\}/);

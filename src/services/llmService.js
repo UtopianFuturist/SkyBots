@@ -287,7 +287,7 @@ Vary your structure and tone from recent messages.`
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000); // 90s timeout
+    const timeout = setTimeout(() => controller.abort(), 180000); // 180s timeout
 
     // Combine external signal if provided
     if (abortSignal && typeof abortSignal.addEventListener === 'function') {
@@ -1258,7 +1258,7 @@ Vary your structure and tone from recent messages.`
     };
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 90000); // 90s timeout
+    const timeout = setTimeout(() => controller.abort(), 180000); // 180s timeout
 
     try {
       const response = await fetch(this.baseUrl, {

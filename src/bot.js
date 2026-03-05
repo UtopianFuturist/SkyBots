@@ -4553,11 +4553,11 @@ Describe how you feel about this user and your relationship now.`;
       // 1. Try to find anything between ** that is NOT just a label
       const boldMatch = topicRaw.match(/\*\*(.*?)\*\*/);
       if (boldMatch && boldMatch[1].trim().length > 0 && !labelRegex.test(boldMatch[1].trim())) {
-        topic = boldMatch[1].trim();
+        topic = boldMatch[1].trim().split("\n")[0];
       } else {
         // 2. Remove all bolding and split into lines
-        const cleanRaw = topicRaw.replace(/\*\*/g, '');
-        const lines = cleanRaw.split('\n').map(l => l.trim()).filter(l => l);
+        const cleanRaw = topicRaw.replace(/\*\*/g, "");
+        const lines = cleanRaw.split("\n").map(l => l.trim()).filter(l => l);
 
         let candidate = lines[lines.length - 1]; // Default to last line
 
@@ -4569,7 +4569,7 @@ Describe how you feel about this user and your relationship now.`;
                 break;
             }
         }
-        topic = candidate;
+        topic = candidate.split("\n")[0];
       }
 
       // Cleanup quotes and trailing punctuation
@@ -4927,7 +4927,7 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: false, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: true, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
 
           embed = {
             $type: 'app.bsky.embed.images',
@@ -4964,7 +4964,7 @@ Describe how you feel about this user and your relationship now.`;
               ---
               Keep it under 300 characters or max 3 threaded posts if deeper.${retryContext}
           `;
-          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: false, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
+          postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt + rewriteInstruction }], { max_tokens: 4000, useStep: true, temperature: isFinalAttempt ? 0.7 : currentTemp, openingBlacklist});
         }
 
         if (postContent) {
@@ -5167,7 +5167,7 @@ Describe how you feel about this user and your relationship now.`;
             EXHAUSTED THEMES TO AVOID: ${exhaustedThemes.join(', ')}
             NOTE: Your previous attempt to generate an image for this topic failed compliance, so please provide a compelling, deep text-only thought instead.
         `;
-        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, useStep: false, temperature: 0.8, useStep: false, openingBlacklist});
+        postContent = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { max_tokens: 4000, useStep: true, temperature: 0.8, openingBlacklist});
         if (postContent) {
           postContent = sanitizeThinkingTags(postContent);
           postContent = sanitizeCharacterCount(postContent);
@@ -6426,7 +6426,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                             { role: 'user', content: `Generate 5 diverse spontaneous messages based on this intent: "${message}"` }
                         ];
                         // We use a simplified prompt for drafts to keep it fast, but we'll evaluate them properly.
-                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: false, openingBlacklist, currentMood });
+                        candidates = await llmService.generateDrafts(draftMessages, 5, {  temperature: 0.8, useStep: true, openingBlacklist, currentMood });
                         candidates = candidates.map(c => sanitizeThinkingTags(c)).filter(c => c.length > 0);
                         // Also include the original message from the poll
                         if (!candidates.includes(message)) candidates.unshift(sanitizeThinkingTags(message));

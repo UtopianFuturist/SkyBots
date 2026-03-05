@@ -57,7 +57,7 @@ class ImageService {
       const revisedPrompt = await llmService.generateResponse([
         { role: 'system', content: systemContent },
         { role: 'user', content: prompt }
-      ], { max_tokens: 500, preface_system_prompt: false, useQwen: true });
+      ], { max_tokens: 500, preface_system_prompt: false, useStep: true });
 
       console.log(`[ImageService] Revised prompt: "${revisedPrompt}"`);
 

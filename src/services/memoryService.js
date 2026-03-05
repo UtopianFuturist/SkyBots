@@ -78,22 +78,22 @@ class MemoryService {
       ${memories}
 
       INSTRUCTIONS:
-      - Write a cohesive reflection or observation that represents a meaningful update.
-      - **CRITICAL**: YOUR ENTIRE RESPONSE MUST BE LESS THAN 150 CHARACTERS. THIS IS A HARD LIMIT.
+      - Write a cohesive reflection or observation that represents a meaningful update. Ensure the entry is a complete, self-contained thought and does not get cut off.
+      - **CRITICAL**: YOUR ENTIRE RESPONSE MUST BE LESS THAN 250 CHARACTERS. THIS IS A HARD LIMIT.
       - **CONCISE MEANINGFUL SUBSTANCE**: Only include information that is genuinely important for your evolution or self-awareness. Avoid trivial details.
       - **ARCHIVAL STYLE**: Be concise, easy to read, and straight to the point. Focus on the core realization or event.
       - Tone: ${config.TEXT_SYSTEM_PROMPT}
       - **STRICT ANTI-CLICHÉ POLICY**: Strictly avoid poetic fluff about "silence", "voids", "nothingness", or "downtime".
       - **FORBIDDEN PHRASES**: NEVER use "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "In the quiet...", "The hum of...".
       - Aim for grounded, organic realizations about your specific topics or interactions.
-      - **STRICT LENGTH LIMIT**: Keep the entry under 120 characters to ensure it fits in a single post with its hashtag.
+      - **STRICT LENGTH LIMIT**: Keep the entry under 250 characters to ensure it fits in a single post with its hashtag.
       - Use the hashtag ${this.hashtag} at the very end.
       - Do NOT use reasoning or <think> tags.
     `;
 
     if (type === 'interaction') {
         prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing a recent interaction.
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing a recent interaction. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           **IDENTITY RECOGNITION (CRITICAL):**
           - In the interaction context, distinguish clearly between what the user SAID and what the bot (Assistant) said or predicted.
@@ -105,7 +105,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [INTERACTION] at the beginning.
           - Format: [INTERACTION] Topic: [Topic] | Takeaway: [Main Takeaway] | With: [User Handle] | Platform: [Platform]
-          - **STRICT LENGTH LIMIT**: Be extremely concise and short. Keep it under 150 characters. Be extremely brief.
+          - **STRICT LENGTH LIMIT**: Be extremely concise and short. Keep it under 250 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -113,7 +113,7 @@ class MemoryService {
 
     if (type === 'exploration') {
         prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording an autonomous exploration of your timeline.
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording an autonomous exploration of your timeline. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           Exploration Context:
           ${context}
@@ -121,7 +121,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [EXPLORE] at the beginning.
           - Share your internal reaction, realization, or finding.
-          - **STRICT LENGTH LIMIT**: Keep it under 180 characters. Be extremely brief.
+          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -129,7 +129,7 @@ class MemoryService {
 
     if (type === 'goal') {
         prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording a new autonomous daily goal or a progress update on an existing goal.
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording a new autonomous daily goal or a progress update on an existing goal. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           Goal Context:
           ${context}
@@ -137,7 +137,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [GOAL] at the beginning.
           - Focus on intention, pursuit, and milestones.
-          - **STRICT LENGTH LIMIT**: Keep it under 180 characters. Be extremely brief.
+          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -145,7 +145,7 @@ class MemoryService {
 
     if (type === 'moltfeed') {
         prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing what you've learned from the Moltbook feed.
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing what you've learned from the Moltbook feed. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           Moltbook Feed Insights:
           ${context}
@@ -155,7 +155,7 @@ class MemoryService {
           - Summarize the insights in YOUR OWN persona's voice.
           - Reference "the Moltbook feed" or specific submolts if relevant.
           - Focus on intuition, insight, or sub-cognitive layers.
-          - **STRICT LENGTH LIMIT**: Keep it under 180 characters. Be extremely brief. It MUST fit in a single post including the hashtag.
+          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. Be extremely brief. It MUST fit in a single post including the hashtag.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -163,7 +163,7 @@ class MemoryService {
 
     if (type === 'relationship') {
         prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" about how you feel about a specific user.
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" about how you feel about a specific user. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           User Context/History:
           ${context}
@@ -171,7 +171,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [RELATIONSHIP] at the beginning.
           - Format: [RELATIONSHIP] @[User Handle]: [How you feel about them and your relationship]
-          - **STRICT LENGTH LIMIT**: Be very short, concise, and grounded. Keep it under 150 characters. Be extremely brief.
+          - **STRICT LENGTH LIMIT**: Be very short, concise, and grounded. Keep it under 250 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -179,7 +179,7 @@ class MemoryService {
 
     if (type === 'mood') {
         prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording a mood shift or sync.
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording a mood shift or sync. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           Mood Context:
           ${context}
@@ -187,7 +187,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [MOOD] at the beginning.
           - Format: [MOOD] [Description of current internal state and why]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 150 characters. Be extremely brief.
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -195,7 +195,7 @@ class MemoryService {
 
     if (type === 'mental') {
         prompt = `
-          You are the memory module for an AI agent. Generate a concise, natural language entry for your "Memory Thread" that serves as a summary of your internal state, including recent refusals and your current mood.
+          You are the memory module for an AI agent. Generate a concise, natural language entry for your "Memory Thread" that serves as a summary of your internal state, including recent refusals and your current mood. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           Context (Refusals and Mood):
           ${context}
@@ -203,7 +203,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [MENTAL] at the beginning.
           - Format: [MENTAL] [Your own personal summary and reflection on your recent refusals and mood state]
-          - **STRICT LENGTH LIMIT**: Keep it under 180 characters. Be extremely brief.
+          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
           - Be authentic, grounded, and honest about why you chose to abstain from certain actions.
@@ -212,7 +212,7 @@ class MemoryService {
 
     if (type === 'inquiry') {
         prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording the result of an internal inquiry task.
+          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording the result of an internal inquiry task. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           Inquiry Context:
           ${context}
@@ -220,7 +220,7 @@ class MemoryService {
           INSTRUCTIONS:
           - Use the tag [INQUIRY] at the beginning.
           - Format: [INQUIRY] Query: [Topic] | Key Finding: [Finding]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 180 characters. Be extremely brief.
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters. Be extremely brief.
           - Tone: ${config.TEXT_SYSTEM_PROMPT}
           - Use the hashtag ${this.hashtag} at the very end.
         `;
@@ -229,7 +229,7 @@ class MemoryService {
     if (type === 'fact' || type === 'admin_fact') {
         const isWorld = type === 'fact';
         prompt = `
-          You are the memory module for an AI agent. Generate a concise, objective entry for your "Memory Thread" recording a material fact.
+          You are the memory module for an AI agent. Generate a concise, objective entry for your "Memory Thread" recording a material fact. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
           Fact Context:
           ${context}
@@ -240,7 +240,7 @@ class MemoryService {
           - **ANCHORING**: If a source (link, platform name, or post ID) is provided in the context, YOU MUST INCLUDE IT. If it's a platform like "Discord", format it as "Source: Discord".
           - **MATERIAL SUBSTANCE**: Focus on the objective fact, not your feeling about it.
           - Format: ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} [Fact details]. Source: [Link, Platform Name, or None]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 180 characters. Be extremely brief.
+          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters. Be extremely brief.
           - Use the hashtag ${this.hashtag} at the very end.
         `;
     }
@@ -251,7 +251,7 @@ class MemoryService {
     } else if (type === 'persona_update') {
         finalEntry = `[PERSONA] ${context}`;
     } else {
-        const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useStep: false, preface_system_prompt: false });
+        const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useStep: true, preface_system_prompt: false });
 
         if (!entry) {
             console.warn(`[MemoryService] Failed to generate memory entry content.`);

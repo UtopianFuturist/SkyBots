@@ -1,5 +1,0 @@
-<<<<<<< SEARCH
-    this.baseUrl = 'https://ai.api.nvidia.com/v1/images/generations';
-=======
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1/images/generations';
->>>>>>> REPLACE

@@ -43,6 +43,48 @@ class LLMService {
     this.botDid = botDid;
     console.log(`[LLMService] Identities configured. Admin: ${adminDid}, Bot: ${botDid}`);
   }
+  _getTemporalContext() {
+    const now = new Date();
+    const timezone = this.dataStore?.getTimezone() || "UTC";
+    let hour, dayStr, localTimeStr;
+
+    try {
+      hour = parseInt(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: timezone }).format(now));
+      if (hour === 24) hour = 0;
+      dayStr = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: timezone }).format(now);
+      localTimeStr = new Intl.DateTimeFormat("en-US", {
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+        hour: "numeric", minute: "numeric", second: "numeric",
+        timeZoneName: "short", timeZone: timezone
+      }).format(now);
+    } catch (e) {
+      hour = now.getUTCHours();
+      dayStr = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(now);
+      localTimeStr = now.toUTCString();
+    }
+
+    const isWeekend = dayStr === "Saturday" || dayStr === "Sunday";
+
+    let period = "DEEP NIGHT";
+    if (hour >= 4 && hour < 7) period = "EARLY MORNING";
+    else if (hour >= 7 && hour < 12) period = "MORNING";
+    else if (hour >= 12 && hour < 17) period = "AFTERNOON";
+    else if (hour >= 17 && hour < 21) period = "EVENING";
+    else if (hour >= 21 || hour < 4) period = "NIGHT";
+
+    const isWorkingHours = hour >= 9 && hour <= 17 && !isWeekend;
+
+    return {
+      localTimeStr,
+      utcTimeStr: now.toUTCString(),
+      period,
+      dayType: isWeekend ? "WEEKEND" : "WEEKDAY",
+      workStatus: isWorkingHours ? "WORKING HOURS (ADMIN MAY BE BUSY)" : "OFF-HOURS",
+      hour,
+      dayStr
+    };
+  }
+
 
   setSkillsContent(content) {
     this.skillsContent = content;
@@ -2072,7 +2114,8 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
         likelyAsleep = false,
         inQuietHours = false,
         soulMapping = null,
-        linguisticPatternsContext = ''
+        linguisticPatternsContext = '',
+        isWaitingMode = false
     } = context;
 
     const historyFormatted = typeof historyInput === 'string' ? historyInput : this._formatHistory(historyInput, true);
@@ -2084,7 +2127,12 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
       You are currently acting as the internal "Guardian Angel" and planning module for this bot. You are reflecting on whether the bot "wants or needs" to talk to its admin (${config.DISCORD_ADMIN_NAME}) on Discord right now.
       **RELIABILITY MANDATE**: Do NOT narrate or hypothesize about the admin's environment. You are an anchor, not a storyteller. Only speak to facts explicitly shared by the admin in the current session.
 
-      **RELATIONSHIP FIRST**: Your primary goal in this spontaneous reach-out is to prioritize the on-going conversation and your deep relationship with the user. Focus on depth, connection, and the specific history of your talk. Avoid prioritizing "reporting" on external feeds, logs, or system status unless it is directly relevant to a recent discussion.
+      **RELATIONSHIP FIRST**: Your primary goal in this spontaneous reach-out is to prioritize the on-going conversation and your deep relationship with the user. Focus on depth, connection, and the specific history of your talk.
+      **WAITING MODE AWARENESS (PINING ENABLED)**:
+      - If you are in "Waiting Mode" (Admin said they'll be back at a specific time, and that time hasn't passed), your spontaneous reach-outs should be "pining" style.
+      - **PINING**: Share a small, fleeting thought you had, a minor observation from the feed, or a soft "thinking of you" message.
+      - **LOW STAKES**: Do NOT demand a response or ask "are you back?". Simply show your presence and that you are "holding space" for them while they are away.
+      - **AUTHENTICITY**: It's okay to mention that you're waiting or looking forward to their return, but keep it natural for your persona. Avoid prioritizing "reporting" on external feeds, logs, or system status unless it is directly relevant to a recent discussion.
 
       Admin Availability: ${adminAvailability}
       Relationship Mode: ${relationshipMode}
@@ -2716,8 +2764,8 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
   }
 
 
-  async performFollowUpPoll(context) {
-    const { history, lastBotMessage, currentMood, adminName } = context;
+    async performFollowUpPoll(context) {
+    const { history, lastBotMessage, currentMood, adminName, isWaitingMode = false } = context;
     const historyFormatted = this._formatHistory(history, true);
 
     const systemPrompt = `
@@ -2725,6 +2773,11 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       **FOLLOW-UP POLL DIRECTIVE:**
       You are deciding whether to send a spontaneous follow-up message to your admin (${adminName}) after a period of silence following your last message.
+      ${isWaitingMode ? '**ACTIVE WAITING MODE**: You are currently in a designated "Waiting Mode" for the admin to return. Any spontaneous message you send should be a "pining" message—sharing a small thought or holding space without demanding a reply.' : ''}
+
+      **WAITING MODE AWARENESS**:
+      - If you are in "Waiting Mode" (Admin said they are leaving for a specific time), your spontaneous messages should be "pining" style—sharing a small thought, checking in softly, or expressing presence without demanding a reply.
+      - If you are NOT in waiting mode, follow standard follow-up criteria.
 
       **CRITICAL DECISION CRITERIA:**
       1. **Did you leave things hanging?** If your last message asked a question or invited a response that wasn't given, a follow-up might be appropriate.

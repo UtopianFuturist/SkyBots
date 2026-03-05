@@ -172,15 +172,7 @@ class DataStore {
     this.db = await JSONFilePreset(DB_PATH, defaultData);
         await this.db.read();
 
-    const configPostTopics = config.POST_TOPICS ? config.POST_TOPICS.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
-    const configImageSubjects = config.IMAGE_SUBJECTS ? config.IMAGE_SUBJECTS.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
 
-    if (this.db.data.post_topics.length === 0 && configPostTopics.length > 0) {
-        this.db.data.post_topics = configPostTopics;
-    }
-    if ((!this.db.data.image_subjects || this.db.data.image_subjects.length === 0) && configImageSubjects.length > 0) {
-        this.db.data.image_subjects = configImageSubjects;
-    }
 
     let changed = false;
     for (const [key, value] of Object.entries(defaultData)) {
@@ -190,6 +182,17 @@ class DataStore {
       }
     }
     if (changed) await this.db.write();
+
+    const configPostTopics = config.POST_TOPICS ? config.POST_TOPICS.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
+    const configImageSubjects = config.IMAGE_SUBJECTS ? config.IMAGE_SUBJECTS.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
+
+    if (this.db.data.post_topics.length === 0 && configPostTopics.length > 0) {
+        this.db.data.post_topics = configPostTopics;
+    }
+    if ((!this.db.data.image_subjects || this.db.data.image_subjects.length === 0) && configImageSubjects.length > 0) {
+        this.db.data.image_subjects = configImageSubjects;
+    }
+    if (configPostTopics.length > 0 || configImageSubjects.length > 0) await this.db.write();
   }
 
   getConfig() { return this.db.data; }

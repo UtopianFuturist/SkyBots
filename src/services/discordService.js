@@ -1370,6 +1370,12 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                              console.log(`[DiscordService] Time correction detected in admin message.`);
                              messages.push({ role: 'system', content: `[TIME_CORRECTION]: The admin is correcting your sense of time. Use 'set_timezone' to update your persistent local timezone.` });
                          }
+                         if (prePlanning.suppressed_topics && Array.isArray(prePlanning.suppressed_topics)) {
+                             for (const topic of prePlanning.suppressed_topics) {
+                                 console.log(`[DiscordService] Suppressing topic from correction: ${topic}`);
+                                 await dataStore.suppressTopic(topic);
+                             }
+                         }
                      }
                  }
 

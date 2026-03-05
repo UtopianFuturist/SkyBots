@@ -157,7 +157,7 @@ const defaultData = {
   firehose_matches: [],
   admin_feedback: [],
   mutated_style: null,
-  discord_interactions: [],
+  discord_interactions: [], suppressed_topics: [],
   user_pfp_cids: {},
   social_resonance: {}
 };
@@ -251,10 +251,23 @@ class DataStore {
   }
 
   getAdminFacts() { return this.db.data.admin_facts || []; }
-  async addAdminFact(fact) {
-    this.db.data.admin_facts.push({ fact, timestamp: Date.now() });
+  async addAdminFact(fact, tags = []) {
+    this.db.data.admin_facts.push({ fact, timestamp: Date.now(), tags });
     if (this.db.data.admin_facts.length > 50) this.db.data.admin_facts.shift();
     await this.db.write();
+  }
+
+  getSuppressedTopics() { return this.db.data.suppressed_topics || []; }
+  async suppressTopic(topic, durationHours = 24) {
+    if (!this.db.data.suppressed_topics) this.db.data.suppressed_topics = [];
+    const entry = { topic: topic.toLowerCase(), expires: Date.now() + (durationHours * 60 * 60 * 1000) };
+    this.db.data.suppressed_topics.push(entry);
+    await this.db.write();
+  }
+  isTopicSuppressed(text) {
+    const now = Date.now();
+    this.db.data.suppressed_topics = (this.db.data.suppressed_topics || []).filter(t => t.expires > now);
+    return this.db.data.suppressed_topics.some(t => text.toLowerCase().includes(t.topic));
   }
 
   async addAdminFeedback(feedback) {

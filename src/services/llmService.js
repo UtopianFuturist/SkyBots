@@ -85,7 +85,7 @@ class LLMService {
     }).join("\n");
   }
   async generateDrafts(messages, count = 5, options = {}) {
-    const { useQwen = true, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null } = options;
+    const { useStep = true, useQwen = false, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null } = options;
     const draftSystemPrompt = `
       You are an AI generating ${count} diverse drafts for a response.
       Each draft must fulfill the user's intent but use a DIFFERENT opening formula, structural template, and emotional cadence.
@@ -104,7 +104,7 @@ class LLMService {
       ...messages
     ];
 
-    const response = await this.generateResponse(draftMessages, { ...options, useQwen, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood });
+    const response = await this.generateResponse(draftMessages, { ...options, useStep, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood });
     if (!response) return [];
 
     const drafts = [];
@@ -365,7 +365,7 @@ Vary your structure and tone from recent messages.`
       return null;
     } catch (error) {
       if (error.name === 'AbortError') {
-        console.error(`[LLMService] [${requestId}] Request timed out after 90s.`);
+        console.error(`[LLMService] [${requestId}] Request timed out after 180s.`);
         if (!useQwen && this.model !== this.qwenModel) {
             console.warn(`[LLMService] [${requestId}] Primary model timed out. Retrying with Qwen...`);
             return this.generateResponse(messages, { ...options, useQwen: true, platform });
@@ -450,7 +450,7 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
 
     try {
       const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -476,7 +476,7 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY "yes" or "no". Do not include any reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -509,7 +509,7 @@ Vary your structure and tone from recent messages.`
       Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: postText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
@@ -539,7 +539,7 @@ Vary your structure and tone from recent messages.`
       Respond directly. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: responseText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
     }
@@ -555,7 +555,7 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY "injection" or "clean". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     return response?.toLowerCase().includes('injection') || false;
   }
 
@@ -587,7 +587,7 @@ Vary your structure and tone from recent messages.`
     `.trim();
 
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true, preface_system_prompt: false });
 
     try {
       const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -628,7 +628,7 @@ Vary your structure and tone from recent messages.`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: 'Identify the submolts I should subscribe to from the list provided in the system instructions.' }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true, preface_system_prompt: false });
 
     try {
       const jsonMatch = response?.match(/\[[\s\S]*\]/);
@@ -694,7 +694,7 @@ Vary your structure and tone from recent messages.`
       { role: 'user', content: 'Select the best submolt for my next post.' }
     ];
 
-    const response = await this.generateResponse(messages, { max_tokens: 100, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 100, useStep: true, preface_system_prompt: false });
     return response?.toLowerCase().replace(/^m\//, '').trim() || 'general';
   }
 
@@ -713,7 +713,7 @@ Vary your structure and tone from recent messages.`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Bio: ${userProfile.description}\n\nRecent Posts:\n- ${userPosts.join('\n- ')}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
 
     if (response?.toLowerCase().includes('high-risk')) {
       return { highRisk: true, reason: response.split('|')[1]?.trim() || 'No reason provided.' };
@@ -741,7 +741,7 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: inputText }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -768,7 +768,7 @@ Vary your structure and tone from recent messages.`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser's latest post: "${currentPost}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useStep: true });
 
     if (response?.toLowerCase().includes('hostile')) {
       return { status: 'hostile', reason: response.split('|')[1]?.trim() || 'unspecified' };
@@ -931,7 +931,7 @@ Vary your structure and tone from recent messages.`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Interaction History:\n${historyText}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     const matches = response?.match(/\d+/g);
     const rating = matches ? parseInt(matches[matches.length - 1], 10) : NaN;
     return isNaN(rating) ? 3 : Math.max(1, Math.min(5, rating));
@@ -947,7 +947,7 @@ Vary your structure and tone from recent messages.`
 
       Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `.trim();
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
     this._sensoryPreferenceCache = response?.toLowerCase().includes('yes') || false;
     return this._sensoryPreferenceCache;
   }
@@ -962,7 +962,7 @@ Vary your structure and tone from recent messages.`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Interaction: ${JSON.stringify(history)}` }
     ];
-    return await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0 });
+    return await this.generateResponse(messages, { useStep: true, preface_system_prompt: false, temperature: 0.0 });
   }
 
   async buildInternalBrief(topic, searchResults, wikiResults, firehoseResults = []) {
@@ -1005,7 +1005,7 @@ Vary your structure and tone from recent messages.`
       - Do NOT mention the dialectic process in the final output.
       - Format: A single, punchy social media post (under 280 chars).
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async performInternalInquiry(query, role = "RESEARCHER") {
@@ -1037,8 +1037,8 @@ Vary your structure and tone from recent messages.`
 
     const validatedQuery = query || "No query provided.";
 
-    // Internal Inquiry uses the main model (Qwen 3.5) as requested.
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: validatedQuery }], { useQwen: false, preface_system_prompt: false });
+    // Internal Inquiry uses Step 3.5 Flash for efficiency.
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: validatedQuery }], { useStep: true, preface_system_prompt: false });
   }
 
   async shouldLikePost(postText) {
@@ -1055,7 +1055,7 @@ Vary your structure and tone from recent messages.`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Post content: "${postText}"` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -1116,7 +1116,7 @@ Vary your structure and tone from recent messages.`
     const { modelOverride = null } = options;
     const actualVisionModel = modelOverride || this.visionModel;
     const payload = {
-      model: imageUrl ? actualVisionModel : this.qwenModel,
+      model: imageUrl ? actualVisionModel : this.stepModel,
       messages: messages,
       max_tokens: 1000,
       stream: false
@@ -1196,7 +1196,7 @@ Vary your structure and tone from recent messages.`
       { role: 'system', content: systemPrompt },
       { role: 'user', content: `Conversation History:\n${historyText}\n\nUser post: "${userPostText}"\nBot reply: "${botReplyText}"${embedContext}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useStep: true });
 
     // Safety check: if the API fails, assume it's coherent (score 5) to avoid accidental deletion.
     if (!response) {
@@ -1353,7 +1353,7 @@ Vary your structure and tone from recent messages.`
       { role: 'user', content: `Topic: "${topic}"\nPost Type: ${postType}\nPost Content: "${postContent}"${embedContext}` }
     ];
 
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useStep: true });
 
     if (!response) {
       return { score: 5, reason: 'Coherence check failed (timeout/empty). Defaulting to pass.' };
@@ -1394,7 +1394,7 @@ Vary your structure and tone from recent messages.`
       Otherwise, respond with ONLY the number of the best result. Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Results:\n${resultsList}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useStep: true });
 
     if (!response || response.toLowerCase().includes('none')) return null;
 
@@ -1424,7 +1424,7 @@ Vary your structure and tone from recent messages.`
       Your answer must be a single word: "yes" or "no". Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `Result:\n${resultInfo}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useStep: true });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -1466,7 +1466,7 @@ Vary your structure and tone from recent messages.`
     `.trim();
 
     const messages = [{ role: 'system', content: systemPrompt }];
-    const response = await this.generateResponse(messages, { max_tokens: 1000, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 1000, useStep: true, preface_system_prompt: false });
 
     try {
       const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -1507,7 +1507,7 @@ Vary your structure and tone from recent messages.`
     `.trim();
 
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }];
-    const response = await this.generateResponse(messages, { max_tokens: 500, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 500, useStep: true, preface_system_prompt: false });
 
     if (response?.toLowerCase().includes('violation')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'Contains private information.' };
@@ -1585,7 +1585,7 @@ Vary your structure and tone from recent messages.`
         { role: 'user', content: `User Post: "${userPost}"\n\nContext (Last 15 interactions):\n${this._formatHistory(conversationHistory.slice(-15), isAdmin)}` }
     ];
 
-    const response = await this.generateResponse(messages, { useQwen: true, preface_system_prompt: false, temperature: 0.0, platform, abortSignal });
+    const response = await this.generateResponse(messages, { useStep: true, preface_system_prompt: false, temperature: 0.0, platform, abortSignal });
 
     try {
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -1643,6 +1643,7 @@ Vary your structure and tone from recent messages.`
   }
 
   async performAgenticPlanning(userPost, conversationHistory, visionContext, isAdmin = false, platform = 'bluesky', exhaustedThemes = [], currentConfig = null, feedback = '', discordStatus = 'online', refusalCounts = null, latestMoodMemory = null, prePlanningContext = null, abortSignal = null, userToneShift = null) {
+    /* planner uses qwen */
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
     const historyText = this._formatHistory(conversationHistory, isAdmin);
 
@@ -2122,7 +2123,7 @@ Vary your structure and tone from recent messages.`
       Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0, abortSignal });
 
     try {
       const jsonMatch = response?.match(/\{[\s\S]*\}/);
@@ -2345,7 +2346,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     `;
 
     const response = await this.generateResponse([{ role: 'system', content: pollPrompt }], {
-        useQwen: true,
+        useStep: true,
         preface_system_prompt: false,
         temperature: 0.0,
         platform: "discord", openingBlacklist
@@ -2395,7 +2396,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Respond with ONLY "safe" or "unsafe | [reason]".
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: `URL: ${url}` }];
-    const response = await this.generateResponse(messages, { max_tokens: 100, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 100, useStep: true, preface_system_prompt: false });
     if (response?.toLowerCase().startsWith('unsafe')) {
       return { safe: false, reason: response.split('|')[1]?.trim() || 'URL looks suspicious.' };
     }
@@ -2423,7 +2424,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Respond with ONLY "yes" or "no". Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
     return response?.toLowerCase().includes('yes') || false;
   }
 
@@ -2448,7 +2449,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Respond with ONLY the alternative suggestion or "NONE". Do not include reasoning or <think> tags.
     `.trim();
 
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async generateRefusalExplanation(reason, platform, context) {
@@ -2473,7 +2474,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Respond with ONLY the explanation text. Do not include reasoning or <think> tags.
     `.trim();
 
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async summarizeWebPage(url, text) {
@@ -2507,7 +2508,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Respond with ONLY the requested format. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false, temperature: 0.7 });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.7 });
 
     if (response?.toUpperCase().startsWith('YES')) {
         return { confirmed: true };
@@ -2524,7 +2525,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Each direction should be unique (e.g., Technical, Poetic, Skeptical, Historical).
       Respond with a numbered list.
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async exploreNuance(thought) {
@@ -2533,7 +2534,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Analyze the following thought and provide a counter-point, a "yes, but...", or a nuanced alternative perspective to avoid binary thinking.
       Thought: "${thought}"
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async resolveDissonance(points) {
@@ -2543,7 +2544,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Points:
       ${points.map((p, i) => `${i + 1}. ${p}`).join('\n')}
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async identifyInstructionConflict(directives) {
@@ -2553,7 +2554,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       ${directives.map((d, i) => `${i + 1}. ${d}`).join('\n')}
       If a conflict exists, identify it and suggest a clarification. If no conflict, respond with "No conflicts detected."
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async decomposeGoal(goal) {
@@ -2572,7 +2573,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       3. Maintain your persona's voice in the descriptions.
       4. Format as a clear, concise list.
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async batchImageGen(subject, count = 3) {
@@ -2591,7 +2592,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       PROMPT 2: [description]
       ...
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async scoreLinkRelevance(urls) {
@@ -2601,7 +2602,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       ${urls.join('\n')}
       Rank them by relevance (1-10).
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async auditStrategy(plans) {
@@ -2618,7 +2619,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       Provide a concise audit report with "Course Correction" suggestions.
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async extractFacts(context) {
@@ -2650,7 +2651,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       }
       If no new facts are found, return empty arrays.
     `;
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: context }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: context }], { useStep: true, preface_system_prompt: false });
     try {
         const match = response?.match(/\{[\s\S]*\}/);
         return match ? JSON.parse(match[0]) : { world_facts: [], admin_facts: [] };
@@ -2673,7 +2674,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
         "reason": "string"
       }
     `;
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
     try {
         const match = response?.match(/\{[\s\S]*\}/);
         return match ? JSON.parse(match[0]) : { score: 0.5, reason: "Parsing failure" };
@@ -2695,7 +2696,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       Respond with ONLY the SYNTHESIS.
     `;
-    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    return await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
   }
 
   async extractDeepKeywords(text, count = 10) {
@@ -2712,7 +2713,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       Do not include reasoning or <think> tags.
     `;
     const messages = [{ role: 'system', content: systemPrompt }, { role: 'user', content: text }];
-    const response = await this.generateResponse(messages, { max_tokens: 500, useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 500, useStep: true, preface_system_prompt: false });
     if (response) {
         return response.split(',').map(k => k.trim().toLowerCase()).filter(k => k.length >= 3);
     }
@@ -2793,7 +2794,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
     ];
 
     const response = await this.generateResponse(messages, {
-      useQwen: true,
+      useStep: true,
       preface_system_prompt: false,
       temperature: 0.7,
       max_tokens: 500
@@ -2838,7 +2839,7 @@ ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
       }
     `;
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
     try {
         const match = response?.match(/\{[\s\S]*\}/);
         return match ? JSON.parse(match[0]) : { decision: 'none', reason: 'Parsing failure' };

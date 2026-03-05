@@ -50,13 +50,13 @@ class MemoryService {
     return null;
   }
 
-  async createMemoryEntry(type, context) {
+  async createMemoryEntry(type, context, timestamp = null) {
     if (!this.isEnabled()) return null;
 
     // Use a promise queue to ensure memory entries are processed sequentially
     return this.processingQueue = this.processingQueue.then(async () => {
         try {
-            return await this._createMemoryEntryInternal(type, context);
+            return await this._createMemoryEntryInternal(type, context, timestamp);
         } catch (error) {
             console.error(`[MemoryService] Error processing memory entry in queue:`, error);
             return null;
@@ -64,7 +64,7 @@ class MemoryService {
     });
   }
 
-  async _createMemoryEntryInternal(type, context) {
+  async _createMemoryEntryInternal(type, context, timestamp = null) {
     console.log(`[MemoryService] Generating memory entry for type: ${type}`);
 
     const memories = this.formatMemoriesForPrompt();
@@ -231,6 +231,8 @@ class MemoryService {
         prompt = `
           You are the memory module for an AI agent. Generate a concise, objective entry for your "Memory Thread" recording a material fact. Ensure the entry is a complete, self-contained thought and does not get cut off.
 
+
+          Original Context Time: ${timestamp ? new Date(timestamp).toLocaleString() : 'Just now'}
           Fact Context:
           ${context}
 
@@ -238,6 +240,7 @@ class MemoryService {
           - Use the tag ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} at the beginning.
           ${!isWorld ? '- **IDENTITY**: Always refer to the administrator as "Admin" in the fact details (e.g., "Admin prefers...", "Admin is planning..."). NEVER use "User".' : ''}
           - **ANCHORING**: If a source (link, platform name, or post ID) is provided in the context, YOU MUST INCLUDE IT. If it's a platform like "Discord", format it as "Source: Discord".
+          - **TEMPORAL INTEGRITY**: DO NOT use relative time phrases like "from now" or "currently". Use past tense or absolute time markers (e.g., "Admin planned to return at 9am" instead of "Admin plans to return in 3 hours").
           - **MATERIAL SUBSTANCE**: Focus on the objective fact, not your feeling about it.
           - Format: ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} [Fact details]. Source: [Link, Platform Name, or None]
           - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters. Be extremely brief.
@@ -326,7 +329,7 @@ class MemoryService {
     if (result) {
         this.recentMemories.push({
             text: finalEntry,
-            indexedAt: new Date().toISOString()
+            indexedAt: timestamp ? new Date(timestamp).toISOString() : new Date().toISOString()
         });
         if (this.recentMemories.length > 15) {
             this.recentMemories.shift();

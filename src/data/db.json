@@ -41,7 +41,84 @@
   "discord_admin_available": true,
   "discord_last_replied": true,
   "lastDiscordHeartbeatTime": 0,
-  "discord_conversations": {},
+  "discord_conversations": {
+    "test_channel": [
+      {
+        "role": "user",
+        "content": "Message 1",
+        "timestamp": 1772722757100
+      },
+      {
+        "role": "user",
+        "content": "Message 2",
+        "timestamp": 1772733557100
+      },
+      {
+        "role": "user",
+        "content": "Back early!",
+        "timestamp": 1772733557100
+      },
+      {
+        "role": "user",
+        "content": "Message 1",
+        "timestamp": 1772722790399
+      },
+      {
+        "role": "user",
+        "content": "Message 2",
+        "timestamp": 1772733590399
+      },
+      {
+        "role": "user",
+        "content": "Back early!",
+        "timestamp": 1772733590399
+      }
+    ],
+    "test_channel_new": [
+      {
+        "role": "user",
+        "content": "Message 1",
+        "timestamp": 1772722823402
+      },
+      {
+        "role": "user",
+        "content": "Message 2",
+        "timestamp": 1772733623402
+      },
+      {
+        "role": "user",
+        "content": "Message 1",
+        "timestamp": 1772724380195
+      },
+      {
+        "role": "user",
+        "content": "Message 2",
+        "timestamp": 1772735180195
+      }
+    ],
+    "test_channel_early_return": [
+      {
+        "role": "user",
+        "content": "Bye",
+        "timestamp": 1772722823402
+      },
+      {
+        "role": "user",
+        "content": "I'm back early",
+        "timestamp": 1772733623402
+      },
+      {
+        "role": "user",
+        "content": "Bye",
+        "timestamp": 1772724380195
+      },
+      {
+        "role": "user",
+        "content": "I'm back early",
+        "timestamp": 1772735180195
+      }
+    ]
+  },
   "discord_pending_mirror": null,
   "discord_relationship_mode": "acquaintance",
   "discord_trust_score": 0.1,
@@ -169,5 +246,10 @@
   "mutated_style": null,
   "discord_interactions": [],
   "user_pfp_cids": {},
-  "social_resonance": {}
+  "social_resonance": {},
+  "post_topics": [],
+  "image_subjects": [],
+  "discord_waiting_until": 0,
+  "discord_session_start": 1772735180233,
+  "suppressed_topics": []
 }

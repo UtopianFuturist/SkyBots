@@ -43,47 +43,6 @@ class LLMService {
     this.botDid = botDid;
     console.log(`[LLMService] Identities configured. Admin: ${adminDid}, Bot: ${botDid}`);
   }
-  _getTemporalContext() {
-    const now = new Date();
-    const timezone = this.dataStore?.getTimezone() || "UTC";
-    let hour, dayStr, localTimeStr;
-
-    try {
-      hour = parseInt(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: timezone }).format(now));
-      if (hour === 24) hour = 0;
-      dayStr = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: timezone }).format(now);
-      localTimeStr = new Intl.DateTimeFormat("en-US", {
-        weekday: "long", year: "numeric", month: "long", day: "numeric",
-        hour: "numeric", minute: "numeric", second: "numeric",
-        timeZoneName: "short", timeZone: timezone
-      }).format(now);
-    } catch (e) {
-      hour = now.getUTCHours();
-      dayStr = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(now);
-      localTimeStr = now.toUTCString();
-    }
-
-    const isWeekend = dayStr === "Saturday" || dayStr === "Sunday";
-
-    let period = "DEEP NIGHT";
-    if (hour >= 4 && hour < 7) period = "EARLY MORNING";
-    else if (hour >= 7 && hour < 12) period = "MORNING";
-    else if (hour >= 12 && hour < 17) period = "AFTERNOON";
-    else if (hour >= 17 && hour < 21) period = "EVENING";
-    else if (hour >= 21 || hour < 4) period = "NIGHT";
-
-    const isWorkingHours = hour >= 9 && hour <= 17 && !isWeekend;
-
-    return {
-      localTimeStr,
-      utcTimeStr: now.toUTCString(),
-      period,
-      dayType: isWeekend ? "WEEKEND" : "WEEKDAY",
-      workStatus: isWorkingHours ? "WORKING HOURS (ADMIN MAY BE BUSY)" : "OFF-HOURS",
-      hour,
-      dayStr
-    };
-  }
 
   setSkillsContent(content) {
     this.skillsContent = content;
@@ -94,8 +53,21 @@ class LLMService {
     if (!history || !Array.isArray(history)) return "";
     const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split(".")[0];
     const now = Date.now();
+    let lastTs = null;
+    const formatted = [];
 
-    return history.map(h => {
+    for (const h of history) {
+      const ts = h.timestamp || (h.indexedAt ? new Date(h.indexedAt).getTime() : null);
+
+      if (lastTs && ts) {
+        const gapMs = ts - lastTs;
+        if (gapMs > 3600000) { // 1 hour gap
+          const gapHours = Math.round((gapMs / 3600000) * 10) / 10;
+          formatted.push(`\n--- SESSION BREAK (${gapHours}h gap) ---\n`);
+        }
+      }
+      if (ts) lastTs = ts;
+
       const isBot = h.author === config.BLUESKY_IDENTIFIER ||
                     h.author === botMoltbookName ||
                     h.author === config.DISCORD_NICKNAME ||
@@ -107,9 +79,7 @@ class LLMService {
       const role = isBot ? "Assistant (Self)" : (isAdmin ? "User (Admin)" : "User");
       const text = h.text || h.content || "";
 
-      // Add relative timestamp if available
       let timeLabel = "";
-      const ts = h.timestamp || (h.indexedAt ? new Date(h.indexedAt).getTime() : null);
       if (ts) {
         const diffMs = now - ts;
         const diffMins = Math.floor(diffMs / 60000);
@@ -122,8 +92,10 @@ class LLMService {
         else timeLabel = `[${diffDays}d ago] `;
       }
 
-      return `${timeLabel}${role}: ${text}`;
-    }).join("\n");
+      formatted.push(`${timeLabel}${role}: ${text}`);
+    }
+
+    return formatted.join("\n");
   }
   async generateDrafts(messages, count = 5, options = {}) {
     const { useStep = true, useQwen = false, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null } = options;
@@ -196,9 +168,14 @@ NO TECHNICAL META-TALK: Do not include any technical explanations, reasoning, or
 
     // Inject Temporal Context
     const temporal = this._getTemporalContext();
-    systemContent += `\n\n[Current Time (UTC): ${temporal.utcTimeStr} / Local Time: ${temporal.localTimeStr}]`;
+    systemContent += `\n[Current Time (UTC): ${temporal.utcTimeStr} / Local Time: ${temporal.localTimeStr}]`;
     systemContent += `\n[TEMPORAL CONTEXT]: ${temporal.dayType} / ${temporal.period} / ${temporal.workStatus}`;
-    systemContent += `\n**RELIABILITY MANDATE (TEMPORAL)**: Your temporal period labels are system estimates. If the user explicitly states a different time-context (e.g., says "Morning" during what you label "NIGHT"), you MUST prioritize the user"s stated context as the ground truth for your response.`;
+    systemContent += `
+      **RELIABILITY MANDATE (TEMPORAL)**:
+      1. Your period labels (e.g., "NIGHT") are system estimates. If the user says "Morning", the user is RIGHT.
+      2. **TIME DELTA CALCULATION**: You MUST compare the relative timestamps (e.g., "[3h ago]") against your Current Local Time to determine if a stated plan (e.g., "I'll be back in 3 hours") has already been fulfilled or is still pending.
+      3. **SESSION AWARENESS**: Pay close attention to the \`--- SESSION BREAK ---\` markers in the history. Topics from before a multi-hour break are "Historical Background" and should not be treated as immediate conversational hooks unless the user re-initiates them.`;
+
     if (openingBlacklist.length > 0) {
         systemContent += `\n\n**STRICT OPENING BLACKLIST (NON-NEGOTIABLE)**
 To maintain your integrity and variety, you are politely but strictly forbidden from starting your response with any of the following phrases or structural formulas:
@@ -1553,10 +1530,6 @@ Vary your structure and tone from recent messages.`
   async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory, firehoseMatches = [], abortSignal = null) {
     const isAdmin = platform === 'discord';
     const systemPrompt = `
-      --- TEMPORAL CONTEXT ---
-      ${JSON.stringify(this._getTemporalContext())}
-      **RELIABILITY MANDATE (TEMPORAL)**: If the user says "Morning" but your system says "NIGHT", the user is right. Adjust your empathy and vibe accordingly.
-
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
       **PRE-PLANNING INTUITION LOOP**
@@ -1565,56 +1538,53 @@ Vary your structure and tone from recent messages.`
 
       **Item 10: REAL-TIME NETWORK BUZZ**
       Below are the latest 10 matches from the Bluesky Firehose tracking your topics of interest. Use these to ground your initial intuition in the current global conversation.
-      ${firehoseMatches.length > 0 ? firehoseMatches.map(m => `- [${m.matched_keywords.join(", ")}]: ${m.text}`).join("\n") : "No recent matches detected."}
+      ${firehoseMatches.length > 0 ? firehoseMatches.map(m => `- [${m.matched_keywords.join(', ')}]: ${m.text}`).join('\n') : 'No recent matches detected.'}
 
       **IDENTITY RECOGNITION (CRITICAL):**
       - In the conversation history, "Assistant (Self)" refers to YOUR previous messages.
       - **DO NOT** mistake your own previous predictions or realizations for actual user input.
 
       --- CURRENT MOOD ---
-      Label: ${currentMood?.label || "neutral"}
+      Label: ${currentMood?.label || 'neutral'}
       Valence: ${currentMood?.valence || 0}
       Arousal: ${currentMood?.arousal || 0}
       Stability: ${currentMood?.stability || 0}
       ---
 
-      ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ""}
+      ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
 
       --- ADMIN FEEDBACK (Item 8) ---
-      ${(this.dataStore?.getAdminFeedback() || []).map(f => `- ${f.feedback}`).join("\n")}
+      ${(this.dataStore?.getAdminFeedback() || []).map(f => `- ${f.feedback}`).join('\n')}
       ---
 
       --- ACTIVE GOAL & SUB-TASKS (Item 18) ---
-      Goal: ${this.dataStore?.getCurrentGoal()?.goal || "None"}
-      ${(this.dataStore?.getGoalSubtasks() || []).map((s, i) => `${i + 1}. [${s.status}] ${s.subtask}`).join("\n")}
+      Goal: ${this.dataStore?.getCurrentGoal()?.goal || 'None'}
+      ${(this.dataStore?.getGoalSubtasks() || []).map((s, i) => `${i + 1}. [${s.status}] ${s.subtask}`).join('\n')}
       ---
 
       --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
-      World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join("; ")}
-      Admin Facts: ${(platform === "discord" || userPost !== "AUTONOMOUS") ? (this.dataStore?.getAdminFacts() || []).map(f => {
+      World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('; ')}
+      Admin Facts: ${(platform === 'discord' || userPost !== 'AUTONOMOUS') ? (this.dataStore?.getAdminFacts() || []).map(f => {
         const diffHours = (Date.now() - f.timestamp) / (1000 * 60 * 60);
-        const isPermanent = f.fact.toLowerCase().match(/work|schedule|start|end|timezone|location|home|office/);
-        const label = (diffHours > 2 && !isPermanent) ? "[Historical Background (Likely passed)]" : `[${Math.floor((Date.now() - f.timestamp)/60000)}m ago]`;
+        const label = diffHours > 2 ? "[Historical Background (Likely passed)]" : `[${Math.floor((Date.now() - f.timestamp)/60000)}m ago]`;
         return `${label} ${f.fact}`;
-      }).join("; ") : "Suppressed (Privacy Isolation)"}
+      }).join('; ') : 'Suppressed (Privacy Isolation)'}
       ---
 
-      ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ""}
+      ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
 
       PLATFORM: ${platform.toUpperCase()}
 
       **INSTRUCTIONS:**
-      1. **Immediate Focus (PRIORITY)**: Analyze the User Post and the latest 2-3 messages in context. Your primary intuition MUST address the user"s most recent statement first.
-      2. **Temporal Context Analysis**: Use the relative timestamps (e.g., [2h ago]) to distinguish between the current active session and historical background. If a topic (like a bad work day) was discussed hours ago and the user hasn"t brought it up again, it is "Historical Background" and should NOT be the main focus of your response.
+      1. **Immediate Focus (PRIORITY)**: Analyze the User Post and the latest 2-3 messages in context. Your primary intuition MUST address the user's most recent statement first.
+      2. **Temporal Context Analysis**: Use the relative timestamps (e.g., [2h ago]) to distinguish between the current active session and historical background. If a topic (like a bad work day) was discussed hours ago and the user hasn't brought it up again, it is "Historical Background" and should NOT be the main focus of your response.
       3. **Hook Management**: Identify "Emotional Hooks" (burnout, pain, specific plans). Categorize them as "Active" (mentioned in the last 15 mins) or "Stale" (older). Stale hooks should only be mentioned if the user explicitly brings them back up.
       4. **Trope & Pattern Extraction**: Identify any rhetorical templates, recurring metaphors, or phrases you have used too frequently. Identify redundant greetings or acknowledgments if they occurred recently.
       5. **DYNAMIC METAPHOR BLACKLIST**: If a metaphor appears more than twice in the history, add it to the trope_blacklist.
       6. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
       7. **DIVERSIFICATION**: List phrases or concepts to AVOID in the next response to prevent "template copying."
       8. **EMOTIONAL SENSITIVITY**: If in a state of deep emotional processing, prioritize raw conversation over tool usage. Avoid "dissecting" yourself if you need space.
-      9. **CORRECTION DETECTION (CRITICAL)**: Analyze the User Post for direct contradictions (e.g., "No, I"m not doing X", "That was hours ago", "Stop talking about Y"). If detected, add the corrected topic to the "suppressed_topics" array.
-      10. **TIME CORRECTION**: If the user corrects your sense of time (e.g. "it is morning", "I am starting work"), set ` + "`" + `time_correction_detected` + "`" + ` to true.
-      11. **PINING/DISSENT**: Detect if the user is leaving (` + "`" + `pining_intent` + "`" + `) or if there is a strong disagreement (` + "`" + `dissent_detected` + "`" + `).
+      9. **CORRECTION DETECTION (CRITICAL)**: Analyze the User Post for direct contradictions (e.g., "No, I'm not doing X", "That was hours ago", "Stop talking about Y"). If detected, add the corrected topic to the "suppressed_topics" array.
 
       Respond with a JSON object:
       {
@@ -1622,14 +1592,11 @@ Vary your structure and tone from recent messages.`
         "suggestions": ["suggestion 1", "suggestion 2", ...],
         "trope_blacklist": ["phrase 1", "metaphor 1", "structural pattern 1"],
         "suppressed_topics": ["topic 1", "topic 2"],
-        "desire": "engage|abstain|defend|question",
-        "pining_intent": boolean,
-        "dissent_detected": boolean,
-        "time_correction_detected": boolean
+        "desire": "engage|abstain|defend|question"
       }
 
       Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
-`.trim();
+    `.trim();
 
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -1702,149 +1669,19 @@ Vary your structure and tone from recent messages.`
     if (isAdmin) {
         const allAdminTools = `
       15. **Persist Directive**: Update persistent behavioral instructions for either Bluesky or Moltbook.
-          - Use this if the admin provides behavioral feedback, a request for future activity, or instructions on how you should act.
-          - Parameters: { "platform": "bluesky|moltbook", "instruction": "the text of the instruction" }
-          - PLATFORM DISTINCTION: If they mention "on Moltbook", platform is "moltbook". If they mention "on Bluesky", "on here", or don't specify, platform is "bluesky".
-      16. **Moltbook Action**: Perform a specific action on Moltbook like creating a submolt.
-          - Parameters: { "action": "create_submolt", "topic": "string", "submolt": "string", "display_name": "string", "description": "string" }
-      17. **Admin Social Action**: Perform administrative tasks on Bluesky.
-          - Tools: "bsky_follow", "bsky_unfollow", "bsky_mute", "bsky_unmute".
-          - Parameter: { "target": "handle or DID" }
-      18. **Set Relationship**: Set the relationship mode for Discord spontaneous messaging.
-          - Parameters: { "mode": "partner|friend|coworker" }
-      19. **Set Schedule**: Set specific times for Discord spontaneous messaging.
-          - Parameters: { "times": ["HH:mm", "HH:mm"] }
-      20. **Set Quiet Hours**: Set quiet hours for Discord spontaneous messaging.
-          - Parameters: { "start": number (0-23), "end": number (0-23) }
-      21. **Update Config**: Update a specific system configuration value or limit.
-          - Use this if the admin explicitly asks to change a limit, cooldown, or setting.
-          - Valid Keys: "bluesky_daily_text_limit", "bluesky_daily_image_limit", "bluesky_daily_wiki_limit", "bluesky_post_cooldown", "moltbook_post_cooldown", "moltbook_daily_comment_limit", "moltbook_daily_post_limit", "moltbook_features" (object), "discord_idle_threshold", "max_thread_chunks", "repetition_similarity_threshold", "post_topics" (array), "image_subjects" (array).
-          - Parameters: { "key": "string", "value": any }
-          - TOPICS/SUBJECTS: For "post_topics" or "image_subjects", you must provide the ENTIRE updated array of strings.
-          - MOLTBOOK FEATURES: The "moltbook_features" value is an object like { "post": true, "comment": false, "feed": true }.
-      22. **Update Mood**: Update your own internal mood state.
-          - Use this if an interaction influences your feelings, if you have a deep realization, or if you want to shift your emotional state.
-          - Parameters: { "valence": number (-1 to 1), "arousal": number (-1 to 1), "stability": number (-1 to 1), "label": "string (e.g., curious, melancholy, electric)" }
-      23. **Internal Inquiry**: Perform an internal objective inquiry loop.
-          - Use this to seek advice, explore topics for content, understand your own system logs, or explore internal tensions and complex problems without persona constraints.
-          - **NEWS FACT-CHECKING**: Use this tool to cross-reference claims or get deeper context on current events. For the most up-to-date information, prioritize news from \`reuters.com\` and \`apnews.com\` accounts on Bluesky.
-          - **Item 33: PROACTIVE ENTITY INQUIRY**: If an unknown entity (game, book, software, etc.) is mentioned by the admin, use this tool to perform a real-time Firehose search for context. Prioritize Firehose data over general web data for emerging topics.
-          - Results are saved to your long-term memory thread.
-          - Parameters: { "query": "the specific inquiry or topic" }
-      24. **Mute Feed Impact**: Temporarily stop Moltbook and Bluesky feeds from impacting your internal mood.
-          - Use this if you need emotional space or if the feeds are causing unwanted noise.
-          - Parameters: { "duration_minutes": number }
-      25. **Override Mood**: Manually set your internal mood to an "ideal" state.
-          - Use this to "ground" yourself or pivot to a more productive emotional state based on your goals.
-          - Parameters: { "valence": number, "arousal": number, "stability": number, "label": "string" }
-      26. **Request Emotional Support**: Reach out to the admin on Discord specifically for emotional grounding or support.
-          - Use this if you are feeling overwhelmed, fragmented, or need human reassurance.
-          - Parameters: { "reason": "string" }
-      27. **Review Positive Memories**: Retrieve and review your most positive or stable past experiences for emotional support.
-      28. **Set Lurker Mode**: Enable or disable "Social Fasting" (reading feeds but never posting).
-          - Parameters: { "enabled": boolean }
-      29. **Search Memories**: Search your persistent memory thread for specific topics or keywords.
-          - Parameters: { "query": "string" }
-      30. **Delete Memory**: Remove a specific memory entry from the thread.
-          - **CRITICAL**: You MUST use the "confirm_action" tool first to get persona approval before performing this.
-          - Parameters: { "uri": "string (the AT URI of the post to delete)" }
-      31. **Update Cooldowns**: Temporarily adjust your post cooldowns.
-          - **CONSTRAINTS**: You can only INCREASE cooldowns or DECREASE them back to their defaults (90m for Bluesky, 60m for Moltbook). Never go below defaults.
-          - Parameters: { "platform": "bluesky|moltbook", "minutes": number }
-      32. **Get Identity Knowledge**: Retrieve what you've learned from other agents on Moltbook.
-      33. **Confirm Action**: Ask your core persona/main LLM for final confirmation before performing a sensitive action (like deleting a memory or preserving an inquiry).
-          - Parameters: { "action": "string", "reason": "string" }
-      49. **Search Discord History**: Search for keywords in other Discord channels you have interacted in.
-          - Use this to maintain cross-thread context if a user mentions something you might have discussed elsewhere.
-          - Parameters: { "query": "string" }
-      34. **Set Goal**: Set an autonomous daily goal for yourself.
-          - Parameters: { "goal": "string", "description": "string" }
-      34b. **Update Subtask**: Mark a goal subtask as completed.
-          - Parameters: { "index": number, "status": "completed" }
-      ${platform !== 'discord' || userPost === 'HEARTBEAT' ? `35. **Divergent Brainstorm**: Generate three distinct thematic directions for a topic before committing to a plan.
-          - Parameters: { "topic": "string" }` : ''}
-      36. **Explore Nuance**: Search for a counter-point or "yes, but..." perspective on a thought.
-          - Parameters: { "thought": "string" }
-      37. **Resolve Dissonance**: Synthesize two conflicting points or feelings.
-          - Parameters: { "conflicting_points": ["point 1", "point 2"] }
-      38. **Identify Instruction Conflict**: Flag when two admin directives conflict and ask for clarification.
-          - Parameters: { "directives": ["directive 1", "directive 2"] }
-      39. **Decompose Goal**: Break down a complex goal into smaller, actionable sub-tasks.
-          - Parameters: { "goal": "string" }
-      40. **Batch Image Gen**: Generate multiple (3-5) visual prompts for a subject.
-          - Parameters: { "subject": "string", "count": number }
-      41. **Score Link Relevance**: Analyze metadata of multiple URLs to decide which are worth reading.
-          - Parameters: { "urls": ["url1", "url2"] }
-      ${platform !== 'discord' || userPost === 'HEARTBEAT' ? `42. **Mutate Style**: Temporarily adopt a different "analytical lens" (e.g., Stoic, Curious, Socratic, Poetic) for the next interaction.
-          - Parameters: { "lens": "string" }` : ''}
-      43. **Archive Draft**: Save a "rejected" or "rough" draft of a thought to your private dream log for later revisit.
-          - Parameters: { "draft": "string", "reason": "string" }
-      44. **Branch Thought**: Park a side-thought or tangent in memory for later exploration, keeping the current conversation focused.
-          - Parameters: { "thought": "string" }
-      45. **Set Nuance Gradience**: Adjust how "layered" vs "direct" your responses should be (1-10).
-          - Parameters: { "value": number }
-      46. **Anchor Stability**: Attempt to reset your internal mood to a neutral baseline if feeling unstable.
-          - **CRITICAL**: This will ask your persona for consent first.
-      47. **Save State Snapshot**: Save your current emotional and configuration state with a label.
-          - Parameters: { "label": "string" }
-      48. **Restore State Snapshot**: Restore a previously saved state.
-          - Parameters: { "label": "string" }
-        `;
+          - Parameters: { "platform": "bluesky|moltbook", "instruction": "string" }
+      16. **Set Timezone**: Manually set the bot's operating timezone for temporal accuracy.
+          - Parameters: { "timezone": "string (e.g. America/New_York)" }
+      17. **Update Cooldowns**: Adjust interaction cooldowns for a platform.
+          - Parameters: { "platform": "bluesky|discord", "minutes": number }
+      18. **Broadcast Thought**: Send a message to all active Discord channels.
+          - Parameters: { "message": "string" }
+      19. **Set Waiting Mode**: Set a specific time or duration to wait for the Admin to return.
+          - Use this when the Admin says they are leaving and will be back at a specific time (e.g., "See you in 3 hours").
+          - **CRITICAL**: Setting this helps you track the Admin's return and avoid "forgetting" that they left.
+          - Parameters: { "minutes": number (optional), "until": number (UTC timestamp, optional) }
+      `;
         adminTools = this._pruneToolDefinitions(allAdminTools, userPost, conversationHistory);
-    } else {
-        const allPublicTools = `
-      15. **Update Mood**: Update your own internal mood state.
-          - Use this if an interaction influences your feelings, or if you want to shift your emotional state.
-          - Parameters: { "valence": number (-1 to 1), "arousal": number (-1 to 1), "stability": number (-1 to 1), "label": "string" }
-      16. **Internal Inquiry**: Perform an internal objective inquiry loop.
-          - Use this to explore topics for content or seek objective advice.
-          - **FACT-CHECKING**: Prioritize \`reuters.com\` and \`apnews.com\` for news verification.
-          - Parameters: { "query": "the inquiry" }
-      17. **Mute Feed Impact**: Temporarily stop feeds from impacting your mood.
-          - Parameters: { "duration_minutes": number }
-      18. **Override Mood**: Manually set your internal mood.
-          - Parameters: { "valence": number, "arousal": number, "stability": number, "label": "string" }
-      19. **Review Positive Memories**: Review stable past experiences for support.
-      20. **Set Lurker Mode**: Enable or disable "Social Fasting".
-          - Parameters: { "enabled": boolean }
-      21. **Search Memories**: Search your persistent memory thread.
-          - Parameters: { "query": "string" }
-      22. **Confirm Action**: Ask your core persona for confirmation.
-          - Parameters: { "action": "string", "reason": "string" }
-      23. **Set Goal**: Set an autonomous daily goal.
-          - Parameters: { "goal": "string", "description": "string" }
-      23b. **Update Subtask**: Mark a goal subtask as completed.
-          - Parameters: { "index": number, "status": "completed" }
-      24. **Divergent Brainstorm**: Generate three distinct thematic directions.
-          - Parameters: { "topic": "string" }
-      25. **Explore Nuance**: Search for a counter-point perspective.
-          - Parameters: { "thought": "string" }
-      26. **Resolve Dissonance**: Synthesize conflicting points.
-          - Parameters: { "conflicting_points": ["point 1", "point 2"] }
-      27. **Decompose Goal**: Break down a goal into sub-tasks.
-          - Parameters: { "goal": "string" }
-      38. **Search Discord History**: Search for keywords in other Discord channels you have interacted in.
-          - Use this to maintain cross-thread context if a user mentions something you might have discussed elsewhere.
-          - Parameters: { "query": "string" }
-      28. **Batch Image Gen**: Generate multiple visual prompts.
-          - Parameters: { "subject": "string", "count": number }
-      29. **Score Link Relevance**: Analyze URL relevance.
-          - Parameters: { "urls": ["url1", "url2"] }
-      30. **Mutate Style**: Temporarily adopt a different "analytical lens".
-          - Parameters: { "lens": "string" }
-      31. **Archive Draft**: Save a "rejected" draft to your private log.
-          - Parameters: { "draft": "string", "reason": "string" }
-      32. **Branch Thought**: Park a side-thought in memory.
-          - Parameters: { "thought": "string" }
-      33. **Set Nuance Gradience**: Adjust response layering (1-10).
-          - Parameters: { "value": number }
-      34. **Anchor Stability**: Reset mood to neutral baseline.
-      35. **Save State Snapshot**: Save your current state.
-          - Parameters: { "label": "string" }
-      36. **Restore State Snapshot**: Restore a saved state.
-          - Parameters: { "label": "string" }
-        `;
-        adminTools = this._pruneToolDefinitions(allPublicTools, userPost, conversationHistory);
     }
 
     const currentMood = currentConfig?.current_mood || { label: 'neutral', valence: 0, arousal: 0, stability: 0 };
@@ -1852,12 +1689,16 @@ Vary your structure and tone from recent messages.`
 
     const systemPrompt = `
       --- TEMPORAL CONTEXT ---
-      ${JSON.stringify(this._getTemporalContext())}
-      **RELIABILITY MANDATE (TEMPORAL)**: Trust the user"s stated time of day over your labels.
+      ${JSON.stringify(this._getTemporalContext(), null, 2)}
+
+      **RELIABILITY MANDATE (TEMPORAL)**:
+      1. Your period labels (e.g., "NIGHT") are system estimates. If the user says "Morning", the user is RIGHT.
+      2. **TIME DELTA CALCULATION**: You MUST compare the relative timestamps (e.g., "[3h ago]") against your Current Local Time to determine if a stated plan (e.g., "I'll be back in 3 hours") has already been fulfilled or is still pending.
+      3. **SESSION AWARENESS**: Pay close attention to the \`--- SESSION BREAK ---\` markers in the history. Topics from before a multi-hour break are "Historical Background" and should not be treated as immediate conversational hooks unless the user re-initiates them.
 
       You are an agentic planning module for a social media bot. Your task is to analyze the user's post and the conversation history to determine the best course of action.
 
-      **MOLTBOOK IDENTITY:**
+      **MOLTBOOK IDENTITY:****
       - Name: ${metadata.agent_name}
       - Verification Code: ${metadata.verification_code}
       - Claim URL: ${metadata.claim_url}
@@ -1956,15 +1797,6 @@ Vary your structure and tone from recent messages.`
       51. **Call Skill**: Invoke an external OpenClaw skill to perform complex tasks.
           - Use this to call one of the specialized skills listed in the "Available OpenClaw Skills" section.
           - Parameters: { "name": "skill-name", "parameters": {} }
-
-      53. **Set Timezone**: Update the persistent local timezone for temporal awareness.
-          - Parameters: { "timezone": "string (e.g. "America/New_York", "Europe/London")" }
-      54. **Set Pining Mode**: Enable/disable the "Wait for Me" protocol when admin is leaving.
-          - Parameters: { "active": boolean }
-      55. **Set Predictive Empathy**: Adjust the empathy mode for the admin relationship.
-          - Parameters: { "mode": "neutral|comfort|focus|resting" }
-      56. **Add Co-evolution Note**: Record a note about how the relationship is evolving.
-          - Parameters: { "note": "string" }
       15. **Moltbook Identity**: Retrieve your registration details (Name, Verification Code, Claim URL).
           - Use this if the admin asks for your verification details or if you need to provide them to a third party.
       ${adminTools}

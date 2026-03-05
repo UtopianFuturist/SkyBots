@@ -6379,6 +6379,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                     const emergentTrends = dataStore.getEmergentTrends();
 
                     pollResult = await llmService.performInternalPoll({
+                        isWaitingMode: dataStore.getDiscordWaitingUntil() > 0,
                         relationalMetrics: dataStore.getRelationalMetrics(),
                         lifeArcs: dataStore.getLifeArcs(admin.id),
                         insideJokes: dataStore.getInsideJokes(admin.id),
@@ -6811,6 +6812,7 @@ ${brief}
     await discordService.startTyping(normChannelId);
     try {
         const poll = await llmService.performFollowUpPoll({
+            isWaitingMode: dataStore.getDiscordWaitingUntil() > 0,
             history,
             lastBotMessage: lastBotMsg,
             currentMood,

@@ -3204,6 +3204,22 @@ Identify the topic and main takeaway.`;
                 await dataStore.addAdminFact(`Local timezone set to ${timezone}`, ["temporal"]);
                 searchContext += `\n[Timezone set to ${timezone}]`;
             }
+        if (action.tool === 'set_waiting_mode') {
+            const { minutes, until } = action.parameters || {};
+            let waitTime = 0;
+            if (until) {
+                // If 'until' is a natural language time like '9am', the LLM should ideally convert it to absolute timestamp first,
+                // but for now we trust the parameter to be a future UTC timestamp.
+                waitTime = until;
+            } else if (minutes) {
+                waitTime = Date.now() + (minutes * 60 * 1000);
+            }
+            if (waitTime > Date.now()) {
+                await dataStore.setDiscordWaitingUntil(waitTime);
+                await dataStore.addAdminFact(`Set waiting mode until ${new Date(waitTime).toLocaleString()}`, ["temporal"]);
+                searchContext += `\n[Waiting mode activated until ${new Date(waitTime).toLocaleString()}]`;
+            }
+        }
         }
             const { platform, minutes } = action.parameters || {};
             if (platform && minutes !== undefined) {
@@ -6133,7 +6149,42 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             };
             const thresholds = modeThresholds[relationshipMode] || modeThresholds['friend'];
 
-            // 1. Scheduled Time Check (High Priority)
+
+                        // 0. Waiting Mode Check (PINING ENABLED)
+            const waitingUntil = dataStore.getDiscordWaitingUntil();
+            const nowMs = Date.now();
+            const isWaiting = waitingUntil > 0 && nowMs < waitingUntil;
+            const waitingJustEnded = waitingUntil > 0 && nowMs >= waitingUntil && nowMs < waitingUntil + (10 * 60 * 1000);
+
+            if (isWaiting) {
+                // PINING LOGIC: Allow infrequent spontaneous "thinking of you" messages while waiting
+                // Calculate how far into the wait we are
+                const lastInteractionTime = (history.length > 0) ? history[history.length - 1].timestamp : 0;
+                const waitMins = (nowMs - lastInteractionTime) / (1000 * 60);
+
+                // Only even consider pining every 45-90 mins
+                const piningInterval = 45;
+                if (waitMins >= piningInterval && Math.random() < 0.3) {
+                    console.log(`[Bot] Waiting Mode active, but triggering "PINING" spontaneity check after ${Math.round(waitMins)}m.`);
+                    shouldPoll = true;
+                    pollReason = 'WAITING_MODE_PINING';
+                    isContinuing = true; // Still the same conceptual session
+                } else {
+                    console.log(`[Bot] Discord heartbeat suppressed: In Waiting Mode until ${new Date(waitingUntil).toLocaleString()} (Wait: ${Math.round(waitMins)}m)`);
+                    await dataStore.updateLastDiscordHeartbeatTime(nowMs);
+                    return;
+                }
+            }
+
+            if (waitingJustEnded) {
+                console.log(`[Bot] Waiting Mode just ended. Forcing return check poll...`);
+                await dataStore.setDiscordWaitingUntil(0); // Reset
+                shouldPoll = true;
+                pollReason = 'WAITING_MODE_EXPIRED';
+                isContinuing = false;
+            }
+
+// 1. Scheduled Time Check (High Priority)
             const isScheduled = scheduledTimes.some(t => {
                 const [sh, sm] = t.split(':').map(Number);
                 const sched = new Date(now);

@@ -58,6 +58,8 @@ const defaultData = {
   admin_work_mentioned_at: 0,
   admin_home_mentioned_at: 0,
   last_exhaustion_update: 0,
+  discord_waiting_until: 0,
+  discord_session_start: 0,
   scheduled_posts: [],
   recent_thoughts: [],
   exhausted_themes: [],
@@ -405,10 +407,26 @@ class DataStore {
   }
   getRecentInteractions(limit = 10) { return this.getLatestInteractions(limit); }
 
-  async saveDiscordInteraction(interaction) {
-    if (!this.db.data.discord_interactions) this.db.data.discord_interactions = [];
-    this.db.data.discord_interactions.push({ ...interaction, timestamp: Date.now() });
-    if (this.db.data.discord_interactions.length > 50) this.db.data.discord_interactions.shift();
+    async saveDiscordInteraction(channelId, role, content, metadata = {}) {
+    if (!this.db.data.discord_conversations) this.db.data.discord_conversations = {};
+    if (!this.db.data.discord_conversations[channelId]) this.db.data.discord_conversations[channelId] = [];
+
+    const now = Date.now();
+    const history = this.db.data.discord_conversations[channelId];
+    const lastInteractionTime = (history.length > 0) ? history[history.length - 1].timestamp : 0;
+
+    // Session logic: 1 hour gap
+    if (lastInteractionTime > 0 && (now - lastInteractionTime > 3600000)) {
+      console.log(`[DataStore] Detected 1-hour gap in Discord channel ${channelId}. Updating session start.`);
+      this.db.data.discord_session_start = now;
+      if (this.db.data.discord_waiting_until > 0) {
+        console.log("[DataStore] User returned early. Clearing waiting mode.");
+        this.db.data.discord_waiting_until = 0;
+      }
+    }
+
+    history.push({ role, content, timestamp: now, ...metadata });
+    if (history.length > 50) history.shift();
     await this.db.write();
   }
 
@@ -1061,5 +1079,9 @@ class DataStore {
   getAdminFeedback() { return this.db.data.admin_feedback || []; }
   getNuanceGradience() { return this.db.data.nuance_gradience || 5; }
   getWorldFacts() { return this.db.data.world_facts || []; }
+  getDiscordWaitingUntil() { return this.db.data.discord_waiting_until || 0; }
+  async setDiscordWaitingUntil(time) { this.db.data.discord_waiting_until = time; await this.db.write(); }
+  getDiscordSessionStart() { return this.db.data.discord_session_start || 0; }
+  async setDiscordSessionStart(time) { this.db.data.discord_session_start = time; await this.db.write(); }
 }
 export const dataStore = new DataStore();

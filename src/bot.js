@@ -2636,6 +2636,13 @@ Identify the topic and main takeaway.`;
       // Item 10: Pre-Planning Context Seeding
       const prePlanning = await llmService.performPrePlanning(text, threadContext, imageAnalysisResult, 'bluesky', currentMood, refusalCounts, latestMoodMemory, firehoseMatches);
 
+      if (prePlanning?.suppressed_topics && Array.isArray(prePlanning.suppressed_topics)) {
+          for (const topic of prePlanning.suppressed_topics) {
+              console.log(`[Bot] Suppressing topic from correction (Bluesky): ${topic}`);
+              await dataStore.suppressTopic(topic);
+          }
+      }
+
       // Item 1: Entity Extraction for Firehose Tracking
       if (prePlanning?.suggestions) {
           const extractionPrompt = `Identify unique titles (games, books, movies, software, specific people) from the user's post: "${text}". Respond with comma-separated list or "NONE".`;

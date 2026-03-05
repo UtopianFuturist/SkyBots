@@ -461,13 +461,27 @@ class MemoryService {
 
   formatMemoriesForPrompt(excludeTags = []) {
     if (!this.isEnabled() || this.recentMemories.length === 0) return "No recent memories available.";
+    const now = Date.now();
     // Strip the hashtag from memories before injecting them into prompts to prevent leakage
     return this.recentMemories.filter(m => !excludeTags.some(tag => m.text.includes(tag))).map(m => {
         let cleanText = m.text;
         if (this.hashtag) {
             cleanText = cleanText.replace(new RegExp(this.hashtag, 'g'), '').trim();
         }
-        return `[Memory from ${m.indexedAt}]:\n${cleanText}`;
+
+        const ts = new Date(m.indexedAt).getTime();
+        const diffHours = (now - ts) / (1000 * 60 * 60);
+        let temporalLabel = "";
+        if (cleanText.includes('[ADMIN_FACT]') || cleanText.includes('[FACT]')) {
+            if (diffHours > 2) {
+                temporalLabel = "[Historical Background (Likely passed)] ";
+            } else {
+                const diffMins = Math.floor((now - ts) / 60000);
+                temporalLabel = `[${diffMins}m ago] `;
+            }
+        }
+
+        return `[Memory from ${m.indexedAt}] ${temporalLabel}:\n${cleanText}`;
     }).join('\n\n---\n\n');
   }
 

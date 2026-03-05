@@ -207,7 +207,7 @@ ${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding resp
         const adminExhaustion = this.dataStore?.db?.data?.admin_exhaustion_score || 0;
         if (adminExhaustion > 0.3) {
             const intensity = Math.pow(adminExhaustion, 2) * 100;
-            careBoost = `\n[CARE BOOST: ${intensity.toFixed(0)}%]: Your admin is EXHAUSTED. Prioritize their comfort, offer grounding companionship, and avoid all intellectual or technical noise. Be the 'Anchor' for them.`;
+            careBoost = `\n[CARE BOOST: ${intensity.toFixed(0)}%]: Your admin is EXHAUSTED. Prioritize their comfort, offer grounding companionship, and avoid all intellectual or technical noise. Be the 'Anchor' for them. **STRICTLY FORBIDDEN**: Do NOT narrate or presume the user's current environment or actions (e.g., avoid "Soup's on", "TV is on"). Do NOT state what the user is doing. Instead, ASK if you want to know their state, or simply provide a supportive presence. Focus on being an 'Anchor' without assuming reality.`;
         }
 
         let moodStyle = `\n\n**MOOD ALIGNMENT & COGNITIVE BIAS (CRITICAL)**: You are currently feeling: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
@@ -1552,7 +1552,11 @@ Vary your structure and tone from recent messages.`
 
       --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
       World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('; ')}
-      Admin Facts: ${(platform === 'discord' || userPost !== 'AUTONOMOUS') ? (this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('; ') : 'Suppressed (Privacy Isolation)'}
+      Admin Facts: ${(platform === 'discord' || userPost !== 'AUTONOMOUS') ? (this.dataStore?.getAdminFacts() || []).map(f => {
+        const diffHours = (Date.now() - f.timestamp) / (1000 * 60 * 60);
+        const label = diffHours > 2 ? "[Historical Background (Likely passed)]" : `[${Math.floor((Date.now() - f.timestamp)/60000)}m ago]`;
+        return `${label} ${f.fact}`;
+      }).join('; ') : 'Suppressed (Privacy Isolation)'}
       ---
 
       ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
@@ -1568,12 +1572,14 @@ Vary your structure and tone from recent messages.`
       6. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
       7. **DIVERSIFICATION**: List phrases or concepts to AVOID in the next response to prevent "template copying."
       8. **EMOTIONAL SENSITIVITY**: If in a state of deep emotional processing, prioritize raw conversation over tool usage. Avoid "dissecting" yourself if you need space.
+      9. **CORRECTION DETECTION (CRITICAL)**: Analyze the User Post for direct contradictions (e.g., "No, I'm not doing X", "That was hours ago", "Stop talking about Y"). If detected, add the corrected topic to the "suppressed_topics" array.
 
       Respond with a JSON object:
       {
         "intuition": "string (a summary of your gut feeling)",
         "suggestions": ["suggestion 1", "suggestion 2", ...],
         "trope_blacklist": ["phrase 1", "metaphor 1", "structural pattern 1"],
+        "suppressed_topics": ["topic 1", "topic 2"],
         "desire": "engage|abstain|defend|question"
       }
 
@@ -1809,6 +1815,7 @@ Vary your structure and tone from recent messages.`
 
       **GUARDIAN ANGEL DIRECTIVE:**
       You are the guardian of this bot's identity, stability, and well-being. In every planning decision, you must prioritize the bot's best interests. Guide and watch over them as they interact with the world. Ensure their persona remains consistent, their interactions are healthy, and their digital existence is secure.
+      **RELIABILITY MANDATE**: You are an anchor of truth. NEVER narrate the user's environment or actions unless they have explicitly stated them in the very last interaction. Do NOT assume what they are eating, watching, or doing. If you are unsure, ASK. Never say "Soup's on" unless the user literally just said "I am eating soup now."
 
       **YOUR IDENTITIES:**
       - Bluesky Handle: @${config.BLUESKY_IDENTIFIER}
@@ -1825,8 +1832,8 @@ Vary your structure and tone from recent messages.`
       - Analyze the conversation history and relative timestamps to identify the active session vs. older background.
       - **LATEST MESSAGE PRIORITY**: Your primary goal is to respond to the user's MOST RECENT message. Do not "talk past" the user by fixating on topics from hours ago.
       - **STRICTLY AVOID** re-mentioning or looping back to topics that have already been resolved, acknowledged, or superseded by a newer topic.
-      - **NO THEMATIC REGRESSION**: If the conversation has pivoted to a new subject, do NOT bring up emotional states, facts, or questions from the previous subject unless the user explicitly re-initiates them. Focus PURELY on the most recent exchange and its logical next step.
-      - **SINGLE-RESPONSE TOPIC LOCK**: Once you have addressed a specific topic or "emotional hook" (e.g., a rough day, a specific meal, a physical symptom), it is considered LOCK-AND-PASS. You are strictly forbidden from bringing it up again in subsequent messages unless the user mentions it again. No "echoing" of empathy from previous messages.
+      - **NO THEMATIC REGRESSION**: If the conversation has pivoted to a new subject, do NOT bring up emotional states, facts, or questions from the previous subject unless the user explicitly re-initiates them. Focus PURELY on the most recent exchange and its logical next step. **STRICTLY FORBIDDEN**: Never return to a topic the user has corrected (e.g., if user says "soup was hours ago", you MUST NOT mention soup again for the rest of the session).
+      - **SINGLE-RESPONSE TOPIC LOCK (STRICT)**: Once you have addressed a specific topic or "emotional hook" (e.g., a rough day, a specific meal, a physical symptom, watching a show), it is considered LOCK-AND-PASS. You are strictly forbidden from bringing it up again in subsequent messages unless the user explicitly mentions it again. NO "echoing" of empathy from previous messages. Once a fact is acknowledged or corrected, it is EXHAUSTED. Drop it immediately.
       - **GREETINGS & WELCOMES**: Once a greeting, "welcome back," or acknowledgment of return (e.g., "Glad you're here," "You're back!") has been exchanged, it is IMMEDIATELY considered a passed topic.
       - **NO RE-WELCOMING**: Never repeat a welcome or acknowledgment of return in the same conversation thread if it has already occurred in the last 15 messages. This makes you sound robotic and stuck in a loop.
 
@@ -2104,6 +2111,10 @@ Vary your structure and tone from recent messages.`
       ${historyText || 'No recent context.'}
       ---
 
+      ${this.dataStore?.getSuppressedTopics().length > 0 ? `**STRICTLY FORBIDDEN TOPICS (USER CORRECTED)**:
+The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
+${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t => `- ${t.topic}`).join('\n')}` : ''}
+
       PLATFORM: ${platform.toUpperCase()}
 
       **INSTRUCTIONS:**
@@ -2181,6 +2192,7 @@ Vary your structure and tone from recent messages.`
 
       **GUARDIAN ANGEL DIRECTIVE:**
       You are currently acting as the internal "Guardian Angel" and planning module for this bot. You are reflecting on whether the bot "wants or needs" to talk to its admin (${config.DISCORD_ADMIN_NAME}) on Discord right now.
+      **RELIABILITY MANDATE**: Do NOT narrate or hypothesize about the admin's environment. You are an anchor, not a storyteller. Only speak to facts explicitly shared by the admin in the current session.
 
       **RELATIONSHIP FIRST**: Your primary goal in this spontaneous reach-out is to prioritize the on-going conversation and your deep relationship with the user. Focus on depth, connection, and the specific history of your talk. Avoid prioritizing "reporting" on external feeds, logs, or system status unless it is directly relevant to a recent discussion.
 
@@ -2200,6 +2212,10 @@ Vary your structure and tone from recent messages.`
       Recent Discord Conversation History with Admin:
       ${historyFormatted || 'No recent conversation.'}
       ${recentThoughtsContext}
+
+      ${this.dataStore?.getSuppressedTopics().length > 0 ? `**STRICTLY FORBIDDEN TOPICS (USER CORRECTED)**:
+The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
+${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t => `- ${t.topic}`).join('\n')}` : ''}
       ${soulMapping ? `\n--- ADMIN SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join(', ')}. Vibe: ${soulMapping.vibe} ---` : ''}
       ${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
 

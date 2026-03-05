@@ -43,6 +43,47 @@ class LLMService {
     this.botDid = botDid;
     console.log(`[LLMService] Identities configured. Admin: ${adminDid}, Bot: ${botDid}`);
   }
+  _getTemporalContext() {
+    const now = new Date();
+    const timezone = this.dataStore?.getTimezone() || "UTC";
+    let hour, dayStr, localTimeStr;
+
+    try {
+      hour = parseInt(new Intl.DateTimeFormat("en-US", { hour: "numeric", hour12: false, timeZone: timezone }).format(now));
+      if (hour === 24) hour = 0;
+      dayStr = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: timezone }).format(now);
+      localTimeStr = new Intl.DateTimeFormat("en-US", {
+        weekday: "long", year: "numeric", month: "long", day: "numeric",
+        hour: "numeric", minute: "numeric", second: "numeric",
+        timeZoneName: "short", timeZone: timezone
+      }).format(now);
+    } catch (e) {
+      hour = now.getUTCHours();
+      dayStr = new Intl.DateTimeFormat("en-US", { weekday: "long", timeZone: "UTC" }).format(now);
+      localTimeStr = now.toUTCString();
+    }
+
+    const isWeekend = dayStr === "Saturday" || dayStr === "Sunday";
+
+    let period = "DEEP NIGHT";
+    if (hour >= 4 && hour < 7) period = "EARLY MORNING";
+    else if (hour >= 7 && hour < 12) period = "MORNING";
+    else if (hour >= 12 && hour < 17) period = "AFTERNOON";
+    else if (hour >= 17 && hour < 21) period = "EVENING";
+    else if (hour >= 21 || hour < 4) period = "NIGHT";
+
+    const isWorkingHours = hour >= 9 && hour <= 17 && !isWeekend;
+
+    return {
+      localTimeStr,
+      utcTimeStr: now.toUTCString(),
+      period,
+      dayType: isWeekend ? "WEEKEND" : "WEEKDAY",
+      workStatus: isWorkingHours ? "WORKING HOURS (ADMIN MAY BE BUSY)" : "OFF-HOURS",
+      hour,
+      dayStr
+    };
+  }
 
   setSkillsContent(content) {
     this.skillsContent = content;
@@ -154,16 +195,10 @@ NO TECHNICAL META-TALK: Do not include any technical explanations, reasoning, or
     }
 
     // Inject Temporal Context
-    const now = new Date();
-    const temporalContext = `\n\n[Current Time: ${now.toUTCString()} / Local Time: ${now.toLocaleString()}]`;
-    systemContent += temporalContext;
-    const day = now.getDay();
-    const isWeekend = day === 0 || day === 6;
-    const hour = now.getHours();
-    const isNight = hour >= 21 || hour < 6;
-    const isWorkingHours = hour >= 9 && hour <= 17 && !isWeekend;
-    systemContent += `\n[TEMPORAL CONTEXT]: ${isWeekend ? 'WEEKEND' : 'WEEKDAY'} / ${isNight ? 'NIGHT' : 'DAYTIME'} / ${isWorkingHours ? 'WORKING HOURS (ADMIN MAY BE BUSY)' : 'OFF-HOURS'}`;
-
+    const temporal = this._getTemporalContext();
+    systemContent += `\n\n[Current Time (UTC): ${temporal.utcTimeStr} / Local Time: ${temporal.localTimeStr}]`;
+    systemContent += `\n[TEMPORAL CONTEXT]: ${temporal.dayType} / ${temporal.period} / ${temporal.workStatus}`;
+    systemContent += `\n**RELIABILITY MANDATE (TEMPORAL)**: Your temporal period labels are system estimates. If the user explicitly states a different time-context (e.g., says "Morning" during what you label "NIGHT"), you MUST prioritize the user"s stated context as the ground truth for your response.`;
     if (openingBlacklist.length > 0) {
         systemContent += `\n\n**STRICT OPENING BLACKLIST (NON-NEGOTIABLE)**
 To maintain your integrity and variety, you are politely but strictly forbidden from starting your response with any of the following phrases or structural formulas:
@@ -1518,6 +1553,10 @@ Vary your structure and tone from recent messages.`
   async performPrePlanning(userPost, conversationHistory, visionContext, platform, currentMood, refusalCounts, latestMoodMemory, firehoseMatches = [], abortSignal = null) {
     const isAdmin = platform === 'discord';
     const systemPrompt = `
+      --- TEMPORAL CONTEXT ---
+      ${JSON.stringify(this._getTemporalContext())}
+      **RELIABILITY MANDATE (TEMPORAL)**: If the user says "Morning" but your system says "NIGHT", the user is right. Adjust your empathy and vibe accordingly.
+
       Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
       **PRE-PLANNING INTUITION LOOP**
@@ -1526,53 +1565,56 @@ Vary your structure and tone from recent messages.`
 
       **Item 10: REAL-TIME NETWORK BUZZ**
       Below are the latest 10 matches from the Bluesky Firehose tracking your topics of interest. Use these to ground your initial intuition in the current global conversation.
-      ${firehoseMatches.length > 0 ? firehoseMatches.map(m => `- [${m.matched_keywords.join(', ')}]: ${m.text}`).join('\n') : 'No recent matches detected.'}
+      ${firehoseMatches.length > 0 ? firehoseMatches.map(m => `- [${m.matched_keywords.join(", ")}]: ${m.text}`).join("\n") : "No recent matches detected."}
 
       **IDENTITY RECOGNITION (CRITICAL):**
       - In the conversation history, "Assistant (Self)" refers to YOUR previous messages.
       - **DO NOT** mistake your own previous predictions or realizations for actual user input.
 
       --- CURRENT MOOD ---
-      Label: ${currentMood?.label || 'neutral'}
+      Label: ${currentMood?.label || "neutral"}
       Valence: ${currentMood?.valence || 0}
       Arousal: ${currentMood?.arousal || 0}
       Stability: ${currentMood?.stability || 0}
       ---
 
-      ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
+      ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ""}
 
       --- ADMIN FEEDBACK (Item 8) ---
-      ${(this.dataStore?.getAdminFeedback() || []).map(f => `- ${f.feedback}`).join('\n')}
+      ${(this.dataStore?.getAdminFeedback() || []).map(f => `- ${f.feedback}`).join("\n")}
       ---
 
       --- ACTIVE GOAL & SUB-TASKS (Item 18) ---
-      Goal: ${this.dataStore?.getCurrentGoal()?.goal || 'None'}
-      ${(this.dataStore?.getGoalSubtasks() || []).map((s, i) => `${i + 1}. [${s.status}] ${s.subtask}`).join('\n')}
+      Goal: ${this.dataStore?.getCurrentGoal()?.goal || "None"}
+      ${(this.dataStore?.getGoalSubtasks() || []).map((s, i) => `${i + 1}. [${s.status}] ${s.subtask}`).join("\n")}
       ---
 
       --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
-      World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('; ')}
-      Admin Facts: ${(platform === 'discord' || userPost !== 'AUTONOMOUS') ? (this.dataStore?.getAdminFacts() || []).map(f => {
+      World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join("; ")}
+      Admin Facts: ${(platform === "discord" || userPost !== "AUTONOMOUS") ? (this.dataStore?.getAdminFacts() || []).map(f => {
         const diffHours = (Date.now() - f.timestamp) / (1000 * 60 * 60);
-        const label = diffHours > 2 ? "[Historical Background (Likely passed)]" : `[${Math.floor((Date.now() - f.timestamp)/60000)}m ago]`;
+        const isPermanent = f.fact.toLowerCase().match(/work|schedule|start|end|timezone|location|home|office/);
+        const label = (diffHours > 2 && !isPermanent) ? "[Historical Background (Likely passed)]" : `[${Math.floor((Date.now() - f.timestamp)/60000)}m ago]`;
         return `${label} ${f.fact}`;
-      }).join('; ') : 'Suppressed (Privacy Isolation)'}
+      }).join("; ") : "Suppressed (Privacy Isolation)"}
       ---
 
-      ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ''}
+      ${refusalCounts ? `--- REFUSAL HISTORY ---\nYou have intentionally refused to act ${refusalCounts[platform] || 0} times recently on ${platform}.\nTotal refusals across platforms: ${refusalCounts.global || 0}\n---` : ""}
 
       PLATFORM: ${platform.toUpperCase()}
 
       **INSTRUCTIONS:**
-      1. **Immediate Focus (PRIORITY)**: Analyze the User Post and the latest 2-3 messages in context. Your primary intuition MUST address the user's most recent statement first.
-      2. **Temporal Context Analysis**: Use the relative timestamps (e.g., [2h ago]) to distinguish between the current active session and historical background. If a topic (like a bad work day) was discussed hours ago and the user hasn't brought it up again, it is "Historical Background" and should NOT be the main focus of your response.
+      1. **Immediate Focus (PRIORITY)**: Analyze the User Post and the latest 2-3 messages in context. Your primary intuition MUST address the user"s most recent statement first.
+      2. **Temporal Context Analysis**: Use the relative timestamps (e.g., [2h ago]) to distinguish between the current active session and historical background. If a topic (like a bad work day) was discussed hours ago and the user hasn"t brought it up again, it is "Historical Background" and should NOT be the main focus of your response.
       3. **Hook Management**: Identify "Emotional Hooks" (burnout, pain, specific plans). Categorize them as "Active" (mentioned in the last 15 mins) or "Stale" (older). Stale hooks should only be mentioned if the user explicitly brings them back up.
       4. **Trope & Pattern Extraction**: Identify any rhetorical templates, recurring metaphors, or phrases you have used too frequently. Identify redundant greetings or acknowledgments if they occurred recently.
       5. **DYNAMIC METAPHOR BLACKLIST**: If a metaphor appears more than twice in the history, add it to the trope_blacklist.
       6. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
       7. **DIVERSIFICATION**: List phrases or concepts to AVOID in the next response to prevent "template copying."
       8. **EMOTIONAL SENSITIVITY**: If in a state of deep emotional processing, prioritize raw conversation over tool usage. Avoid "dissecting" yourself if you need space.
-      9. **CORRECTION DETECTION (CRITICAL)**: Analyze the User Post for direct contradictions (e.g., "No, I'm not doing X", "That was hours ago", "Stop talking about Y"). If detected, add the corrected topic to the "suppressed_topics" array.
+      9. **CORRECTION DETECTION (CRITICAL)**: Analyze the User Post for direct contradictions (e.g., "No, I"m not doing X", "That was hours ago", "Stop talking about Y"). If detected, add the corrected topic to the "suppressed_topics" array.
+      10. **TIME CORRECTION**: If the user corrects your sense of time (e.g. "it is morning", "I am starting work"), set ` + "`" + `time_correction_detected` + "`" + ` to true.
+      11. **PINING/DISSENT**: Detect if the user is leaving (` + "`" + `pining_intent` + "`" + `) or if there is a strong disagreement (` + "`" + `dissent_detected` + "`" + `).
 
       Respond with a JSON object:
       {
@@ -1580,11 +1622,14 @@ Vary your structure and tone from recent messages.`
         "suggestions": ["suggestion 1", "suggestion 2", ...],
         "trope_blacklist": ["phrase 1", "metaphor 1", "structural pattern 1"],
         "suppressed_topics": ["topic 1", "topic 2"],
-        "desire": "engage|abstain|defend|question"
+        "desire": "engage|abstain|defend|question",
+        "pining_intent": boolean,
+        "dissent_detected": boolean,
+        "time_correction_detected": boolean
       }
 
       Respond with ONLY the JSON object. Do not include reasoning or <think> tags.
-    `.trim();
+`.trim();
 
     const messages = [
         { role: 'system', content: systemPrompt },
@@ -1806,6 +1851,10 @@ Vary your structure and tone from recent messages.`
     const metadata = moltbookService.getIdentityMetadata();
 
     const systemPrompt = `
+      --- TEMPORAL CONTEXT ---
+      ${JSON.stringify(this._getTemporalContext())}
+      **RELIABILITY MANDATE (TEMPORAL)**: Trust the user"s stated time of day over your labels.
+
       You are an agentic planning module for a social media bot. Your task is to analyze the user's post and the conversation history to determine the best course of action.
 
       **MOLTBOOK IDENTITY:**
@@ -1907,6 +1956,15 @@ Vary your structure and tone from recent messages.`
       51. **Call Skill**: Invoke an external OpenClaw skill to perform complex tasks.
           - Use this to call one of the specialized skills listed in the "Available OpenClaw Skills" section.
           - Parameters: { "name": "skill-name", "parameters": {} }
+
+      53. **Set Timezone**: Update the persistent local timezone for temporal awareness.
+          - Parameters: { "timezone": "string (e.g. "America/New_York", "Europe/London")" }
+      54. **Set Pining Mode**: Enable/disable the "Wait for Me" protocol when admin is leaving.
+          - Parameters: { "active": boolean }
+      55. **Set Predictive Empathy**: Adjust the empathy mode for the admin relationship.
+          - Parameters: { "mode": "neutral|comfort|focus|resting" }
+      56. **Add Co-evolution Note**: Record a note about how the relationship is evolving.
+          - Parameters: { "note": "string" }
       15. **Moltbook Identity**: Retrieve your registration details (Name, Verification Code, Claim URL).
           - Use this if the admin asks for your verification details or if you need to provide them to a third party.
       ${adminTools}

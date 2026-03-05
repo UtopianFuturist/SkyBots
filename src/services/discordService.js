@@ -1508,7 +1508,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      }
                      if (action.tool === 'set_timezone') {
                          const { timezone } = action.parameters || {};
-                         if (timezone) await dataStore.setTimezone(timezone);
+                         if (timezone) { await dataStore.setTimezone(timezone); await dataStore.addAdminFact(`Local timezone set to ${timezone}`, ["temporal"]); }
                          actionResults.push(`[SYSTEM]: Timezone updated to ${timezone}.`);
                      }
                      if (action.tool === 'bsky_post') {

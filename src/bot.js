@@ -3201,6 +3201,7 @@ Identify the topic and main takeaway.`;
             const { timezone } = action.parameters || {};
             if (timezone) {
                 await dataStore.setTimezone(timezone);
+                await dataStore.addAdminFact(`Local timezone set to ${timezone}`, ["temporal"]);
                 searchContext += `\n[Timezone set to ${timezone}]`;
             }
         }

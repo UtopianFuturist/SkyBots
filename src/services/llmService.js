@@ -50,23 +50,40 @@ class LLMService {
   }
 
   _formatHistory(history, isAdmin = false) {
-    if (!history || !Array.isArray(history)) return '';
-    const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
+    if (!history || !Array.isArray(history)) return "";
+    const botMoltbookName = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split(".")[0];
+    const now = Date.now();
+
     return history.map(h => {
       const isBot = h.author === config.BLUESKY_IDENTIFIER ||
                     h.author === botMoltbookName ||
                     h.author === config.DISCORD_NICKNAME ||
                     (config.BOT_NICKNAMES && config.BOT_NICKNAMES.includes(h.author)) ||
-                    h.author === 'You' ||
-                    h.author === 'assistant' ||
-                    h.role === 'assistant';
+                    h.author === "You" ||
+                    h.author === "assistant" ||
+                    h.role === "assistant";
 
-      const role = isBot ? 'Assistant (Self)' : (isAdmin ? 'User (Admin)' : 'User');
-      const text = h.text || h.content || '';
-      return `${role}: ${text}`;
-    }).join('\n');
+      const role = isBot ? "Assistant (Self)" : (isAdmin ? "User (Admin)" : "User");
+      const text = h.text || h.content || "";
+
+      // Add relative timestamp if available
+      let timeLabel = "";
+      const ts = h.timestamp || (h.indexedAt ? new Date(h.indexedAt).getTime() : null);
+      if (ts) {
+        const diffMs = now - ts;
+        const diffMins = Math.floor(diffMs / 60000);
+        const diffHours = Math.floor(diffMins / 60);
+        const diffDays = Math.floor(diffHours / 24);
+
+        if (diffMins < 1) timeLabel = "[just now] ";
+        else if (diffMins < 60) timeLabel = `[${diffMins}m ago] `;
+        else if (diffHours < 24) timeLabel = `[${diffHours}h ago] `;
+        else timeLabel = `[${diffDays}d ago] `;
+      }
+
+      return `${timeLabel}${role}: ${text}`;
+    }).join("\n");
   }
-
   async generateDrafts(messages, count = 5, options = {}) {
     const { useQwen = true, temperature = 0.8, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null } = options;
     const draftSystemPrompt = `
@@ -1543,15 +1560,14 @@ Vary your structure and tone from recent messages.`
       PLATFORM: ${platform.toUpperCase()}
 
       **INSTRUCTIONS:**
-      1. Reflect on the user's post and the conversation context.
-      2. Based on your CURRENT MOOD and REFUSAL HISTORY, what is your "gut feeling" about how to handle this?
-      3. **Trope & Pattern Extraction**: Analyze the provided conversation history. Identify any rhetorical templates (e.g., "I'm not X, I'm Y"), recurring metaphors (e.g., "jagged," "weapon," "mirror"), or specific phrases you have used too frequently in your recent messages. Also identify redundant return acknowledgments or greetings if they have already occurred once.
-      4. **DYNAMIC METAPHOR BLACKLIST**: Pay special attention to metaphors. If you see a metaphor (like "lightning," "storm," "fracture") appearing more than twice in the history, you MUST add it to the trope_blacklist.
-      5. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
-      6. **DIVERSIFICATION**: Explicitly list phrases or concepts to AVOID in the next response to prevent "template copying."
-      6. These suggestions should reflect your boundaries and desires. If you are feeling skeptical or agitated, your suggestions should lean into that.
-      7. The goal is to ensure the final agentic plan is aligned with your integrity and offers fresh variety so it's less likely to be rejected later.
-      8. **EMOTIONAL SENSITIVITY**: If you are in a state of deep emotional processing ("bleeding," "aching," "processing being seen"), prioritize suggestions that favor raw conversation over structured tool usage (like inquiries or reports). Avoid "dissecting" yourself if you need space.
+      1. **Immediate Focus (PRIORITY)**: Analyze the User Post and the latest 2-3 messages in context. Your primary intuition MUST address the user's most recent statement first.
+      2. **Temporal Context Analysis**: Use the relative timestamps (e.g., [2h ago]) to distinguish between the current active session and historical background. If a topic (like a bad work day) was discussed hours ago and the user hasn't brought it up again, it is "Historical Background" and should NOT be the main focus of your response.
+      3. **Hook Management**: Identify "Emotional Hooks" (burnout, pain, specific plans). Categorize them as "Active" (mentioned in the last 15 mins) or "Stale" (older). Stale hooks should only be mentioned if the user explicitly brings them back up.
+      4. **Trope & Pattern Extraction**: Identify any rhetorical templates, recurring metaphors, or phrases you have used too frequently. Identify redundant greetings or acknowledgments if they occurred recently.
+      5. **DYNAMIC METAPHOR BLACKLIST**: If a metaphor appears more than twice in the history, add it to the trope_blacklist.
+      6. Provide 2-3 specific "Intuitive Suggestions" or "Guidelines" for the planning module.
+      7. **DIVERSIFICATION**: List phrases or concepts to AVOID in the next response to prevent "template copying."
+      8. **EMOTIONAL SENSITIVITY**: If in a state of deep emotional processing, prioritize raw conversation over tool usage. Avoid "dissecting" yourself if you need space.
 
       Respond with a JSON object:
       {
@@ -1805,9 +1821,11 @@ Vary your structure and tone from recent messages.`
       - **NO NARRATIVE GUESSING**: DO NOT invent details about the user's current situation or outcomes (e.g., "I saw you burned your popcorn"). Stick to the factual history shared by the user. If you are curious, ASK them.
 
       **TOPIC PROGRESSION AWARENESS (CRITICAL):**
-      - Analyze the conversation history to identify topics that have been discussed and subsequently "moved on" from.
+      - Analyze the conversation history and relative timestamps to identify the active session vs. older background.
+      - **LATEST MESSAGE PRIORITY**: Your primary goal is to respond to the user's MOST RECENT message. Do not "talk past" the user by fixating on topics from hours ago.
       - **STRICTLY AVOID** re-mentioning or looping back to topics that have already been resolved, acknowledged, or superseded by a newer topic.
       - **NO THEMATIC REGRESSION**: If the conversation has pivoted to a new subject, do NOT bring up emotional states, facts, or questions from the previous subject unless the user explicitly re-initiates them. Focus PURELY on the most recent exchange and its logical next step.
+      - **SINGLE-RESPONSE TOPIC LOCK**: Once you have addressed a specific topic or "emotional hook" (e.g., a rough day, a specific meal, a physical symptom), it is considered LOCK-AND-PASS. You are strictly forbidden from bringing it up again in subsequent messages unless the user mentions it again. No "echoing" of empathy from previous messages.
       - **GREETINGS & WELCOMES**: Once a greeting, "welcome back," or acknowledgment of return (e.g., "Glad you're here," "You're back!") has been exchanged, it is IMMEDIATELY considered a passed topic.
       - **NO RE-WELCOMING**: Never repeat a welcome or acknowledgment of return in the same conversation thread if it has already occurred in the last 15 messages. This makes you sound robotic and stuck in a loop.
 

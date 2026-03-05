@@ -1,13 +1,16 @@
-# Code Review Request
+# Code Review Request: Conversational Response Improvements (Recency & Temporal Awareness)
 
-I have implemented the following changes to address the reported errors:
+## Summary of Changes
+This PR addresses the issue where the bot "talks past" the user by fixating on historical emotional hooks instead of responding to the latest message. It introduces "Temporal Awareness" and "Recency Priority" across the planning modules.
 
-1.  **High-Risk Intent Handling**: Modified `src/bot.js` to block the specific high-risk user using `dataStore.blockUser(handle)` instead of pausing the entire bot globally.
-2.  **DataStore Initialization**: Added `post_topics: []` to `defaultData` in `src/services/dataStore.js` to prevent `TypeError` when accessing this field.
-3.  **Keyword Evolution Fix**: Added a fallback empty array check in `performKeywordEvolution` in `src/bot.js` before calling `.join()` on topics.
-4.  **Discord Deprecation Update**: Renamed `ready` event listeners to `clientReady` in `src/services/discordService.js` as per `discord.js` v14 deprecation warnings.
-5.  **Robust Cleanup**: Improved error logging in `cleanupOldPosts` (`src/bot.js`) to handle transient network errors (like `fetch failed` or socket closures) with a concise warning instead of a full error trace.
+### Key Enhancements:
+1.  **Temporal Awareness in History**: Modified `llmService._formatHistory` to inject relative timestamps (e.g., `[15m ago]`, `[2h ago]`) into the conversation context.
+2.  **Preserved Timestamps**: Updated `src/bot.js` (`_getThreadHistory`) to include `indexedAt` timestamps for Bluesky threads. Discord already provides `timestamp`.
+3.  **Recency Priority in Pre-Planning**: Updated the `performPrePlanning` system prompt to explicitly distinguish between "Active Session" and "Historical Background" using timestamps. Instructed the subagent to prioritize the latest user statement.
+4.  **Latest Message Priority in Agentic Planning**: Updated `performAgenticPlanning` system prompt to enforce responding to the MOST RECENT message first and avoiding "Thematic Regression".
+5.  **Single-Response Topic Lock**: Introduced a "Lock-and-Pass" directive in the planning module to prevent repetitive empathy or "echoing" of previously addressed hooks (e.g., no more repeating "I'm sorry about your rough day" in every message).
+6.  **Bug Fix**: Fixed a method signature issue for `generateDrafts` in `llmService.js`.
 
-I have verified the changes with existing unit tests (`tests/bot.test.js`).
-
-Please review the implementation, especially the change from global pause to specific user blocking for high-risk intents.
+## Verification Results
+-   **Unit Tests**: All tests in `tests/llmService.test.js` and `tests/bot.test.js` passed.
+-   **Manual Validation**: Verified that relative timestamps are correctly calculated and injected into the history text.

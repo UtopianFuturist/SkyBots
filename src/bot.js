@@ -4157,7 +4157,8 @@ Describe how you feel about this user and your relationship now.`;
           text: postText.trim(),
           uri: current.post.uri,
           images: postImages,
-          did: current.post.author.did
+          did: current.post.author.did,
+          indexedAt: current.post.indexedAt,
         });
         current = current.parent;
 
@@ -4182,7 +4183,8 @@ Describe how you feel about this user and your relationship now.`;
                     text: rootPostText.trim(),
                     uri: root.post.uri,
                     images: rootImages,
-                    did: root.post.author.did
+                    did: root.post.author.did,
+                    indexedAt: root.post.indexedAt,
                 });
             }
             break;

@@ -46,6 +46,7 @@ const defaultData = {
   discord_quiet_hours: { start: 21, end: 6 },
   discord_pending_directives: [],
   post_topics: [],
+  image_subjects: [],
   discord_user_facts: {},
   discord_channel_summaries: {},
   discord_next_spontaneity_time: 0,
@@ -134,7 +135,6 @@ const defaultData = {
   render_service_id: null,
   render_service_name: null,
   pending_directives: [],
-  post_topics: [],
   greeting_state: {},
   last_rejection_reason: null,
   user_soul_mappings: {},
@@ -170,7 +170,17 @@ class DataStore {
   async init() {
     if (this.db) return;
     this.db = await JSONFilePreset(DB_PATH, defaultData);
-    await this.db.read();
+        await this.db.read();
+
+    const configPostTopics = config.POST_TOPICS ? config.POST_TOPICS.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
+    const configImageSubjects = config.IMAGE_SUBJECTS ? config.IMAGE_SUBJECTS.split(',').map(s => s.trim()).filter(s => s.length > 0) : [];
+
+    if (this.db.data.post_topics.length === 0 && configPostTopics.length > 0) {
+        this.db.data.post_topics = configPostTopics;
+    }
+    if ((!this.db.data.image_subjects || this.db.data.image_subjects.length === 0) && configImageSubjects.length > 0) {
+        this.db.data.image_subjects = configImageSubjects;
+    }
 
     let changed = false;
     for (const [key, value] of Object.entries(defaultData)) {

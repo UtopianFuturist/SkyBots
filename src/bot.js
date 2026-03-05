@@ -4478,7 +4478,7 @@ Describe how you feel about this user and your relationship now.`;
           INSTRUCTION: Choose a topic that resonates with your identity at this exact moment.
 
           Preferred Topics (Context Bank):
-          ${dConfig.post_topics.length > 0 ? dConfig.post_topics.join('\n') : 'None specified.'}
+          ${(dConfig.post_topics || []).length > 0 ? dConfig.post_topics.join('\n') : 'None specified.'}
 
           Network Buzz (what others are talking about):
           ${networkBuzz.substring(0, 1500) || 'None.'}
@@ -4762,10 +4762,10 @@ Describe how you feel about this user and your relationship now.`;
         ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
 
         Preferred Topics (Context Bank):
-        ${dConfig.post_topics.length > 0 ? dConfig.post_topics.join('\n') : 'None specified.'}
+        ${(dConfig.post_topics || []).length > 0 ? dConfig.post_topics.join('\n') : 'None specified.'}
 
         Preferred Image Subjects (Context Bank):
-        ${dConfig.image_subjects.length > 0 ? dConfig.image_subjects.join('\n') : 'None specified.'}
+        ${(dConfig.image_subjects || []).length > 0 ? dConfig.image_subjects.join('\n') : 'None specified.'}
 
         Recent Activity for Context (Do not repeat these):
         ${recentTimelineActivity}

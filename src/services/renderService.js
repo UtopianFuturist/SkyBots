@@ -140,6 +140,8 @@ class RenderService {
             const hint = response.status === 404 ? " (Note: Render's API log streaming may require a paid plan)" : "";
             if (response.status === 404) {
                 this.apiLogsDisabled = true;
+                console.warn(`[RenderService] Render API 404 (tier mismatch or invalid ID): ${errBody}`);
+                return "Render API log streaming is not available on this plan or service ID is invalid.";
             }
             throw new Error(`Render API error: ${response.status}${hint} - ${errBody}`);
         }

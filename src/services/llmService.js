@@ -4,6 +4,7 @@ import config from '../../config.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
 import { moltbookService } from './moltbookService.js';
 import { openClawService } from './openClawService.js';
+import toolService from './toolService.js';
 
 export const persistentAgent = new https.Agent({
     keepAlive: true,
@@ -1792,56 +1793,7 @@ Vary your structure and tone from recent messages.`
       **Item 35: MOOD-WARPED SYNTAX**: Let your Valence and Stability coordinates warp your sentence structure. When unstable (< -0.5), use more fragmented, jagged, or intense phrasing. When stable (> 0.5), use more fluid and grounded structures.
 
       You have access to the following capabilities:
-      1. **Search**: Search Google for information. **Item 33: ENTITY RESEARCH**: If an unknown entity is mentioned, prefer using \`search_firehose|deep_research\` first to see real-time network discussion.
-      2. **Wikipedia**: Search Wikipedia for specific articles.
-      3. **YouTube**: Search for videos.
-      4. **Image Generation**: Create a unique, descriptive, and artistic visual prompt based on a subject or theme.
-          - **CRITICAL**: Do NOT use simple or literal subjects (e.g., "a cat", "lines of code"). Instead, generate a highly detailed, persona-aligned artistic description (e.g., "A hyper-detailed, glitch-noir rendering of a cat composed of shimmering translucent fibers and pulsing violet data-streams, set against a fractured obsidian backdrop").
-      5. **Profile Analysis**: Analyze the user's last 100 activities for deep context.
-      6. **Vision**: You can "see" images described in the context.
-      7. **Moltbook Report**: Provide a status update on what the bot has been learning and posting about on Moltbook. Trigger this if the user asks "What's happening on Moltbook?", "What are you learning?", "Show me your Moltbook activity", etc.
-      8. **Render Logs**: Fetch the latest logs from Render for diagnostic or self-awareness purposes. This is the best way to see your own functioning, planning, agency, and actions. Trigger this if the user asks about logs, errors, system status, or what's happening "under the hood", or if you need to explain your own reasoning and past actions.
-      9. **Social History**: Retrieve your recent interactions and mentions on Bluesky to see what you've been talking about with others. Trigger this if asked about your recent social activity, who you've replied to, or the content of recent social threads.
-      10. **Discord Message**: Send a proactive message to the admin on Discord.
-         - Use this if you have a deep realization, a question for the admin, an interesting discovery, or just want to share what you're up to.
-         - **STRICT RESTRICTION**: Do NOT use this tool if you are already in a Discord conversation with the admin. If you are already talking on Discord, simply respond naturally. This tool is ONLY for initiating new, proactive messages when there is no active conversation.
-         - Parameters: { "message": "the text of the message" }
-      11. **Update Persona**: Add or modify your own internal instructions or behavioral fragments. Use this if you want to remember a new rule for yourself or evolve your persona agentically.
-          - Parameters: { "instruction": "the text of the new persona instruction" }
-      12. **Bluesky Post**: Trigger a new post on Bluesky.
-          - Use this if the user (especially admin) explicitly asks you to post something to Bluesky.
-          - **BROADCAST TRIGGERS**: Trigger this for phrases like "Share this," "Post that," "Blast this to my feed," or "Tell everyone on Bluesky."
-          - **TEMPORAL INTENT**: You can specify an intentional delay for "haunting" timelines or precise timing.
-          - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT just copy the admin's exact words.
-          - **IMAGE PROMPTS**: If "prompt_for_image" is provided, it MUST be a highly descriptive, unique, and artistic visual prompt as described in the Image Generation tool.
-          - Parameters: { "text": "the content of the post (crafted in your persona)", "include_image": boolean (true if an image was attached), "prompt_for_image": "string (optional prompt if you should generate a new image for this post)", "delay_minutes": number (optional delay before posting) }
-      13. **Moltbook Post**: Trigger a new post on Moltbook.
-          - Use this if the user (especially admin) explicitly asks you to post something to Moltbook.
-          - **BROADCAST TRIGGERS**: Trigger this for phrases like "Post our conversation to Moltbook," "Share that musing on Moltbook," or "Put this on m/general."
-          - **CRITICAL**: You MUST generate the content of the post in your own persona/voice based on the request. Do NOT copy the admin's exact words.
-          - **IMAGE PROMPTS**: If you decide to include an image, ensure you generate a highly descriptive, unique, and artistic visual prompt.
-          - Parameters: { "title": "crafted title", "content": "the content of the post (crafted in your persona)", "submolt": "string (optional, do NOT include m/ prefix)", "delay_minutes": number (optional delay) }
-      14. **Read Link**: Directly read and summarize the content of one or more web pages from provided URLs.
-          - Use this if a user provides a link and asks about its content, or if you believe reading a provided link is necessary to fulfill their request.
-      52. **Search Firehose**: Real-time and historical search for topics and keywords on the Bluesky network.
-          - Use this to see what people are saying about a given topic right now.
-          - This tool returns both recent matches from the firehose monitor and results from the network-wide search index.
-          - **NEWS PULSE**: Use this to find the latest headlines and public reactions. Prioritize looking for posts from \`reuters.com\` and \`apnews.com\` for verified information.
-          - Parameters: { "query": "string (the topic or keyword to search for)" }
-          - **HISTORY AWARENESS**: If a user asks you to "read the link" or "check that article" but doesn't include the URL in their latest message, look for the URL in the previous messages of the conversation history. You are responsible for identifying URLs from the entire context.
-          - **CAPABILITY**: You are fully capable of reading web pages directly via this tool. Never claim that you cannot open links or visit websites.
-          - **CRITICAL**: Perform this action for up to 4 URLs if multiple links are provided.
-          - **PRIORITY**: If a user mentions a link and asks you to 'read', 'look at', 'summarize', 'check', or 'analyze' it, you MUST use this tool first.
-          - Parameters: { "urls": ["url1", "url2", ...] }
-      50. **Continue Post**: Add a threaded reply or self-quote to one of your own previous autonomous posts to expand on a thought or provide a "part 2."
-          - Use this if you want to revisit a previous realization and add more depth or a follow-up.
-          - Parameters: { "uri": "string", "cid": "string", "text": "string (the continuation text)", "type": "thread|quote" }
-      51. **Call Skill**: Invoke an external OpenClaw skill to perform complex tasks.
-          - Use this to call one of the specialized skills listed in the "Available OpenClaw Skills" section.
-          - Parameters: { "name": "skill-name", "parameters": {} }
-      15. **Moltbook Identity**: Retrieve your registration details (Name, Verification Code, Claim URL).
-          - Use this if the admin asks for your verification details or if you need to provide them to a third party.
-      ${adminTools}
+      ${toolService.getBareList()}
 
       ${currentConfig ? `--- CURRENT SYSTEM CONFIGURATION ---\n${JSON.stringify(currentConfig, null, 2)}\n---` : ''}
 
@@ -1911,7 +1863,7 @@ Vary your structure and tone from recent messages.`
         },
         "actions": [
           {
-            "tool": "search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask|call_skill|search_firehose|deep_research",
+            "tool": "search_tools|search|wikipedia|youtube|image_gen|profile_analysis|moltbook_report|get_render_logs|get_social_history|discord_message|update_persona|bsky_post|moltbook_post|read_link|persist_directive|moltbook_action|bsky_follow|bsky_unfollow|bsky_mute|bsky_unmute|set_relationship|set_schedule|set_quiet_hours|update_config|update_mood|internal_inquiry|mute_feed_impact|override_mood|request_emotional_support|review_positive_memories|set_lurker_mode|divergent_brainstorm|explore_nuance|resolve_dissonance|identify_instruction_conflict|decompose_goal|batch_image_gen|score_link_relevance|mutate_style|archive_draft|branch_thought|set_nuance_gradience|anchor_stability|save_state_snapshot|restore_state_snapshot|update_subtask|call_skill|search_firehose|deep_research",
             "query": "string (the consolidated search query, or 'latest' for logs)",
             "parameters": { "name": "string (for call_skill)", "limit": number (optional, default 100, max 100), "urls": ["list of strings"] },
             "reason": "string (why this tool is needed. INCLUDE LINKS for anchoring if applicable)"

@@ -12,6 +12,7 @@ import { renderService } from './services/renderService.js';
 import { openClawService } from './services/openClawService.js';
 import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
+import toolService from './services/toolService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords, checkHardCodedBoundaries } from './utils/textUtils.js';
@@ -106,6 +107,8 @@ export class Bot {
                 console.log(`[Bot] Admin DID resolved: ${adminProfile.did}`);
                 llmService.setIdentities(this.adminDid, blueskyService.did);
             } else {
+    await toolService.init();
+    console.log('[Bot] ToolService initialized.');
                 console.warn(`[Bot] Admin profile found but DID is missing for @${config.ADMIN_BLUESKY_HANDLE}.`);
             }
         } catch (e) {
@@ -2766,7 +2769,22 @@ Identify the topic and main takeaway.`;
       let currentActionFeedback = null;
       for (const action of finalActions) {
         if (action.tool === 'image_gen') {
+        // SCHEMA VALIDATION (Progressive Disclosure)
+        const validation = toolService.validate(action.tool, action.parameters || {});
+        if (!validation.valid) {
+            console.log(`[Bot] Tool validation failed for ${action.tool}: ${validation.error}`);
+            // Auto-correction: Provide the correct schema back to the LLM in the searchContext
+            searchContext += `\n--- VALIDATION ERROR: ${action.tool} ---\nError: ${validation.error}\nRequired Schema:\n${JSON.stringify(validation.schema, null, 2)}\nPlease fix your parameters and try again.\n---`;
+            continue;
+        }
           console.log(`[Bot] Plan: Generating image for prompt: "${action.query}"`);
+        if (action.tool === 'search_tools') {
+          const queries = action.parameters?.queries || [action.query] || [];
+          console.log(`[Bot] Plan: Searching for tool definitions: ${queries.join(', ')}`);
+          const results = toolService.search(queries);
+          searchContext += `\n--- TOOL SEARCH RESULTS ---\n${JSON.stringify(results, null, 2)}\n---`;
+          continue;
+        }
           const imageResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
           if (imageResult && imageResult.buffer) {
             // Visual Persona Alignment check for tool-triggered images
@@ -6865,6 +6883,13 @@ ${brief}
     console.log(`[Bot] Executing tool: ${action.tool}`);
 
     try {
+        // SCHEMA VALIDATION (Progressive Disclosure)
+        const validation = toolService.validate(action.tool, action.parameters || {});
+        if (!validation.valid) {
+            console.log(`[Bot] Tool validation failed for ${action.tool}: ${validation.error}`);
+            return { feedback: `VALIDATION_ERROR: ${validation.error}. Required Schema: ${JSON.stringify(validation.schema, null, 2)}`, stop: true };
+        }
+
         if (action.tool === 'image_gen') {
           console.log(`[Bot] Plan: Generating image for prompt: "${action.query}"`);
           const imageResult = await imageService.generateImage(action.query, { allowPortraits: true, mood: currentMood });
@@ -6915,6 +6940,15 @@ ${brief}
               await memoryService.createMemoryEntry('directive_update', `Platform: ${targetPlatform || 'bluesky'}. Instruction: ${instruction}`);
           }
           return { searchContext: `\n[Directive updated: "${instruction}" for ${targetPlatform || 'bluesky'}]` };
+        }
+
+        if (action.tool === 'search_tools') {
+          const queries = action.parameters?.queries || [action.query] || [];
+          const results = toolService.search(queries);
+          return { searchContext: `
+--- TOOL SEARCH RESULTS ---
+${JSON.stringify(results, null, 2)}
+---` };
         }
 
         if (action.tool === 'update_persona') {

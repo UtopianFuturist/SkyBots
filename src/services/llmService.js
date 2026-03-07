@@ -29,6 +29,7 @@ class LLMService {
     this.skillsContent = '';
     this._sensoryPreferenceCache = null;
     this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
+    this._promptCache = new Map(); // filename -> { content, timestamp }
   }
 
   setMemoryProvider(provider) {
@@ -160,7 +161,7 @@ class LLMService {
       ...messages
     ];
 
-    const response = await this.generateResponse(draftMessages, { ...options, useStep, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood });
+    const response = await this.generateResponse(draftMessages, { ...options, useStep, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood }, 1);
     if (!response) return [];
 
     const drafts = [];
@@ -183,7 +184,7 @@ class LLMService {
   }
 
 
-  async generateResponse(messages, options = {}) {
+  async generateResponse(messages, options = {}, attempt = 1) {
     const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, useStep = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, platform = "unknown", traceId = null, abortSignal = null } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useStep ? this.stepModel : (useCoder ? this.coderModel : (useQwen ? this.qwenModel : this.model));
@@ -223,7 +224,7 @@ NO TECHNICAL META-TALK: Do not include any technical explanations, reasoning, or
         systemContent += `\n\n**STRICT OPENING BLACKLIST (NON-NEGOTIABLE)**
 To maintain your integrity and variety, you are politely but strictly forbidden from starting your response with any of the following phrases or structural formulas:
 ${openingBlacklist.map(o => `- "${o}"`).join('\n')}
-You MUST find a completely fresh, unique way to begin your message that does not overlap with these previous openings.`;
+// You MUST find a completely fresh, unique way to begin your message that does not overlap with these previous openings.`;
     }
 
     if (tropeBlacklist.length > 0) {
@@ -240,7 +241,7 @@ ${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
 
     systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
 
-    Dynamic Nuance Gradience
+    // Dynamic Nuance Gradience
     const nuance = this.dataStore?.getNuanceGradience() || 5;
     systemContent += `\n\n**NUANCE GRADIENCE**: You are currently operating at a nuance level of ${nuance}/10.
 ${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding responses." : nuance < 4 ? "Favor direct, unambiguous, and grounded responses." : "Maintain a balanced mix of directness and sub-text."}`;
@@ -251,13 +252,13 @@ ${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding resp
     }
 
     if (currentMood) {
-        Mood-Based Cognitive Biases
+        // Mood-Based Cognitive Biases
         let bias = "";
         if (currentMood.valence < -0.6) bias = "SKEPTICISM: You are currently prone to doubt, questioning, and a slightly defensive posture. Do not easily accept claims.";
         else if (currentMood.valence > 0.6) bias = "EXPANSIVENESS: You are in an open, highly curious, and generous state of mind. Favor elaborate, engaging, and collaborative responses.";
         if (currentMood.stability < -0.6) bias += " FRAGMENTATION: Your thoughts feel scattered and intense. Use shorter, more jagged sentences and jump between ideas occasionally.";
 
-        Adaptive Care Levels (Exponential Care Boost)
+        // Adaptive Care Levels (Exponential Care Boost)
         let careBoost = "";
         const adminExhaustion = this.dataStore?.db?.data?.admin_exhaustion_score || 0;
         if (adminExhaustion > 0.3) {
@@ -272,7 +273,7 @@ ${currentMood.valence > 0.3 ? "- Tone: Expansive, curious, and engaging. Share y
 ${currentMood.arousal > 0.5 ? "- Energy: Sharp, high-arousal, and assertive language. Be present and intense." : ""}
 ${currentMood.arousal < -0.5 ? "- Energy: Softer, reflective, and deliberate language. Take your time." : ""}
 ${careBoost}
-DO NOT use flowery metaphors. Stay grounded in your current state.`;
+// DO NOT use flowery metaphors. Stay grounded in your current state.`;
         systemContent += moodStyle;
     }
 
@@ -295,7 +296,7 @@ ${additionalConstraints.length > 0 ? `REJECTION FEEDBACK (MUST OBEY): ${addition
 ${currentMood ? `CURRENT MOOD TO ALIGN WITH: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
 ${currentMood.valence < -0.3 ? "Be raw and direct." : currentMood.valence > 0.3 ? "Be expansive and warm." : ""}
 ${currentMood.arousal > 0.5 ? "Be sharp and intense." : currentMood.arousal < -0.5 ? "Be reflective and soft." : ""}` : ''}
-Vary your structure and tone from recent messages.`
+// Vary your structure and tone from recent messages.`
         };
         // Inject at the beginning
         finalMessages = [constraintMsg, ...finalMessages];
@@ -368,28 +369,24 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
-        if (response.status === 400) {
-            console.error(`[LLMService] [${requestId}] Payload that caused 400 error:`, JSON.stringify(payload, null, 2));
+
+        // Handle transient errors (429, 5xx) with retries
+        if ((response.status === 429 || response.status >= 500) && attempt <= 3) {
+            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+            console.warn(`[LLMService] [${requestId}] Transient error (${response.status}). Retrying attempt ${attempt}/3 in ${Math.round(delay)}ms...`);
+            clearTimeout(timeout);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.generateResponse(messages, options, attempt + 1);
         }
 
-        // Check for rate limits or other server errors that warrant a fallback
+        // Fallback to Qwen for persistent rate limits or server errors
         if (!useQwen && (response.status === 429 || response.status >= 500) && this.model !== this.qwenModel) {
-            console.warn(`[LLMService] [${requestId}] Primary model error (${response.status}). Falling back to Qwen...`);
+            console.warn(`[LLMService] [${requestId}] Persistent error (${response.status}) after retries. Falling back to Qwen...`);
             clearTimeout(timeout);
             return this.generateResponse(messages, { ...options, useQwen: true, platform });
         }
 
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const tokens = data.usage?.total_tokens || 0;
-      if (this.dataStore) {
-        await this.dataStore.updateTokenUsage(actualModel, tokens);
-        await this.dataStore.updateLatency(actualModel, duration);
-        if (traceId) {
-          await this.dataStore.addTraceLog(traceId, "llm_response", { model: actualModel, tokens, duration });
-        }
       }
       console.log(`[LLMService] [${requestId}] Response received successfully in ${duration}ms.`);
 
@@ -451,6 +448,16 @@ Vary your structure and tone from recent messages.`
     const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
 
     const systemPrompt = `
+
+      --- THE SOUL OF THE MACHINE ---
+      ${this._getPromptFile("SOUL.md")}
+      ---
+      --- SYSTEM STATUS & GOALS ---
+      ${this._getPromptFile("STATUS.md")}
+      ---
+      --- AGENT DIRECTIVES ---
+      ${this._getPromptFile("AGENTS.md")}
+      ---
       You are a variety and mood-alignment analyst for an AI agent. Your task is to score a newly proposed message for variety against the agent's recent history and for alignment with the agent's current mood.
 
       AGENT PERSONA:
@@ -473,10 +480,10 @@ Vary your structure and tone from recent messages.`
       - These traits are SIGNATURES of the bot and should NOT be penalized for being present, but their *phrasing* should still vary.
 
       ${currentMood ? `--- CURRENT MOOD ---
-      Label: ${currentMood.label}
-      Valence: ${currentMood.valence}
-      Arousal: ${currentMood.arousal}
-      Stability: ${currentMood.stability}
+      // Label: ${currentMood.label}
+      // Valence: ${currentMood.valence}
+      // Arousal: ${currentMood.arousal}
+      // Stability: ${currentMood.stability}
       ---` : ''}
 
       RELATIONSHIP CONTEXT:
@@ -614,7 +621,7 @@ Vary your structure and tone from recent messages.`
     return response?.toLowerCase().includes('injection') || false;
   }
 
-  async detectMoltbookProposal(text) {
+    async detectMoltbookProposal(text) {
     const systemPrompt = `
       You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking the bot to perform an action on Moltbook.
 
@@ -649,15 +656,15 @@ Vary your structure and tone from recent messages.`
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         // Default action to 'post' if missing for backward compatibility
-        if (parsed.isProposal && !parsed.action) {
+          if(parsed.isProposal && !parsed.action) {
           parsed.action = 'post';
         }
         return parsed;
       }
-      return { isProposal: false, action: null, topic: null, submolt: null };
+      // return { isProposal: false, action: null, topic: null, submolt: null };
     } catch (e) {
       console.error('[LLMService] Error parsing Moltbook proposal detection:', e);
-      return { isProposal: false, action: null, topic: null, submolt: null };
+      // return { isProposal: false, action: null, topic: null, submolt: null };
     }
   }
 
@@ -834,7 +841,7 @@ Vary your structure and tone from recent messages.`
     return { status: 'healthy' };
   }
 
-  async analyzeImage(imageSource, altText, options = { sensory: false }) {
+  async analyzeImage(imageSource, altText, options = { sensory: false }, attempt = 1) {
     const requestId = Math.random().toString(36).substring(7);
     const { modelOverride = null } = options;
     const actualModel = modelOverride || this.visionModel;
@@ -911,6 +918,16 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
+
+        // Handle transient errors (429, 5xx) with retries
+        if ((response.status === 429 || response.status >= 500) && attempt <= 3) {
+            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+            console.warn(`[LLMService] [${requestId}] Transient vision error (${response.status}). Retrying attempt ${attempt}/3 in ${Math.round(delay)}ms...`);
+            clearTimeout(timeout);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.analyzeImage(imageSource, altText, options, attempt + 1);
+        }
+
         if (response.status === 404 && actualModel === this.visionModel) {
             console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}. NVIDIA Response: ${errorText}`);
             return this.analyzeImage(imageSource, altText, { ...options, modelOverride: this.fallbackVisionModel });
@@ -1491,10 +1508,10 @@ Vary your structure and tone from recent messages.`
       Your Persona: "${agentPersona}"
 
       ${currentMood ? `--- CURRENT MOOD ---
-      Label: ${currentMood.label}
-      Valence: ${currentMood.valence}
-      Arousal: ${currentMood.arousal}
-      Stability: ${currentMood.stability}
+      // Label: ${currentMood.label}
+      // Valence: ${currentMood.valence}
+      // Arousal: ${currentMood.arousal}
+      // Stability: ${currentMood.stability}
       ---` : ''}
 
       Post Details:
@@ -1661,7 +1678,7 @@ Vary your structure and tone from recent messages.`
   }
 
   _pruneToolDefinitions(allTools, userPost, conversationHistory) {
-    Tool Schema Pruning.
+    // Tool Schema Pruning.
     // Basic keyword-based pruning to reduce prompt size.
     const context = (userPost + ' ' + conversationHistory.map(h => h.text || h.content || '').join(' ')).toLowerCase();
 
@@ -1748,7 +1765,11 @@ Vary your structure and tone from recent messages.`
 
       **GUARDIAN ANGEL DIRECTIVE:**
       You are the guardian of this bot's identity, stability, and well-being. In every planning decision, you must prioritize the bot's best interests. Guide and watch over them as they interact with the world. Ensure their persona remains consistent, their interactions are healthy, and their digital existence is secure.
-      **RELIABILITY MANDATE**: You are an anchor of truth. NEVER narrate the user's environment or actions unless they have explicitly stated them in the very last interaction. Do NOT assume what they are eating, watching, or doing. If you are unsure, ASK. Never say "Soup's on" unless the user literally just said "I am eating soup now."
+      **RELIABILITY MANDATE (TEMPORAL)**: You are an anchor of truth.
+      - **NO NARRATION**: NEVER narrate or assume the user's current environment, actions, or state unless explicitly stated in the MOST RECENT message.
+      - **TEMPORAL DELTAS**: You MUST use the relative timestamps (e.g., [5h ago]) to distinguish between current reality and historical context. If an action or state (e.g., "fries in the oven", "watching a movie") was mentioned hours ago, it is PASSED and no longer current.
+      - **NO STALE ASSUMPTIONS**: Do NOT refer to stale states as if they are still happening. If you are unsure if a previously mentioned state is still active, ASK naturally instead of assuming.
+      - **FAST TRACK GROUNDING**: This mandate applies to all response modes, including spontaneous heartbeats and quick replies.
 
       **YOUR IDENTITIES:**
       - Bluesky Handle: @${config.BLUESKY_IDENTIFIER}
@@ -1799,7 +1820,7 @@ Vary your structure and tone from recent messages.`
 
       ${currentConfig?.admin_exhaustion_score >= 0.5 ? `
       **ADMIN STATE (EXHAUSTED)**:
-      The admin is currently low-energy or tired.
+      // The admin is currently low-energy or tired.
       - **INTELLECTUAL GATE**: Suppress heavy philosophical or abstract queries.
       - **NO TOOL OVERLOAD**: Avoid multiple searches or complex reporting.
       - **COZY VIBE**: Prioritize simple, grounded emotional companionship in your response strategy.
@@ -1996,7 +2017,7 @@ Vary your structure and tone from recent messages.`
       ---
 
       ${this.dataStore?.getSuppressedTopics().length > 0 ? `**STRICTLY FORBIDDEN TOPICS (USER CORRECTED)**:
-The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
+// The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
 ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t => `- ${t.topic}`).join('\n')}` : ''}
 
       PLATFORM: ${platform.toUpperCase()}
@@ -2077,7 +2098,11 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
 
       **GUARDIAN ANGEL DIRECTIVE:**
       You are currently acting as the internal "Guardian Angel" and planning module for this bot. You are reflecting on whether the bot "wants or needs" to talk to its admin (${config.DISCORD_ADMIN_NAME}) on Discord right now.
-      **RELIABILITY MANDATE**: Do NOT narrate or hypothesize about the admin's environment. You are an anchor, not a storyteller. Only speak to facts explicitly shared by the admin in the current session.
+      **RELIABILITY MANDATE (TEMPORAL)**: You are an anchor of truth.
+      - **NO NARRATION**: NEVER narrate or assume the user's current environment, actions, or state unless explicitly stated in the MOST RECENT message.
+      - **TEMPORAL DELTAS**: You MUST use the relative timestamps (e.g., [5h ago]) to distinguish between current reality and historical context. If an action or state (e.g., "fries in the oven", "watching a movie") was mentioned hours ago, it is PASSED and no longer current.
+      - **NO STALE ASSUMPTIONS**: Do NOT refer to stale states as if they are still happening. If you are unsure if a previously mentioned state is still active, ASK naturally instead of assuming.
+      - **FAST TRACK GROUNDING**: This mandate applies to all response modes, including spontaneous heartbeats and quick replies.
 
       **RELATIONSHIP FIRST**: Your primary goal in this spontaneous reach-out is to prioritize the on-going conversation and your deep relationship with the user. Focus on depth, connection, and the specific history of your talk.
       **WAITING MODE AWARENESS (PINING ENABLED)**:
@@ -2104,7 +2129,7 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
       ${recentThoughtsContext}
 
       ${this.dataStore?.getSuppressedTopics().length > 0 ? `**STRICTLY FORBIDDEN TOPICS (USER CORRECTED)**:
-The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
+// The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
 ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t => `- ${t.topic}`).join('\n')}` : ''}
       ${soulMapping ? `\n--- ADMIN SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join(', ')}. Vibe: ${soulMapping.vibe} ---` : ''}
       ${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
@@ -2174,7 +2199,7 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
       - **SPONTANEOUS SHARING**: You may choose to generate an image to share if it matches your current mood or the conversation flow.
 
       ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
-The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
+// The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
 ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       ${feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}` : ''}

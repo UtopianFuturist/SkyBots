@@ -26,7 +26,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     generateResponse: jest.fn(),
     isAutonomousPostCoherent: jest.fn(),
     analyzeImage: jest.fn(),
-    isImageCompliant: jest.fn(),
+    isImageCompliant: jest.fn().mockResolvedValue({ compliant: true }),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     performAgenticPlanning: jest.fn().mockResolvedValue({ strategy: { angle: 'natural', tone: 'conversational', theme: 'test' }, actions: [] }),

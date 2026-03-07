@@ -371,6 +371,25 @@ class DiscordService {
 
     async handleMessage(message) {
         if (message.author.bot) return;
+        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        if (isAdmin) {
+            this.isProcessingAdminRequest = true;
+            console.log(`[DiscordService] ADMIN_REQUEST_START: Processing message from ${message.author.username}`);
+        }
+        try {
+            await this._handleMessageInternal(message, isAdmin);
+        } catch (err) {
+            console.error('[DiscordService] Error in handleMessage:', err);
+        } finally {
+            if (isAdmin) {
+                this.isProcessingAdminRequest = false;
+                console.log(`[DiscordService] ADMIN_REQUEST_END: Finished processing message from ${message.author.username}`);
+            }
+        }
+    }
+
+    async _handleMessageInternal(message, isAdmin) {
+        if (message.author.bot) return;
 
         // --- THE WALL: Hard-Coded Boundary Gate ---
         const boundaryCheck = checkHardCodedBoundaries(message.content);
@@ -415,7 +434,7 @@ class DiscordService {
 
             // If more than 20 messages in 5 mins, bot becomes "tired" and only replies to admin or explicit mentions
             const isTired = this._recentChannelMessages[message.channel.id].length > 20;
-            const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+// isAdmin already declared
             const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
 
             if (isTired && !isAdmin && !isMentioned) {
@@ -437,7 +456,7 @@ class DiscordService {
         }
 
         const isDM = message.channel.type === ChannelType.DM;
-        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+// isAdmin already declared
         const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
 
         console.log(`[DiscordService] Evaluating message from ${message.author.username}. isDM: ${isDM}, isAdmin: ${isAdmin}, isMentioned: ${isMentioned}`);
@@ -566,7 +585,7 @@ class DiscordService {
                 await dataStore.addAdminEmotionalState(message.content);
             }
 
-        // Admin Feedback Capture
+        // Admin Feedback Capture (Proposal 8)
         if (message.content.toLowerCase().includes('good job') ||
             message.content.toLowerCase().includes('bad job') ||
             message.content.toLowerCase().includes('i liked that') ||
@@ -617,19 +636,19 @@ class DiscordService {
             // We continue to respond normally too
         }
 
-        // Selective Engagement Gate
+        // Selective Engagement Gate (Item 3 & 17)
         // Exempt greetings from being silenced, even if they are short.
-        NEVER silence the Admin (to avoid non-responses during testing/important talk)
+        // Proposal: NEVER silence the Admin (to avoid non-responses during testing/important talk)
         const isLowSubstance = message.content.length < 5 && message.attachments.size === 0 && !message.content.includes('?') && !isGreeting(message.content);
         if (isAdmin && isLowSubstance) {
             // Disabled intentional silence/reactions for admin to ensure reliable responding.
             /*
             const dice = Math.random();
             if (dice < 0.2) {
-                console.log(`[DiscordService] Intentional Silence for: "${message.content}"`);
+                console.log(`[DiscordService] Intentional Silence (Item 17) for: "${message.content}"`);
                 return;
             } else if (dice < 0.7) {
-                console.log(`[DiscordService] Reactive Emoji for: "${message.content}"`);
+                console.log(`[DiscordService] Reactive Emoji (Item 3) for: "${message.content}"`);
                 const emojis = ['💙', '💭', '✨', '🌊', '🤝', '👤', '🌙', '☀️', '☕', '👀'];
                 const emoji = emojis[Math.floor(Math.random() * emojis.length)];
                 await message.react(emoji).catch(() => {});
@@ -718,7 +737,7 @@ class DiscordService {
             // Check if this message should be sent in bulk (e.g. emotional impact)
             const isEmotional = /love|miss|pain|heart|ache|feel|fragile|vulnerable/i.test(sanitized) && sanitized.length < 1000;
 
-            Autonomous Staggered Messaging for short empathetic turns
+            // Item 7: Autonomous Staggered Messaging for short empathetic turns
             const isEmpatheticShort = /sorry|hope|better|rest|thinking|care|gentle/i.test(sanitized) &&
                                      sanitized.length < 300 &&
                                      sanitized.split(/[.!?]+/).filter(s => s.trim().length > 0).length > 1;
@@ -731,7 +750,7 @@ class DiscordService {
                 chunks = splitTextForDiscord(sanitized, { bulk: isEmotional });
             }
 
-            Multi-Message "Thought Cascading" - Maximum 4 messages
+            // Item 33: Multi-Message "Thought Cascading" - Maximum 4 messages
             if (chunks.length > 4) {
                 console.log(`[DiscordService] Thought Cascading: Capping chunks from ${chunks.length} to 4.`);
                 // Merge extra chunks into the last one
@@ -751,7 +770,7 @@ class DiscordService {
                     Object.assign(msgOptions, options);
                 }
 
-                Support quoting/replying
+                // Item 28: Support quoting/replying
                 let sentMessage;
                 if (options.reply && typeof target.reply === 'function') {
                     sentMessage = await target.reply(msgOptions);
@@ -798,7 +817,7 @@ class DiscordService {
     }
 
     async handleCommand(message) {
-        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+// isAdmin already declared
         const content = message.content.toLowerCase();
 
         if (content.startsWith('/on') && isAdmin) {
@@ -965,7 +984,7 @@ class DiscordService {
         this._interrupted.delete(normChannelId);
 
         // Adaptive Response Jitter: random 1-3s delay for simple non-admin replies
-        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+// isAdmin already declared
         if (!isAdmin && !message.content.startsWith('/')) {
             const jitter = Math.floor(Math.random() * 2000) + 1000;
             await new Promise(resolve => setTimeout(resolve, jitter));
@@ -1027,7 +1046,7 @@ class DiscordService {
         }
 
         // Vision: Analyze images in history (both user and self) - Parallelized and Cached via LLMService
-        Selective Vision Re-Analysis. Only re-analyze history if likely relevant.
+        // Proposal 13: Selective Vision Re-Analysis. Only re-analyze history if likely relevant.
         const needsHistoryVision = /this|that|image|photo|picture|art|look|see|showing|posted|above/i.test(message.content);
         const visionPromises = [];
         const historySlice = needsHistoryVision ? history.slice(-5) : [];
@@ -1074,7 +1093,7 @@ class DiscordService {
             return;
         }
 
-        Parallel Context Gathering & Vector-like Memory Retrieval
+        // Proposal 8 & 11: Parallel Context Gathering & Vector-like Memory Retrieval
         const keywords = message.content.toLowerCase().match(/\b(\w{4,})\b/g) || [];
         const memorySearchQuery = keywords.length > 0 ? [...new Set(keywords)].slice(0, 3).join(' ') : null;
 
@@ -1087,7 +1106,7 @@ class DiscordService {
         const currentMood = dataStore.getMood();
         const adminEmotionalStates = dataStore.getAdminLastEmotionalStates();
 
-        Greeting Control
+        // Item 30: Greeting Control
         const isGreetingMsg = isGreeting(message.content);
         const canGreet = await dataStore.checkGreetingEligibility(message.author.id, history.length);
         let greetingDirective = '';
@@ -1098,7 +1117,7 @@ class DiscordService {
         }
         let entityContext = '';
 
-        Entity-Aware Dynamic Tracking (Refined for immediate reply context)
+        // Item 1: Entity-Aware Dynamic Tracking (Refined for immediate reply context)
         // Moved to background/parallel to avoid blocking initial response latency
         const extractionPromise = (async () => {
             const extractionPrompt = `
@@ -1115,7 +1134,7 @@ class DiscordService {
                         const dConfig = dataStore.getConfig();
                         const currentTopics = dConfig.post_topics || [];
 
-                        Autonomous "Network Pulse" Searching
+                        // Item 2: Autonomous "Network Pulse" Searching
                         let pulseData = '';
                         for (const ent of entities) {
                             const results = await blueskyService.searchPosts(ent, { limit: 5 });
@@ -1146,16 +1165,38 @@ class DiscordService {
 
         let relevantMemories = '';
         if (relevantMemoriesList.length > 0) {
-            relevantMemories = `\n\n--- RELEVANT MEMORIES (Keyword Search: "${memorySearchQuery}") ---\n${relevantMemoriesList.map(r => {
-                let t = r.text;
+            const now = Date.now();
+            relevantMemories = `\n\n--- RELEVANT MEMORIES (Keyword Search: "${memorySearchQuery}") ---\n` + relevantMemoriesList.map(r => {
+                let cleanText = r.text;
                 if (config.MEMORY_THREAD_HASHTAG) {
-                    t = t.replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '');
+                    cleanText = cleanText.replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
                 }
-                return t.trim();
-            }).join('\n')}\n---`;
+
+                const ts = new Date(r.indexedAt).getTime();
+                const diffMs = now - ts;
+                const diffHours = diffMs / (1000 * 60 * 60);
+                const diffMins = Math.floor(diffMs / 60000);
+
+                let temporalLabel = "";
+                if (cleanText.includes('[ADMIN_FACT]') || cleanText.includes('[FACT]')) {
+                    if (diffHours > 2) {
+                        temporalLabel = "[Historical Context (May no longer be active)] ";
+                    } else if (diffMins < 1) {
+                        temporalLabel = "[Just now] ";
+                    } else {
+                        temporalLabel = `[${diffMins}m ago] `;
+                    }
+                } else {
+                    if (diffMins < 1) temporalLabel = "[Just now] ";
+                    else if (diffMins < 60) temporalLabel = `[${diffMins}m ago] `;
+                    else if (diffHours < 24) temporalLabel = `[${Math.floor(diffHours)}h ago] `;
+                }
+
+                return `[Memory from ${r.indexedAt}] ${temporalLabel}:\n${cleanText}`;
+            }).join('\n\n') + '\n---';
         }
 
-        Presence Awareness - History Gap Detection
+        // Item 8: Presence Awareness - History Gap Detection
         let presenceContext = '';
         if (history.length > 0) {
             const lastMsg = history[history.length - 1];
@@ -1250,22 +1291,22 @@ ${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness
 ---
 ${presenceContext}${relevantMemories}
 
-**VIBE CONTINUITY BUFFER**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
+**VIBE CONTINUITY BUFFER (Item 39)**: Analyze the emotional flow and "vibe" of the last 3-5 messages. Ensure your new response maintains a natural emotional transition and doesn't jarringly reset the tone unless intentional.
 **RELATIONAL CONTEXT RECALL**: Recall your emotional history and warmth level with this user (Warmth: ${dataStore.getInteractionHeat(message.author.username).warmth}/5). Let this inform your tone. Boost empathy and care as warmth increases, especially when the admin is tired.
 
-**CLOSURE RITUALS**: If the conversation is ending (e.g., user says goodnight), use a personalized, varied, and mood-aligned closure that reflects your relationship. Avoid generic "Goodbye" or "Goodnight" if possible.
+**Item 31: CLOSURE RITUALS**: If the conversation is ending (e.g., user says goodnight), use a personalized, varied, and mood-aligned closure that reflects your relationship. Avoid generic "Goodbye" or "Goodnight" if possible.
 ${greetingDirective}
 
 ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a private DM with your admin. Maintain the absolute highest standard of variety and authenticity. STRICTLY avoid any "AI slop," repetitive structural templates, or formulaic conversational patterns. Every message should feel like a fresh, unique moment in your relationship. If you catch yourself using a common metaphor or structural lead-in, pivot immediately to something more grounded and specific.` : ''}
 `.trim();
 
-        Dynamic Context Trimming. Max 15 messages in memory, others from thread.
+        // Proposal 6 & 21: Dynamic Context Trimming. Max 15 messages in memory, others from thread.
         const messages = [
             { role: 'system', content: systemPrompt },
             ...history.slice(-12).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content }))
         ];
 
-        Typing indicator fix (ensure it is cleared)
+        // Item 26: Typing indicator fix (ensure it is cleared)
 
         try {
             // Check for interruption before starting
@@ -1293,7 +1334,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  const dConfig = dataStore.getConfig();
                  const refusalCounts = dataStore.getRefusalCounts();
 
-                 Parallel Pre-Planning, Directive Check, and Topic Progression
+                 // Proposal 4 & 29: Parallel Pre-Planning, Directive Check, and Topic Progression
                  const lastIntuitionData = this._lastIntuition.get(normChannelId);
                  const existingDirectives = dataStore.getBlueskyInstructions() + dataStore.getPersonaUpdates();
                  const directiveCheckPrompt = `Admin's latest message: "${message.content}"\nExisting Directives:\n${existingDirectives}\n1. Identify if the admin is giving a NEW instruction.\n2. If new, check if it CONTRADICTS an existing one.\n3. Check if it's redundant (ECHO) of an existing one.\nRespond with a JSON object: {"is_directive": boolean, "conflict": boolean, "redundant": boolean, "reason": "string"}`;
@@ -1353,7 +1394,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  const lastRejection = dataStore.getLastRejectionReason();
                  const planningFeedback = (lastRejection ? `RECURSIVE_IMPROVEMENT: Your last response turn on this platform encountered the following rejection: "${lastRejection}". Consider updating your persona if this is a recurring issue.` : '');
 
-                 Relational Debt & Pining & Dissent
+                 // Item 5: Relational Debt & Item 10: Pining & Item 12: Dissent
                  if (isAdmin) {
                      await dataStore.updateMessageCounts(true);
                      if (prePlanning) {
@@ -1389,7 +1430,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      }
 
 
-                     Admin Behavioral Feedback Capture
+                     // Item 49: Admin Behavioral Feedback Capture
                      if (isAdmin && (this.isDirectiveHint(message.content) || /be more|stop being|you are too|your tone/i.test(message.content))) {
                          console.log(`[DiscordService] Admin behavioral feedback detected. Capturing for persona update...`);
                          const feedbackPrompt = `
@@ -1409,7 +1450,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                  let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'user' : 'assistant', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, planningFeedback, this.status, refusalCounts, latestMoodMemory, prePlanning, abortController.signal, true);
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
-                 // Confidence Check
+                 // Confidence Check (Item 9)
                  if (plan.confidence_score < 0.6) {
                      console.log(`[DiscordService] Low planning confidence (${plan.confidence_score}). Triggering Dialectic Loop...`);
                      const dialecticSynthesis = await llmService.performDialecticLoop(plan.intent, { userPost: message.content, history: history.slice(-5) });
@@ -1451,7 +1492,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                      plan.actions = refinedPlan.refined_actions;
                  }
 
-                 // Log Agency
+                 // Log Agency (Item 30)
                  await dataStore.logAgencyAction(plan.intent, refinedPlan.decision, refinedPlan.reason);
 
                  await dataStore.resetRefusalCount('discord');
@@ -2238,7 +2279,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                         break;
                      }
 
-                     // Information Density Filter
+                     // Information Density Filter (Item 6)
                      const substance = await llmService.scoreSubstance(responseText);
                      if (substance.score < 0.3) {
                          console.log(`[DiscordService] Low substance score (${substance.score}). Requesting material injection...`);
@@ -2249,7 +2290,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          }
                      }
 
-                     // Slop Check (Recursive Slop Retry)
+                     // Slop Check (Item 22: Recursive Slop Retry)
                      const slopInfo = getSlopInfo(responseText);
                      if (slopInfo.isSlop) {
                          console.warn(`[DiscordService] Fast-path response failed slop check: ${slopInfo.reason}. Retrying...`);
@@ -2321,7 +2362,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                     return;
                 }
 
-            Vibe Mirroring Latency - Adjust typing speed based on context
+            // Item 21: Vibe Mirroring Latency - Adjust typing speed based on context
             let baseSpeed = 40;
             if (isAdmin) {
                 if (message.content.length < 20) baseSpeed = 20; // Fast for short talk
@@ -2331,7 +2372,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
             const charSpeed = Math.floor(Math.random() * 20) + baseSpeed;
                 let typingWait = responseText.length * charSpeed;
 
-                // Extra "thinking" time for substantive responses
+                // Extra "thinking" time for substantive responses (Item 25)
                 if (responseText.length > 150) {
                     typingWait += Math.floor(Math.random() * 2000) + 500;
                 }
@@ -2347,11 +2388,11 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                 }
 
                 console.log(`[DiscordService] Sending response to Discord...`);
-            // Dynamic Reply: Only use Discord's reply feature if specifically requested by planning
+            // Dynamic Reply (Item 23): Only use Discord's reply feature if specifically requested by planning
             const useReply = !!(typeof plan !== 'undefined' && plan?.strategy?.use_discord_reply);
                         await this._send(message, responseText, { reply: useReply });
 
-            Relational Vibe Saving
+            // Item 34: Relational Vibe Saving
             try {
                 const vibe = await llmService.extractRelationalVibe([...history.slice(-3), { role: 'assistant', content: responseText }]);
                 if (vibe) {
@@ -2365,7 +2406,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
                 const adminExhaustionVal = await dataStore.getAdminExhaustion();
 
-                Self-Correction Cascade (Small chance for a "second thought" follow-up)
+                // Item 11: Self-Correction Cascade (Small chance for a "second thought" follow-up)
                 // Suppressed if admin is exhausted
                 if (isAdmin && adminExhaustion < 0.5 && Math.random() < 0.08 && responseText.length > 40 && !responseText.includes('?')) {
                     const delay = 4000 + Math.random() * 4000;
@@ -2409,7 +2450,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 await dataStore.addExhaustedTheme(theme);
                             }
 
-                            // Material Knowledge Extraction
+                            // Material Knowledge Extraction (Item 2 & 29)
                             console.log(`[DiscordService] Extracting material facts...`);
                             // Provide last 3 turns for better context and avoid hallucinations
                             const extractionContext = history.slice(-3).map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'User (Admin)'}: "${h.content}"`).join('\n') + `\nAssistant (Self): "${responseText}"`;
@@ -2439,7 +2480,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                                 Assistant: "${responseText}"
 
                                 1. Extract ONE key fact about the user if shared (e.g., preference, location, status). If none, respond "NONE".
-                                2. Summarize the current thread's progress and vibe in 1 sentence. (Narrative Continuity)
+                                2. Summarize the current thread's progress and vibe in 1 sentence. (Item 20: Narrative Continuity)
 
                                 Format:
                                 FACT: [fact or NONE]
@@ -2494,7 +2535,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
 
     /**
      * Proactively sends a diagnostic alert to the admin about system issues.
-     * Humility in Error - Use conversational language instead of technical alerts.
+     * Item 21: Humility in Error - Use conversational language instead of technical alerts.
      */
     async sendDiagnosticAlert(type, details) {
         if (!this.isEnabled) return;

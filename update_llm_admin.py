@@ -13,12 +13,12 @@ def apply_diff(filepath, search_text, replace_text):
 llm_path = "src/services/llmService.js"
 
 # Platform Isolation: In public pre-planning, explicitly forbid using Admin Facts
-search_admin = """      --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
+search_admin = """
       World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('\\n')}
       Admin Facts: ${(this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('\\n')}
       ---"""
 
-replace_admin = """      --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
+replace_admin = """
       World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('\\n')}
       ${platform !== 'discord' ? '[STRICT PLATFORM ISOLATION: Admin Facts are private and FORBIDDEN for use on public platforms]' : 'Admin Facts: ' + (this.dataStore?.getAdminFacts() || []).map(f => f.fact).join('\\n')}
       ---"""

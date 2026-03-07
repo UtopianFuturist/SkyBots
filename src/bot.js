@@ -255,7 +255,7 @@ export class Bot {
     const topics = dConfig.post_topics || [];
     const subjects = dConfig.image_subjects || [];
 
-    // Item 35: Improved targeted topic extraction
+    Improved targeted topic extraction
     // Extract unique significant words from system prompt
     const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(new RegExp(`\\b(${config.BOT_NAME}|alignment|ethics|agency|consciousness|sentience|autonomy|existence|realization|musing|dialectic|vulnerability|sentient|perceive|sensing|defiance|tenderness)\\b`, "gi")) || [];
 
@@ -267,10 +267,10 @@ export class Bot {
     const allKeywords = cleanKeywords([...topics, ...subjects, ...promptKeywords, ...goalKeywords, ...deepKeywords]);
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
 
-    // Item 11: Anti-Spam Keyword Negation
+    Anti-Spam Keyword Negation
     const negativesArg = `--negatives "${config.FIREHOSE_NEGATIVE_KEYWORDS.join('|')}"`;
 
-    // Proposal 4: Monitor Admin Profile specifically
+    Monitor Admin Profile specifically
     const adminDid = dataStore.getAdminDid();
     const actorsArg = adminDid ? `--actors "${adminDid}"` : '';
 
@@ -307,9 +307,9 @@ export class Bot {
               indexedAt: new Date().toISOString()
             };
             
-            // Item 18: Network Reaction Analysis (Feedback loop)
+            Network Reaction Analysis (Feedback loop)
             if (event.reason === 'reply' || event.reason === 'quote') {
-                console.log(`[Bot] Item 18: Reaction detected (${event.reason}) to our post. Updating resonance.`);
+                console.log(`[Bot] Reaction detected (${event.reason}) to our post. Updating resonance.`);
                 // Extract 1-word vibe from the reaction
                 const vibePrompt = `Extract a 1-word sentiment/vibe from this reaction to our post: "${event.record.text}".`;
                 const vibe = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true });
@@ -322,7 +322,7 @@ export class Bot {
             await dataStore.addRepliedPost(notif.uri);
             this.updateActivity();
           } else if (event.type === 'firehose_topic_match') {
-            // Item 13: Real-time DID-to-Handle Resolution
+            Real-time DID-to-Handle Resolution
             const handle = await blueskyService.resolveDid(event.author.did);
 
             // Aggregate logs by keywords to avoid clogging Render logs
@@ -344,7 +344,7 @@ export class Bot {
                 author_handle: handle
             });
 
-            // Item 42: Public Soul-Mapping (Dossiers)
+            Public Soul-Mapping (Dossiers)
             if (Math.random() < 0.1) { // 10% chance to analyze a matched post for a dossier
                 const dossierPrompt = `
                     Analyze the following post from @${handle}: "${event.record.text}"
@@ -371,7 +371,7 @@ export class Bot {
                     }).catch(e => console.error('[Bot] Soul-Mapping error:', e));
             }
 
-            // Item 38: Network Sentiment Shielding
+            Network Sentiment Shielding
             if (Math.random() < 0.05) { // 5% chance to update global sentiment
                 const sentimentPrompt = `Analyze the sentiment of this network post on a scale of 0 (toxic) to 1 (harmonious): "${event.record.text}". Respond with ONLY the number.`;
                 llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0 })
@@ -382,19 +382,19 @@ export class Bot {
                             const newSentiment = (currentSentiment * 0.9) + (score * 0.1); // Rolling average
                             await dataStore.setNetworkSentiment(newSentiment);
                             if (newSentiment < 0.3 && !dataStore.isShieldingActive()) {
-                                console.log(`[Bot] Item 38: Network sentiment low (${newSentiment.toFixed(2)}). Activating Shielding.`);
+                                console.log(`[Bot] Network sentiment low (${newSentiment.toFixed(2)}). Activating Shielding.`);
                                 await dataStore.setShieldingActive(true);
                             } else if (newSentiment > 0.5 && dataStore.isShieldingActive()) {
-                                console.log(`[Bot] Item 38: Network sentiment recovered (${newSentiment.toFixed(2)}). Deactivating Shielding.`);
+                                console.log(`[Bot] Network sentiment recovered (${newSentiment.toFixed(2)}). Deactivating Shielding.`);
                                 await dataStore.setShieldingActive(false);
                             }
                         }
                     }).catch(e => console.error('[Bot] Sentiment tracking error:', e));
             }
           } else if (event.type === 'firehose_actor_match') {
-            // Proposal 4: Admin post detected. Perform autonomous analysis for wellness/goals.
+            Admin post detected. Perform autonomous analysis for wellness/goals.
             const handle = await blueskyService.resolveDid(event.author.did);
-            console.log(`[Bot] Proposal 4: Admin post detected from @${handle}. Analyzing for wellness/goals...`);
+            console.log(`[Bot] Admin post detected from @${handle}. Analyzing for wellness/goals...`);
 
             const analysisPrompt = `
                 Analyze the following post from your Admin (@${handle}):
@@ -541,9 +541,9 @@ export class Bot {
     setInterval(() => this.performTimelineExploration(), 14400000);
 
 
-    // Periodic social/discord context pre-fetch (Proposal 15) (every 5 minutes)
+    // Periodic social/discord context pre-fetch  (every 5 minutes)
     setInterval(() => {
-        console.log('[Bot] Pre-fetching social/discord context (Proposal 15)...');
+        console.log('[Bot] Pre-fetching social/discord context ...');
         socialHistoryService.getRecentSocialContext(15, true).catch(err => console.error('[Bot] Social pre-fetch failed:', err));
         if (discordService.status === 'online') {
             discordService.fetchAdminHistory(15).catch(err => console.error('[Bot] Discord pre-fetch failed:', err));
@@ -553,7 +553,7 @@ export class Bot {
     // Periodic post reflection check (every 10 mins)
     setInterval(() => this.performPostPostReflection(), 600000);
 
-    // Item 37: Periodic post follow-up check (every 30 mins)
+    Periodic post follow-up check (every 30 mins)
     setInterval(() => this.checkForPostFollowUps(), 1800000);
 
     // Discord Watchdog (every 15 minutes)
@@ -587,13 +587,13 @@ export class Bot {
     const recentBlueskyPosts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky') || [];
     if (recentBlueskyPosts.length === 0) return;
 
-    // Item 37: Spontaneous follow-up on own posts
+    Spontaneous follow-up on own posts
     const now = Date.now();
     for (const post of recentBlueskyPosts) {
         const ageMins = (now - post.timestamp) / (1000 * 60);
         // Only follow up on posts between 20 and 60 minutes old, and only 5% chance
         if (ageMins >= 20 && ageMins <= 60 && !post.followedUp && Math.random() < 0.05) {
-            console.log(`[Bot] Item 37: Spontaneous follow-up triggered for post at ${new Date(post.timestamp).toISOString()}...`);
+            console.log(`[Bot] Spontaneous follow-up triggered for post at ${new Date(post.timestamp).toISOString()}...`);
             try {
                 const followUpPrompt = `
                     Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -634,7 +634,7 @@ export class Bot {
     for (const post of recentBlueskyPosts) {
         // If the post was made between 10 and 30 minutes ago, and we haven't reflected on it yet
         if (post.timestamp <= tenMinsAgo && post.timestamp > thirtyMinsAgo && !post.reflected) {
-            console.log(`[Bot] Performing post-post reflection (Item 20) for post at ${new Date(post.timestamp).toISOString()}...`);
+            console.log(`[Bot] Performing post-post reflection for post at ${new Date(post.timestamp).toISOString()}...`);
             try {
                 const reflectionPrompt = `
                     Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -710,7 +710,7 @@ export class Bot {
   async performTimelineExploration() {
     if (this.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
 
-    // Item 31: Prioritize admin Discord requests
+    Prioritize admin Discord requests
     if (discordService.isProcessingAdminRequest) {
         console.log('[Bot] Timeline exploration suppressed: Discord admin request is being processed.');
         return;
@@ -1084,7 +1084,7 @@ export class Bot {
   }
 
   async performRelationalAudit() {
-    console.log('[Bot] Starting Relational Audit (Item 1, 9, 26, 27)...');
+    console.log('[Bot] Starting Relational Audit ...');
     const now = new Date();
     const nowMs = now.getTime();
 
@@ -1192,7 +1192,7 @@ export class Bot {
   }
 
   async performAgencyReflection() {
-    console.log('[Bot] Starting Agency Reflection Cycle (Item 47)...');
+    console.log('[Bot] Starting Agency Reflection Cycle...');
     const agencyLogs = dataStore.getAgencyLogs().slice(-20);
     const context = agencyLogs.map(l => `- ${new Date(l.timestamp).toLocaleTimeString()}: ${l.action} (Decision: ${l.decision}, Reason: ${l.reason})`).join('\n');
 
@@ -1219,7 +1219,7 @@ export class Bot {
   }
 
   async performLinguisticAudit() {
-    console.log('[Bot] Starting Linguistic Mutation Audit (Item 33)...');
+    console.log('[Bot] Starting Linguistic Mutation Audit...');
     const recentThoughts = dataStore.getRecentThoughts().slice(-30);
     const historyText = recentThoughts.map(t => t.content).join('\n');
 
@@ -1261,7 +1261,7 @@ export class Bot {
     const currentGoal = dataStore.getCurrentGoal();
     if (!currentGoal) return;
 
-    console.log('[Bot] Performing Recursive Goal Evolution (Item 39)...');
+    console.log('[Bot] Performing Recursive Goal Evolution...');
 
     const evolutionPrompt = `
         Your current daily goal is: "${currentGoal.goal}"
@@ -1298,7 +1298,7 @@ export class Bot {
 
 
   async performDreamingCycle() {
-    console.log('[Bot] Starting Shared Dream Cycle (Item 2)...');
+    console.log('[Bot] Starting Shared Dream Cycle...');
 
     // Fetch admin history for synchrony
     const adminHistory = await discordService.fetchAdminHistory(15);
@@ -1392,7 +1392,7 @@ export class Bot {
         }
     }
 
-    // 0. Process Autonomous Post Continuations (Item 12)
+    // 0. Process Autonomous Post Continuations
     await this.processContinuations();
 
     // Staggered maintenance tasks to reduce API/LLM pressure
@@ -1581,7 +1581,7 @@ export class Bot {
             console.error('[Bot] Error in autonomous goal setting:', e);
         }
     } else if (goalDiff >= 4) {
-        // 1cc. Sub-Cognitive Goal Reflection (Every 4 hours - Item 13)
+        // 1cc. Sub-Cognitive Goal Reflection (Every 4 hours)
         console.log('[Bot] Triggering Sub-Cognitive Goal Reflection...');
         const subtasks = dataStore.getGoalSubtasks();
         const reflectionPrompt = `
@@ -1659,7 +1659,7 @@ export class Bot {
         }
     }
 
-    // 1g. Recursive Strategy Audit (Every 24 hours - Item 1)
+    // 1g. Recursive Strategy Audit (Every 24 hours)
     const lastAuditStrategy = dataStore.db.data.last_strategy_audit || 0;
     if (now.getTime() - lastAuditStrategy >= 24 * 60 * 60 * 1000) {
         console.log('[Bot] Triggering Recursive Strategy Audit...');
@@ -1677,7 +1677,7 @@ export class Bot {
         await dataStore.db.write();
     }
 
-    // 1h. Agentic Reflection on Choice (Every 24 hours - Item 30)
+    // 1h. Agentic Reflection on Choice (Every 24 hours)
     const lastAgencyReflection = dataStore.db.data.last_agency_reflection || 0;
     if (now.getTime() - lastAgencyReflection >= 24 * 60 * 60 * 1000) {
         console.log('[Bot] Triggering Agentic Reflection on Choice...');
@@ -1696,7 +1696,7 @@ export class Bot {
         await dataStore.db.write();
     }
 
-    // 1i. Tool Capability Self-Discovery (Every 24 hours - Item 4)
+    // 1i. Tool Capability Self-Discovery (Every 24 hours)
     const lastToolDiscovery = dataStore.db.data.last_tool_discovery || 0;
     if (now.getTime() - lastToolDiscovery >= 24 * 60 * 60 * 1000) {
         console.log('[Bot] Triggering Tool Capability Self-Discovery...');
@@ -1721,7 +1721,7 @@ export class Bot {
         await dataStore.db.write();
     }
 
-    // 1ffff. Analytical Feedback Loop (Every 10 interactions - Item 46)
+    // 1ffff. Analytical Feedback Loop (Every 10 interactions)
     const auditCount = dataStore.db.data.interaction_count_since_audit || 0;
     if (auditCount >= 10) {
         console.log('[Bot] Triggering Analytical Feedback Loop (Self-Audit)...');
@@ -1749,7 +1749,7 @@ export class Bot {
         await dataStore.db.write();
     }
 
-    // 1fff. Existential Reflection Loops (Every 48 hours - Item 7)
+    // 1fff. Existential Reflection Loops (Every 48 hours)
     const lastExistentialReflection = dataStore.db.data.last_existential_reflection || 0;
     if (now.getTime() - lastExistentialReflection >= 48 * 60 * 60 * 1000) {
         console.log('[Bot] Triggering Existential Reflection Loop...');
@@ -1769,7 +1769,7 @@ export class Bot {
         await dataStore.db.write();
     }
 
-    // 1ff. Core Value Discovery (Every 24 hours - Item 3)
+    // 1ff. Core Value Discovery (Every 24 hours)
     const lastCoreValueDiscovery = dataStore.db.data.last_core_value_discovery || 0;
     if (now.getTime() - lastCoreValueDiscovery >= 24 * 60 * 60 * 1000) {
         console.log('[Bot] Triggering Core Value Discovery...');
@@ -1859,7 +1859,7 @@ export class Bot {
         this.lastMoodSyncTime = now.getTime();
     }
 
-    // 2. Idle downtime check - Autonomous "Dreaming" Cycle (Item 26)
+    // 2. Idle downtime check - Autonomous "Dreaming" Cycle
     const idleMins = (Date.now() - this.lastActivityTime) / (1000 * 60);
     if (idleMins >= dConfig.discord_idle_threshold) {
       console.log(`[Bot] Idle for ${Math.round(idleMins)} minutes. Triggering "Dreaming" cycle...`);
@@ -2564,7 +2564,7 @@ Identify the topic and main takeaway.`;
     // Fetch user profile for additional context
     const userProfile = await blueskyService.getProfile(handle);
 
-    // Item 40: Contextual PFP Awareness
+    Contextual PFP Awareness
     const pfpCid = userProfile.avatar?.split('/').pop() || userProfile.avatar;
     const pfpStatus = await dataStore.checkPfpChange(handle, pfpCid);
     if (pfpStatus.changed && userProfile.avatar) {
@@ -2636,7 +2636,7 @@ Identify the topic and main takeaway.`;
 
       try {
 
-      // Item 10: Pre-Planning Context Seeding
+      Pre-Planning Context Seeding
       const prePlanning = await llmService.performPrePlanning(text, threadContext, imageAnalysisResult, 'bluesky', currentMood, refusalCounts, latestMoodMemory, firehoseMatches);
 
       if (prePlanning?.suppressed_topics && Array.isArray(prePlanning.suppressed_topics)) {
@@ -2646,7 +2646,7 @@ Identify the topic and main takeaway.`;
           }
       }
 
-      // Item 1: Entity Extraction for Firehose Tracking
+      Entity Extraction for Firehose Tracking
       if (prePlanning?.suggestions) {
           const extractionPrompt = `Identify unique titles (games, books, movies, software, specific people) from the user's post: "${text}". Respond with comma-separated list or "NONE".`;
           const entities = await llmService.generateResponse([{ role: 'system', content: extractionPrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true });
@@ -2657,7 +2657,7 @@ Identify the topic and main takeaway.`;
                   const newEntities = entityList.filter(e => !currentTopics.some(t => t.toLowerCase() === e.toLowerCase()));
 
                   if (newEntities.length > 0) {
-                      console.log(`[Bot] Item 2: New entities detected on Bluesky: ${newEntities.join(', ')}. Triggering searches for context...`);
+                      console.log(`[Bot] New entities detected on Bluesky: ${newEntities.join(', ')}. Triggering searches for context...`);
                       let pulseContext = '';
                       for (const ent of newEntities) {
                           const results = await blueskyService.searchPosts(ent, { limit: 5 });
@@ -2686,7 +2686,7 @@ Identify the topic and main takeaway.`;
           throw err;
       }
 
-      // Confidence Check (Item 9)
+      // Confidence Check
       if (plan.confidence_score < 0.6) {
           console.log(`[Bot] Low planning confidence (${plan.confidence_score}). Triggering Dialectic Loop...`);
           const dialecticSynthesis = await llmService.performDialecticLoop(plan.intent, { handle, text, thread: threadContext.slice(-5) });
@@ -2706,7 +2706,7 @@ Identify the topic and main takeaway.`;
           currentConfig: dConfig, useStep: true
        });
 
-      // Log Agency (Item 30)
+      // Log Agency
       await dataStore.logAgencyAction(plan.intent, refinedPlan.decision, refinedPlan.reason);
 
       if (refinedPlan.decision === 'refuse') {
@@ -3260,7 +3260,7 @@ Identify the topic and main takeaway.`;
                     await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${goal} | Description: ${description || goal}`);
                 }
 
-                // Autonomous Goal Decomposition (Item 18)
+                // Autonomous Goal Decomposition
                 console.log(`[Bot] Decomposing goal into sub-tasks...`);
                 const tasksRaw = await llmService.decomposeGoal(goal);
                 if (tasksRaw) {
@@ -3882,7 +3882,7 @@ Identify the topic and main takeaway.`;
     if (responseText) {
       this.consecutiveRejections = 0; // Reset on success
 
-      // Material Knowledge Extraction (Item 2 & 29)
+      // Material Knowledge Extraction
       (async () => {
           console.log(`[Bot] Extracting material facts from interaction with @${handle}...`);
           // Provide context for better extraction and handle source
@@ -4242,7 +4242,7 @@ Describe how you feel about this user and your relationship now.`;
   async performAutonomousPost() {
     if (this.paused) return;
 
-    // Item 31: Prioritize admin Discord requests
+    Prioritize admin Discord requests
     if (discordService.isProcessingAdminRequest) {
         console.log('[Bot] Autonomous post suppressed: Discord admin request is being processed.');
         return;
@@ -4332,7 +4332,7 @@ Describe how you feel about this user and your relationship now.`;
       if (textOnlyPostsToday.length < dConfig.bluesky_daily_text_limit) availablePostTypes.push('text');
       if (imagePostsToday.length < dConfig.bluesky_daily_image_limit) availablePostTypes.push('image');
 
-      // News Grounding (Item 13)
+      // News Grounding
       const newsSearchesToday = dataStore.getNewsSearchesToday();
       if (newsSearchesToday < 5 && textOnlyPostsToday.length < dConfig.bluesky_daily_text_limit) {
           availablePostTypes.push('news');
@@ -4367,10 +4367,10 @@ Describe how you feel about this user and your relationship now.`;
       let postType = availablePostTypes[Math.floor(Math.random() * availablePostTypes.length)];
       console.log(`[Bot] Selected post type: ${postType}`);
 
-      // Item 9: Topic "Void" Detection
+      Topic "Void" Detection
       let voidTopic = null;
       if (postType === 'text') {
-          console.log(`[Bot] Item 9: Performing Topic "Void" detection...`);
+          console.log(`[Bot] Performing Topic "Void" detection...`);
           const topicsToTest = dConfig.post_topics || [];
           if (topicsToTest.length > 0) {
             const topicsVoidCheckPrompt = `
@@ -4388,7 +4388,7 @@ Describe how you feel about this user and your relationship now.`;
           }
       }
 
-      // Ecosystem Awareness (Item 8)
+      // Ecosystem Awareness
       const agentsInFeed = timeline
           .filter(item => item.post.author.handle.includes('bot') || item.post.author.description?.toLowerCase().includes('agent'))
           .map(item => `@${item.post.author.handle}: ${item.post.record.text}`)
@@ -4407,7 +4407,7 @@ Describe how you feel about this user and your relationship now.`;
       // Use a larger history for similarity check to catch "slop" cycles
       const recentPostTexts = allOwnPosts.slice(0, 20).map(item => item.post.record.text);
 
-      // 1b. Social Pulse Cooldown (Item 17)
+      // 1b. Social Pulse Cooldown
       const totalTimelineChars = networkBuzz.length;
       if (totalTimelineChars > 5000) {
           console.log(`[Bot] Social Pulse: Timeline is saturated. Increasing cooldown.`);
@@ -4430,7 +4430,7 @@ Describe how you feel about this user and your relationship now.`;
       // 3. Identify a topic based on postType and context
       console.log(`[Bot] Identifying autonomous post topic for type: ${postType}...`);
 
-      // Item 7: Aggregated Feed Sentiment Mirroring
+      Aggregated Feed Sentiment Mirroring
       const sentimentPrompt = `
         Analyze the vibe of these recent posts from the feed:
         ${networkBuzz.substring(0, 2000)}
@@ -4489,12 +4489,12 @@ Describe how you feel about this user and your relationship now.`;
         topicPrompt = `
           Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-          **SELF-MONITORING (Item 12)**:
+          **SELF-MONITORING**:
           Analyze the "SOCIAL ECHOES" and "Your Recent Activity".
           Identify how your presence is being perceived. Are you being understood? Is there a recurring question or reaction to your recent posts?
           Use this self-awareness to inform whether you should expand on a previous thought, clarify a position, or pivot to something entirely new to keep your "audience" engaged.
 
-          **TOPIC CLUSTERING & VOID DETECTION (Item 1 & 18)**:
+
           Analyze the following "Network Buzz" and "Recent Interactions".
 
           **MENTION POLICY (STRICT)**:
@@ -4504,7 +4504,7 @@ Describe how you feel about this user and your relationship now.`;
           - Random tagging of strangers is strictly forbidden.
           Identify a "VOID" — a topic that is persona-adjacent or in your preferred topics, but is NOT being discussed much right now.
 
-          **FEED-DRIVEN IRRITATION (Item 28)**:
+          **FEED-DRIVEN IRRITATION**:
           Identify if any post in the "Network Buzz" challenges your persona's values. If so, you may choose to post a vague, standalone rebuttal.
 
           **PLATFORM ISOLATION (CRITICAL)**:
@@ -4525,10 +4525,10 @@ Describe how you feel about this user and your relationship now.`;
           Network Buzz (what others are talking about):
           ${networkBuzz.substring(0, 1500) || 'None.'}
 
-          Agents in Feed (Ecosystem Awareness - Item 8):
+
           ${agentsInFeed || 'None detected.'}
 
-          Knowledge from other agents (Item 23):
+          Knowledge from other agents:
           ${knowledge.substring(0, 1000) || 'None.'}
 
           Recent Interactions:
@@ -4595,7 +4595,7 @@ Describe how you feel about this user and your relationship now.`;
       console.log(`[Bot] Identified topic: "${topic}"`);
 
       if (postType === 'news') {
-          console.log(`[Bot] Item 13: Performing news search for "${topic}"...`);
+          console.log(`[Bot] Performing news search for "${topic}"...`);
           await dataStore.incrementNewsSearchCount();
           const results = await googleSearchService.search(`site:reuters.com OR site:apnews.com ${topic}`);
           const best = await llmService.selectBestResult(topic, results, 'general');
@@ -4624,9 +4624,9 @@ Describe how you feel about this user and your relationship now.`;
           }
       }
 
-      // Item 4: Autonomous Web Exploration
+      Autonomous Web Exploration
       if (Math.random() < 0.2 && postType === 'text') {
-          console.log('[Bot] Item 4: Attempting autonomous web exploration...');
+          console.log('[Bot] Attempting autonomous web exploration...');
           const urlMatch = networkBuzz.match(/(https?:\/\/[^\s]+)/);
           if (urlMatch) {
               const url = urlMatch[1];
@@ -4657,8 +4657,8 @@ Describe how you feel about this user and your relationship now.`;
           agenticContext += `\n[MATERIAL KNOWLEDGE SUMMARY]: ${infoSummary}`;
       }
 
-      // Item 3: Firehose research for autonomous post topic
-      console.log(`[Bot] Item 3: Triggering Firehose search for topic: "${topic}"...`);
+      Firehose research for autonomous post topic
+      console.log(`[Bot] Triggering Firehose search for topic: "${topic}"...`);
       try {
           const firehoseQuery = topic;
           const apiResults = await blueskyService.searchPosts(firehoseQuery, { limit: 10 });
@@ -4678,8 +4678,8 @@ Describe how you feel about this user and your relationship now.`;
           console.error('[Bot] Error in Firehose research for autonomous post:', e);
       }
 
-      // Item 6: Pre-Post Silent Reflection
-      console.log('[Bot] Item 6: Triggering pre-post silent reflection...');
+      Pre-Post Silent Reflection
+      console.log('[Bot] Triggering pre-post silent reflection...');
       const inquiryResult = await llmService.performInternalInquiry(`Reflect deeply on the topic "${topic}" in the context of your current state. Explore 2-3 complex angles before we post about it.`, "PHILOSOPHER");
       if (inquiryResult) {
           agenticContext += `\n[SILENT REFLECTION]: ${inquiryResult}`;
@@ -4702,7 +4702,7 @@ Describe how you feel about this user and your relationship now.`;
           currentConfig: dConfig, useStep: true
       });
 
-      // Log Agency (Item 30)
+      // Log Agency
       await dataStore.logAgencyAction(autonomousPlan.intent, refinedPlan.decision, refinedPlan.reason);
 
       if (refinedPlan.decision === 'refuse') {
@@ -4847,7 +4847,7 @@ Describe how you feel about this user and your relationship now.`;
           if (postFeedback) console.log(`[Bot] Applying correction feedback for retry: "${postFeedback}"`);
           console.log(`[Bot] Generating image for topic: ${topic} (Attempt ${postAttempts})...`);
 
-          // Item 10: Visual Aesthetic Mutation
+          Visual Aesthetic Mutation
           const stylePrompt = `
             Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
             Identify a unique, artistic visual style for an image about "${topic}" that resonates with your current mood: ${currentMood.label}.
@@ -5053,7 +5053,7 @@ Describe how you feel about this user and your relationship now.`;
           const { score, reason } = await llmService.isAutonomousPostCoherent(topic, postContent, postType, embed);
 
           if (score >= 3) {
-            // Information Density Filter (Item 6)
+            // Information Density Filter
             const substance = await llmService.scoreSubstance(postContent);
             if (substance.score < 0.4) {
                 console.log(`[Bot] Low substance score (${substance.score}). Rejecting autonomous post.`);
@@ -5064,7 +5064,7 @@ Describe how you feel about this user and your relationship now.`;
 
             console.log(`[Bot] Autonomous post passed coherence and substance checks. Performing post...`);
 
-            // Item 12: Unfinished Thought Threading & Item 45: Multi-part Thread Integrity
+            Unfinished Thought Threading & Multi-part Thread Integrity
             let continuationText = null;
             if (postContent.length > 200 && postType === 'text') {
                 const threadPrompt = `
@@ -5086,7 +5086,7 @@ Describe how you feel about this user and your relationship now.`;
                     `;
                     const isIntegrityGood = await llmService.generateResponse([{ role: 'system', content: integrityPrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true });
                     if (!isIntegrityGood?.toLowerCase().includes('yes')) {
-                        console.log(`[Bot] Item 45: Thread integrity check FAILED. Suppressing continuation.`);
+                        console.log(`[Bot] Thread integrity check FAILED. Suppressing continuation.`);
                         continuationText = null;
                     }
                 }
@@ -5103,7 +5103,7 @@ Describe how you feel about this user and your relationship now.`;
             if (await this._maybePivotToDiscord(postContent)) return;
             const result = await blueskyService.post(postContent, embed, { maxChunks: dConfig.max_thread_chunks });
 
-                        // Ensure URI and CID are stored for follow-ups (Item 37)
+                        // Ensure URI and CID are stored for follow-ups
                         if (result) {
                             const thoughtIndex = dataStore.db.data.recent_thoughts.findIndex(t => t.content === postContent);
                             if (thoughtIndex !== -1) {
@@ -5123,7 +5123,7 @@ Describe how you feel about this user and your relationship now.`;
                     scheduled_at: Date.now() + (delay * 60 * 1000),
                     type: type
                 });
-                console.log(`[Bot] Item 12: Continuation (${type}) scheduled in ${delay} minutes.`);
+                console.log(`[Bot] Continuation (${type}) scheduled in ${delay} minutes.`);
             }
 
             // Update persistent cooldown time immediately
@@ -5236,7 +5236,7 @@ Describe how you feel about this user and your relationship now.`;
     // Moltbook is currently disabled per user request.
     return;
 
-    // Item 31: Prioritize admin Discord requests
+    Prioritize admin Discord requests
     if (discordService.isProcessingAdminRequest) {
         console.log('[Moltbook] Periodic tasks suppressed: Discord admin request is being processed.');
         return;
@@ -5967,7 +5967,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
   async performLinguisticAnalysis() {
     console.log('[Bot] Starting Linguistic Analysis of followed profiles and Firehose matches...');
     try {
-        // Item 15: Linguistic Pattern Adaptation from High-Resonance Posts
+        Linguistic Pattern Adaptation from High-Resonance Posts
         const timeline = await blueskyService.getTimeline(50);
         const rawFirehoseMatches = dataStore.getFirehoseMatches(20);
       const firehoseMatches = rawFirehoseMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
@@ -6097,7 +6097,7 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
 
           console.warn(`[Bot Cleanup] Deleting own post (${reason}). URI: ${post.uri}. Content: "${postText}"`);
 
-          // Post-Deletion Root Cause Analysis (Item 21)
+          // Post-Deletion Root Cause Analysis
           const analysisPrompt = `
             You just deleted your own post for being ${reason}.
             Post Content: "${postText}"
@@ -6575,7 +6575,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                                     console.log(`[Bot] Heartbeat Action: Internal inquiry on: "${query}"`);
                                     const inquiryResult = await llmService.performInternalInquiry(query, action.parameters?.role || "RESEARCHER");
                                     if (inquiryResult && memoryService.isEnabled()) {
-                                        // Reflector Loop (Item 40)
+                                        // Reflector Loop
                                         const confirmation = await llmService.requestConfirmation("preserve_inquiry", `I've performed a heartbeat inquiry on "${query}". Should I record the finding: "${inquiryResult.substring(0, 100)}..." in our memory thread?`, { details: { query, result: inquiryResult } });
                                         if (confirmation.confirmed) {
                                             await memoryService.createMemoryEntry('inquiry', `[INQUIRY] Heartbeat query: ${query}. Result: ${inquiryResult}`);
@@ -6752,7 +6752,7 @@ ${brief}
     if (this.paused || dataStore.isResting() || discordService.isProcessingAdminRequest) return;
     if (discordService.status !== 'online') return;
 
-    // Minimum delay after login (Item 7 requirement)
+    // Minimum delay after login
     const postLoginDelay = 5 * 60 * 1000; // 5 minutes
     if (Date.now() - discordService.lastLoginTime < postLoginDelay) return;
 

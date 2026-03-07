@@ -10,7 +10,7 @@ class SocialHistoryService {
   }
 
   async getRecentSocialContext(limit = 15, force = false) {
-    // Proposal 10: Social Context Caching
+    Social Context Caching
     if (!force && this._contextCache && (Date.now() - this._lastFetch < this._cacheTTL)) {
         console.log(`[SocialHistoryService] Returning cached social context.`);
         return this._contextCache;

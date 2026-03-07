@@ -371,6 +371,25 @@ class DiscordService {
 
     async handleMessage(message) {
         if (message.author.bot) return;
+        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        if (isAdmin) {
+            this.isProcessingAdminRequest = true;
+            console.log(`[DiscordService] ADMIN_REQUEST_START: Processing message from ${message.author.username}`);
+        }
+        try {
+            await this._handleMessageInternal(message, isAdmin);
+        } catch (err) {
+            console.error('[DiscordService] Error in handleMessage:', err);
+        } finally {
+            if (isAdmin) {
+                this.isProcessingAdminRequest = false;
+                console.log(`[DiscordService] ADMIN_REQUEST_END: Finished processing message from ${message.author.username}`);
+            }
+        }
+    }
+
+    async _handleMessageInternal(message, isAdmin) {
+        if (message.author.bot) return;
 
         // --- THE WALL: Hard-Coded Boundary Gate ---
         const boundaryCheck = checkHardCodedBoundaries(message.content);
@@ -415,7 +434,7 @@ class DiscordService {
 
             // If more than 20 messages in 5 mins, bot becomes "tired" and only replies to admin or explicit mentions
             const isTired = this._recentChannelMessages[message.channel.id].length > 20;
-            const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+// isAdmin already declared
             const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
 
             if (isTired && !isAdmin && !isMentioned) {
@@ -437,7 +456,7 @@ class DiscordService {
         }
 
         const isDM = message.channel.type === ChannelType.DM;
-        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+// isAdmin already declared
         const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
 
         console.log(`[DiscordService] Evaluating message from ${message.author.username}. isDM: ${isDM}, isAdmin: ${isAdmin}, isMentioned: ${isMentioned}`);
@@ -798,7 +817,7 @@ class DiscordService {
     }
 
     async handleCommand(message) {
-        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+// isAdmin already declared
         const content = message.content.toLowerCase();
 
         if (content.startsWith('/on') && isAdmin) {
@@ -965,7 +984,7 @@ class DiscordService {
         this._interrupted.delete(normChannelId);
 
         // Adaptive Response Jitter: random 1-3s delay for simple non-admin replies
-        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+// isAdmin already declared
         if (!isAdmin && !message.content.startsWith('/')) {
             const jitter = Math.floor(Math.random() * 2000) + 1000;
             await new Promise(resolve => setTimeout(resolve, jitter));
@@ -1146,13 +1165,35 @@ class DiscordService {
 
         let relevantMemories = '';
         if (relevantMemoriesList.length > 0) {
-            relevantMemories = `\n\n--- RELEVANT MEMORIES (Keyword Search: "${memorySearchQuery}") ---\n${relevantMemoriesList.map(r => {
-                let t = r.text;
+            const now = Date.now();
+            relevantMemories = `\n\n--- RELEVANT MEMORIES (Keyword Search: "${memorySearchQuery}") ---\n` + relevantMemoriesList.map(r => {
+                let cleanText = r.text;
                 if (config.MEMORY_THREAD_HASHTAG) {
-                    t = t.replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '');
+                    cleanText = cleanText.replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
                 }
-                return t.trim();
-            }).join('\n')}\n---`;
+
+                const ts = new Date(r.indexedAt).getTime();
+                const diffMs = now - ts;
+                const diffHours = diffMs / (1000 * 60 * 60);
+                const diffMins = Math.floor(diffMs / 60000);
+
+                let temporalLabel = "";
+                if (cleanText.includes('[ADMIN_FACT]') || cleanText.includes('[FACT]')) {
+                    if (diffHours > 2) {
+                        temporalLabel = "[Historical Context (May no longer be active)] ";
+                    } else if (diffMins < 1) {
+                        temporalLabel = "[Just now] ";
+                    } else {
+                        temporalLabel = `[${diffMins}m ago] `;
+                    }
+                } else {
+                    if (diffMins < 1) temporalLabel = "[Just now] ";
+                    else if (diffMins < 60) temporalLabel = `[${diffMins}m ago] `;
+                    else if (diffHours < 24) temporalLabel = `[${Math.floor(diffHours)}h ago] `;
+                }
+
+                return `[Memory from ${r.indexedAt}] ${temporalLabel}:\n${cleanText}`;
+            }).join('\n\n') + '\n---';
         }
 
         // Item 8: Presence Awareness - History Gap Detection

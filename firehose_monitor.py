@@ -148,7 +148,7 @@ async def main():
                         print(json.dumps(event), flush=True)
                         continue # Already handled
 
-                    # 1b. Check for specifically tracked actors (Proposal 4)
+                    # 1b. Check for specifically tracked actors
                     if actors and commit.repo in actors:
                         event = {
                             "type": "firehose_actor_match",
@@ -165,7 +165,7 @@ async def main():
 
                     # 2. Check for keyword matches
                     if keywords:
-                        # Item 11: Anti-Spam Keyword Negation
+                        # Anti-Spam Keyword Negation
                         is_spam = any(n in text for n in negatives)
                         if is_spam:
                             continue

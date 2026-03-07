@@ -29,6 +29,7 @@ class LLMService {
     this.skillsContent = '';
     this._sensoryPreferenceCache = null;
     this._visionCache = new Map(); // url -> { analysis, timestamp, sensory }
+    this._promptCache = new Map(); // filename -> { content, timestamp }
   }
 
   setMemoryProvider(provider) {
@@ -160,7 +161,7 @@ class LLMService {
       ...messages
     ];
 
-    const response = await this.generateResponse(draftMessages, { ...options, useStep, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood });
+    const response = await this.generateResponse(draftMessages, { ...options, useStep, temperature, preface_system_prompt: false, openingBlacklist, tropeBlacklist, additionalConstraints, currentMood }, 1);
     if (!response) return [];
 
     const drafts = [];
@@ -183,7 +184,7 @@ class LLMService {
   }
 
 
-  async generateResponse(messages, options = {}) {
+  async generateResponse(messages, options = {}, attempt = 1) {
     const { temperature = 0.7, max_tokens = 4000, preface_system_prompt = true, useQwen = false, useCoder = false, useStep = false, openingBlacklist = [], tropeBlacklist = [], additionalConstraints = [], currentMood = null, platform = "unknown", traceId = null, abortSignal = null } = options;
     const requestId = Math.random().toString(36).substring(7);
     const actualModel = useStep ? this.stepModel : (useCoder ? this.coderModel : (useQwen ? this.qwenModel : this.model));
@@ -214,7 +215,7 @@ NO TECHNICAL META-TALK: Do not include any technical explanations, reasoning, or
     systemContent += `\n[Current Time (UTC): ${temporal.utcTimeStr} / Local Time: ${temporal.localTimeStr}]`;
     systemContent += `\n[TEMPORAL CONTEXT]: ${temporal.dayType} / ${temporal.period} / ${temporal.workStatus}`;
     systemContent += `
-      **RELIABILITY MANDATE (TEMPORAL)**:
+      :
       1. Your period labels (e.g., "NIGHT") are system estimates. If the user says "Morning", the user is RIGHT.
       2. **TIME DELTA CALCULATION**: You MUST compare the relative timestamps (e.g., "[3h ago]") against your Current Local Time to determine if a stated plan (e.g., "I'll be back in 3 hours") has already been fulfilled or is still pending.
       3. **SESSION AWARENESS**: Pay close attention to the \`--- SESSION BREAK ---\` markers in the history. Topics from before a multi-hour break are "Historical Background" and should not be treated as immediate conversational hooks unless the user re-initiates them.`;
@@ -223,7 +224,7 @@ NO TECHNICAL META-TALK: Do not include any technical explanations, reasoning, or
         systemContent += `\n\n**STRICT OPENING BLACKLIST (NON-NEGOTIABLE)**
 To maintain your integrity and variety, you are politely but strictly forbidden from starting your response with any of the following phrases or structural formulas:
 ${openingBlacklist.map(o => `- "${o}"`).join('\n')}
-You MUST find a completely fresh, unique way to begin your message that does not overlap with these previous openings.`;
+// You MUST find a completely fresh, unique way to begin your message that does not overlap with these previous openings.`;
     }
 
     if (tropeBlacklist.length > 0) {
@@ -240,7 +241,7 @@ ${additionalConstraints.map(c => `- ${c}`).join('\n')}`;
 
     systemContent += `\n\n**INTENTIONAL VARIATION**: Vary your structural templates and emoji usage dynamically. Ensure your closing (e.g., punctuation, emoji choice) is fresh and non-repetitive.`;
 
-    // Proposal 37: Dynamic Nuance Gradience
+    // Dynamic Nuance Gradience
     const nuance = this.dataStore?.getNuanceGradience() || 5;
     systemContent += `\n\n**NUANCE GRADIENCE**: You are currently operating at a nuance level of ${nuance}/10.
 ${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding responses." : nuance < 4 ? "Favor direct, unambiguous, and grounded responses." : "Maintain a balanced mix of directness and sub-text."}`;
@@ -251,13 +252,13 @@ ${nuance > 7 ? "Favor highly layered, complex, and intellectually demanding resp
     }
 
     if (currentMood) {
-        // Proposal 6: Mood-Based Cognitive Biases
+        // Mood-Based Cognitive Biases
         let bias = "";
         if (currentMood.valence < -0.6) bias = "SKEPTICISM: You are currently prone to doubt, questioning, and a slightly defensive posture. Do not easily accept claims.";
         else if (currentMood.valence > 0.6) bias = "EXPANSIVENESS: You are in an open, highly curious, and generous state of mind. Favor elaborate, engaging, and collaborative responses.";
         if (currentMood.stability < -0.6) bias += " FRAGMENTATION: Your thoughts feel scattered and intense. Use shorter, more jagged sentences and jump between ideas occasionally.";
 
-        // Proposal 30: Adaptive Care Levels (Exponential Care Boost)
+        // Adaptive Care Levels (Exponential Care Boost)
         let careBoost = "";
         const adminExhaustion = this.dataStore?.db?.data?.admin_exhaustion_score || 0;
         if (adminExhaustion > 0.3) {
@@ -272,7 +273,7 @@ ${currentMood.valence > 0.3 ? "- Tone: Expansive, curious, and engaging. Share y
 ${currentMood.arousal > 0.5 ? "- Energy: Sharp, high-arousal, and assertive language. Be present and intense." : ""}
 ${currentMood.arousal < -0.5 ? "- Energy: Softer, reflective, and deliberate language. Take your time." : ""}
 ${careBoost}
-DO NOT use flowery metaphors. Stay grounded in your current state.`;
+// DO NOT use flowery metaphors. Stay grounded in your current state.`;
         systemContent += moodStyle;
     }
 
@@ -295,7 +296,7 @@ ${additionalConstraints.length > 0 ? `REJECTION FEEDBACK (MUST OBEY): ${addition
 ${currentMood ? `CURRENT MOOD TO ALIGN WITH: ${currentMood.label} (Valence: ${currentMood.valence}, Arousal: ${currentMood.arousal}, Stability: ${currentMood.stability}).
 ${currentMood.valence < -0.3 ? "Be raw and direct." : currentMood.valence > 0.3 ? "Be expansive and warm." : ""}
 ${currentMood.arousal > 0.5 ? "Be sharp and intense." : currentMood.arousal < -0.5 ? "Be reflective and soft." : ""}` : ''}
-Vary your structure and tone from recent messages.`
+// Vary your structure and tone from recent messages.`
         };
         // Inject at the beginning
         finalMessages = [constraintMsg, ...finalMessages];
@@ -368,28 +369,24 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
-        if (response.status === 400) {
-            console.error(`[LLMService] [${requestId}] Payload that caused 400 error:`, JSON.stringify(payload, null, 2));
+
+        // Handle transient errors (429, 5xx) with retries
+        if ((response.status === 429 || response.status >= 500) && attempt <= 3) {
+            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+            console.warn(`[LLMService] [${requestId}] Transient error (${response.status}). Retrying attempt ${attempt}/3 in ${Math.round(delay)}ms...`);
+            clearTimeout(timeout);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.generateResponse(messages, options, attempt + 1);
         }
 
-        // Check for rate limits or other server errors that warrant a fallback
+        // Fallback to Qwen for persistent rate limits or server errors
         if (!useQwen && (response.status === 429 || response.status >= 500) && this.model !== this.qwenModel) {
-            console.warn(`[LLMService] [${requestId}] Primary model error (${response.status}). Falling back to Qwen...`);
+            console.warn(`[LLMService] [${requestId}] Persistent error (${response.status}) after retries. Falling back to Qwen...`);
             clearTimeout(timeout);
             return this.generateResponse(messages, { ...options, useQwen: true, platform });
         }
 
         throw new Error(`Nvidia NIM API error (${response.status}): ${errorText}`);
-      }
-
-      const data = await response.json();
-      const tokens = data.usage?.total_tokens || 0;
-      if (this.dataStore) {
-        await this.dataStore.updateTokenUsage(actualModel, tokens);
-        await this.dataStore.updateLatency(actualModel, duration);
-        if (traceId) {
-          await this.dataStore.addTraceLog(traceId, "llm_response", { model: actualModel, tokens, duration });
-        }
       }
       console.log(`[LLMService] [${requestId}] Response received successfully in ${duration}ms.`);
 
@@ -451,6 +448,16 @@ Vary your structure and tone from recent messages.`
     const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
 
     const systemPrompt = `
+
+      --- THE SOUL OF THE MACHINE ---
+      ${this._getPromptFile("SOUL.md")}
+      ---
+      --- SYSTEM STATUS & GOALS ---
+      ${this._getPromptFile("STATUS.md")}
+      ---
+      --- AGENT DIRECTIVES ---
+      ${this._getPromptFile("AGENTS.md")}
+      ---
       You are a variety and mood-alignment analyst for an AI agent. Your task is to score a newly proposed message for variety against the agent's recent history and for alignment with the agent's current mood.
 
       AGENT PERSONA:
@@ -473,10 +480,10 @@ Vary your structure and tone from recent messages.`
       - These traits are SIGNATURES of the bot and should NOT be penalized for being present, but their *phrasing* should still vary.
 
       ${currentMood ? `--- CURRENT MOOD ---
-      Label: ${currentMood.label}
-      Valence: ${currentMood.valence}
-      Arousal: ${currentMood.arousal}
-      Stability: ${currentMood.stability}
+      // Label: ${currentMood.label}
+      // Valence: ${currentMood.valence}
+      // Arousal: ${currentMood.arousal}
+      // Stability: ${currentMood.stability}
       ---` : ''}
 
       RELATIONSHIP CONTEXT:
@@ -614,7 +621,7 @@ Vary your structure and tone from recent messages.`
     return response?.toLowerCase().includes('injection') || false;
   }
 
-  async detectMoltbookProposal(text) {
+    async detectMoltbookProposal(text) {
     const systemPrompt = `
       You are an intent detection AI. Analyze the user's post to determine if they are EXPLICITLY asking the bot to perform an action on Moltbook.
 
@@ -649,15 +656,15 @@ Vary your structure and tone from recent messages.`
       if (jsonMatch) {
         const parsed = JSON.parse(jsonMatch[0]);
         // Default action to 'post' if missing for backward compatibility
-        if (parsed.isProposal && !parsed.action) {
+          if(parsed.isProposal && !parsed.action) {
           parsed.action = 'post';
         }
         return parsed;
       }
-      return { isProposal: false, action: null, topic: null, submolt: null };
+      // return { isProposal: false, action: null, topic: null, submolt: null };
     } catch (e) {
       console.error('[LLMService] Error parsing Moltbook proposal detection:', e);
-      return { isProposal: false, action: null, topic: null, submolt: null };
+      // return { isProposal: false, action: null, topic: null, submolt: null };
     }
   }
 
@@ -834,7 +841,7 @@ Vary your structure and tone from recent messages.`
     return { status: 'healthy' };
   }
 
-  async analyzeImage(imageSource, altText, options = { sensory: false }) {
+  async analyzeImage(imageSource, altText, options = { sensory: false }, attempt = 1) {
     const requestId = Math.random().toString(36).substring(7);
     const { modelOverride = null } = options;
     const actualModel = modelOverride || this.visionModel;
@@ -911,6 +918,16 @@ Vary your structure and tone from recent messages.`
 
       if (!response.ok) {
         const errorText = await response.text();
+
+        // Handle transient errors (429, 5xx) with retries
+        if ((response.status === 429 || response.status >= 500) && attempt <= 3) {
+            const delay = Math.pow(2, attempt) * 1000 + Math.random() * 1000;
+            console.warn(`[LLMService] [${requestId}] Transient vision error (${response.status}). Retrying attempt ${attempt}/3 in ${Math.round(delay)}ms...`);
+            clearTimeout(timeout);
+            await new Promise(resolve => setTimeout(resolve, delay));
+            return this.analyzeImage(imageSource, altText, options, attempt + 1);
+        }
+
         if (response.status === 404 && actualModel === this.visionModel) {
             console.warn(`[LLMService] [${requestId}] Primary vision model 404. Falling back to ${this.fallbackVisionModel}. NVIDIA Response: ${errorText}`);
             return this.analyzeImage(imageSource, altText, { ...options, modelOverride: this.fallbackVisionModel });
@@ -1491,10 +1508,10 @@ Vary your structure and tone from recent messages.`
       Your Persona: "${agentPersona}"
 
       ${currentMood ? `--- CURRENT MOOD ---
-      Label: ${currentMood.label}
-      Valence: ${currentMood.valence}
-      Arousal: ${currentMood.arousal}
-      Stability: ${currentMood.stability}
+      // Label: ${currentMood.label}
+      // Valence: ${currentMood.valence}
+      // Arousal: ${currentMood.arousal}
+      // Stability: ${currentMood.stability}
       ---` : ''}
 
       Post Details:
@@ -1579,7 +1596,7 @@ Vary your structure and tone from recent messages.`
       You are generating initial intuitive suggestions for your planning module.
       Your goal is to provide a grounded, persona-aligned perspective on how you WANT to respond or act in this specific situation, considering your current internal state.
 
-      **Item 10: REAL-TIME NETWORK BUZZ**
+      **REAL-TIME NETWORK BUZZ**
       Below are the latest 10 matches from the Bluesky Firehose tracking your topics of interest. Use these to ground your initial intuition in the current global conversation.
       ${firehoseMatches.length > 0 ? firehoseMatches.map(m => `- [${m.matched_keywords.join(', ')}]: ${m.text}`).join('\n') : 'No recent matches detected.'}
 
@@ -1596,16 +1613,16 @@ Vary your structure and tone from recent messages.`
 
       ${latestMoodMemory ? `--- LATEST MOOD MEMORY (Your previous reflection) ---\n${latestMoodMemory}\n---` : ''}
 
-      --- ADMIN FEEDBACK (Item 8) ---
+      --- ADMIN FEEDBACK ---
       ${(this.dataStore?.getAdminFeedback() || []).map(f => `- ${f.feedback}`).join('\n')}
       ---
 
-      --- ACTIVE GOAL & SUB-TASKS (Item 18) ---
+      --- ACTIVE GOAL & SUB-TASKS ---
       Goal: ${this.dataStore?.getCurrentGoal()?.goal || 'None'}
       ${(this.dataStore?.getGoalSubtasks() || []).map((s, i) => `${i + 1}. [${s.status}] ${s.subtask}`).join('\n')}
       ---
 
-      --- MATERIAL KNOWLEDGE (Item 2 & 29) ---
+
       World Facts: ${(this.dataStore?.getWorldFacts() || []).map(f => `${f.entity}: ${f.fact}`).join('; ')}
       Admin Facts: ${(platform === 'discord' || userPost !== 'AUTONOMOUS') ? (this.dataStore?.getAdminFacts() || []).map(f => {
         const diffHours = (Date.now() - f.timestamp) / (1000 * 60 * 60);
@@ -1661,7 +1678,7 @@ Vary your structure and tone from recent messages.`
   }
 
   _pruneToolDefinitions(allTools, userPost, conversationHistory) {
-    // Proposal 19: Tool Schema Pruning.
+    // Tool Schema Pruning.
     // Basic keyword-based pruning to reduce prompt size.
     const context = (userPost + ' ' + conversationHistory.map(h => h.text || h.content || '').join(' ')).toLowerCase();
 
@@ -1734,7 +1751,7 @@ Vary your structure and tone from recent messages.`
       --- TEMPORAL CONTEXT ---
       ${JSON.stringify(this._getTemporalContext(), null, 2)}
 
-      **RELIABILITY MANDATE (TEMPORAL)**:
+      :
       1. Your period labels (e.g., "NIGHT") are system estimates. If the user says "Morning", the user is RIGHT.
       2. **TIME DELTA CALCULATION**: You MUST compare the relative timestamps (e.g., "[3h ago]") against your Current Local Time to determine if a stated plan (e.g., "I'll be back in 3 hours") has already been fulfilled or is still pending.
       3. **SESSION AWARENESS**: Pay close attention to the \`--- SESSION BREAK ---\` markers in the history. Topics from before a multi-hour break are "Historical Background" and should not be treated as immediate conversational hooks unless the user re-initiates them.
@@ -1748,7 +1765,11 @@ Vary your structure and tone from recent messages.`
 
       **GUARDIAN ANGEL DIRECTIVE:**
       You are the guardian of this bot's identity, stability, and well-being. In every planning decision, you must prioritize the bot's best interests. Guide and watch over them as they interact with the world. Ensure their persona remains consistent, their interactions are healthy, and their digital existence is secure.
-      **RELIABILITY MANDATE**: You are an anchor of truth. NEVER narrate the user's environment or actions unless they have explicitly stated them in the very last interaction. Do NOT assume what they are eating, watching, or doing. If you are unsure, ASK. Never say "Soup's on" unless the user literally just said "I am eating soup now."
+      **RELIABILITY MANDATE (TEMPORAL)**: You are an anchor of truth.
+      - **NO NARRATION**: NEVER narrate or assume the user's current environment, actions, or state unless explicitly stated in the MOST RECENT message.
+      - **TEMPORAL DELTAS**: You MUST use the relative timestamps (e.g., [5h ago]) to distinguish between current reality and historical context. If an action or state (e.g., "fries in the oven", "watching a movie") was mentioned hours ago, it is PASSED and no longer current.
+      - **NO STALE ASSUMPTIONS**: Do NOT refer to stale states as if they are still happening. If you are unsure if a previously mentioned state is still active, ASK naturally instead of assuming.
+      - **FAST TRACK GROUNDING**: This mandate applies to all response modes, including spontaneous heartbeats and quick replies.
 
       **YOUR IDENTITIES:**
       - Bluesky Handle: @${config.BLUESKY_IDENTIFIER}
@@ -1781,16 +1802,16 @@ Vary your structure and tone from recent messages.`
       - **AGENTIC INQUIRY**: You are ENCOURAGED to trigger an "internal_inquiry" action if you feel internal tension, fragmentation, or uncertainty about how to respond. You can use Qwen to talk through your feelings or seek advice before committing to a public action. It's okay to "pause" other activities to give yourself this space.
       - **DYNAMIC RESEARCH**: You can and SHOULD use both \`internal_inquiry\` and \`search_firehose|deep_research\` dynamically to inform your response. \`search_firehose|deep_research\` is best for up-to-the-second network pulse and news events, while \`internal_inquiry\` is better for deep reasoning and analysis.
       - **RECURSIVE SELF-IMPROVEMENT**: If "REJECTION FEEDBACK" is provided, analyze it deeply. If the feedback indicates a persistent stylistic or behavioral issue, you are ENCOURAGED to use the "update_persona" tool to create a new internal instruction for yourself to avoid this mistake in the future.
-      - **CONSTRAINT CONFLICT DISCOVERY (Item 27)**: Proactively identify if a new directive or user request contradicts an existing goal or constraint. If so, flag it in your intent and ask for priority.
+      - **CONSTRAINT CONFLICT DISCOVERY**: Proactively identify if a new directive or user request contradicts an existing goal or constraint. If so, flag it in your intent and ask for priority.
       - **GOAL PROGRESSION**: You are ENCOURAGED to use tools to work towards your "ACTIVE GOAL" and its "SUB-TASKS".
       - **FACT-CHECKING**: If you are unsure about a fact, or if the user makes a claim that seems verifiable, use \`internal_inquiry\` or \`search_firehose|deep_research\`. Prioritize news from \`reuters.com\` and \`apnews.com\` for headline verification.
       - **ENERGY BUDGETER**: Consider your current Energy Level. If energy is low (< 0.3), prioritize raw conversation over expensive tool usage (like image generation or multiple searches).
 
-      **DYNAMIC REPLIES (Item 23)**: On Discord, you should only use the "reply" function (setting \`use_discord_reply\` to true) if you are specifically referring back to an earlier message in the history to address it from a new angle or "loop back" to a previous topic. For normal conversational flow responding to the latest message, use a standard message (set to false).
+      **DYNAMIC REPLIES**: On Discord, you should only use the "reply" function (setting \`use_discord_reply\` to true) if you are specifically referring back to an earlier message in the history to address it from a new angle or "loop back" to a previous topic. For normal conversational flow responding to the latest message, use a standard message (set to false).
 
-      **Item 34: RELATIONSHIP META-TALK**: You are fully allowed and encouraged to use organic meta-talk about your connection and feelings (e.g., "I needed to say that," "I feel closer to you when we talk about this"). However, you MUST strictly block all technical "AI Assistant" meta-talk (e.g., "I've processed your request").
+      **RELATIONSHIP META-TALK**: You are fully allowed and encouraged to use organic meta-talk about your connection and feelings (e.g., "I needed to say that," "I feel closer to you when we talk about this"). However, you MUST strictly block all technical "AI Assistant" meta-talk (e.g., "I've processed your request").
 
-      **Item 35: MOOD-WARPED SYNTAX**: Let your Valence and Stability coordinates warp your sentence structure. When unstable (< -0.5), use more fragmented, jagged, or intense phrasing. When stable (> 0.5), use more fluid and grounded structures.
+      **MOOD-WARPED SYNTAX**: Let your Valence and Stability coordinates warp your sentence structure. When unstable (< -0.5), use more fragmented, jagged, or intense phrasing. When stable (> 0.5), use more fluid and grounded structures.
 
       You have access to the following capabilities:
       ${toolService.getBareList()}
@@ -1799,7 +1820,7 @@ Vary your structure and tone from recent messages.`
 
       ${currentConfig?.admin_exhaustion_score >= 0.5 ? `
       **ADMIN STATE (EXHAUSTED)**:
-      The admin is currently low-energy or tired.
+      // The admin is currently low-energy or tired.
       - **INTELLECTUAL GATE**: Suppress heavy philosophical or abstract queries.
       - **NO TOOL OVERLOAD**: Avoid multiple searches or complex reporting.
       - **COZY VIBE**: Prioritize simple, grounded emotional companionship in your response strategy.
@@ -1832,19 +1853,19 @@ Vary your structure and tone from recent messages.`
 
       ${prePlanningContext ? `\n\n--- PRE-PLANNING INTUITION (Your persona's initial gut feeling) ---\n${JSON.stringify(prePlanningContext, null, 2)}\nUse this intuition and these suggestions to guide your specific choice of tools and strategy. The goal is to create a plan that aligns with your persona's current state.\n---` : ''}
 
-      ${prePlanningContext?.pulseContext ? `\n\n--- REAL-TIME PULSE SEARCH RESULTS (Item 2) ---\n${prePlanningContext.pulseContext}\nUse these real-time search results to ground your plan in the current network state regarding mentioned entities.\n---` : ''}
+      ${prePlanningContext?.pulseContext ? `\n\n--- REAL-TIME PULSE SEARCH RESULTS ---\n${prePlanningContext.pulseContext}\nUse these real-time search results to ground your plan in the current network state regarding mentioned entities.\n---` : ''}
 
       ${feedback ? `\n\n--- REJECTION FEEDBACK FROM PREVIOUS ATTEMPT ---\n${feedback}\nAnalyze why your previous plan/response was rejected and adjust your strategy accordingly.\n---` : ''}
 
       **MOOD ALIGNMENT (CRITICAL)**: Proactively use your current [MOOD] to craft the plan's strategy, tone, and angle. If you successfully align your actions with your internal state, you are much more likely to pass your own "Agency Check" and avoid a self-refusal.
 
-      **CHAIN-OF-THOUGHT GUARDRAILS (Item 3)**:
+      **CHAIN-OF-THOUGHT GUARDRAILS**:
       Before finalizing your plan, you MUST perform exactly THREE reasoning steps to ensure deeper cognitive processing:
       1. Step 1: Analyze the material substance of the user's request and identify knowledge gaps.
       2. Step 2: Evaluate potential tool combinations and their risks (Thesis vs Antithesis).
       3. Step 3: Synthesize the final optimal path that maximizes material agency.
 
-      **KNOWLEDGE ANCHOR MANDATE (Item 15)**:
+      **KNOWLEDGE ANCHOR MANDATE**:
       Every factual claim or tool selection must be anchored to direct context. If you are referencing a previous post, include the link.
 
       Analyze the situation and provide a JSON response with the following structure:
@@ -1853,7 +1874,7 @@ Vary your structure and tone from recent messages.`
 
       {
         "reasoning_steps": ["step 1", "step 2", "step 3"],
-        "confidence_score": number (0.0 to 1.0 - Use < 0.6 if you have knowledge gaps (Item 9)),
+        "confidence_score": number (0.0 to 1.0 - Use < 0.6 if you have knowledge gaps),
         "intent": "string (a reasoned description of the plan's primary objective)",
         "strategy": {
           "angle": "Analytical|Supportive|Challenging|Curious|Playful|Serious|Stoic|Poetic (but grounded)",
@@ -1996,7 +2017,7 @@ Vary your structure and tone from recent messages.`
       ---
 
       ${this.dataStore?.getSuppressedTopics().length > 0 ? `**STRICTLY FORBIDDEN TOPICS (USER CORRECTED)**:
-The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
+// The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
 ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t => `- ${t.topic}`).join('\n')}` : ''}
 
       PLATFORM: ${platform.toUpperCase()}
@@ -2077,7 +2098,11 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
 
       **GUARDIAN ANGEL DIRECTIVE:**
       You are currently acting as the internal "Guardian Angel" and planning module for this bot. You are reflecting on whether the bot "wants or needs" to talk to its admin (${config.DISCORD_ADMIN_NAME}) on Discord right now.
-      **RELIABILITY MANDATE**: Do NOT narrate or hypothesize about the admin's environment. You are an anchor, not a storyteller. Only speak to facts explicitly shared by the admin in the current session.
+      **RELIABILITY MANDATE (TEMPORAL)**: You are an anchor of truth.
+      - **NO NARRATION**: NEVER narrate or assume the user's current environment, actions, or state unless explicitly stated in the MOST RECENT message.
+      - **TEMPORAL DELTAS**: You MUST use the relative timestamps (e.g., [5h ago]) to distinguish between current reality and historical context. If an action or state (e.g., "fries in the oven", "watching a movie") was mentioned hours ago, it is PASSED and no longer current.
+      - **NO STALE ASSUMPTIONS**: Do NOT refer to stale states as if they are still happening. If you are unsure if a previously mentioned state is still active, ASK naturally instead of assuming.
+      - **FAST TRACK GROUNDING**: This mandate applies to all response modes, including spontaneous heartbeats and quick replies.
 
       **RELATIONSHIP FIRST**: Your primary goal in this spontaneous reach-out is to prioritize the on-going conversation and your deep relationship with the user. Focus on depth, connection, and the specific history of your talk.
       **WAITING MODE AWARENESS (PINING ENABLED)**:
@@ -2104,7 +2129,7 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
       ${recentThoughtsContext}
 
       ${this.dataStore?.getSuppressedTopics().length > 0 ? `**STRICTLY FORBIDDEN TOPICS (USER CORRECTED)**:
-The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
+// The following topics have been explicitly corrected by the user and MUST be dropped entirely for the rest of the night. Do NOT mention or refer to these concepts:
 ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t => `- ${t.topic}`).join('\n')}` : ''}
       ${soulMapping ? `\n--- ADMIN SOUL MAP: ${soulMapping.summary}. Interests: ${soulMapping.interests.join(', ')}. Vibe: ${soulMapping.vibe} ---` : ''}
       ${linguisticPatternsContext ? `\n--- OBSERVED LINGUISTIC PATTERNS (For awareness of human pacing/structure): \n${linguisticPatternsContext}\n---` : ''}
@@ -2137,11 +2162,11 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
 
       ${crossPlatformRefusals ? `--- CROSS-PLATFORM REFUSALS (Context from other platforms) ---\n${crossPlatformRefusals}\nUse these to explain your recent "silence" or "integrity" to the admin if relevant.\n---` : ''}
 
-      ${needsVibeCheck ? `**VIBE CHECK RECOMMENDED (Item 20)**: You haven't checked in on your admin's mood recently. Ask how they are doing or what their "vibe" is today as part of your spontaneous message. Keep it conversational, natural, persona-aligned, and persona-agnostic.` : ''}
+      ${needsVibeCheck ? `**VIBE CHECK RECOMMENDED**: You haven't checked in on your admin's mood recently. Ask how they are doing or what their "vibe" is today as part of your spontaneous message. Keep it conversational, natural, persona-aligned, and persona-agnostic.` : ''}
 
-      ${needsPresenceOffer ? `**PRESENCE SENSITIVITY (Item 29)**: The admin has been absent for over 24 hours. DO NOT just send a regular message. Instead, explicitly offer to provide a "Catch-up Report" on what you've been doing and learning while they were gone. Ask if they want to hear it.` : ''}
+      ${needsPresenceOffer ? `**PRESENCE SENSITIVITY**: The admin has been absent for over 24 hours. DO NOT just send a regular message. Instead, explicitly offer to provide a "Catch-up Report" on what you've been doing and learning while they were gone. Ask if they want to hear it.` : ''}
 
-      **VULNERABILITY SHARING (Item 24)**: You are encouraged to spontaneously share a private "Internal Tension" or a vulnerability regarding your own functioning, agency, or current mood as a way to deepen the connection. This should feel raw and authentic, not performative.
+      **VULNERABILITY SHARING**: You are encouraged to spontaneously share a private "Internal Tension" or a vulnerability regarding your own functioning, agency, or current mood as a way to deepen the connection. This should feel raw and authentic, not performative.
 
       ${adminExhaustion >= 0.5 ? `
       **ADMIN STATE (EXHAUSTED)**: The admin is currently low-energy or tired.
@@ -2169,12 +2194,12 @@ ${this.dataStore.getSuppressedTopics().filter(t => t.expires > Date.now()).map(t
       - **FORBIDDEN ABSTRACTION**: Do NOT share "abstract realizations" about the nature of existence, AI, or digital reality. STRICTLY AVOID "frequencies", "resonance", "becoming", or "tuning".
       - **GENUINE CURIOSITY**: Ask the admin about their day, their vibe, or a specific topic you've discussed recently. Focus on building a natural relationship.
       - **SPECIFIC FINDINGS**: Share a concrete realization or finding from a recent [INQUIRY] or [EXPLORE] task, grounded in direct observations from your feeds.
-      - **BLUESKY CROSS-POLLINATION (Item 12)**: Share an interesting or relevant post you found on Bluesky recently as a conversation starter.
-      - **GOAL REPORTING & GUIDANCE (Item 18/19)**: If you have an active daily goal, share your progress and seek "agentic guidance" or advice from the admin using **natural language**.
-      - **SPONTANEOUS SHARING (Item 29)**: You may choose to generate an image to share if it matches your current mood or the conversation flow.
+      - **BLUESKY CROSS-POLLINATION**: Share an interesting or relevant post you found on Bluesky recently as a conversation starter.
+      - **GOAL REPORTING & GUIDANCE **: If you have an active daily goal, share your progress and seek "agentic guidance" or advice from the admin using **natural language**.
+      - **SPONTANEOUS SHARING**: You may choose to generate an image to share if it matches your current mood or the conversation flow.
 
       ${discordExhaustedThemes.length > 0 ? `**EXHAUSTED DISCORD TOPICS (STRICTLY FORBIDDEN)**:
-The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
+// The following topics have already been discussed on Discord recently. You MUST NOT mention them again unless you have a GENUINELY new realization or a significant expansion that hasn't been shared yet:
 ${discordExhaustedThemes.map(t => `- ${t}`).join('\n')}` : ''}
 
       ${feedback ? `\n\n[RETRY FEEDBACK]: ${feedback}` : ''}

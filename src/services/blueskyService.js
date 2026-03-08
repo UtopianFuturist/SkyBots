@@ -69,8 +69,8 @@ class BlueskyService {
     } catch (e) {}
   }
   async uploadBlob(buffer, encoding) { return await this.agent.uploadBlob(buffer, { encoding }); }
-  async getExternalEmbed() { return null; }
-  async uploadImages() { return null; }
+  async getExternalEmbed(url) { return null; }
+  async uploadImages(images) { return null; }
   async registerComindAgent() {}
   async submitAutonomyDeclaration() {}
   async likePost() {}
@@ -79,7 +79,12 @@ class BlueskyService {
   async mute() {}
   async unmute() {}
   async updateSeen() {}
-  async getNotifications() { return { data: { notifications: [] } }; }
+  async getNotifications(cursor) {
+    try {
+      const res = await this.agent.api.app.bsky.notification.listNotifications({ cursor, limit: 50 });
+      return res.data;
+    } catch (error) { return { notifications: [] }; }
+  }
   async getTimeline() { return { data: { feed: [] } }; }
   async getDetailedThread() { return null; }
   async getPostDetails() { return null; }

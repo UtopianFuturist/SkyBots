@@ -2121,7 +2121,7 @@ Identify the topic and main takeaway.`;
     do {
       pageCount++;
       const response = await blueskyService.getNotifications(cursor);
-      if (!response || response.notifications.length === 0) {
+      if (!response || !Array.isArray(response.notifications) || response.notifications.length === 0) {
         break;
       }
 

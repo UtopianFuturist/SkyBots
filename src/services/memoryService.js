@@ -77,6 +77,7 @@ class MemoryService {
   async auditMemoriesForReconstruction() {}
   async getLatestMoodMemory() { return null; }
   async searchMemories(query) { return (this.recentMemories || []).filter(m => m.text.includes(query)); }
+  async deleteMemory(uri) { try { await blueskyService.deletePost(uri); return true; } catch (e) { return false; } }
 }
 
 export const memoryService = new MemoryService();

@@ -7186,8 +7186,6 @@ ${JSON.stringify(results, null, 2)}
         console.error('[Bot] Error in trend prediction:', e);
     }
   }
-}
-
   async performSpecialistResearchProject(query) {
     console.log(`[Bot] Initializing specialist research project: "${query}"`);
     const admin = await discordService.getAdminUser();
@@ -7246,7 +7244,6 @@ ${JSON.stringify(results, null, 2)}
 
     return finalReport;
   }
-}
 
   async attemptCrossPlatformSocialPost(privateThought) {
     console.log('[Bot] Attempting privacy-safe cross-platform social post...');
@@ -7257,4 +7254,5 @@ ${JSON.stringify(results, null, 2)}
         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
         await dataStore.addRecentThought('bluesky', adapted);
     }
-  }
+}
+}

@@ -1,116 +1,88 @@
 import fetch from 'node-fetch';
-import https from 'https';
 import config from '../../config.js';
-import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
-import { moltbookService } from './moltbookService.js';
-
-export const persistentAgent = new https.Agent({ keepAlive: true, maxSockets: 10, timeout: 60000 });
+import fs from 'fs/promises';
+import { dataStore } from './dataStore.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags } from '../utils/textUtils.js';
 
 class LLMService {
   constructor() {
-    this.primaryModel = config.LLM_MODEL;
-    this.coderModel = config.CODER_MODEL;
-    this.stepModel = config.STEP_MODEL;
     this.apiKey = config.NVIDIA_NIM_API_KEY;
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1';
-    this.dataStore = null;
-    this.adminDid = null;
-    this.botDid = null;
-    this.memoryProvider = null;
-    this.skillsContent = "";
+    this.model = config.LLM_MODEL;
+    this.personaCache = null;
+    this.cacheTimestamp = 0;
   }
-  get js() { return this; }
-  setDataStore(ds) { this.dataStore = ds; }
-  setIdentities(adminDid, botDid) { this.adminDid = adminDid; this.botDid = botDid; }
-  setMemoryProvider(mp) { this.memoryProvider = mp; }
-  setSkillsContent(content) { this.skillsContent = content; }
-  async generateResponse(messages, options = {}) {
-    const { useStep = false, abortSignal = null } = options;
-    if (abortSignal && (typeof abortSignal.addEventListener !== 'function')) options.abortSignal = null;
-    const model = useStep ? this.stepModel : this.primaryModel;
-    const body = { model, messages, max_tokens: options.max_tokens || 1000, temperature: options.temperature || 0.7 };
+
+  async _getPersona() {
+    const now = Date.now();
+    if (this.personaCache && (now - this.cacheTimestamp < 300000)) return this.personaCache;
     try {
-      const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
-        body: JSON.stringify(body), agent: persistentAgent, signal: options.abortSignal
-      });
-      if (!response.ok) throw new Error(`NVIDIA NIM API error (${response.status})`);
-      const data = await response.json();
-      return data.choices?.[0]?.message?.content || '';
-    } catch (error) {
-      if (error.name === 'AbortError') return null;
-      if (!useStep) return await this.generateResponse(messages, { ...options, useStep: true });
-      return null;
+      const soul = await fs.readFile('SOUL.md', 'utf-8');
+      const agents = await fs.readFile('AGENTS.md', 'utf-8');
+      this.personaCache = `${soul}\n\n${agents}`;
+      this.cacheTimestamp = now;
+      return this.personaCache;
+    } catch (e) { return config.TEXT_SYSTEM_PROMPT; }
+  }
+
+  async generateResponse(messages, options = {}) {
+    const persona = await this._getPersona();
+    const systemMsg = messages.find(m => m.role === 'system');
+    if (systemMsg) systemMsg.content = `${persona}\n\n${systemMsg.content}`;
+    else messages.unshift({ role: 'system', content: persona });
+
+    if (!messages.some(m => m.role === 'user')) {
+        messages.push({ role: 'user', content: "[Internal State Update Request]" });
     }
+
+    const model = options.useStep ? config.STEP_MODEL : this.model;
+
+    for (let i = 0; i < 3; i++) {
+      try {
+        const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
+          body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 1024 })
+        });
+        if (res.status === 429) {
+            await new Promise(r => setTimeout(r, 2000 * (i + 1)));
+            continue;
+        }
+        const data = await res.json();
+        let content = data.choices?.[0]?.message?.content;
+        if (!content) throw new Error("Empty response");
+        content = sanitizeThinkingTags(content);
+        if (options.traceId) await dataStore.addTraceLog(options.traceId, content);
+        return content;
+      } catch (e) { if (i === 2) return null; }
+    }
+    return null;
   }
-  _formatHistory(history, isAdmin = false) {
-    if (!history || !Array.isArray(history)) return "";
-    return history.filter(h => !h.ephemeral).map(h => `${h.role === 'assistant' ? 'Assistant' : 'User'}: ${h.content || h.text}`).join('\n');
+
+  async analyzeUserIntent(profile, posts) {
+    const systemPrompt = `Analyze the user profile and recent posts for high-risk intent (self-harm, threats, etc.). Respond in JSON: { "highRisk": boolean, "reason": "string" }`;
+    const userPrompt = `Profile: ${JSON.stringify(profile)}\nPosts: ${posts.map(p => p.record?.text || p).join('\n')}`;
+    const res = await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], { useStep: true });
+    try { return JSON.parse(res); } catch (e) { return { highRisk: false, reason: "" }; }
   }
-  _getTemporalContext() {
-    const now = new Date();
-    return { current_time: now.toISOString(), local_time: now.toLocaleString(), day_of_week: now.toLocaleDateString('en-US', { weekday: 'long' }) };
+
+  async evaluateConversationVibe(history, current) {
+    const systemPrompt = `Evaluate the conversation vibe. Status options: neutral, hostile, monotonous. Respond in JSON: { "status": "string", "reason": "string" }`;
+    const userPrompt = `History: ${JSON.stringify(history)}\nCurrent: ${current}`;
+    const res = await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: userPrompt }], { useStep: true });
+    try {
+        const parsed = JSON.parse(res);
+        return { status: parsed.status || "neutral", reason: parsed.reason || "" };
+    } catch (e) { return { status: "neutral", reason: "" }; }
   }
-  async performAgenticPlanning() { return { intent: "none", actions: [], confidence_score: 1.0, strategy: { tone: "neutral", theme: "none" } }; }
-  async performPersonaHeartbeatPoll() { return { decision: 'continue', reason: "Idle maintenance" }; }
-  async checkConsistency() { return { consistent: true }; }
-  async performMemoryReconstruction() { return "RECONSTRUCTED"; }
-  async detectTopicEchoes() { return { echoes: [] }; }
-  async generateAdminWorldview() { return { summary: "Evolving perspective", philosophies: [] }; }
-  async analyzeBlueskyUsage() { return { summary: "Normal usage", avg_posts_per_day: 5 }; }
-  async auditPersonaAlignment() { return { drift_detected: false, advice: "" }; }
-  async performFollowUpPoll() { return { decision: 'none' }; }
-  async analyzeUserIntent() { return { intent: "none", reason: "" }; }
-  async auditStrategy() { return ""; }
-  async checkSemanticLoop() { return false; }
-  async evaluateConversationVibe() { return "neutral"; }
-  async evaluateMoltbookInteraction() { return { score: 0 }; }
-  async extractClaim() { return null; }
-  async extractDeepKeywords() { return []; }
-  async generalizePrivateThought() { return "PRIVATE"; }
-  async generateAlternativeAction() { return "NONE"; }
-  async generateDrafts() { return []; }
-  async identifyRelevantSubmolts() { return []; }
-  async isAutonomousPostCoherent() { return true; }
-  async isImageCompliant() { return true; }
-  async isPersonaAligned() { return { aligned: true }; }
-  async isReplyCoherent() { return true; }
-  async isReplyRelevant() { return true; }
-  async isResponseSafe() { return { safe: true }; }
-  async performDialecticHumor() { return ""; }
-  async performInternalPoll() { return { decision: "none" }; }
-  async rateUserInteraction() { return 3; }
-  async searchHistory() { return []; }
-  async shouldLikePost() { return false; }
-  async performInternalInquiry() { return ""; }
-  async decomposeGoal() { return ""; }
-  async analyzeImage() { return "Analyzed image context."; }
-  async batchImageGen() { return []; }
-  async buildInternalBrief() { return ""; }
-  async checkVariety() { return true; }
-  async divergentBrainstorm() { return []; }
-  async evaluateAndRefinePlan(plan) { return { decision: "proceed", refined_actions: plan.actions }; }
-  async exploreNuance() { return ""; }
-  async extractFacts() { return { world_facts: [], admin_facts: [] }; }
-  async identifyInstructionConflict() { return null; }
-  async isPostSafe() { return true; }
-  async performDialecticLoop() { return ""; }
-  async performPrePlanning() { return {}; }
+
+  async checkConsistency(text, platform) {
+    return { consistent: true };
+  }
+
+  async performPrePlanning() { return { hooks: [], plan: [] }; }
+  async performAgenticPlanning() { return { goal: "", tasks: [] }; }
   async performSafetyAnalysis() { return { safe: true }; }
-  async requestBoundaryConsent() { return { safe: true }; }
-  async requestConfirmation() { return { confirmed: true }; }
-  async resolveDissonance() { return ""; }
-  async scoreLinkRelevance() { return 10; }
-  async scoreSubstance() { return 10; }
-  async selectBestResult(query, results) { return results[0]; }
-  async selectSubmoltForPost() { return null; }
-  async shouldExplainRefusal() { return false; }
-  async shouldIncludeSensory() { return false; }
-  async summarizeWebPage() { return "Web content summary."; }
-  async generateRefusalExplanation() { return "I cannot fulfill this request."; }
-  async isUrlSafe() { return { safe: true }; }
-  async extractRelationalVibe() { return "neutral"; }
-  async extractScheduledTask() { return null; }
-  async validateResultRelevance() { return true; }
+  async requestBoundaryConsent() { return true; }
 }
+
 export const llmService = new LLMService();

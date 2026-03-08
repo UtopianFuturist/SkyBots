@@ -22,6 +22,7 @@ class LLMService {
     this.dataStore = null;
     this.adminDid = null;
     this.botDid = null;
+    this.memoryProvider = null;
   }
 
   setDataStore(ds) {
@@ -31,6 +32,10 @@ class LLMService {
   setIdentities(adminDid, botDid) {
     this.adminDid = adminDid;
     this.botDid = botDid;
+  }
+
+  setMemoryProvider(mp) {
+    this.memoryProvider = mp;
   }
 
   async generateResponse(messages, options = {}) {

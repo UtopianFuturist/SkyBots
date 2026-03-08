@@ -2598,7 +2598,7 @@ Identify the topic and main takeaway.`;
       return;
     }
     // Filter out the current post's text from cross-post memory to avoid self-contamination
-    const crossPostMemory = userPosts
+    const crossPostMemory = (userPosts || []).map(p => p.record?.text || p)
       .filter(p => (p.includes(config.BLUESKY_IDENTIFIER) || config.BOT_NICKNAMES.some(nick => p.includes(nick))) && p !== text)
       .map(p => `- (Previous mention in a DIFFERENT thread) "${p.substring(0, 100)}..."`)
       .join('\n');

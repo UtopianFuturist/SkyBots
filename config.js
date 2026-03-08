@@ -150,3 +150,8 @@ console.log(`[Config] Loaded RENDER_SERVICE_ID: ${config.RENDER_SERVICE_ID || 'N
 console.log(`[Config] Loaded BOT_NAME: ${config.BOT_NAME || "MISSING!"}`);
 
 export default config;
+
+// Ensure BOT_NICKNAMES is always an array
+if (!Array.isArray(config.BOT_NICKNAMES)) {
+  config.BOT_NICKNAMES = (process.env.BOT_NICKNAMES || '').split(',').filter(Boolean);
+}

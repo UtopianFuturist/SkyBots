@@ -117,7 +117,14 @@ class DataStore {
       admin_availability: "available",
       shared_stances: [],
       relational_goals: [],
-      curiosity_reservoir: []
+      curiosity_reservoir: [],
+      research_whiteboard: {},
+      self_corrections: [],
+      persona_advice: [],
+      shared_media: [],
+      mutual_learnings: [],
+      resilience_tracking: { disagreements: 0, recovery_speed: 1.0 },
+      digital_artifacts: []
     };
 
     this.db = await JSONFilePreset(this.dbPath, defaultData);
@@ -549,10 +556,10 @@ class DataStore {
   isLurkerMode() { return this.db.data.lurker_mode; }
   async setLurkerMode(active) { this.db.data.lurker_mode = active; await this.db.write(); }
 
-  isResting() { return this.db.data.resting_until > Date.now(); }
+  isResting() { return (this.db.data.resting_until || 0) > Date.now(); }
   async setRestingUntil(timestamp) { this.db.data.resting_until = timestamp; await this.db.write(); }
 
-  isFeedImpactMuted() { return this.db.data.mute_feed_impact_until > Date.now(); }
+  isFeedImpactMuted() { return (this.db.data.mute_feed_impact_until || 0) > Date.now(); }
   async setMuteFeedImpactUntil(timestamp) { this.db.data.mute_feed_impact_until = timestamp; await this.db.write(); }
 
   async updateConversationLength(channelId, length) {
@@ -651,7 +658,9 @@ class DataStore {
   }
   getMutedBranchInfo(branchId) { return (this.db.data.mutedBranches || []).includes(branchId); }
 
-  // Companionship Enhancements
+  async setDiscordWaitingUntil(time) { this.db.data.discord_waiting_until = time; await this.db.write(); }
+  getDiscordWaitingUntil() { return this.db.data.discord_waiting_until || 0; }
+
   async updateAdminInterests(interests) {
     if (!this.db.data.admin_interests) this.db.data.admin_interests = {};
     for (const [interest, weight] of Object.entries(interests)) {
@@ -699,6 +708,53 @@ class DataStore {
     await this.db.write();
   }
   getCuriosityReservoir() { return this.db.data.curiosity_reservoir || []; }
+
+  async updateResearchWhiteboard(projectId, facts) {
+    if (!this.db.data.research_whiteboard) this.db.data.research_whiteboard = {};
+    this.db.data.research_whiteboard[projectId] = facts;
+    await this.db.write();
+  }
+  getResearchWhiteboard(projectId) { return this.db.data.research_whiteboard?.[projectId] || []; }
+
+  async addSelfCorrection(correction) {
+    if (!this.db.data.self_corrections) this.db.data.self_corrections = [];
+    this.db.data.self_corrections.push({ correction, timestamp: Date.now() });
+    if (this.db.data.self_corrections.length > 50) this.db.data.self_corrections.shift();
+    await this.db.write();
+  }
+
+  async addPersonaAdvice(advice) {
+    if (!this.db.data.persona_advice) this.db.data.persona_advice = [];
+    this.db.data.persona_advice.push({ advice, timestamp: Date.now() });
+    await this.db.write();
+  }
+
+  async addSharedMedia(media) {
+    if (!this.db.data.shared_media) this.db.data.shared_media = [];
+    this.db.data.shared_media.push({ ...media, timestamp: Date.now() });
+    await this.db.write();
+  }
+  getSharedMedia() { return this.db.data.shared_media || []; }
+
+  async addMutualLearning(learning) {
+    if (!this.db.data.mutual_learnings) this.db.data.mutual_learnings = [];
+    this.db.data.mutual_learnings.push({ learning, timestamp: Date.now() });
+    await this.db.write();
+  }
+  getMutualLearnings() { return this.db.data.mutual_learnings || []; }
+
+  async updateResilience(disagreement = false) {
+    if (!this.db.data.resilience_tracking) this.db.data.resilience_tracking = { disagreements: 0, recovery_speed: 1.0 };
+    if (disagreement) this.db.data.resilience_tracking.disagreements++;
+    // Future recovery speed logic can be added here
+    await this.db.write();
+  }
+
+  async addDigitalArtifact(artifact) {
+    if (!this.db.data.digital_artifacts) this.db.data.digital_artifacts = [];
+    this.db.data.digital_artifacts.push({ ...artifact, timestamp: Date.now() });
+    await this.db.write();
+  }
 }
 
 export const dataStore = new DataStore();

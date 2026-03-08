@@ -8,7 +8,7 @@ class GoogleSearchService {
     this.cxId = config.GOOGLE_CUSTOM_SEARCH_CX_ID;
     this.baseUrl = 'https://www.googleapis.com/customsearch/v1';
     this.searchCount = 0;
-    this.MAX_DAILY_SEARCHES = 10;
+    this.MAX_DAILY_SEARCHES = 100;
     this.lastResetDate = new Date().toISOString().split('T')[0];
   }
 

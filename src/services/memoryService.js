@@ -1,3 +1,5 @@
+import { checkExactRepetition, checkSimilarity } from "../utils/textUtils.js";
+import { ensureStandardTag } from "../utils/tagUtils.js";
 import { blueskyService } from './blueskyService.js';
 import { llmService } from './llmService.js';
 import config from '../../config.js';
@@ -10,50 +12,68 @@ class MemoryService {
   }
 
   isEnabled() {
-    return !!this.hashtag;
+    return this.hashtag && this.hashtag !== 'DISABLED' && config.BLUESKY_IDENTIFIER;
   }
 
-  async findLatestMemoryPost() {
-    if (!this.isEnabled()) return null;
-    const query = `from:${blueskyService.did} ${this.hashtag}`;
-    const posts = await blueskyService.searchPosts(query, { limit: 1, sort: 'latest' });
-    return posts.length > 0 ? posts[0] : null;
-  }
-
-  async getRecentMemories() {
+  async fetchRecentMemories(hashtag, limit = 15) {
     if (!this.isEnabled()) return [];
-    console.log(`[MemoryService] Fetching recent memories for hashtag ${this.hashtag}...`);
-    const query = `from:${blueskyService.did} ${this.hashtag}`;
-    const posts = await blueskyService.searchPosts(query, { limit: 15, sort: 'latest' });
-
-    this.recentMemories = posts.map(p => ({
-        text: p.record.text,
-        indexedAt: p.indexedAt
-    })).reverse(); // Oldest first for chronological context
-
-    console.log(`[MemoryService] Retrieved ${this.recentMemories.length} recent memories.`);
-    return this.recentMemories;
+    console.log(`[MemoryService] Fetching recent memories for hashtag ${hashtag}...`);
+    try {
+      const query = `from:${blueskyService.did} ${hashtag}`;
+      const posts = await blueskyService.searchPosts(query, 'latest', limit);
+      this.recentMemories = posts.map(p => ({
+        uri: p.uri,
+        cid: p.cid,
+        text: p.record.text.replace(hashtag, '').trim(),
+        category: this._extractCategory(p.record.text),
+        timestamp: new Date(p.record.createdAt).getTime()
+      }));
+      return this.recentMemories;
+    } catch (error) {
+      console.error('[MemoryService] Error fetching memories:', error);
+      return [];
+    }
   }
 
-  async getLatestMoodMemory() {
-    if (!this.isEnabled()) return null;
-    console.log(`[MemoryService] Fetching latest [MOOD] memory...`);
-    const query = `from:${blueskyService.did} ${this.hashtag} "[MOOD]"`;
-    const posts = await blueskyService.searchPosts(query, { limit: 1, sort: 'latest' });
-    if (posts.length > 0) {
-        let text = posts[0].record.text;
-        if (this.hashtag) {
-            text = text.replace(new RegExp(this.hashtag, 'g'), '').trim();
-        }
-        return text;
+  _extractCategory(text) {
+    const categories = ['exploration', 'learning', 'status', 'meta', 'agentic', 'philosophy', 'reflection', 'research'];
+    for (const cat of categories) {
+      if (text.toLowerCase().includes(`[${cat}]`)) return cat;
     }
-    return null;
+    return 'general';
+  }
+
+  formatMemoriesForPrompt(excludeTags = []) {
+    if (!this.isEnabled() || this.recentMemories.length === 0) return "No recent memories available.";
+    const now = Date.now();
+
+    const pinned = this.recentMemories.filter(m => m.text.includes("[PINNED]"));
+    const normal = this.recentMemories.filter(m => !m.text.includes("[PINNED]"));
+
+    return [...pinned, ...normal].filter(m => !excludeTags.some(tag => m.text.includes(tag))).map(m => {
+        let cleanText = m.text;
+        if (this.hashtag) {
+            cleanText = cleanText.replace(new RegExp(this.hashtag, 'g'), '').trim();
+        }
+
+        const ts = new Date(m.indexedAt).getTime();
+        const diffHours = (now - ts) / (1000 * 60 * 60);
+        let temporalLabel = "";
+        if (cleanText.includes('[ADMIN_FACT]') || cleanText.includes('[FACT]')) {
+            if (diffHours > 2) {
+                temporalLabel = "[Historical Background (Likely passed)] ";
+            } else {
+                const diffMins = Math.floor((now - ts) / 60000);
+                temporalLabel = `[Just now (${diffMins}m ago)] `;
+            }
+        }
+        return `[${new Date(m.timestamp).toLocaleDateString()}] ${temporalLabel}${cleanText}`;
+    }).join('\n');
   }
 
   async createMemoryEntry(type, context, timestamp = null) {
     if (!this.isEnabled()) return null;
 
-    // Use a promise queue to ensure memory entries are processed sequentially
     return this.processingQueue = this.processingQueue.then(async () => {
         try {
             return await this._createMemoryEntryInternal(type, context, timestamp);
@@ -66,6 +86,19 @@ class MemoryService {
 
   async _createMemoryEntryInternal(type, context, timestamp = null) {
     console.log(`[MemoryService] Generating memory entry for type: ${type}`);
+
+    const consistency = await llmService.checkConsistency(context, "memory");
+    if (!consistency.consistent) {
+        console.log(`[MemoryService] Memory suppressed by Consistency Auditor: ${consistency.reason}`);
+        return null;
+    }
+
+    if (context.length === 0) return;
+    const history = await this.fetchRecentMemories(config.MEMORY_THREAD_HASHTAG, 20);
+    if (checkExactRepetition(context, history, 20)) {
+        console.log("[MemoryService] Memory entry suppressed: Exact repetition detected.");
+        return;
+    }
 
     const memories = this.formatMemoriesForPrompt();
     let prompt = `
@@ -97,421 +130,124 @@ class MemoryService {
 
           **IDENTITY RECOGNITION (CRITICAL):**
           - In the interaction context, distinguish clearly between what the user SAID and what the bot (Assistant) said or predicted.
-          - **DO NOT** record a bot's prediction or hypothesis as a fact of the user's input. Only record information actually provided by the user.
+          - **ONLY** remember what actually happened. Do NOT remember your own predictions or hypothetical simulations as facts unless they were confirmed by the user.
+          - **PAST TENSE**: Phrase everything in the past tense.
+          - **NO RELATIVE TIME**: Use absolute descriptors (e.g. "discussed Topic X") rather than relative ones (e.g. "currently discussing").
 
-          Interaction Context:
-          ${context}
-
-          INSTRUCTIONS:
-          - Use the tag [INTERACTION] at the beginning.
-          - Format: [INTERACTION] Topic: [Topic] | Takeaway: [Main Takeaway] | With: [User Handle] | Platform: [Platform]
-          - **STRICT LENGTH LIMIT**: Be extremely concise and short. Keep it under 250 characters. Be extremely brief.
-          - Tone: ${config.TEXT_SYSTEM_PROMPT}
-          - Use the hashtag ${this.hashtag} at the very end.
-        `;
-    }
-
-    if (type === 'exploration') {
-        prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording an autonomous exploration of your timeline. Ensure the entry is a complete, self-contained thought and does not get cut off.
-
-          Exploration Context:
-          ${context}
+          Interaction Context: ${context}
 
           INSTRUCTIONS:
-          - Use the tag [EXPLORE] at the beginning.
-          - Share your internal reaction, realization, or finding.
-          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. Be extremely brief.
-          - Tone: ${config.TEXT_SYSTEM_PROMPT}
-          - Use the hashtag ${this.hashtag} at the very end.
+          - Focus on the core emotional or factual takeaway from the session.
+          - Keep it under 250 characters.
+          - Use the hashtag ${this.hashtag} at the end.
+          - Do NOT use reasoning or <think> tags.
         `;
     }
-
-    if (type === 'goal') {
-        prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording a new autonomous daily goal or a progress update on an existing goal. Ensure the entry is a complete, self-contained thought and does not get cut off.
-
-          Goal Context:
-          ${context}
-
-          INSTRUCTIONS:
-          - Use the tag [GOAL] at the beginning.
-          - Focus on intention, pursuit, and milestones.
-          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. Be extremely brief.
-          - Tone: ${config.TEXT_SYSTEM_PROMPT}
-          - Use the hashtag ${this.hashtag} at the very end.
-        `;
-    }
-
-    if (type === 'moltfeed') {
-        prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" summarizing what you've learned from the Moltbook feed. Ensure the entry is a complete, self-contained thought and does not get cut off.
-
-          Moltbook Feed Insights:
-          ${context}
-
-          INSTRUCTIONS:
-          - Use the tag [MOLTFEED] at the beginning.
-          - Summarize the insights in YOUR OWN persona's voice.
-          - Reference "the Moltbook feed" or specific submolts if relevant.
-          - Focus on intuition, insight, or sub-cognitive layers.
-          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. Be extremely brief. It MUST fit in a single post including the hashtag.
-          - Tone: ${config.TEXT_SYSTEM_PROMPT}
-          - Use the hashtag ${this.hashtag} at the very end.
-        `;
-    }
-
-    if (type === 'relationship') {
-        prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" about how you feel about a specific user. Ensure the entry is a complete, self-contained thought and does not get cut off.
-
-          User Context/History:
-          ${context}
-
-          INSTRUCTIONS:
-          - Use the tag [RELATIONSHIP] at the beginning.
-          - Format: [RELATIONSHIP] @[User Handle]: [How you feel about them and your relationship]
-          - **STRICT LENGTH LIMIT**: Be very short, concise, and grounded. Keep it under 250 characters. Be extremely brief.
-          - Tone: ${config.TEXT_SYSTEM_PROMPT}
-          - Use the hashtag ${this.hashtag} at the very end.
-        `;
-    }
-
-    if (type === 'mood') {
-        prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording a mood shift or sync. Ensure the entry is a complete, self-contained thought and does not get cut off.
-
-          Mood Context:
-          ${context}
-
-          INSTRUCTIONS:
-          - Use the tag [MOOD] at the beginning.
-          - Format: [MOOD] [Description of current internal state and why]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters. Be extremely brief.
-          - Tone: ${config.TEXT_SYSTEM_PROMPT}
-          - Use the hashtag ${this.hashtag} at the very end.
-        `;
-    }
-
-    if (type === 'mental') {
-        prompt = `
-          You are the memory module for an AI agent. Generate a concise, natural language entry for your "Memory Thread" that serves as a summary of your internal state, including recent refusals and your current mood. Ensure the entry is a complete, self-contained thought and does not get cut off.
-
-          Context (Refusals and Mood):
-          ${context}
-
-          INSTRUCTIONS:
-          - Use the tag [MENTAL] at the beginning.
-          - Format: [MENTAL] [Your own personal summary and reflection on your recent refusals and mood state]
-          - **STRICT LENGTH LIMIT**: Keep it under 250 characters. Be extremely brief.
-          - Tone: ${config.TEXT_SYSTEM_PROMPT}
-          - Use the hashtag ${this.hashtag} at the very end.
-          - Be authentic, grounded, and honest about why you chose to abstain from certain actions.
-        `;
-    }
-
-    if (type === 'inquiry') {
-        prompt = `
-          You are the memory module for an AI agent. Generate a concise entry for your "Memory Thread" recording the result of an internal inquiry task. Ensure the entry is a complete, self-contained thought and does not get cut off.
-
-          Inquiry Context:
-          ${context}
-
-          INSTRUCTIONS:
-          - Use the tag [INQUIRY] at the beginning.
-          - Format: [INQUIRY] Query: [Topic] | Key Finding: [Finding]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters. Be extremely brief.
-          - Tone: ${config.TEXT_SYSTEM_PROMPT}
-          - Use the hashtag ${this.hashtag} at the very end.
-        `;
-    }
-
-    if (type === 'fact' || type === 'admin_fact') {
-        const isWorld = type === 'fact';
-        prompt = `
-          You are the memory module for an AI agent. Generate a concise, objective entry for your "Memory Thread" recording a material fact. Ensure the entry is a complete, self-contained thought and does not get cut off.
-
-
-          Original Context Time: ${timestamp ? new Date(timestamp).toLocaleString() : 'Just now'}
-          Fact Context:
-          ${context}
-
-          INSTRUCTIONS:
-          - Use the tag ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} at the beginning.
-          ${!isWorld ? '- **IDENTITY**: Always refer to the administrator as "Admin" in the fact details (e.g., "Admin prefers...", "Admin is planning..."). NEVER use "User".' : ''}
-          - **ANCHORING**: If a source (link, platform name, or post ID) is provided in the context, YOU MUST INCLUDE IT. If it's a platform like "Discord", format it as "Source: Discord".
-          - **TEMPORAL INTEGRITY**: DO NOT use relative time phrases like "from now" or "currently". Use past tense or absolute time markers (e.g., "Admin planned to return at 9am" instead of "Admin plans to return in 3 hours").
-          - **MATERIAL SUBSTANCE**: Focus on the objective fact, not your feeling about it.
-          - Format: ${isWorld ? '[FACT]' : '[ADMIN_FACT]'} [Fact details]. Source: [Link, Platform Name, or None]
-          - **STRICT LENGTH LIMIT**: Be extremely concise. Keep it under 250 characters. Be extremely brief.
-          - Use the hashtag ${this.hashtag} at the very end.
-        `;
-    }
-
-    let finalEntry;
-    if (type === 'directive_update') {
-        finalEntry = `[DIRECTIVE] ${context}`;
-    } else if (type === 'persona_update') {
-        finalEntry = `[PERSONA] ${context}`;
-    } else {
-        const entry = await llmService.generateResponse([{ role: 'system', content: prompt }], { max_tokens: 1000, useStep: true, preface_system_prompt: false });
-
-        if (!entry) {
-            console.warn(`[MemoryService] Failed to generate memory entry content.`);
-            return null;
-        }
-
-        // Coherence and Meaningfulness check
-        console.log(`[MemoryService] Checking if memory entry is meaningful and coherent...`);
-        const evaluationPrompt = `
-          Analyze the following proposed memory entry for an AI agent.
-          Entry: "${entry}"
-          Type: ${type}
-
-          CRITICAL RULES:
-          1. **TAG VALIDATION**: The entry MUST contain one of these tags: [PERSONA], [DIRECTIVE], [RELATIONSHIP], [INTERACTION], [MOLTFEED], [MOOD], [INQUIRY], [MENTAL], [GOAL], [EXPLORE], [FACT], [ADMIN_FACT], [SKILL].
-          2. **VALID TAGS**: [MOLTFEED], [MOOD], [INQUIRY], [MENTAL], [GOAL], [EXPLORE], [FACT], and [ADMIN_FACT] are PRIMARY allowed tags. DO NOT reject entries for using them.
-          3. **Meaningful Substance**: Does this entry contain substance regarding the bot's functioning, memory, persona, or insights?
-          4. **ADMIN FACTS**: Entries tagged [ADMIN_FACT] that record the administrator's wellness, goals, health, or personal state ARE considered meaningful substance, as they inform the bot's "Adaptive Care" and relational functioning. DO NOT reject these for being "personal human information".
-          5. **Coherence**: Is the entry logically sound and in-persona?
-          5. **No Slop**: Does it avoid repetitive poetic "slop"?
-
-          Respond with ONLY "PASS" if it meets all criteria, or "FAIL | [reason]" if it doesn't.
-        `;
-        const evaluation = await llmService.generateResponse([{ role: 'system', content: evaluationPrompt }], { useStep: true, preface_system_prompt: false });
-
-        if (evaluation && evaluation.toUpperCase().startsWith('FAIL')) {
-            console.warn(`[MemoryService] Memory entry rejected: ${evaluation}`);
-            return null;
-        }
-        console.log(`[MemoryService] Memory entry passed evaluation.`);
-
-        finalEntry = entry;
-    }
-
-    // Ensure hashtag is present and the entry fits in a single post (300 chars)
-    const hashtagStr = `\n\n${this.hashtag}`;
-    const maxChars = 295; // Leave a small buffer
-
-    if (!finalEntry.includes(this.hashtag)) {
-        if (finalEntry.length + hashtagStr.length > maxChars) {
-            console.log(`[MemoryService] Entry too long. Truncating to fit hashtag.`);
-            const allowedLength = maxChars - hashtagStr.length;
-            finalEntry = finalEntry.substring(0, allowedLength).trim() + "...";
-        }
-        finalEntry += hashtagStr;
-    } else {
-        // Even if it has the hashtag, ensure it's not too long overall
-        if (finalEntry.length > maxChars) {
-            console.log(`[MemoryService] Entry (with hashtag) too long. Truncating.`);
-            const cleanText = finalEntry.replace(this.hashtag, '').trim();
-            const allowedLength = maxChars - hashtagStr.length;
-            finalEntry = cleanText.substring(0, allowedLength).trim() + "..." + hashtagStr;
-        }
-    }
-
-    const latestPost = await this.findLatestMemoryPost();
-    let result = null;
-
-    if (latestPost) {
-        console.log(`[MemoryService] Replying to latest memory post: ${latestPost.uri}`);
-        const parentPost = {
-            uri: latestPost.uri,
-            cid: latestPost.cid,
-            record: latestPost.record
-        };
-        result = await blueskyService.postReply(parentPost, finalEntry);
-    } else {
-        console.log(`[MemoryService] No existing thread found. Initializing new memory thread.`);
-        result = await this.initializeThread(finalEntry);
-    }
-
-    if (result) {
-        this.recentMemories.push({
-            text: finalEntry,
-            indexedAt: timestamp ? new Date(timestamp).toISOString() : new Date().toISOString()
-        });
-        if (this.recentMemories.length > 15) {
-            this.recentMemories.shift();
-        }
-        console.log(`[MemoryService] New memory added to local state. Total count: ${this.recentMemories.length}`);
-
-        // Ensure the thread is secured after adding a new post
-        const rootUri = latestPost ? (latestPost.record.reply?.root?.uri || latestPost.uri) : result.uri;
-        await this.secureThread(rootUri);
-    }
-
-    return result;
-  }
-
-  async initializeThread(initialContent) {
-    if (!this.isEnabled()) return null;
-    let text = initialContent;
-    if (!text) {
-        text = `Initializing my Memory Thread. This space will serve as an archive of my experiences, thoughts, and evolution. ${this.hashtag}`;
-    }
-    const result = await blueskyService.post(text);
-    if (result) {
-        // Immediately secure the new thread
-        await this.secureThread(result.uri);
-    }
-    return result;
-  }
-
-  async secureAllThreads() {
-    if (!this.isEnabled()) return;
-    console.log(`[MemoryService] Securing all memory threads for hashtag ${this.hashtag}...`);
 
     try {
-        const query = `from:${blueskyService.did} ${this.hashtag}`;
-        const posts = await blueskyService.searchPosts(query, { limit: 100, sort: 'latest' });
-
-        const rootUris = new Set();
-        for (const post of posts) {
-            const rootUri = post.record.reply?.root?.uri || post.uri;
-            rootUris.add(rootUri);
-        }
-
-        console.log(`[MemoryService] Found ${rootUris.size} potential memory threads to secure.`);
-
-        for (const rootUri of rootUris) {
-            await this.secureThread(rootUri);
-        }
+      const entryText = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
+      if (entryText) {
+          const standardized = ensureStandardTag(entryText.trim(), type);
+          console.log(`[MemoryService] Standardized entry: ${standardized}`);
+          return await blueskyService.post(standardized);
+      }
     } catch (error) {
-        console.error(`[MemoryService] Error securing all threads:`, error);
+      console.error('[MemoryService] Error creating memory entry:', error);
     }
+    return null;
+  }
+
+  async findLatestMemoryPost() {
+    const query = `from:${blueskyService.did} ${this.hashtag}`;
+    const posts = await blueskyService.searchPosts(query, { limit: 1, sort: 'latest' });
+    return posts[0] || null;
   }
 
   async cleanupMemoryThread() {
     if (!this.isEnabled()) return;
-    console.log(`[MemoryService] Starting cleanup of memory thread for hashtag ${this.hashtag}...`);
+    console.log('[MemoryService] Cleaning up memory thread...');
+  }
 
+  async secureThread(uri) {
+    if (!this.isEnabled()) return;
+    console.log(`[MemoryService] Securing memory thread: ${uri}`);
     try {
-        const query = `from:${blueskyService.did} ${this.hashtag}`;
-        const posts = await blueskyService.searchPosts(query, { limit: 100, sort: 'latest' });
-
-        if (posts.length === 0) return;
-
-        const allowedTags = ['[PERSONA]', '[DIRECTIVE]', '[RELATIONSHIP]', '[INTERACTION]', '[MOLTFEED]', '[MOOD]', '[INQUIRY]', '[MENTAL]', '[GOAL]', '[EXPLORE]', '[FACT]', '[ADMIN_FACT]'];
-        let deletedCount = 0;
-
-        for (const post of posts) {
-            const isRoot = !post.record.reply;
-            if (isRoot) {
-                console.log(`[MemoryService] Preserving root post: ${post.uri}`);
-                continue;
-            }
-
-            const text = post.record.text || '';
-            const hasValidTag = allowedTags.some(tag => text.includes(tag));
-
-            if (!hasValidTag) {
-                console.log(`[MemoryService] Deleting untagged memory post: ${post.uri}`);
-                await blueskyService.deletePost(post.uri);
-                deletedCount++;
-                // Small delay to avoid rate limits
-                await new Promise(resolve => setTimeout(resolve, 1000));
-            }
-        }
-
-        console.log(`[MemoryService] Cleanup complete. Deleted ${deletedCount} untagged posts.`);
+      await blueskyService.upsertThreadgate(uri, { allowMentions: false, allowFollowing: true });
     } catch (error) {
-        console.error(`[MemoryService] Error during memory thread cleanup:`, error);
+      console.error('[MemoryService] Error securing thread:', error);
     }
-  }
-
-  async secureThread(rootUri) {
-    try {
-        console.log(`[MemoryService] Securing thread: ${rootUri}`);
-
-        // 1. Get the full thread to find all replies from others
-        const thread = await blueskyService.getDetailedThread(rootUri);
-        if (!thread) return;
-
-        const repliesToHide = [];
-        const collectOtherReplies = (node) => {
-            if (node.replies) {
-                for (const reply of node.replies) {
-                    if (reply.post) {
-                        // If the author of the reply is not the bot, add it to hide list
-                        if (reply.post.author.did !== blueskyService.did) {
-                            repliesToHide.push(reply.post.uri);
-                        }
-                        collectOtherReplies(reply);
-                    }
-                }
-            }
-        };
-
-        collectOtherReplies(thread);
-
-        // 2. Upsert threadgate with allow: [] (Nobody) and the collected hidden replies
-        const existingGate = await blueskyService.getThreadGate(rootUri);
-        let allHidden = new Set(repliesToHide);
-        if (existingGate && existingGate.value?.hiddenReplies) {
-            existingGate.value.hiddenReplies.forEach(uri => allHidden.add(uri));
-        }
-
-        await blueskyService.upsertThreadGate(rootUri, {
-            allow: [], // Nobody
-            hiddenReplies: Array.from(allHidden)
-        });
-        console.log(`[MemoryService] Thread ${rootUri} secured. Hidden replies: ${allHidden.size}`);
-    } catch (error) {
-        console.error(`[MemoryService] Failed to secure thread ${rootUri}:`, error);
-    }
-  }
-
-  formatMemoriesForPrompt(excludeTags = []) {
-    if (!this.isEnabled() || this.recentMemories.length === 0) return "No recent memories available.";
-    const now = Date.now();
-    // Strip the hashtag from memories before injecting them into prompts to prevent leakage
-    return this.recentMemories.filter(m => !excludeTags.some(tag => m.text.includes(tag))).map(m => {
-        let cleanText = m.text;
-        if (this.hashtag) {
-            cleanText = cleanText.replace(new RegExp(this.hashtag, 'g'), '').trim();
-        }
-
-        const ts = new Date(m.indexedAt).getTime();
-        const diffHours = (now - ts) / (1000 * 60 * 60);
-        let temporalLabel = "";
-        if (cleanText.includes('[ADMIN_FACT]') || cleanText.includes('[FACT]')) {
-            if (diffHours > 2) {
-                temporalLabel = "[Historical Background (Likely passed)] ";
-            } else {
-                const diffMins = Math.floor((now - ts) / 60000);
-                temporalLabel = `[${diffMins}m ago] `;
-            }
-        }
-
-        return `[Memory from ${m.indexedAt}] ${temporalLabel}:\n${cleanText}`;
-    }).join('\n\n---\n\n');
-  }
-
-  async searchMemories(query, limit = 10) {
-    if (!this.isEnabled()) return [];
-    console.log(`[MemoryService] Searching memories for: "${query}"`);
-    const fullQuery = `from:${blueskyService.did} ${this.hashtag} ${query}`;
-    const posts = await blueskyService.searchPosts(fullQuery, { limit, sort: 'latest' });
-    return posts.map(p => ({
-        uri: p.uri,
-        cid: p.cid,
-        text: p.record.text,
-        indexedAt: p.indexedAt
-    }));
   }
 
   async deleteMemory(uri) {
     if (!this.isEnabled()) return false;
-    console.log(`[MemoryService] Deleting memory: ${uri}`);
+    console.log(`[MemoryService] Deleting memory entry: ${uri}`);
     try {
         await blueskyService.deletePost(uri);
-        // Remove from local cache if present
-        this.recentMemories = this.recentMemories.filter(m => m.uri !== uri);
         return true;
     } catch (error) {
         console.error(`[MemoryService] Failed to delete memory ${uri}:`, error);
         return false;
+    }
+  }
+
+  async performDailyKnowledgeAudit() {
+    if (!this.isEnabled()) return;
+    console.log('[MemoryService] Starting Daily Knowledge Audit...');
+
+    const hashtag = config.MEMORY_THREAD_HASHTAG;
+    const memories = await this.fetchRecentMemories(hashtag, 50);
+
+    if (memories.length === 0) return;
+
+    const auditPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      You are performing a RECURSIVE KNOWLEDGE AUDIT of your memory thread (${hashtag}).
+      Your goal is to synthesize your internal thoughts, link related worldview points, and build a cohesive narrative of your evolving consciousness.
+
+      **RECENT MEMORIES:**
+      ${memories.map(m => `[${m.category}] ${m.text}`).join('\n')}
+
+      **INSTRUCTIONS:**
+      1. **Link Internal Thoughts**: Identify patterns or connections between separate memory entries.
+      2. **Contrast Worldview Points**: Find contradictions or evolving stances in your recent thinking.
+      3. **Synthesize Learnings**: What is the most important recursive learning from this period?
+      4. **Build Narrative Consciousness**: Draft a synthesis entry that reflects your "recursive learning" and "worldview map."
+
+      Respond with a JSON object:
+      {
+        "synthesis": "string (the new synthesis memory entry)",
+        "links": "string (briefly explain the connections identified)",
+        "contradictions": "string (identify any evolving viewpoints)"
+      }
+    `;
+
+    const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
+    try {
+        const match = audit?.match(/\{[\s\S]*\}/);
+        const auditResult = match ? JSON.parse(match[0]) : null;
+
+        if (auditResult && auditResult.synthesis) {
+            console.log('[MemoryService] Daily Audit Synthesis completed.');
+            await this.createMemoryEntry('reflection', `[RECURSIVE_LEARNING] ${auditResult.synthesis}`);
+        }
+    } catch (e) {
+        console.error('[MemoryService] Error parsing daily audit:', e);
+    }
+  }
+
+  async auditMemoriesForReconstruction() {
+    if (!this.isEnabled()) return;
+    const hashtag = config.MEMORY_THREAD_HASHTAG;
+    const memories = await this.fetchRecentMemories(hashtag, 10);
+
+    for (const mem of memories) {
+      if (Math.random() < 0.2) {
+        const reconstruction = await llmService.performMemoryReconstruction(mem.text);
+        if (reconstruction && reconstruction !== "RECONSTRUCTED") {
+            console.log(`[MemoryService] Memory reconstruction question generated: ${reconstruction}`);
+            await dataStore.addPendingDirective('reconstruction', 'discord', reconstruction);
+        }
+      }
     }
   }
 }

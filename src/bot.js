@@ -1970,7 +1970,7 @@ export class Bot {
         if (admin) {
             const channelId = admin.dmChannel?.id || `dm_${admin.id}`;
             const history = dataStore.getDiscordConversation(channelId);
-            const recentHistory = history.filter(h => h.timestamp > lastDiscordMemory);
+            const recentHistory = history.filter(h => !h.ephemeral).filter(h => h.timestamp > lastDiscordMemory);
 
             if (recentHistory.length >= 5) {
                 console.log(`[Bot] Found ${recentHistory.length} new Discord messages. Generating [INTERACTION] memory...`);
@@ -3259,6 +3259,11 @@ Identify the topic and main takeaway.`;
         if (action.tool === 'set_goal') {
             const { goal, description } = action.parameters || {};
             if (goal) {
+                const previousGoal = dataStore.getCurrentGoal();
+                if (previousGoal && previousGoal.goal !== goal) {
+                    console.log(`[Bot] PIVOTING goal from "${previousGoal.goal}" to "${goal}"`);
+                    if (memoryService.isEnabled()) await memoryService.createMemoryEntry("goal", `[PIVOT] Pivoted from "${previousGoal.goal}" to "${goal}". Reasoning: ${description}`);
+                }
                 console.log(`[Bot] Setting autonomous goal: ${goal}`);
                 await dataStore.setCurrentGoal(goal, description);
                 if (memoryService.isEnabled()) {
@@ -6170,7 +6175,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
                 'friend': { continue: 30 * multiplier, new: 60 * multiplier },
                 'acquaintance': { continue: 120 * multiplier, new: 240 * multiplier }
             };
-            const thresholds = modeThresholds[relationshipMode] || modeThresholds['friend'];
+            const season = dataStore.getRelationshipSeason();
+            const seasonMultiplier = (season === "summer") ? 0.5 : (season === "winter" ? 2.0 : 1.0);
+            const thresholds = modeThresholds[relationshipMode] || modeThresholds["friend"];
+            thresholds.continue *= seasonMultiplier;
+            thresholds.new *= seasonMultiplier;
 
 
                         // 0. Waiting Mode Check (PINING ENABLED)
@@ -6251,6 +6260,11 @@ ${recentInteractions ? `Recent Conversations:\n${recentInteractions}` : ''}
             } else if (quietMins >= thresholds.continue) {
                 shouldPoll = true;
                 pollReason = 'RELATIONSHIP_CONTINUATION';
+            if (season === "winter" && quietMins > 2880) {
+                console.log("[Bot] Winter season and long silence detected. Forcing Relationship Repair check-in.");
+                shouldPoll = true;
+                pollReason = "RELATIONSHIP_REPAIR";
+            }
                 isContinuing = true;
             }
 
@@ -7173,3 +7187,74 @@ ${JSON.stringify(results, null, 2)}
     }
   }
 }
+
+  async performSpecialistResearchProject(query) {
+    console.log(`[Bot] Initializing specialist research project: "${query}"`);
+    const admin = await discordService.getAdminUser();
+    const projectId = `res_${Date.now()}`;
+
+    // 1. Initial inquiry with sub-agent
+    const initialFindings = await this.performInternalInquiry(query, "RESEARCH_COORDINATOR");
+    await dataStore.updateResearchWhiteboard(projectId, [initialFindings]);
+
+    // 2. Peer Review / Skeptic (Suggestion 75)
+    const skepticPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      You are the RESEARCH_SKEPTIC.
+      Project: "${query}"
+      Findings to challenge: ${initialFindings}
+
+      INSTRUCTIONS:
+      - Act as a skeptical peer reviewer.
+      - Identify gaps, biases, or unverified claims in the initial findings.
+      - Suggest specific areas for external grounding.
+    `;
+    const skepticism = await llmService.generateResponse([{ role: 'system', content: skepticPrompt }], { useStep: true });
+
+    // 3. External research (Suggestion 76)
+    let externalContext = '';
+    try {
+        const searchResults = await googleSearchService.search(query, { useTrustedSources: true });
+        if (searchResults.length > 0) {
+            externalContext = `\n[WEB_SEARCH_RESULTS]: \n${searchResults.slice(0, 3).map(r => `- ${r.title} (${r.link}): ${r.snippet}`).join('\n')}`;
+        }
+    } catch (e) {
+        console.warn('[Bot] Specialist research: Google search failed.');
+    }
+
+    // 4. Final synthesis
+    const synthesisPrompt = `
+      Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+      You are the RESEARCH_SYNTHESIZER.
+
+      Project: "${query}"
+      Initial Findings: ${initialFindings}
+      CHALLENGES: ${skepticism}
+      ${externalContext}
+
+      INSTRUCTIONS:
+      - Combine internal reflection with external grounding.
+      - Maintain high quality and use trusted sources.
+      - Reach a final, verified conclusion.
+    `;
+
+    const finalReport = await llmService.generateResponse([{ role: 'system', content: synthesisPrompt }], { useStep: true });
+
+    if (admin) {
+        await discordService.sendSpontaneousMessage(`[RESEARCH_REPORT] \n\nProject: "${query}"\n\n${finalReport}`);
+    }
+
+    return finalReport;
+  }
+}
+
+  async attemptCrossPlatformSocialPost(privateThought) {
+    console.log('[Bot] Attempting privacy-safe cross-platform social post...');
+    const adapted = await llmService.generalizePrivateThought(privateThought);
+    if (adapted && adapted !== "PRIVATE") {
+        console.log(`[Bot] Posting generalized thought to Bluesky: ${adapted}`);
+        await blueskyService.post(adapted);
+        await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+        await dataStore.addRecentThought('bluesky', adapted);
+    }
+  }

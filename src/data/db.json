@@ -280,5 +280,15 @@
   "admin_availability": "available",
   "shared_stances": [],
   "relational_goals": [],
-  "curiosity_reservoir": []
+  "curiosity_reservoir": [],
+  "research_whiteboard": {},
+  "self_corrections": [],
+  "persona_advice": [],
+  "shared_media": [],
+  "mutual_learnings": [],
+  "resilience_tracking": {
+    "disagreements": 0,
+    "recovery_speed": 1
+  },
+  "digital_artifacts": []
 }

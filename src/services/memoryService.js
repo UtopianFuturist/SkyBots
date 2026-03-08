@@ -10,6 +10,7 @@ class MemoryService {
     this.hashtag = config.MEMORY_THREAD_HASHTAG;
     this.recentMemories = [];
     this.processingQueue = Promise.resolve();
+    this.rootPost = null;
   }
 
   get js() { return this; }
@@ -24,8 +25,13 @@ class MemoryService {
         uri: p.uri, cid: p.cid, text: p.record.text.replace(hashtag, '').trim(),
         category: this._extractCategory(p.record.text),
         timestamp: new Date(p.record.createdAt).getTime(),
-        indexedAt: p.record.createdAt
+        indexedAt: p.record.createdAt,
+        originalPost: p
       }));
+      if (this.recentMemories.length > 0) {
+        const root = this.recentMemories[this.recentMemories.length - 1].originalPost;
+        this.rootPost = root.record.reply?.root || root;
+      }
       return this.recentMemories;
     } catch (error) { return []; }
   }
@@ -57,8 +63,24 @@ class MemoryService {
     const history = await this.fetchRecentMemories(this.hashtag, 20);
     if (checkExactRepetition(context, history, 20)) return;
     try {
-      const entryText = await llmService.generateResponse([{ role: 'system', content: `Generate memory entry for type: ${type}. Context: ${context}.` }], { useStep: true, preface_system_prompt: false });
-      if (entryText) return await blueskyService.post(ensureStandardTag(entryText.trim(), type) + " " + this.hashtag);
+      const systemPrompt = `Generate a concise memory entry for type: ${type}.
+Current Year: 2026.
+Constraint: Max 240 characters including the tag.
+Context: ${context}.`;
+      let entryText = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
+      if (entryText) {
+        entryText = ensureStandardTag(entryText.trim(), type);
+        if (entryText.length > 240) entryText = entryText.substring(0, 237) + "...";
+        const finalContent = `${entryText} ${this.hashtag}`;
+
+        if (this.rootPost) {
+          return await blueskyService.postReply(this.rootPost, finalContent);
+        } else {
+          const res = await blueskyService.post(finalContent);
+          if (res) this.rootPost = res;
+          return res;
+        }
+      }
     } catch (error) {}
     return null;
   }

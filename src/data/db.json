@@ -256,7 +256,6 @@
   "intimacy_scores": {},
   "last_interaction_times": {},
   "moltbook_instructions": "",
-  "admin_exhaustion": 0,
   "refusal_counts": {
     "global": 0,
     "discord": 0,
@@ -273,5 +272,13 @@
   "inside_jokes": [],
   "energy_level": 1,
   "post_continuations": [],
-  "network_sentiment": 0.5
+  "network_sentiment": 0.5,
+  "admin_interests": {},
+  "relationship_season": "spring",
+  "relational_reflections": [],
+  "strong_relationship": false,
+  "admin_availability": "available",
+  "shared_stances": [],
+  "relational_goals": [],
+  "curiosity_reservoir": []
 }

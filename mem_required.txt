@@ -1,0 +1,10 @@
+cleanupMemoryThread
+createMemoryEntry
+deleteMemory
+formatMemoriesForPrompt
+getLatestMoodMemory
+getRecentMemories
+isEnabled
+js
+searchMemories
+secureAllThreads

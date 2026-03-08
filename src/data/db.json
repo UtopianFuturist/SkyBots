@@ -251,5 +251,44 @@
   "image_subjects": [],
   "discord_waiting_until": 0,
   "discord_session_start": 1772735180233,
-  "suppressed_topics": []
+  "suppressed_topics": [],
+  "interaction_hunger": 0.5,
+  "intimacy_scores": {},
+  "last_interaction_times": {},
+  "moltbook_instructions": "",
+  "refusal_counts": {
+    "global": 0,
+    "discord": 0,
+    "bluesky": 0
+  },
+  "admin_emotional_states": [],
+  "last_admin_vibe_check": 0,
+  "config": {
+    "bluesky_post_cooldown": 90,
+    "moltbook_post_cooldown": 240,
+    "max_thread_chunks": 3
+  },
+  "last_deep_keyword_refresh": 0,
+  "inside_jokes": [],
+  "energy_level": 1,
+  "post_continuations": [],
+  "network_sentiment": 0.5,
+  "admin_interests": {},
+  "relationship_season": "spring",
+  "relational_reflections": [],
+  "strong_relationship": false,
+  "admin_availability": "available",
+  "shared_stances": [],
+  "relational_goals": [],
+  "curiosity_reservoir": [],
+  "research_whiteboard": {},
+  "self_corrections": [],
+  "persona_advice": [],
+  "shared_media": [],
+  "mutual_learnings": [],
+  "resilience_tracking": {
+    "disagreements": 0,
+    "recovery_speed": 1
+  },
+  "digital_artifacts": []
 }

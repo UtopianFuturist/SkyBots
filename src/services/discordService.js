@@ -614,8 +614,13 @@ class DiscordService {
             linkContext = linkResults.join(' ');
         }
 
+        const isEphemeral = /ephemeral|private|off the record|don.t record/i.test(message.content);
+        if (isEphemeral) {
+            console.log("[DiscordService] Ephemeral session detected. Skipping persistent storage for this turn.");
+            // Still save to a temporary non-persistent log if needed, or just skip.
+        }
         await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content + (linkContext ? ` ${linkContext}` : ''), {
-            authorId: message.author.id,
+            authorId: message.author.id, ephemeral: isEphemeral,
             username: message.author.username
         });
 

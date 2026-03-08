@@ -20,10 +20,17 @@ class LLMService {
     this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.baseUrl = 'https://integrate.api.nvidia.com/v1';
     this.dataStore = null;
+    this.adminDid = null;
+    this.botDid = null;
   }
 
   setDataStore(ds) {
     this.dataStore = ds;
+  }
+
+  setIdentities(adminDid, botDid) {
+    this.adminDid = adminDid;
+    this.botDid = botDid;
   }
 
   async generateResponse(messages, options = {}) {
@@ -186,6 +193,19 @@ class LLMService {
         return match ? JSON.parse(match[0]) : null;
     } catch (e) {
         return null;
+    }
+  }
+
+  async performFollowUpPoll(context) {
+    const { history, lastBotMessage, currentMood, adminName, isWaitingMode = false } = context;
+    const historyFormatted = this._formatHistory(history, true);
+    const systemPrompt = `Follow-up poll. Decide if you should message. Respond with JSON { "decision": "follow-up|none", "reason": "", "message": "" }.`;
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
+    try {
+        const match = response?.match(/\{[\s\S]*\}/);
+        return match ? JSON.parse(match[0]) : { decision: 'none' };
+    } catch (e) {
+        return { decision: 'none' };
     }
   }
 }

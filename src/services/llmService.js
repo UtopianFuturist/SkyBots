@@ -120,6 +120,7 @@ class LLMService {
   async shouldIncludeSensory() { return false; }
   async summarizeWebPage() { return "Web content summary."; }
   async generateRefusalExplanation() { return "I cannot fulfill this request."; }
+  async isUrlSafe() { return { safe: true }; }
 }
 
 export const llmService = new LLMService();

@@ -1,0 +1,17 @@
+_focusMode
+_send
+client
+fetchAdminHistory
+getAdminUser
+init
+isEnabled
+isInitializing
+isProcessingAdminRequest
+js
+lastLoginTime
+searchHistory
+sendSpontaneousMessage
+setBotInstance
+startTyping
+status
+stopTyping

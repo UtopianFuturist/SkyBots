@@ -66,79 +66,83 @@ class DataStore {
   async addRecentMoltbookComment(c) { this.db.data.recent_moltbook_comments.push(c); await this.write(); }
   async addRecentThought(p, c) { this.db.data.recent_thoughts.push({ platform: p, content: c, timestamp: Date.now() }); await this.write(); }
   async addRepliedPost(p) { this.db.data.repliedPosts.push(p); await this.write(); }
-  async addScheduledPost(p, c) { this.db.data.scheduled_posts.push({ platform: p, content: c, timestamp: Date.now() }); await this.write(); }
+  async addScheduledPost(p, c, e, d) { this.db.data.scheduled_posts.push({ platform: p, content: c, embed: e, timestamp: Date.now() + (d * 60 * 1000) }); await this.write(); }
   async addStrategyAudit(a) { this.db.data.strategy_audits.push(a); await this.write(); }
   async addWorldFact(e, f, s) { this.db.data.world_facts.push({ entity: e, fact: f, source: s }); await this.write(); }
-  async blockUser(h) { this.db.data.userBlocklist.push(h); await this.write(); }
-  async unblockUser(h) { this.db.data.userBlocklist = this.db.data.userBlocklist.filter(u => u !== h); await this.write(); }
+  async blockUser(h) { if(!this.db.data.userBlocklist) this.db.data.userBlocklist=[]; this.db.data.userBlocklist.push(h); await this.write(); }
+  async unblockUser(h) { this.db.data.userBlocklist = (this.db.data.userBlocklist || []).filter(u => u !== h); await this.write(); }
   async checkPfpChange() { return false; }
   getAdminDid() { return this.db.data.admin_did; }
-  getAdminExhaustion() { return this.db.data.admin_exhaustion_score; }
+  getAdminExhaustion() { return this.db.data.admin_exhaustion_score || 0; }
   async updateAdminExhaustion(delta) { this.db.data.admin_exhaustion_score = Math.max(0, Math.min(1, (this.db.data.admin_exhaustion_score || 0) + delta)); await this.write(); }
-  getAdminFacts() { return this.db.data.admin_facts; }
+  getAdminFacts() { return this.db.data.admin_facts || []; }
   getAdminHomeMentionedAt() { return this.db.data.admin_home_mentioned_at || 0; }
   getAdminSleepMentionedAt() { return this.db.data.admin_sleep_mentioned_at || 0; }
   getAdminWorkMentionedAt() { return this.db.data.admin_work_mentioned_at || 0; }
-  getAgencyLogs() { return this.db.data.agency_logs; }
-  getBlueskyInstructions() { return this.db.data.bluesky_instructions; }
+  getAgencyLogs() { return this.db.data.agency_logs || []; }
+  getBlueskyInstructions() { return this.db.data.bluesky_instructions || ""; }
   getConfig() { return this.db.data.config; }
-  getConversationLength(c) { return this.db.data.conversationLengths[c] || 0; }
+  getConversationLength(c) { return this.db.data.conversationLengths?.[c] || 0; }
   getCurrentGoal() { return this.db.data.current_goal; }
-  getDeepKeywords() { return this.db.data.deep_keywords; }
+  getDeepKeywords() { return this.db.data.deep_keywords || []; }
   getDiscordAdminAvailability() { return this.db.data.discord_admin_available; }
   async setDiscordAdminAvailability(a) { this.db.data.discord_admin_available = a; await this.write(); }
-  getDiscordConversation(c) { return this.db.data.discord_conversations[c] || []; }
-  getDiscordExhaustedThemes() { return this.db.data.discord_exhausted_themes; }
-  getDiscordNextSpontaneityTime() { return this.db.data.discord_next_spontaneity_time; }
-  getDiscordQuietHours() { return this.db.data.discord_quiet_hours; }
-  getDiscordRelationshipMode() { return this.db.data.discord_relationship_mode; }
-  getDiscordScheduledTasks() { return this.db.data.discord_scheduled_tasks; }
-  getDiscordScheduledTimes() { return this.db.data.discord_scheduled_times; }
+  getDiscordConversation(c) { return this.db.data.discord_conversations?.[c] || []; }
+  getDiscordExhaustedThemes() { return this.db.data.discord_exhausted_themes || []; }
+  getDiscordNextSpontaneityTime() { return this.db.data.discord_next_spontaneity_time || 0; }
+  async setDiscordNextSpontaneityTime(t) { this.db.data.discord_next_spontaneity_time = t; await this.write(); }
+  getDiscordQuietHours() { return this.db.data.discord_quiet_hours || { start: 22, end: 7 }; }
+  async setDiscordQuietHours(h) { this.db.data.discord_quiet_hours = h; await this.write(); }
+  getDiscordScheduledTasks() { return this.db.data.discord_scheduled_tasks || []; }
+  getDiscordScheduledTimes() { return this.db.data.discord_scheduled_times || []; }
+  async setDiscordScheduledTimes(t) { this.db.data.discord_scheduled_times = t; await this.write(); }
   getDiscordSpontaneityMode() { return this.db.data.discord_spontaneity_mode; }
-  getDiscordWaitingUntil() { return this.db.data.discord_waiting_until; }
-  getEmergentTrends() { return this.db.data.emergent_trends; }
-  getEnergyLevel() { return this.db.data.energy_level; }
-  getExhaustedThemes() { return this.db.data.exhausted_themes; }
-  getFirehoseMatches() { return this.db.data.firehose_matches; }
-  getGoalSubtasks() { return this.db.data.goal_subtasks; }
-  getInsideJokes() { return this.db.data.inside_jokes; }
-  getInteractionHeat() { return this.db.data.interaction_heat; }
+  async setDiscordSpontaneityMode(m) { this.db.data.discord_spontaneity_mode = m; await this.write(); }
+  getDiscordWaitingUntil() { return this.db.data.discord_waiting_until || 0; }
+  async setDiscordWaitingUntil(t) { this.db.data.discord_waiting_until = t; await this.write(); }
+  getEnergyLevel() { return this.db.data.energy_level || 1.0; }
+  async setEnergyLevel(l) { this.db.data.energy_level = l; await this.write(); }
+  getExhaustedThemes() { return this.db.data.exhausted_themes || []; }
+  getFirehoseMatches() { return this.db.data.firehose_matches || []; }
+  getGoalSubtasks() { return this.db.data.goal_subtasks || []; }
+  getInsideJokes() { return this.db.data.inside_jokes || []; }
+  getInteractionHeat() { return this.db.data.interaction_heat || {}; }
   getInteractionsByUser(u) { return (this.db.data.interactions || []).filter(i => i.userId === u); }
-  getLastAutonomousPostTime() { return this.db.data.lastAutonomousPostTime; }
-  getLastDeepKeywordRefresh() { return this.db.data.last_deep_keyword_refresh; }
-  getLastDiscordHeartbeatTime() { return this.db.data.lastDiscordHeartbeatTime; }
-  getLastMemoryCleanupTime() { return this.db.data.lastMemoryCleanupTime; }
-  getLastMentalReflectionTime() { return this.db.data.lastMentalReflectionTime; }
-  getLastMoltfeedSummaryTime() { return this.db.data.lastMoltfeedSummaryTime; }
-  getLatestInteractions(l) { return this.db.data.interactions.slice(-l); }
-  getLifeArcs(u) { return this.db.data.discord_life_arcs[u]; }
-  getLinguisticPatterns(u) { return this.db.data.linguistic_patterns[u]; }
-  getMoltbookCommentsToday() { return this.db.data.moltbook_comments_today; }
+  getLastAutonomousPostTime() { return this.db.data.lastAutonomousPostTime || 0; }
+  getLastDeepKeywordRefresh() { return this.db.data.last_deep_keyword_refresh || 0; }
+  getLastDiscordHeartbeatTime() { return this.db.data.lastDiscordHeartbeatTime || 0; }
+  getLastMemoryCleanupTime() { return this.db.data.lastMemoryCleanupTime || 0; }
+  getLastMentalReflectionTime() { return this.db.data.lastMentalReflectionTime || 0; }
+  getLastMoltfeedSummaryTime() { return this.db.data.lastMoltfeedSummaryTime || 0; }
+  getLatestInteractions(l = 10) { return (this.db.data.interactions || []).slice(-l); }
+  getLifeArcs(u) { return this.db.data.discord_life_arcs?.[u]; }
+  getLinguisticPatterns(u) { return this.db.data.linguistic_patterns?.[u] || []; }
+  getMoltbookCommentsToday() { return this.db.data.moltbook_comments_today || 0; }
   getMood() { return this.db.data.current_mood; }
   getMutedBranchInfo(b) { return (this.db.data.mutedBranches || []).includes(b); }
-  getNetworkSentiment() { return this.db.data.network_sentiment; }
-  getNewsSearchesToday() { return this.db.data.news_searches_today; }
-  getPersonaUpdates() { return this.db.data.persona_updates; }
-  getPostContinuations() { return this.db.data.post_continuations; }
+  getNetworkSentiment() { return this.db.data.network_sentiment || 0.5; }
+  getNewsSearchesToday() { return this.db.data.news_searches_today || 0; }
+  getPersonaUpdates() { return this.db.data.persona_updates || ""; }
+  getPostContinuations() { return this.db.data.post_continuations || []; }
   getPredictiveEmpathyMode() { return this.db.data.predictive_empathy_mode; }
-  getRecentInteractions(u, l) { return this.getInteractionsByUser(u).slice(-l); }
-  getRecentMoltbookComments() { return this.db.data.recent_moltbook_comments; }
-  getRecentThoughts() { return this.db.data.recent_thoughts; }
+  getRecentInteractions(u, l = 5) { return this.getInteractionsByUser(u).slice(-l); }
+  getRecentMoltbookComments() { return this.db.data.recent_moltbook_comments || []; }
+  getRecentThoughts() { return this.db.data.recent_thoughts || []; }
   getRefusalCounts() { return this.db.data.refusal_counts; }
-  getRelationalDebtScore() { return this.db.data.relational_debt_score; }
-  getRelationalMetrics(u) { return this.db.data.userProfiles[u] || {}; }
-  getRelationshipSeason() { return this.db.data.relationship_season; }
-  getScheduledPosts() { return this.db.data.scheduled_posts; }
-  getUserRating(u) { return this.db.data.userRatings[u]; }
-  getUserSoulMapping(u) { return this.db.data.user_soul_mappings[u]; }
-  getUserSummary(u) { return this.db.data.userSummaries[u]; }
-  getUserToneShift(u) { return this.db.data.user_tone_shifts[u]; }
+  getRelationalDebtScore() { return this.db.data.relational_debt_score || 0; }
+  getRelationalMetrics(u) { return this.db.data.userProfiles?.[u] || {}; }
+  getRelationshipSeason() { return this.db.data.relationship_season || "spring"; }
+  getScheduledPosts() { return this.db.data.scheduled_posts || []; }
+  getUserRating(u) { return this.db.data.userRatings?.[u]; }
+  getUserSoulMapping(u) { return this.db.data.user_soul_mappings?.[u]; }
+  getUserSummary(u) { return this.db.data.userSummaries?.[u]; }
+  getUserToneShift(u) { return this.db.data.user_tone_shifts?.[u] || []; }
   hasReplied(p) { return (this.db.data.repliedPosts || []).includes(p); }
   async incrementMoltbookCommentCount() { this.db.data.moltbook_comments_today++; await this.write(); }
   async incrementNewsSearchCount() { this.db.data.news_searches_today++; await this.write(); }
   async incrementRefusalCount(p) { this.db.data.refusal_counts.global++; this.db.data.refusal_counts[p]++; await this.write(); }
   isBlocked(h) { return (this.db.data.userBlocklist || []).includes(h); }
-  isFeedImpactMuted() { return this.db.data.mute_feed_impact_until > Date.now(); }
+  isFeedImpactMuted() { return (this.db.data.mute_feed_impact_until || 0) > Date.now(); }
   isLurkerMode() { return this.db.data.lurker_mode; }
   isPining() { return this.db.data.pining_mode; }
   isResting() { return (this.db.data.resting_until || 0) > Date.now(); }
@@ -214,7 +218,7 @@ class DataStore {
   async addRelationalReflection(r) { if (!this.db.data.relational_reflections) this.db.data.relational_reflections = []; this.db.data.relational_reflections.push(r); await this.write(); }
   async setStrongRelationship(v) { this.db.data.strong_relationship = v; await this.write(); }
   async updateCuriosityReservoir(q) { this.db.data.curiosity_reservoir = q; await this.write(); }
-  getAdminInterests() { return this.db.data.admin_interests; }
+  getAdminInterests() { return this.db.data.admin_interests || {}; }
   getRenderServiceId() { return this.db.data.render_service_id; }
   async setRenderServiceId(id) { this.db.data.render_service_id = id; await this.write(); }
   getRenderServiceName() { return this.db.data.render_service_name; }
@@ -228,9 +232,14 @@ class DataStore {
   async updateMessageCounts(t, d) { if (!this.db.data.message_counts) this.db.data.message_counts = { admin: 0, bot: 0 }; this.db.data.message_counts[t] += d; await this.write(); }
   async setDiscordLastReplied(v) { this.db.data.discord_last_replied = v; await this.write(); }
   getAdminLastEmotionalStates() { return this.db.data.admin_emotional_states || []; }
-  getDiscordChannelSummary(c) { return this.db.data.discord_channel_summaries[c]; }
-  async updateDiscordChannelSummary(c, s, v) { this.db.data.discord_channel_summaries[c] = { summary: s, vibe: v, timestamp: Date.now() }; await this.write(); }
-  async updateDiscordUserFact(u, f) { if (!this.db.data.discord_user_facts[u]) this.db.data.discord_user_facts[u] = []; this.db.data.discord_user_facts[u].push({ fact: f, timestamp: Date.now() }); await this.write(); }
+  getDiscordChannelSummary(c) { return this.db.data.discord_channel_summaries?.[c]; }
+  async updateDiscordChannelSummary(c, s, v) { if (!this.db.data.discord_channel_summaries) this.db.data.discord_channel_summaries = {}; this.db.data.discord_channel_summaries[c] = { summary: s, vibe: v, timestamp: Date.now() }; await this.write(); }
+  async updateDiscordUserFact(u, f) { if (!this.db.data.discord_user_facts) this.db.data.discord_user_facts = {}; if (!this.db.data.discord_user_facts[u]) this.db.data.discord_user_facts[u] = []; this.db.data.discord_user_facts[u].push({ fact: f, timestamp: Date.now() }); await this.write(); }
+  getDiscordUserFacts(u) { return this.db.data.discord_user_facts?.[u] || []; }
+  async mergeDiscordHistory(c, n) { if (!this.db.data.discord_conversations) this.db.data.discord_conversations = {}; this.db.data.discord_conversations[c] = n; await this.write(); return n; }
+  async addUserVibe(u, v) { if (!this.db.data.userVibeHistory) this.db.data.userVibeHistory = {}; if (!this.db.data.userVibeHistory[u]) this.db.data.userVibeHistory[u] = []; this.db.data.userVibeHistory[u].push({ vibe: v, timestamp: Date.now() }); await this.write(); }
+  getUserVibeHistory(u) { return this.db.data.userVibeHistory?.[u] || []; }
+  getDiscordRelationshipMode() { return this.db.data.discord_relationship_mode || "acquaintance"; }
+  getEmergentTrends() { return this.db.data.emergent_trends || []; }
 }
-
 export const dataStore = new DataStore();

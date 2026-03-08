@@ -4,11 +4,7 @@ import config from '../../config.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, stripWrappingQuotes, checkSimilarity, GROUNDED_LANGUAGE_DIRECTIVES, isSlop, sanitizeCjkCharacters } from '../utils/textUtils.js';
 import { moltbookService } from './moltbookService.js';
 
-export const persistentAgent = new https.Agent({
-  keepAlive: true,
-  maxSockets: 10,
-  timeout: 60000,
-});
+export const persistentAgent = new https.Agent({ keepAlive: true, maxSockets: 10, timeout: 60000 });
 
 class LLMService {
   constructor() {
@@ -23,13 +19,11 @@ class LLMService {
     this.memoryProvider = null;
     this.skillsContent = "";
   }
-
   get js() { return this; }
   setDataStore(ds) { this.dataStore = ds; }
   setIdentities(adminDid, botDid) { this.adminDid = adminDid; this.botDid = botDid; }
   setMemoryProvider(mp) { this.memoryProvider = mp; }
   setSkillsContent(content) { this.skillsContent = content; }
-
   async generateResponse(messages, options = {}) {
     const { useStep = false, abortSignal = null } = options;
     if (abortSignal && (typeof abortSignal.addEventListener !== 'function')) options.abortSignal = null;
@@ -37,11 +31,8 @@ class LLMService {
     const body = { model, messages, max_tokens: options.max_tokens || 1000, temperature: options.temperature || 0.7 };
     try {
       const response = await fetch(`${this.baseUrl}/chat/completions`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
-        body: JSON.stringify(body),
-        agent: persistentAgent,
-        signal: options.abortSignal
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
+        body: JSON.stringify(body), agent: persistentAgent, signal: options.abortSignal
       });
       if (!response.ok) throw new Error(`NVIDIA NIM API error (${response.status})`);
       const data = await response.json();
@@ -52,17 +43,14 @@ class LLMService {
       return null;
     }
   }
-
   _formatHistory(history, isAdmin = false) {
     if (!history || !Array.isArray(history)) return "";
     return history.filter(h => !h.ephemeral).map(h => `${h.role === 'assistant' ? 'Assistant' : 'User'}: ${h.content || h.text}`).join('\n');
   }
-
   _getTemporalContext() {
     const now = new Date();
     return { current_time: now.toISOString(), local_time: now.toLocaleString(), day_of_week: now.toLocaleDateString('en-US', { weekday: 'long' }) };
   }
-
   async performAgenticPlanning() { return { intent: "none", actions: [], confidence_score: 1.0, strategy: { tone: "neutral", theme: "none" } }; }
   async performPersonaHeartbeatPoll() { return { decision: 'continue', reason: "Idle maintenance" }; }
   async checkConsistency() { return { consistent: true }; }
@@ -121,6 +109,8 @@ class LLMService {
   async summarizeWebPage() { return "Web content summary."; }
   async generateRefusalExplanation() { return "I cannot fulfill this request."; }
   async isUrlSafe() { return { safe: true }; }
+  async extractRelationalVibe() { return "neutral"; }
+  async extractScheduledTask() { return null; }
+  async validateResultRelevance() { return true; }
 }
-
 export const llmService = new LLMService();

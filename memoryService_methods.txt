@@ -1,0 +1,12 @@
+auditMemoriesForReconstruction
+cleanupMemoryThread
+createMemoryEntry
+deleteMemory
+formatMemoriesForPrompt
+getLatestMoodMemory
+getRecentMemories
+isEnabled
+js
+performDailyKnowledgeAudit
+searchMemories
+secureAllThreads

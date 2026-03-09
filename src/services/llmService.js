@@ -3,6 +3,9 @@ import config from '../../config.js';
 import fs from 'fs/promises';
 import { dataStore } from './dataStore.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags } from '../utils/textUtils.js';
+import https from 'https';
+
+export const persistentAgent = new https.Agent({ keepAlive: true });
 
 class LLMService {
   constructor() {
@@ -41,7 +44,8 @@ class LLMService {
         const res = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${this.apiKey}` },
-          body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 1024 })
+          body: JSON.stringify({ model, messages, temperature: 0.7, max_tokens: 1024 }),
+          agent: persistentAgent
         });
         if (res.status === 429) {
             await new Promise(r => setTimeout(r, 2000 * (i + 1)));

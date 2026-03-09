@@ -60,35 +60,72 @@ Guidelines:
 
     const model = options.useStep ? config.STEP_MODEL : (options.useCoder ? config.CODER_MODEL : config.LLM_MODEL);
 
-    try {
-      const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
-        },
-        body: JSON.stringify({
-          model: model,
-          messages: [{ role: 'system', content: systemPrompt }, ...messages],
-          temperature: 0.7,
-          max_tokens: 1024
-        }),
-        agent: persistentAgent,
-        signal: options.abortSignal
-      });
+    let attempts = 0;
+    const maxAttempts = 3;
 
-      const data = await response.json();
-      const content = data.choices?.[0]?.message?.content;
+    while (attempts < maxAttempts) {
+        attempts++;
+        try {
+          const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
+            },
+            body: JSON.stringify({
+              model: model,
+              messages: [{ role: 'system', content: systemPrompt }, ...messages],
+              temperature: 0.7,
+              max_tokens: 1024
+            }),
+            agent: persistentAgent,
+            signal: options.abortSignal,
+            timeout: 30000 // 30s timeout
+          });
 
-      if (options.traceId) {
-          await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1].content, response: content });
-      }
+          if (!response.ok) {
+              const errorText = await response.text();
+              console.warn(`[LLMService] Attempt ${attempts} failed: HTTP ${response.status} - ${errorText.substring(0, 100)}`);
+              if (response.status === 429 || response.status >= 500) {
+                  await new Promise(r => setTimeout(r, 2000 * attempts));
+                  continue;
+              }
+              return null;
+          }
 
-      return content;
-    } catch (error) {
-      console.error('[LLMService] NVIDIA NIM Error:', error);
-      return null;
+          const rawBody = await response.text();
+          if (!rawBody) {
+              console.warn(`[LLMService] Attempt ${attempts} returned empty body.`);
+              await new Promise(r => setTimeout(r, 1000));
+              continue;
+          }
+
+          let data;
+          try {
+              data = JSON.parse(rawBody);
+          } catch (e) {
+              console.error(`[LLMService] Attempt ${attempts} - JSON parse error:`, e.message);
+              await new Promise(r => setTimeout(r, 1000));
+              continue;
+          }
+
+          const content = data.choices?.[0]?.message?.content;
+
+          if (options.traceId && this.ds) {
+              await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1].content, response: content });
+          }
+
+          return content;
+        } catch (error) {
+          console.error(`[LLMService] Attempt ${attempts} - NVIDIA NIM Error:`, error.message);
+          if (attempts < maxAttempts) {
+              await new Promise(r => setTimeout(r, 2000 * attempts));
+              continue;
+          }
+          return null;
+        }
     }
+    return null;
   }
 
   async performPrePlanning(text, history, vision, platform, mood, refusalCounts) {
@@ -101,9 +138,9 @@ Guidelines:
 
   async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, config, status, vibe, refusalCounts, signal, prePlan) {
       const prompt = `Plan actions for: "${text}". isAdmin: ${isAdmin}. Platform: ${platform}.
-Current Mood: ${JSON.stringify(this.ds.getMood())}
+Current Mood: ${JSON.stringify(this.ds?.getMood() || {})}
 PrePlan Analysis: ${JSON.stringify(prePlan)}
-Exhausted Themes: ${exhaustedThemes.join(', ')}
+Exhausted Themes: ${(exhaustedThemes || []).join(', ')}
 
 Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "query": "params" }], "suggested_mood": "label" }`;
       const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, abortSignal: signal });
@@ -113,7 +150,7 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
   }
 
   async evaluateAndRefinePlan(plan, context) {
-      return { decision: 'proceed', refined_actions: plan.actions };
+      return { decision: 'proceed', refined_actions: plan?.actions || [] };
   }
 
   async performSafetyAnalysis(text, context) {
@@ -156,7 +193,7 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
       return await this.generateResponse([{ role: 'system', content: `You are ${role}. Research: ${query}` }], { useStep: true });
   }
 
-  async selectBestResult(query, results, type) { return results[0]; }
+  async selectBestResult(query, results, type) { return results?.[0]; }
   async decomposeGoal(goal) { return "Decomposed goal"; }
 
   async extractRelationalVibe(history) { return "friendly"; }
@@ -198,6 +235,7 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
   }
 
   _formatHistory(history, includeRole = true) {
+      if (!history) return "";
       return history.map(h => `${includeRole ? (h.role || h.author) + ': ' : ''}${h.content || h.text}`).join('\n');
   }
 }

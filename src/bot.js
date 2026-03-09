@@ -284,7 +284,7 @@ export class Bot {
   async performAutonomousPost() {
     const dConfig = dataStore.getConfig();
     const currentMood = dataStore.getMood();
-    const topicPrompt = \`Identify a deep topic for an autonomous post. Preferred: \${dConfig.post_topics.join(', ')}. Respond with ONLY topic.\`;
+    const topicPrompt = `Identify a deep topic for an autonomous post. Preferred: ${dConfig.post_topics.join(', ')}. Respond with ONLY topic.`;
     const topic = (await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true }))?.trim() || "existence";
 
     const postType = Math.random() < 0.3 ? 'image' : 'text';
@@ -294,14 +294,14 @@ export class Bot {
             attempts++;
             const res = await imageService.generateImage(topic, { allowPortraits: false, mood: currentMood });
             if (res && (await llmService.isImageCompliant(res.buffer)).compliant) {
-                const content = await llmService.generateResponse([{ role: 'system', content: \`Post about: \${topic}\` }], { useStep: true });
+                const content = await llmService.generateResponse([{ role: 'system', content: `Post about: ${topic}` }], { useStep: true });
                 const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
                 await blueskyService.post(content, { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: topic }] });
                 return;
             }
         }
     }
-    const content = await llmService.generateResponse([{ role: 'system', content: \`Deep thought about \${topic}\` }], { useStep: true });
+    const content = await llmService.generateResponse([{ role: 'system', content: `Deep thought about ${topic}` }], { useStep: true });
     if (content) {
         await blueskyService.post(content);
         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
@@ -323,14 +323,14 @@ export class Bot {
       const currentMood = dataStore.getMood();
       const timeline = await blueskyService.getTimeline(20);
       const vibeText = timeline.map(item => item.post.record.text).join('\n');
-      await llmService.generateResponse([{ role: 'system', content: \`Analyze the feed vibe: \${vibeText}. Current mood: \${JSON.stringify(currentMood)}. Update your mood.\` }], { useStep: true });
+      await llmService.generateResponse([{ role: 'system', content: `Analyze the feed vibe: ${vibeText}. Current mood: ${JSON.stringify(currentMood)}. Update your mood.` }], { useStep: true });
   }
 
   async checkDiscordSpontaneity() {
       if (discordService.status !== 'online') return;
       const admin = await discordService.getAdminUser();
       if (!admin) return;
-      const history = dataStore.getDiscordConversation(\`dm_\${admin.id}\`);
+      const history = dataStore.getDiscordConversation(`dm_${admin.id}`);
       if (history.length === 0) return;
       const lastMsg = history[history.length - 1];
       if (lastMsg.role === 'assistant') return;

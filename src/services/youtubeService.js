@@ -1,71 +1,16 @@
 import fetch from 'node-fetch';
 import config from '../../config.js';
 
-class YouTubeService {
-  constructor() {
-    this.apiKey = config.YOUTUBE_API_KEY;
-    this.baseUrl = 'https://www.googleapis.com/youtube/v3';
-  }
-
-  async getVideoDetails(videoId) {
-    const url = `${this.baseUrl}/videos?key=${this.apiKey}&id=${videoId}&part=status,snippet`;
+class YoutubeService {
+  async search(query) {
+    if (!config.YOUTUBE_API_KEY) return "YouTube search not configured.";
     try {
+      const url = `https://www.googleapis.com/youtube/v3/search?part=snippet&maxResults=3&q=${encodeURIComponent(query)}&type=video&key=${config.YOUTUBE_API_KEY}`;
       const response = await fetch(url);
       const data = await response.json();
-      if (data.items && data.items.length > 0) {
-        return data.items[0];
-      }
-      return null;
-    } catch (error) {
-      console.error(`[YouTubeService] Error fetching video details for ${videoId}:`, error);
-      return null;
-    }
-  }
-
-  async search(query) {
-    const searchUrl = `${this.baseUrl}/search?key=${this.apiKey}&q=${encodeURIComponent(query)}&part=snippet&type=video&maxResults=5`;
-    try {
-      console.log(`[YouTubeService] Searching for: "${query}"`);
-      const response = await fetch(searchUrl);
-      const data = await response.json();
-
-      if (!response.ok) {
-        const errorDetails = data.error ? JSON.stringify(data.error, null, 2) : 'No additional error details.';
-        console.error(`[YouTubeService] YouTube API error (${response.status}):`, errorDetails);
-        throw new Error(`YouTube API error (${response.status})`);
-      }
-
-      if (!data.items || data.items.length === 0) {
-        console.log(`[YouTubeService] No videos found for "${query}".`);
-        return [];
-      }
-
-      console.log(`[YouTubeService] Found ${data.items.length} potential videos for "${query}".`);
-      const results = [];
-      for (const item of data.items) {
-        const videoId = item.id.videoId;
-        const details = await this.getVideoDetails(videoId);
-        if (details && details.status.uploadStatus === 'processed' && details.status.embeddable) {
-          console.log(`[YouTubeService] Found available video: "${details.snippet.title}" (ID: ${videoId})`);
-          results.push({
-            title: details.snippet.title,
-            videoId: videoId,
-            thumbnail: details.snippet.thumbnails.default.url,
-            channel: details.snippet.channelTitle,
-            description: details.snippet.description,
-          });
-        } else {
-          console.log(`[YouTubeService] Skipping unavailable video: ID ${videoId}`);
-        }
-      }
-
-      console.log(`[YouTubeService] Found ${results.length} available videos for "${query}" after checking details.`);
-      return results;
-    } catch (error) {
-      console.error('[YouTubeService] Unhandled error during YouTube search:', error.message);
-      return [];
-    }
+      return (data.items || []).map(i => `${i.snippet.title}: https://youtube.com/watch?v=${i.id.videoId}`).join('\n');
+    } catch (e) { return "YouTube search failed."; }
   }
 }
 
-export const youtubeService = new YouTubeService();
+export const youtubeService = new YoutubeService();

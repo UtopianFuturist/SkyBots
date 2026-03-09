@@ -37,8 +37,8 @@ class MemoryService {
   }
 
   _extractCategory(text) {
-    const categories = ['exploration', 'learning', 'status', 'meta', 'agentic', 'philosophy', 'reflection', 'research'];
-    for (const cat of categories) { if (text.toLowerCase().includes(`[${cat}]`)) return cat; }
+    const categories = ['exploration', 'learning', 'status', 'meta', 'agentic', 'philosophy', 'reflection', 'research', 'mental', 'admin_fact', 'goal', 'interaction', 'mood'];
+    for (const cat of categories) { if (text.toUpperCase().includes(`[${cat.toUpperCase()}]`)) return cat; }
     return 'general';
   }
 
@@ -46,7 +46,7 @@ class MemoryService {
     if (!this.isEnabled() || this.recentMemories.length === 0) return "No recent memories available.";
     const pinned = this.recentMemories.filter(m => m.text.includes("[PINNED]"));
     const normal = this.recentMemories.filter(m => !m.text.includes("[PINNED]"));
-    return [...pinned, ...normal].filter(m => !excludeTags.some(tag => m.text.includes(tag))).map(m => `[${new Date(m.timestamp).toLocaleDateString()}] ${m.text}`).join('\n');
+    return [...pinned, ...normal].filter(m => !excludeTags.some(tag => m.text.toUpperCase().includes(tag.toUpperCase()))).map(m => `[${new Date(m.timestamp).toLocaleDateString()}] ${m.text}`).join('\n');
   }
 
   async createMemoryEntry(type, context, timestamp = null) {
@@ -95,7 +95,13 @@ Context: ${context}.`;
         for (const post of posts) { await this.secureThread(post.record.reply?.root?.uri || post.uri); }
     } catch (e) {}
   }
-  async performDailyKnowledgeAudit() {}
+  async performDailyKnowledgeAudit() {
+      if (!this.isEnabled()) return;
+      const memories = await this.getRecentMemories(50);
+      const auditPrompt = `Daily Knowledge Audit: Synthesize these 50 memories into a worldview map. Identify patterns and shifts. Context: ${JSON.stringify(memories)}`;
+      const synth = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
+      if (synth) await this.createMemoryEntry('reflection', `[WORLDVIEW_SYNTH] ${synth.substring(0, 200)}`);
+  }
   async auditMemoriesForReconstruction() {}
   async getLatestMoodMemory() { return null; }
   async searchMemories(query) { return (this.recentMemories || []).filter(m => m.text.includes(query)); }

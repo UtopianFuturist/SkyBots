@@ -59,9 +59,9 @@ Guidelines:
 - Do not narrate the user's actions.
 - Anti-slop rules: avoid generic filler, be direct.`;
 
-    const models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
-    if (options.useStep) models.unshift(config.STEP_MODEL);
-    else if (options.useCoder) models.unshift(config.CODER_MODEL);
+    let models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
+    if (options.useStep) models = [config.STEP_MODEL, config.LLM_MODEL, config.CODER_MODEL].filter(Boolean);
+    else if (options.useCoder) models = [config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean);
 
     let lastError = null;
 
@@ -170,7 +170,7 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
       return { consistent: true };
   }
 
-  async isPostSafe(text) { return true; }
+  async isPostSafe(text) { return { safe: true }; }
   async isUrlSafe(url) { return true; }
   async isImageCompliant(buffer) { return { compliant: true }; }
   async isPersonaAligned(action) { return { aligned: true }; }

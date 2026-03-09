@@ -99,7 +99,7 @@ export class Bot {
         const dConfig = dataStore.getConfig() || {};
         const postTopics = dConfig.post_topics || [];
         const imageSubjects = dConfig.image_subjects || [];
-        const allKeywords = cleanKeywords([...postTopics, ...imageSubjects]);
+        const allKeywords = cleanKeywords([...postTopics, ...imageSubjects].filter(Boolean));
         const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
         const negativesArg = `--negatives "${(config.FIREHOSE_NEGATIVE_KEYWORDS || []).join('|')}"`;
         const adminDid = dataStore.getAdminDid();
@@ -129,6 +129,7 @@ export class Bot {
               if (event.type === 'firehose_topic_match') {
                   const keywords = event.matched_keywords || [];
                   for (const kw of keywords) {
+                      if (!kw) continue;
                       const cleanKw = kw.toLowerCase();
                       this.firehoseMatchCounts[cleanKw] = (this.firehoseMatchCounts[cleanKw] || 0) + 1;
                   }
@@ -148,7 +149,7 @@ export class Bot {
   }
 
   _flushFirehoseLogs() {
-    const keywords = Object.keys(this.firehoseMatchCounts);
+    const keywords = Object.keys(this.firehoseMatchCounts).filter(k => k !== 'undefined');
     if (keywords.length > 0) {
         const summary = keywords.map(kw => `${this.firehoseMatchCounts[kw]} for '${kw}'`).join(', ');
         console.log(`[Bot] Firehose topic matches aggregated: ${summary}`);
@@ -163,39 +164,20 @@ export class Bot {
     setInterval(() => this.performAutonomousPost(), 7200000);
     setInterval(() => this.checkDiscordSpontaneity(), 60000);
     setInterval(() => this.refreshFirehoseKeywords(), 21600000);
-    setInterval(() => this.checkScheduledTasks(), 60000);
-  }
-
-  async checkScheduledTasks() {
-      try {
-          const now = Date.now();
-          const scheduledPosts = dataStore.getScheduledPosts() || [];
-          for (let i = 0; i < scheduledPosts.length; i++) {
-              const post = scheduledPosts[i];
-              if (post?.timestamp && now >= post.timestamp) {
-                  let success = false;
-                  if (post.platform === 'bluesky') {
-                      const res = await blueskyService.post(post.content, post.embed);
-                      if (res) success = true;
-                  }
-                  if (success) {
-                      await dataStore.removeScheduledPost(i);
-                      i--;
-                  }
-              }
-          }
-      } catch (e) {}
   }
 
   async refreshFirehoseKeywords(force = false) {
       console.log('[Bot] Refreshing Firehose keywords...');
       try {
           const dConfig = dataStore.getConfig() || {};
-          const currentKeywords = [...(dConfig.post_topics || []), ...(dConfig.image_subjects || [])];
+          const currentKeywords = [...(dConfig.post_topics || []), ...(dConfig.image_subjects || [])].filter(Boolean);
           const newKeywords = await llmService.extractDeepKeywords("current interests and evolution", currentKeywords.join(', '));
           if (newKeywords?.length > 0) {
-              await dataStore.setDeepKeywords(newKeywords);
-              await this.restartFirehose();
+              const validKeywords = newKeywords.filter(k => k && k !== 'undefined');
+              if (validKeywords.length > 0) {
+                  await dataStore.setDeepKeywords(validKeywords);
+                  await this.restartFirehose();
+              }
           }
       } catch (e) {}
   }
@@ -254,7 +236,7 @@ export class Bot {
   async performAutonomousPost() {
     try {
         const dConfig = dataStore.getConfig() || {};
-        const postTopics = dConfig.post_topics || [];
+        const postTopics = (dConfig.post_topics || []).filter(Boolean);
         const currentMood = dataStore.getMood();
         const topicPrompt = `Identify a deep topic for an autonomous post. Preferred: ${postTopics.join(', ')}. Respond with ONLY topic.`;
         let topic = (await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true }))?.trim() || "existence";

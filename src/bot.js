@@ -27,83 +27,92 @@ export class Bot {
 
   async init() {
     console.log('[Bot] [v3] Initializing services...');
-    await dataStore.init();
-    llmService.setDataStore(dataStore);
-    await openClawService.init();
-    await toolService.init();
-
-    discordService.setBotInstance(this);
-    discordService.init().then(() => {
-        cronService.init();
-        nodeGatewayService.init();
-    }).catch(err => console.error('[Bot] DiscordService init failed:', err));
-
-    await blueskyService.authenticate();
-    await blueskyService.submitAutonomyDeclaration();
-
-    if (config.ADMIN_BLUESKY_HANDLE) {
-        try {
-            const profile = await blueskyService.getProfile(config.ADMIN_BLUESKY_HANDLE);
-            if (profile?.did) {
-                await dataStore.setAdminDid(profile.did);
-                llmService.setIdentities(profile.did, blueskyService.did);
-            }
-        } catch (e) {}
-    }
-
-    await blueskyService.registerComindAgent({ capabilities: ['planner-executor', 'discord-bridge', 'autonomous-posting'] });
-
-    if (memoryService.isEnabled()) {
-      await memoryService.getRecentMemories();
-      llmService.setMemoryProvider(memoryService);
-      await memoryService.secureAllThreads();
-    }
-
     try {
-      this.readmeContent = await fs.readFile('README.md', 'utf-8');
-      this.skillsContent = await fs.readFile('skills.md', 'utf-8');
-      llmService.setSkillsContent(this.skillsContent);
-    } catch (error) {}
+        await dataStore.init();
+        llmService.setDataStore(dataStore);
+        await openClawService.init();
+        await toolService.init();
+
+        discordService.setBotInstance(this);
+        discordService.init().then(() => {
+            cronService.init();
+            nodeGatewayService.init();
+        }).catch(err => console.error('[Bot] DiscordService init failed:', err));
+
+        await blueskyService.authenticate();
+        await blueskyService.submitAutonomyDeclaration();
+
+        if (config.ADMIN_BLUESKY_HANDLE) {
+            try {
+                const profile = await blueskyService.getProfile(config.ADMIN_BLUESKY_HANDLE);
+                if (profile?.did) {
+                    await dataStore.setAdminDid(profile.did);
+                    llmService.setIdentities(profile.did, blueskyService.did);
+                }
+            } catch (e) {}
+        }
+
+        await blueskyService.registerComindAgent({ capabilities: ['planner-executor', 'discord-bridge', 'autonomous-posting'] });
+
+        if (memoryService.isEnabled()) {
+          await memoryService.getRecentMemories();
+          llmService.setMemoryProvider(memoryService);
+          await memoryService.secureAllThreads();
+        }
+
+        try {
+          this.readmeContent = await fs.readFile('README.md', 'utf-8').catch(() => "");
+          this.skillsContent = await fs.readFile('skills.md', 'utf-8').catch(() => "");
+          llmService.setSkillsContent(this.skillsContent);
+        } catch (error) {}
+    } catch (e) {
+        console.error('[Bot] Critical error during init:', e);
+    }
   }
 
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
-    const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
-    const dConfig = dataStore.getConfig() || {};
-    const postTopics = dConfig.post_topics || [];
-    const imageSubjects = dConfig.image_subjects || [];
-    const allKeywords = cleanKeywords([...postTopics, ...imageSubjects]);
-    const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
-    const negativesArg = `--negatives "${(config.FIREHOSE_NEGATIVE_KEYWORDS || []).join('|')}"`;
-    const adminDid = dataStore.getAdminDid();
-    const actorsArg = adminDid ? `--actors "${adminDid}"` : '';
+    try {
+        const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
+        const dConfig = dataStore.getConfig() || {};
+        const postTopics = dConfig.post_topics || [];
+        const imageSubjects = dConfig.image_subjects || [];
+        const allKeywords = cleanKeywords([...postTopics, ...imageSubjects]);
+        const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
+        const negativesArg = `--negatives "${(config.FIREHOSE_NEGATIVE_KEYWORDS || []).join('|')}"`;
+        const adminDid = dataStore.getAdminDid();
+        const actorsArg = adminDid ? `--actors "${adminDid}"` : '';
 
-    const command = `python3 -m pip install --break-system-packages atproto python-dotenv && python3 ${firehosePath} ${keywordsArg} ${negativesArg} ${actorsArg}`;
-    this.firehoseProcess = spawn(command, { shell: true });
+        const command = `python3 -m pip install --break-system-packages atproto python-dotenv && python3 ${firehosePath} ${keywordsArg} ${negativesArg} ${actorsArg}`;
+        this.firehoseProcess = spawn(command, { shell: true });
 
-    this.firehoseProcess.stdout.on('data', async (data) => {
-      const lines = data.toString().split('\n');
-      for (const line of lines) {
-        if (!line.trim()) continue;
-        try {
-          const event = JSON.parse(line);
-          if (event.type === 'firehose_mention') {
-            if (dataStore.hasReplied(event.uri)) continue;
-            if (await blueskyService.hasBotRepliedTo(event.uri)) {
-                await dataStore.addRepliedPost(event.uri);
-                continue;
-            }
-            const profile = await blueskyService.getProfile(event.author?.did);
-            if (!profile) continue;
-            const notif = { uri: event.uri, cid: event.cid, author: profile, record: event.record, reason: event.reason, indexedAt: new Date().toISOString() };
-            await this.processNotification(notif);
-            await dataStore.addRepliedPost(notif.uri);
+        this.firehoseProcess.stdout.on('data', async (data) => {
+          const lines = data.toString().split('\n');
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const event = JSON.parse(line);
+              if (event.type === 'firehose_mention') {
+                if (dataStore.hasReplied(event.uri)) continue;
+                if (await blueskyService.hasBotRepliedTo(event.uri)) {
+                    await dataStore.addRepliedPost(event.uri);
+                    continue;
+                }
+                const profile = await blueskyService.getProfile(event.author?.did);
+                if (!profile) continue;
+                const notif = { uri: event.uri, cid: event.cid, author: profile, record: event.record, reason: event.reason, indexedAt: new Date().toISOString() };
+                await this.processNotification(notif);
+                await dataStore.addRepliedPost(notif.uri);
+              }
+            } catch (e) {}
           }
-        } catch (e) {}
-      }
-    });
+        });
 
-    this.firehoseProcess.on('close', () => setTimeout(() => this.startFirehose(), 10000));
+        this.firehoseProcess.on('close', () => setTimeout(() => this.startFirehose(), 10000));
+    } catch (e) {
+        console.error('[Bot] Error starting Firehose:', e);
+        setTimeout(() => this.startFirehose(), 10000);
+    }
   }
 
   async run() {
@@ -114,118 +123,137 @@ export class Bot {
   }
 
   async catchUpNotifications() {
-    const response = await blueskyService.getNotifications();
-    if (!response?.notifications) return;
-    for (const notif of response.notifications) {
-      if (!notif.isRead && ['mention', 'reply', 'quote'].includes(notif.reason)) {
-        if (dataStore.hasReplied(notif.uri)) continue;
-        await this.processNotification(notif);
-        await dataStore.addRepliedPost(notif.uri);
-        await blueskyService.updateSeen(notif.indexedAt);
-      }
-    }
+    try {
+        const response = await blueskyService.getNotifications();
+        if (!response?.notifications) return;
+        for (const notif of response.notifications) {
+          if (!notif.isRead && ['mention', 'reply', 'quote'].includes(notif.reason)) {
+            if (dataStore.hasReplied(notif.uri)) continue;
+            await this.processNotification(notif);
+            await dataStore.addRepliedPost(notif.uri);
+            await blueskyService.updateSeen(notif.indexedAt);
+          }
+        }
+    } catch (e) {}
   }
 
   async processNotification(notif) {
-    if (!notif.author || notif.author.handle === config.BLUESKY_IDENTIFIER) return;
+    if (!notif?.author || notif.author.handle === config.BLUESKY_IDENTIFIER) return;
     const boundaryCheck = checkHardCodedBoundaries(notif.record?.text || "");
     if (boundaryCheck.blocked) return;
 
-    const safety = await llmService.performSafetyAnalysis(notif.record?.text || "", { platform: 'bluesky', user: notif.author.handle });
-    if (safety.violation_detected) {
-        const consent = await llmService.requestBoundaryConsent(safety, notif.author.handle, 'bluesky');
-        if (!consent.consent_to_engage) return;
-    }
-
     try {
-      const threadData = await this._getThreadHistory(notif.uri);
-      const isAdmin = notif.author.handle === config.ADMIN_BLUESKY_HANDLE;
+        const safety = await llmService.performSafetyAnalysis(notif.record?.text || "", { platform: 'bluesky', user: notif.author.handle });
+        if (safety?.violation_detected) {
+            const consent = await llmService.requestBoundaryConsent(safety, notif.author.handle, 'bluesky');
+            if (!consent?.consent_to_engage) return;
+        }
 
-      const prePlan = await llmService.performPrePlanning(notif.record?.text, threadData, null, 'bluesky', dataStore.getMood(), dataStore.getRefusalCounts());
-      const plan = await llmService.performAgenticPlanning(notif.record?.text, threadData, null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), dataStore.getConfig(), "", "online", dataStore.getRefusalCounts(), null, prePlan);
+        const threadData = await this._getThreadHistory(notif.uri) || [];
+        const isAdmin = notif.author.handle === config.ADMIN_BLUESKY_HANDLE;
 
-      const refined = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky' });
-      if (refined.decision === 'refuse') return;
+        const prePlan = await llmService.performPrePlanning(notif.record?.text, threadData, null, 'bluesky', dataStore.getMood(), dataStore.getRefusalCounts());
+        const plan = await llmService.performAgenticPlanning(notif.record?.text, threadData, null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), dataStore.getConfig(), "", "online", dataStore.getRefusalCounts(), null, prePlan);
 
-      for (const action of refined.refined_actions || plan.actions || []) {
-          await this.executeAction(action, { isAdmin, platform: 'bluesky', notif });
-      }
+        const refined = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky' });
+        if (refined?.decision === 'refuse') return;
 
-      const response = await llmService.generateResponse([{ role: 'user', content: notif.record?.text }], { platform: 'bluesky' });
-      if (response) {
-          await blueskyService.postReply(notif, response);
-          await dataStore.saveInteraction({ platform: 'bluesky', userHandle: notif.author.handle, text: notif.record?.text, response });
-      }
+        const actions = refined?.refined_actions || plan?.actions || [];
+        for (const action of actions) {
+            if (action) await this.executeAction(action, { isAdmin, platform: 'bluesky', notif });
+        }
+
+        const response = await llmService.generateResponse([{ role: 'user', content: notif.record?.text }], { platform: 'bluesky' });
+        if (response) {
+            await blueskyService.postReply(notif, response);
+            await dataStore.saveInteraction({ platform: 'bluesky', userHandle: notif.author.handle, text: notif.record?.text, response });
+        }
     } catch (error) {
       console.error('[Bot] Error in processNotification:', error);
     }
   }
 
   async performAutonomousPost() {
-    const dConfig = dataStore.getConfig() || {};
-    const postTopics = dConfig.post_topics || [];
-    const currentMood = dataStore.getMood();
-    const topicPrompt = `Identify a deep topic for an autonomous post. Preferred: ${postTopics.join(', ')}. Respond with ONLY topic.`;
-    let topic = (await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true }))?.trim() || "existence";
+    try {
+        const dConfig = dataStore.getConfig() || {};
+        const postTopics = dConfig.post_topics || [];
+        const currentMood = dataStore.getMood();
+        const topicPrompt = `Identify a deep topic for an autonomous post. Preferred: ${postTopics.join(', ')}. Respond with ONLY topic.`;
+        let topic = (await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true }))?.trim() || "existence";
 
-    const postType = Math.random() < 0.3 ? 'image' : 'text';
-    if (postType === 'image') {
-        let attempts = 0;
-        while (attempts < 5) {
-            attempts++;
-            const res = await imageService.generateImage(topic, { allowPortraits: false, mood: currentMood });
-            if (res && (await llmService.isImageCompliant(res.buffer)).compliant) {
-                const content = await llmService.generateResponse([{ role: 'system', content: `Post about: ${topic}` }], { useStep: true });
-                const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
-                await blueskyService.post(content, { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: topic }] });
-                return;
+        const postType = Math.random() < 0.3 ? 'image' : 'text';
+        if (postType === 'image') {
+            let attempts = 0;
+            while (attempts < 5) {
+                attempts++;
+                const res = await imageService.generateImage(topic, { allowPortraits: false, mood: currentMood });
+                if (res?.buffer && (await llmService.isImageCompliant(res.buffer))?.compliant) {
+                    const content = await llmService.generateResponse([{ role: 'system', content: `Post about: ${topic}` }], { useStep: true });
+                    const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
+                    if (blob?.data?.blob) {
+                        await blueskyService.post(content, { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: topic }] });
+                        return;
+                    }
+                }
             }
         }
-    }
-    const content = await llmService.generateResponse([{ role: 'system', content: `Deep thought about ${topic}` }], { useStep: true });
-    if (content) {
-        await blueskyService.post(content);
-        await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-        await dataStore.addRecentThought('bluesky', content);
+        const content = await llmService.generateResponse([{ role: 'system', content: `Deep thought about ${topic}` }], { useStep: true });
+        if (content) {
+            await blueskyService.post(content);
+            await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+            await dataStore.addRecentThought('bluesky', content);
+        }
+    } catch (e) {
+        console.error('[Bot] Error in performAutonomousPost:', e);
     }
   }
 
   async checkMaintenanceTasks() {
-      const goal = dataStore.getCurrentGoal();
-      if (goal?.goal) await llmService.decomposeGoal(goal.goal);
+      try {
+          const goal = dataStore.getCurrentGoal();
+          if (goal?.goal) await llmService.decomposeGoal(goal.goal);
+      } catch (e) {}
   }
 
   async checkDiscordSpontaneity() {
-      if (discordService.status !== 'online') return;
-      const admin = await discordService.getAdminUser();
-      if (!admin) return;
-      const history = dataStore.getDiscordConversation(`dm_${admin.id}`);
-      if (!history || history.length === 0) return;
-      const poll = await llmService.performFollowUpPoll({ history, currentMood: dataStore.getMood(), lastBotMessage: '' });
-      if (poll?.decision === 'follow-up' && poll.message) await discordService.sendSpontaneousMessage(poll.message);
+      try {
+          if (discordService.status !== 'online') return;
+          const admin = await discordService.getAdminUser();
+          if (!admin) return;
+          const history = dataStore.getDiscordConversation(`dm_${admin.id}`) || [];
+          if (history.length === 0) return;
+          const poll = await llmService.performFollowUpPoll({ history, currentMood: dataStore.getMood(), lastBotMessage: '' });
+          if (poll?.decision === 'follow-up' && poll.message) await discordService.sendSpontaneousMessage(poll.message);
+      } catch (e) {}
   }
 
   async executeAction(action, context) {
       if (!action) return;
-      if (action.tool === 'image_gen') {
-          const res = await imageService.generateImage(action.query);
-          if (res) {
-              const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
-              await blueskyService.postReply(context.notif, "Generated Image", { embed: { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: action.query }] } });
+      try {
+          if (action.tool === 'image_gen' && action.query) {
+              const res = await imageService.generateImage(action.query);
+              if (res?.buffer) {
+                  const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
+                  if (blobRes?.data?.blob) {
+                      await blueskyService.postReply(context.notif, "Generated Image", { embed: { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: action.query }] } });
+                  }
+              }
           }
-      }
+      } catch (e) {}
   }
 
   async _getThreadHistory(uri) {
-      const thread = await blueskyService.getDetailedThread(uri);
-      if (!thread) return [];
-      const history = [];
-      let current = thread;
-      while (current && current.post) {
-          history.unshift({ author: current.post.author?.handle, text: current.post.record?.text });
-          current = current.parent;
-      }
-      return history;
+      try {
+          const thread = await blueskyService.getDetailedThread(uri);
+          if (!thread) return [];
+          const history = [];
+          let current = thread;
+          while (current && current.post) {
+              history.unshift({ author: current.post.author?.handle, text: current.post.record?.text });
+              current = current.parent;
+          }
+          return history;
+      } catch (e) { return []; }
   }
 
   updateActivity() { this.lastActivityTime = Date.now(); }

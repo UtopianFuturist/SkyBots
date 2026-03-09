@@ -25,109 +25,123 @@ class CronService {
     }
 
     async tick() {
-        const now = new Date();
-        const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+        try {
+            const now = new Date();
+            const timeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
 
-        const tasks = dataStore.getDiscordScheduledTasks();
-        for (let i = 0; i < tasks.length; i++) {
-            const task = tasks[i];
-            if (task.time === timeStr) {
-                try {
-                    if (task.channelId) {
-                        const channelId = task.channelId.replace('dm_', '');
-                        const channel = await discordService.client.channels.fetch(channelId).catch(() => null);
-                        if (channel) await discordService._send(channel, task.message);
-                    } else {
-                        await discordService.sendSpontaneousMessage(task.message);
+            const tasks = dataStore.getDiscordScheduledTasks() || [];
+            for (let i = 0; i < tasks.length; i++) {
+                const task = tasks[i];
+                if (task?.time === timeStr) {
+                    try {
+                        if (task.channelId) {
+                            const channelId = task.channelId.replace('dm_', '');
+                            const channel = await discordService.client?.channels?.fetch(channelId).catch(() => null);
+                            if (channel) await discordService._send(channel, task.message);
+                        } else {
+                            await discordService.sendSpontaneousMessage(task.message);
+                        }
+                        await dataStore.removeDiscordScheduledTask(i);
+                        i--;
+                    } catch (e) {
+                        console.error('[CronService] Error executing scheduled task:', e);
                     }
-                    await dataStore.removeDiscordScheduledTask(i);
-                    i--;
-                } catch (e) {
-                    console.error('[CronService] Error executing scheduled task:', e);
                 }
             }
-        }
 
-        if (timeStr === '00:00') {
-            console.log('[CronService] Midnight maintenance starting...');
-            await memoryService.cleanupMemoryThread();
-            await memoryService.auditMemoriesForReconstruction();
-            if (now.getDate() === 1) await this.performMonthlyWorldviewAudit();
-            if (now.getDay() === 0) await this.performWeeklyPersonaAudit();
-            await this.performDailyRelationalAudit();
-            await this.auditAdminBlueskyUsage();
-            await memoryService.performDailyKnowledgeAudit();
-        }
+            if (timeStr === '00:00') {
+                console.log('[CronService] Midnight maintenance starting...');
+                await memoryService.cleanupMemoryThread();
+                await memoryService.auditMemoriesForReconstruction();
+                if (now.getDate() === 1) await this.performMonthlyWorldviewAudit();
+                if (now.getDay() === 0) await this.performWeeklyPersonaAudit();
+                await this.performDailyRelationalAudit();
+                await this.auditAdminBlueskyUsage();
+                await memoryService.performDailyKnowledgeAudit();
+            }
 
-        const scheduledPosts = dataStore.getScheduledPosts();
-        for (let i = 0; i < scheduledPosts.length; i++) {
-            const post = scheduledPosts[i];
-            if (now >= new Date(post.timestamp)) {
-                try {
-                    if (post.platform === 'bluesky') await blueskyService.post(post.content, post.embed);
-                    await dataStore.removeScheduledPost(i);
-                    i--;
-                } catch (e) {
-                    console.error('[CronService] Error executing scheduled post:', e);
+            const scheduledPosts = dataStore.getScheduledPosts() || [];
+            for (let i = 0; i < scheduledPosts.length; i++) {
+                const post = scheduledPosts[i];
+                if (post?.timestamp && now >= new Date(post.timestamp)) {
+                    try {
+                        if (post.platform === 'bluesky') await blueskyService.post(post.content, post.embed);
+                        await dataStore.removeScheduledPost(i);
+                        i--;
+                    } catch (e) {
+                        console.error('[CronService] Error executing scheduled post:', e);
+                    }
                 }
             }
+        } catch (e) {
+            console.error('[CronService] Error in tick:', e);
         }
     }
 
   async performDailyRelationalAudit() {
-    console.log('[CronService] Starting Daily Relational Audit...');
-    const admin = await discordService.getAdminUser();
-    if (!admin) return;
-
-    const history = dataStore.getDiscordConversation(`dm_${admin.id}`);
-    if (history.length === 0) return;
-
-    const auditPrompt = `Daily Relational Reflection for Admin ${admin.username}. Respond with JSON { "interests": {}, "season": "spring", "reflection": "", "strong_relationship": false, "curiosity_questions": [] }.`;
-    const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
     try {
-        const match = audit?.match(/\{[\s\S]*\}/);
-        const result = match ? JSON.parse(match[0]) : null;
-        if (result) {
-            if (result.interests) await dataStore.updateAdminInterests(result.interests);
-            if (result.season) await dataStore.updateRelationshipSeason(result.season);
-            if (result.reflection) await dataStore.addRelationalReflection(result.reflection);
-            if (result.strong_relationship !== undefined) await dataStore.setStrongRelationship(result.strong_relationship);
-            if (result.curiosity_questions) await dataStore.updateCuriosityReservoir(result.curiosity_questions);
+        console.log('[CronService] Starting Daily Relational Audit...');
+        const admin = await discordService.getAdminUser();
+        if (!admin) return;
+
+        const history = dataStore.getDiscordConversation(`dm_${admin.id}`) || [];
+        if (history.length === 0) return;
+
+        const auditPrompt = `Daily Relational Reflection for Admin ${admin.username}. Respond with JSON { "interests": {}, "season": "spring", "reflection": "", "strong_relationship": false, "curiosity_questions": [] }.`;
+        const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
+        try {
+            const match = audit?.match(/\{[\s\S]*\}/);
+            const result = match ? JSON.parse(match[0]) : null;
+            if (result) {
+                if (result.interests) await dataStore.updateAdminInterests(result.interests);
+                if (result.season) await dataStore.updateRelationshipSeason(result.season);
+                if (result.reflection) await dataStore.addRelationalReflection(result.reflection);
+                if (result.strong_relationship !== undefined) await dataStore.setStrongRelationship(result.strong_relationship);
+                if (result.curiosity_questions) await dataStore.updateCuriosityReservoir(result.curiosity_questions);
+            }
+        } catch (e) {
+            console.error('[CronService] Error parsing daily relational audit:', e);
         }
     } catch (e) {
-        console.error('[CronService] Error parsing daily relational audit:', e);
+        console.error('[CronService] Error in performDailyRelationalAudit:', e);
     }
   }
 
   async performMonthlyWorldviewAudit() {
-    const admin = await discordService.getAdminUser();
-    if (!admin) return;
-    const history = await discordService.fetchAdminHistory(100);
-    const interests = dataStore.getAdminInterests();
-    const worldview = await llmService.generateAdminWorldview(history, interests);
-    if (worldview) {
-        await dataStore.update(data => { data.admin_worldview = worldview; });
-        if (memoryService.isEnabled()) await memoryService.createMemoryEntry('philosophy', `[WORLDVIEW] ${worldview.summary.substring(0, 150)}`);
+    try {
+        const admin = await discordService.getAdminUser();
+        if (!admin) return;
+        const history = await discordService.fetchAdminHistory(100) || [];
+        const interests = dataStore.getAdminInterests();
+        const worldview = await llmService.generateAdminWorldview(history, interests);
+        if (worldview) {
+            await dataStore.update(data => { data.admin_worldview = worldview; });
+            if (memoryService.isEnabled()) await memoryService.createMemoryEntry('philosophy', `[WORLDVIEW] ${worldview.summary?.substring(0, 150)}`);
+        }
+    } catch (e) {
+        console.error('[CronService] Error in performMonthlyWorldviewAudit:', e);
     }
   }
 
   async auditAdminBlueskyUsage() {
-    const adminDid = dataStore.getAdminDid();
-    if (!adminDid) return;
     try {
-        const posts = await blueskyService.getUserPosts(adminDid, 50);
+        const adminDid = dataStore.getAdminDid();
+        if (!adminDid) return;
+        const posts = await blueskyService.getUserPosts(adminDid, 50) || [];
         const analysis = await llmService.analyzeBlueskyUsage(adminDid, posts);
         if (analysis) await dataStore.update(data => { data.admin_bluesky_usage = analysis; });
     } catch (e) {}
   }
 
   async performWeeklyPersonaAudit() {
-    const recentActions = dataStore.getAgencyLogs().slice(-20);
-    const audit = await llmService.auditPersonaAlignment(recentActions);
-    if (audit && audit.advice) {
-        await dataStore.addPersonaAdvice(audit.advice);
-        if (memoryService.isEnabled()) await memoryService.createMemoryEntry('persona_update', `[PERSONA] Alignment Advice: ${audit.advice}`);
-    }
+    try {
+        const recentActions = (dataStore.getAgencyLogs() || []).slice(-20);
+        const audit = await llmService.auditPersonaAlignment(recentActions);
+        if (audit && audit.advice) {
+            await dataStore.addPersonaAdvice(audit.advice);
+            if (memoryService.isEnabled()) await memoryService.createMemoryEntry('persona_update', `[PERSONA] Alignment Advice: ${audit.advice}`);
+        }
+    } catch (e) {}
   }
 
     stop() {

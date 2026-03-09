@@ -19,7 +19,10 @@ class LLMService {
     this.statusContent = "";
     this.cache = new Map();
     this.cacheExpiry = 300000; // 5 minutes
-    this.endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    this.endpoints = [
+        'https://integrate.api.nvidia.com/v1/chat/completions',
+        'https://api.nvcf.nvidia.com/v1/chat/completions'
+    ];
   }
 
   setDataStore(ds) { this.ds = ds; }
@@ -59,21 +62,18 @@ Guidelines:
 - Do not narrate the user's actions.
 - Anti-slop rules: avoid generic filler, be direct.`;
 
-    const models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
-    if (options.useStep) models.unshift(config.STEP_MODEL);
-    else if (options.useCoder) models.unshift(config.CODER_MODEL);
+    // Model selection logic
+    let models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
+    if (options.useStep) models = [config.STEP_MODEL, config.LLM_MODEL, config.CODER_MODEL].filter(Boolean);
+    else if (options.useCoder) models = [config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean);
 
     let lastError = null;
 
     for (const model of models) {
-        let attempts = 0;
-        const maxAttempts = model === config.LLM_MODEL ? 2 : 1;
-
-        while (attempts < maxAttempts) {
-            attempts++;
+        for (const endpoint of this.endpoints) {
             try {
-              console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
-              const response = await fetch(this.endpoint, {
+              console.log(`[LLMService] Requesting response from ${model} via ${endpoint}...`);
+              const response = await fetch(endpoint, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -92,12 +92,11 @@ Guidelines:
 
               if (!response.ok) {
                   const errorText = await response.text();
-                  console.warn(`[LLMService] Model ${model} failed (HTTP ${response.status}): ${errorText.substring(0, 100)}`);
-                  if (response.status === 429 || response.status >= 500) {
-                      await new Promise(r => setTimeout(r, 2000 * attempts));
-                      continue;
+                  console.warn(`[LLMService] Attempt failed: HTTP ${response.status} from ${endpoint}`);
+                  if (response.status === 429) {
+                      await new Promise(r => setTimeout(r, 2000));
                   }
-                  break; // Try next model
+                  continue; // Try next endpoint or model
               }
 
               const rawBody = await response.text();
@@ -107,29 +106,25 @@ Guidelines:
               try {
                   data = JSON.parse(rawBody);
               } catch (e) {
-                  console.error(`[LLMService] JSON parse error from ${model}:`, e.message);
+                  console.error(`[LLMService] JSON parse error from ${endpoint}:`, e.message);
                   continue;
               }
 
               const content = data.choices?.[0]?.message?.content;
               if (content) {
                   if (options.traceId && this.ds) {
-                      await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1].content, response: content });
+                      await this.ds.addTraceLog({ traceId: options.traceId, model, endpoint, prompt: messages[messages.length-1].content, response: content });
                   }
                   return content;
               }
             } catch (error) {
-              console.error(`[LLMService] Error with ${model}:`, error.message);
+              console.error(`[LLMService] ${endpoint} Error for ${model}:`, error.message);
               lastError = error;
-              if (attempts < maxAttempts) {
-                  await new Promise(r => setTimeout(r, 2000 * attempts));
-                  continue;
-              }
-              break; // Try next model
+              continue; // Try next endpoint
             }
         }
     }
-    console.error(`[LLMService] All models failed. Final error:`, lastError?.message);
+    console.error(`[LLMService] All endpoints/models failed.`);
     return null;
   }
 

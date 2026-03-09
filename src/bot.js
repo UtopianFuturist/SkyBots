@@ -97,9 +97,9 @@ export class Bot {
     try {
         const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
         const dConfig = dataStore.getConfig() || {};
-        const postTopics = dConfig.post_topics || [];
-        const imageSubjects = dConfig.image_subjects || [];
-        const allKeywords = cleanKeywords([...postTopics, ...imageSubjects].filter(Boolean));
+        const postTopics = (dConfig.post_topics || []).filter(t => t && t !== 'undefined');
+        const imageSubjects = (dConfig.image_subjects || []).filter(s => s && s !== 'undefined');
+        const allKeywords = cleanKeywords([...postTopics, ...imageSubjects]);
         const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
         const negativesArg = `--negatives "${(config.FIREHOSE_NEGATIVE_KEYWORDS || []).join('|')}"`;
         const adminDid = dataStore.getAdminDid();
@@ -129,7 +129,7 @@ export class Bot {
               if (event.type === 'firehose_topic_match') {
                   const keywords = event.matched_keywords || [];
                   for (const kw of keywords) {
-                      if (!kw) continue;
+                      if (!kw || kw === 'undefined') continue;
                       const cleanKw = kw.toLowerCase();
                       this.firehoseMatchCounts[cleanKw] = (this.firehoseMatchCounts[cleanKw] || 0) + 1;
                   }
@@ -149,10 +149,13 @@ export class Bot {
   }
 
   _flushFirehoseLogs() {
-    const keywords = Object.keys(this.firehoseMatchCounts).filter(k => k !== 'undefined');
+    const keywords = Object.keys(this.firehoseMatchCounts).filter(k => k && k !== 'undefined');
     if (keywords.length > 0) {
         const summary = keywords.map(kw => `${this.firehoseMatchCounts[kw]} for '${kw}'`).join(', ');
         console.log(`[Bot] Firehose topic matches aggregated: ${summary}`);
+        this.firehoseMatchCounts = {};
+        this.lastFirehoseLogTime = Date.now();
+    } else {
         this.firehoseMatchCounts = {};
         this.lastFirehoseLogTime = Date.now();
     }
@@ -170,7 +173,7 @@ export class Bot {
       console.log('[Bot] Refreshing Firehose keywords...');
       try {
           const dConfig = dataStore.getConfig() || {};
-          const currentKeywords = [...(dConfig.post_topics || []), ...(dConfig.image_subjects || [])].filter(Boolean);
+          const currentKeywords = [...(dConfig.post_topics || []), ...(dConfig.image_subjects || [])].filter(k => k && k !== 'undefined');
           const newKeywords = await llmService.extractDeepKeywords("current interests and evolution", currentKeywords.join(', '));
           if (newKeywords?.length > 0) {
               const validKeywords = newKeywords.filter(k => k && k !== 'undefined');
@@ -236,7 +239,7 @@ export class Bot {
   async performAutonomousPost() {
     try {
         const dConfig = dataStore.getConfig() || {};
-        const postTopics = (dConfig.post_topics || []).filter(Boolean);
+        const postTopics = (dConfig.post_topics || []).filter(t => t && t !== 'undefined');
         const currentMood = dataStore.getMood();
         const topicPrompt = `Identify a deep topic for an autonomous post. Preferred: ${postTopics.join(', ')}. Respond with ONLY topic.`;
         let topic = (await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true }))?.trim() || "existence";

@@ -20,9 +20,9 @@ class LLMService {
     this.cache = new Map();
     this.cacheExpiry = 300000; // 5 minutes
     this.endpoints = [
-        'https://ai.api.nvidia.com/v1/chat/completions',
         'https://integrate.api.nvidia.com/v1/chat/completions',
-        'https://api.nvidia.com/v1/chat/completions'
+        'https://api.nvcf.nvidia.com/v2/nvcf/pexec/functions/chat/completions', // Possible correct v2 format
+        'https://api.nvcf.nvidia.com/v1/chat/completions' // Standard v1 on correct host
     ];
   }
 
@@ -72,7 +72,7 @@ Guidelines:
     for (const model of models) {
         for (const endpoint of this.endpoints) {
             let attempts = 0;
-            const maxAttempts = (model === config.LLM_MODEL || model === config.STEP_MODEL) ? 1 : 1;
+            const maxAttempts = 1;
 
             while (attempts < maxAttempts) {
                 attempts++;
@@ -92,16 +92,12 @@ Guidelines:
                     }),
                     agent: persistentAgent,
                     signal: options.abortSignal,
-                    timeout: 180000 // 180s per request
+                    timeout: 120000 // 120s per request
                   });
 
                   if (!response.ok) {
                       const errorText = await response.text();
                       console.warn(`[LLMService] endpoint ${endpoint} for ${model} failed: HTTP ${response.status}`);
-                      if (response.status === 429) {
-                          await new Promise(r => setTimeout(r, 2000));
-                          continue;
-                      }
                       break; // Try next endpoint or model
                   }
 

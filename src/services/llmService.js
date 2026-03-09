@@ -19,10 +19,7 @@ class LLMService {
     this.statusContent = "";
     this.cache = new Map();
     this.cacheExpiry = 300000; // 5 minutes
-    this.endpoints = [
-        'https://integrate.api.nvidia.com/v1/chat/completions',
-        'https://api.nvcf.nvidia.com/v1/chat/completions'
-    ];
+    this.endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
   setDataStore(ds) { this.ds = ds; }
@@ -62,7 +59,6 @@ Guidelines:
 - Do not narrate the user's actions.
 - Anti-slop rules: avoid generic filler, be direct.`;
 
-    // Model selection logic
     let models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
     if (options.useStep) models = [config.STEP_MODEL, config.LLM_MODEL, config.CODER_MODEL].filter(Boolean);
     else if (options.useCoder) models = [config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean);
@@ -70,10 +66,14 @@ Guidelines:
     let lastError = null;
 
     for (const model of models) {
-        for (const endpoint of this.endpoints) {
+        let attempts = 0;
+        const maxAttempts = model === config.LLM_MODEL ? 2 : 1;
+
+        while (attempts < maxAttempts) {
+            attempts++;
             try {
-              console.log(`[LLMService] Requesting response from ${model} via ${endpoint}...`);
-              const response = await fetch(endpoint, {
+              console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
+              const response = await fetch(this.endpoint, {
                 method: 'POST',
                 headers: {
                   'Content-Type': 'application/json',
@@ -92,11 +92,12 @@ Guidelines:
 
               if (!response.ok) {
                   const errorText = await response.text();
-                  console.warn(`[LLMService] Attempt failed: HTTP ${response.status} from ${endpoint}`);
-                  if (response.status === 429) {
-                      await new Promise(r => setTimeout(r, 2000));
+                  console.warn(`[LLMService] Model ${model} failed (HTTP ${response.status}): ${errorText.substring(0, 100)}`);
+                  if (response.status === 429 || response.status >= 500) {
+                      await new Promise(r => setTimeout(r, 2000 * attempts));
+                      continue;
                   }
-                  continue; // Try next endpoint or model
+                  break; // Try next model
               }
 
               const rawBody = await response.text();
@@ -106,25 +107,29 @@ Guidelines:
               try {
                   data = JSON.parse(rawBody);
               } catch (e) {
-                  console.error(`[LLMService] JSON parse error from ${endpoint}:`, e.message);
+                  console.error(`[LLMService] JSON parse error from ${model}:`, e.message);
                   continue;
               }
 
               const content = data.choices?.[0]?.message?.content;
               if (content) {
                   if (options.traceId && this.ds) {
-                      await this.ds.addTraceLog({ traceId: options.traceId, model, endpoint, prompt: messages[messages.length-1].content, response: content });
+                      await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1].content, response: content });
                   }
                   return content;
               }
             } catch (error) {
-              console.error(`[LLMService] ${endpoint} Error for ${model}:`, error.message);
+              console.error(`[LLMService] Error with ${model}:`, error.message);
               lastError = error;
-              continue; // Try next endpoint
+              if (attempts < maxAttempts) {
+                  await new Promise(r => setTimeout(r, 2000 * attempts));
+                  continue;
+              }
+              break; // Try next model
             }
         }
     }
-    console.error(`[LLMService] All endpoints/models failed.`);
+    console.error(`[LLMService] All models failed. Final error:`, lastError?.message);
     return null;
   }
 
@@ -165,7 +170,7 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
       return { consistent: true };
   }
 
-  async isPostSafe(text) { return true; }
+  async isPostSafe(text) { return { safe: true }; }
   async isUrlSafe(url) { return true; }
   async isImageCompliant(buffer) { return { compliant: true }; }
   async isPersonaAligned(action) { return { aligned: true }; }

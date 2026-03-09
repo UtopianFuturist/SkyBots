@@ -66,6 +66,7 @@ class DataStore {
       last_soul_mapping: 0,
       last_strategy_audit: 0,
       last_tool_discovery: 0,
+      last_research_project: 0,
       mood_history: [],
       interaction_count_since_audit: 0,
       relational_debt_score: 0,
@@ -79,7 +80,10 @@ class DataStore {
       firehose_matches: [],
       admin_facts: [],
       persona_updates: "",
-      bluesky_instructions: ""
+      bluesky_instructions: "",
+      daily_search_count: 0,
+      self_corrections: [],
+      research_whiteboard: {}
     };
 
     this.db = await JSONFilePreset(this.dbPath, defaultData);
@@ -358,6 +362,9 @@ class DataStore {
   // Memory Service Support
   getPersonaUpdates() { return this.db?.data?.persona_updates || ""; }
   getBlueskyInstructions() { return this.db?.data?.bluesky_instructions || ""; }
+
+  // Extra features
+  async addSelfCorrection(c) { if (this.db?.data) { if (!this.db.data.self_corrections) this.db.data.self_corrections = []; this.db.data.self_corrections.push(c); await this.write(); } }
 }
 
 export const dataStore = new DataStore();

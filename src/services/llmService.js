@@ -19,11 +19,7 @@ class LLMService {
     this.statusContent = "";
     this.cache = new Map();
     this.cacheExpiry = 300000; // 5 minutes
-    this.endpoints = [
-        'https://integrate.api.nvidia.com/v1/chat/completions',
-        'https://api.nvcf.nvidia.com/v2/nvcf/pexec/functions/chat/completions', // Possible correct v2 format
-        'https://api.nvcf.nvidia.com/v1/chat/completions' // Standard v1 on correct host
-    ];
+    this.endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
   setDataStore(ds) { this.ds = ds; }
@@ -70,64 +66,70 @@ Guidelines:
     let lastError = null;
 
     for (const model of models) {
-        for (const endpoint of this.endpoints) {
-            let attempts = 0;
-            const maxAttempts = 1;
+        let attempts = 0;
+        const maxAttempts = model === config.LLM_MODEL ? 2 : 1;
 
-            while (attempts < maxAttempts) {
-                attempts++;
-                try {
-                  console.log(`[LLMService] Requesting response from ${model} via ${endpoint}...`);
-                  const response = await fetch(endpoint, {
-                    method: 'POST',
-                    headers: {
-                      'Content-Type': 'application/json',
-                      'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
-                    },
-                    body: JSON.stringify({
-                      model: model,
-                      messages: [{ role: 'system', content: systemPrompt }, ...messages],
-                      temperature: 0.7,
-                      max_tokens: 1024
-                    }),
-                    agent: persistentAgent,
-                    signal: options.abortSignal,
-                    timeout: 120000 // 120s per request
-                  });
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+              console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
+              const response = await fetch(this.endpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
+                },
+                body: JSON.stringify({
+                  model: model,
+                  messages: [{ role: 'system', content: systemPrompt }, ...messages],
+                  temperature: 0.7,
+                  max_tokens: 1024
+                }),
+                agent: persistentAgent,
+                signal: options.abortSignal,
+                timeout: 180000 // 180s timeout
+              });
 
-                  if (!response.ok) {
-                      const errorText = await response.text();
-                      console.warn(`[LLMService] endpoint ${endpoint} for ${model} failed: HTTP ${response.status}`);
-                      break; // Try next endpoint or model
-                  }
-
-                  const rawBody = await response.text();
-                  if (!rawBody) continue;
-
-                  let data;
-                  try {
-                      data = JSON.parse(rawBody);
-                  } catch (e) {
-                      console.error(`[LLMService] JSON parse error from ${endpoint}:`, e.message);
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  console.warn(`[LLMService] Model ${model} failed (HTTP ${response.status}): ${errorText.substring(0, 100)}`);
+                  if (response.status === 429 || response.status >= 500) {
+                      await new Promise(r => setTimeout(r, 2000 * attempts));
                       continue;
                   }
+                  break; // Try next model
+              }
 
-                  const content = data.choices?.[0]?.message?.content;
-                  if (content) {
-                      if (options.traceId && this.ds) {
-                          await this.ds.addTraceLog({ traceId: options.traceId, model, endpoint, prompt: messages[messages.length-1].content, response: content });
-                      }
-                      return content;
+              const rawBody = await response.text();
+              if (!rawBody) continue;
+
+              let data;
+              try {
+                  data = JSON.parse(rawBody);
+              } catch (e) {
+                  console.error(`[LLMService] JSON parse error from ${model}:`, e.message);
+                  continue;
+              }
+
+              const content = data.choices?.[0]?.message?.content;
+              if (content) {
+                  if (options.traceId && this.ds) {
+                      await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1].content, response: content });
                   }
-                } catch (error) {
-                  console.error(`[LLMService] ${endpoint} Error for ${model}:`, error.message);
-                  lastError = error;
-                  break; // Try next endpoint
-                }
+                  return content;
+              }
+            } catch (error) {
+              console.error(`[LLMService] Error with ${model}:`, error.message);
+              lastError = error;
+              if (attempts < maxAttempts) {
+                  await new Promise(r => setTimeout(r, 2000 * attempts));
+                  continue;
+              }
+              break; // Try next model
             }
         }
     }
-    console.error(`[LLMService] All endpoints/models failed.`);
+    console.error(`[LLMService] All models failed. Final error:`, lastError?.message);
     return null;
   }
 

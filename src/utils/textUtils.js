@@ -255,8 +255,8 @@ export const stripWrappingQuotes = (text) => {
   let trimmed = text.trim();
 
   // Handle markdown code blocks that might wrap the whole response
-  if (trimmed.startsWith('```') && trimmed.endsWith('```')) {
-    trimmed = trimmed.replace(/^```[a-z]*\n?|```$/gi, '').trim();
+  if (trimmed.startsWith('\`\`\`') && trimmed.endsWith('\`\`\`')) {
+    trimmed = trimmed.replace(/^\`\`\`[a-z]*\n?|\`\`\`$/gi, '').trim();
   }
 
   while (

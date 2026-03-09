@@ -49,7 +49,7 @@ class ToolService {
         const lines = section.split(/\r?\n/);
         const name = lines[0].trim().toLowerCase();
 
-        const jsonMatch = section.match(/```json\r?\n([\s\S]*?)```/);
+        const jsonMatch = section.match(/\`\`\`json\r?\n([\s\S]*?)\`\`\`/);
         if (jsonMatch) {
             try {
                 const schema = JSON.parse(jsonMatch[1]);

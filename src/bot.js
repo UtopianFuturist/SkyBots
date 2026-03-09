@@ -1,17 +1,10 @@
-import { blueskyService } from './services/blueskyService.js';
-import { llmService } from './services/llmService.js';
 import { dataStore } from './services/dataStore.js';
-import { googleSearchService } from './services/googleSearchService.js';
-import { imageService } from './services/imageService.js';
-import { youtubeService } from './services/youtubeService.js';
-import { wikipediaService } from './services/wikipediaService.js';
-import { webReaderService } from './services/webReaderService.js';
-import { moltbookService } from './services/moltbookService.js';
 import { memoryService } from './services/memoryService.js';
-import { renderService } from './services/renderService.js';
-import { openClawService } from './services/openClawService.js';
-import { socialHistoryService } from './services/socialHistoryService.js';
+import { blueskyService } from './services/blueskyService.js';
 import { discordService } from './services/discordService.js';
+import { llmService } from './services/llmService.js';
+import { openClawService } from './services/openClawService.js';
+import { imageService } from './services/imageService.js';
 import { cronService } from './services/cronService.js';
 import { nodeGatewayService } from './services/nodeGatewayService.js';
 import toolService from './services/toolService.js';
@@ -76,10 +69,12 @@ export class Bot {
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
     const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
-    const dConfig = dataStore.getConfig();
-    const allKeywords = cleanKeywords([...(dConfig.post_topics || []), ...(dConfig.image_subjects || [])]);
+    const dConfig = dataStore.getConfig() || {};
+    const postTopics = dConfig.post_topics || [];
+    const imageSubjects = dConfig.image_subjects || [];
+    const allKeywords = cleanKeywords([...postTopics, ...imageSubjects]);
     const keywordsArg = allKeywords.length > 0 ? `--keywords "${allKeywords.join('|')}"` : '';
-    const negativesArg = `--negatives "${config.FIREHOSE_NEGATIVE_KEYWORDS.join('|')}"`;
+    const negativesArg = `--negatives "${(config.FIREHOSE_NEGATIVE_KEYWORDS || []).join('|')}"`;
     const adminDid = dataStore.getAdminDid();
     const actorsArg = adminDid ? `--actors "${adminDid}"` : '';
 
@@ -98,7 +93,8 @@ export class Bot {
                 await dataStore.addRepliedPost(event.uri);
                 continue;
             }
-            const profile = await blueskyService.getProfile(event.author.did);
+            const profile = await blueskyService.getProfile(event.author?.did);
+            if (!profile) continue;
             const notif = { uri: event.uri, cid: event.cid, author: profile, record: event.record, reason: event.reason, indexedAt: new Date().toISOString() };
             await this.processNotification(notif);
             await dataStore.addRepliedPost(notif.uri);
@@ -131,11 +127,11 @@ export class Bot {
   }
 
   async processNotification(notif) {
-    if (notif.author.handle === config.BLUESKY_IDENTIFIER) return;
-    const boundaryCheck = checkHardCodedBoundaries(notif.record.text || "");
+    if (!notif.author || notif.author.handle === config.BLUESKY_IDENTIFIER) return;
+    const boundaryCheck = checkHardCodedBoundaries(notif.record?.text || "");
     if (boundaryCheck.blocked) return;
 
-    const safety = await llmService.performSafetyAnalysis(notif.record.text || "", { platform: 'bluesky', user: notif.author.handle });
+    const safety = await llmService.performSafetyAnalysis(notif.record?.text || "", { platform: 'bluesky', user: notif.author.handle });
     if (safety.violation_detected) {
         const consent = await llmService.requestBoundaryConsent(safety, notif.author.handle, 'bluesky');
         if (!consent.consent_to_engage) return;
@@ -145,20 +141,20 @@ export class Bot {
       const threadData = await this._getThreadHistory(notif.uri);
       const isAdmin = notif.author.handle === config.ADMIN_BLUESKY_HANDLE;
 
-      const prePlan = await llmService.performPrePlanning(notif.record.text, threadData, null, 'bluesky', dataStore.getMood(), dataStore.getRefusalCounts());
-      const plan = await llmService.performAgenticPlanning(notif.record.text, threadData, null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), dataStore.getConfig(), "", "online", dataStore.getRefusalCounts(), null, prePlan);
+      const prePlan = await llmService.performPrePlanning(notif.record?.text, threadData, null, 'bluesky', dataStore.getMood(), dataStore.getRefusalCounts());
+      const plan = await llmService.performAgenticPlanning(notif.record?.text, threadData, null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), dataStore.getConfig(), "", "online", dataStore.getRefusalCounts(), null, prePlan);
 
       const refined = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky' });
       if (refined.decision === 'refuse') return;
 
-      for (const action of refined.refined_actions || plan.actions) {
+      for (const action of refined.refined_actions || plan.actions || []) {
           await this.executeAction(action, { isAdmin, platform: 'bluesky', notif });
       }
 
-      const response = await llmService.generateResponse([{ role: 'user', content: notif.record.text }], { platform: 'bluesky' });
+      const response = await llmService.generateResponse([{ role: 'user', content: notif.record?.text }], { platform: 'bluesky' });
       if (response) {
           await blueskyService.postReply(notif, response);
-          await dataStore.saveInteraction({ platform: 'bluesky', userHandle: notif.author.handle, text: notif.record.text, response });
+          await dataStore.saveInteraction({ platform: 'bluesky', userHandle: notif.author.handle, text: notif.record?.text, response });
       }
     } catch (error) {
       console.error('[Bot] Error in processNotification:', error);
@@ -166,9 +162,10 @@ export class Bot {
   }
 
   async performAutonomousPost() {
-    const dConfig = dataStore.getConfig();
+    const dConfig = dataStore.getConfig() || {};
+    const postTopics = dConfig.post_topics || [];
     const currentMood = dataStore.getMood();
-    const topicPrompt = `Identify a deep topic for an autonomous post. Preferred: ${dConfig.post_topics.join(', ')}. Respond with ONLY topic.`;
+    const topicPrompt = `Identify a deep topic for an autonomous post. Preferred: ${postTopics.join(', ')}. Respond with ONLY topic.`;
     let topic = (await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true }))?.trim() || "existence";
 
     const postType = Math.random() < 0.3 ? 'image' : 'text';
@@ -195,7 +192,7 @@ export class Bot {
 
   async checkMaintenanceTasks() {
       const goal = dataStore.getCurrentGoal();
-      if (goal) await llmService.decomposeGoal(goal.goal);
+      if (goal?.goal) await llmService.decomposeGoal(goal.goal);
   }
 
   async checkDiscordSpontaneity() {
@@ -203,12 +200,13 @@ export class Bot {
       const admin = await discordService.getAdminUser();
       if (!admin) return;
       const history = dataStore.getDiscordConversation(`dm_${admin.id}`);
-      if (history.length === 0) return;
+      if (!history || history.length === 0) return;
       const poll = await llmService.performFollowUpPoll({ history, currentMood: dataStore.getMood(), lastBotMessage: '' });
-      if (poll.decision === 'follow-up') await discordService.sendSpontaneousMessage(poll.message);
+      if (poll?.decision === 'follow-up' && poll.message) await discordService.sendSpontaneousMessage(poll.message);
   }
 
   async executeAction(action, context) {
+      if (!action) return;
       if (action.tool === 'image_gen') {
           const res = await imageService.generateImage(action.query);
           if (res) {
@@ -224,7 +222,7 @@ export class Bot {
       const history = [];
       let current = thread;
       while (current && current.post) {
-          history.unshift({ author: current.post.author.handle, text: current.post.record.text });
+          history.unshift({ author: current.post.author?.handle, text: current.post.record?.text });
           current = current.parent;
       }
       return history;

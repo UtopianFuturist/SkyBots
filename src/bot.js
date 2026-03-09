@@ -8,6 +8,7 @@ import { imageService } from './services/imageService.js';
 import { cronService } from './services/cronService.js';
 import { nodeGatewayService } from './services/nodeGatewayService.js';
 import toolService from './services/toolService.js';
+import { renderService } from './services/renderService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords, checkHardCodedBoundaries } from './utils/textUtils.js';
@@ -23,6 +24,9 @@ export class Bot {
     this.paused = false;
     this.firehoseProcess = null;
     this.lastActivityTime = Date.now();
+    this.firehoseMatchCounts = {};
+    this.lastFirehoseLogTime = Date.now();
+    this.autonomousPostCount = 0;
   }
 
   async init() {
@@ -55,8 +59,26 @@ export class Bot {
         await blueskyService.registerComindAgent({ capabilities: ['planner-executor', 'discord-bridge', 'autonomous-posting'] });
 
         if (memoryService.isEnabled()) {
-          await memoryService.getRecentMemories();
+          const memories = await memoryService.getRecentMemories();
           llmService.setMemoryProvider(memoryService);
+
+          for (const mem of (memories || [])) {
+              if (mem.text?.includes('[DIRECTIVE]')) {
+                  const instructionMatch = mem.text.match(/Instruction: (.*)/i);
+                  if (instructionMatch) await dataStore.addBlueskyInstruction(instructionMatch[1].trim());
+              }
+              if (mem.text?.includes('[PERSONA]')) {
+                  const personaMatch = mem.text.match(/New self-instruction: (.*)/i) || mem.text.match(/\[PERSONA\] (.*)/i);
+                  if (personaMatch) await dataStore.addPersonaUpdate(personaMatch[1].trim());
+              }
+              if (mem.text?.includes('[GOAL]')) {
+                  const goalMatch = mem.text.match(/\[GOAL\]\s*Goal:\s*(.*?)(?:\s*\||$)/i);
+                  const descMatch = mem.text.match(/Description:\s*(.*?)(?:\s*\||$|#)/i);
+                  if (goalMatch) {
+                      await dataStore.setCurrentGoal(goalMatch[1].trim(), descMatch ? descMatch[1].trim() : goalMatch[1].trim());
+                  }
+              }
+          }
           await memoryService.secureAllThreads();
         }
 
@@ -66,7 +88,7 @@ export class Bot {
           llmService.setSkillsContent(this.skillsContent);
         } catch (error) {}
     } catch (e) {
-        console.error('[Bot] Critical error during init:', e);
+        await this._handleError(e, 'Bot.init');
     }
   }
 
@@ -104,6 +126,12 @@ export class Bot {
                 await this.processNotification(notif);
                 await dataStore.addRepliedPost(notif.uri);
               }
+              if (event.type === 'firehose_topic_match') {
+                  const kw = event.matched_keyword;
+                  this.firehoseMatchCounts[kw] = (this.firehoseMatchCounts[kw] || 0) + 1;
+                  await dataStore.addFirehoseMatch(event);
+                  if (Date.now() - this.lastFirehoseLogTime > 120000) this._flushFirehoseLogs();
+              }
             } catch (e) {}
           }
         });
@@ -115,11 +143,57 @@ export class Bot {
     }
   }
 
+  _flushFirehoseLogs() {
+    const keywords = Object.keys(this.firehoseMatchCounts);
+    if (keywords.length > 0) {
+        const summary = keywords.map(kw => `${this.firehoseMatchCounts[kw]} for '${kw}'`).join(', ');
+        console.log(`[Bot] Firehose topic matches aggregated: ${summary}`);
+        this.firehoseMatchCounts = {};
+        this.lastFirehoseLogTime = Date.now();
+    }
+  }
+
   async run() {
     this.startFirehose();
     setInterval(() => this.catchUpNotifications(), 300000);
     setInterval(() => this.performAutonomousPost(), 7200000);
     setInterval(() => this.checkDiscordSpontaneity(), 60000);
+    setInterval(() => this.refreshFirehoseKeywords(), 21600000);
+    setInterval(() => this.checkScheduledTasks(), 60000);
+  }
+
+  async checkScheduledTasks() {
+      try {
+          const now = Date.now();
+          const scheduledPosts = dataStore.getScheduledPosts() || [];
+          for (let i = 0; i < scheduledPosts.length; i++) {
+              const post = scheduledPosts[i];
+              if (post?.timestamp && now >= post.timestamp) {
+                  let success = false;
+                  if (post.platform === 'bluesky') {
+                      const res = await blueskyService.post(post.content, post.embed);
+                      if (res) success = true;
+                  }
+                  if (success) {
+                      await dataStore.removeScheduledPost(i);
+                      i--;
+                  }
+              }
+          }
+      } catch (e) {}
+  }
+
+  async refreshFirehoseKeywords(force = false) {
+      console.log('[Bot] Refreshing Firehose keywords...');
+      try {
+          const dConfig = dataStore.getConfig() || {};
+          const currentKeywords = [...(dConfig.post_topics || []), ...(dConfig.image_subjects || [])];
+          const newKeywords = await llmService.extractDeepKeywords("current interests and evolution", currentKeywords.join(', '));
+          if (newKeywords?.length > 0) {
+              await dataStore.setDeepKeywords(newKeywords);
+              await this.restartFirehose();
+          }
+      } catch (e) {}
   }
 
   async catchUpNotifications() {
@@ -199,9 +273,11 @@ export class Bot {
         }
         const content = await llmService.generateResponse([{ role: 'system', content: `Deep thought about ${topic}` }], { useStep: true });
         if (content) {
-            await blueskyService.post(content);
-            await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-            await dataStore.addRecentThought('bluesky', content);
+            const res = await blueskyService.post(content);
+            if (res) {
+                await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                await dataStore.addRecentThought('bluesky', content);
+            }
         }
     } catch (e) {
         console.error('[Bot] Error in performAutonomousPost:', e);
@@ -254,6 +330,21 @@ export class Bot {
           }
           return history;
       } catch (e) { return []; }
+  }
+
+  async _handleError(error, contextInfo) {
+    console.error(`[Bot] CRITICAL ERROR in ${contextInfo}:`, error);
+    if (renderService.isEnabled()) {
+      try {
+        const logs = await renderService.getLogs(50);
+        const alertPrompt = `DIAGNOSTIC ALERT: ${contextInfo} failed with error ${error.message}. Logs: ${logs}. Generate short alert.`;
+        const alertMsg = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useStep: true });
+        if (alertMsg) {
+          if (discordService.status === 'online') await discordService.sendSpontaneousMessage(alertMsg);
+          await blueskyService.post(`@${config.ADMIN_BLUESKY_HANDLE} ${alertMsg}`);
+        }
+      } catch (logError) {}
+    }
   }
 
   updateActivity() { this.lastActivityTime = Date.now(); }

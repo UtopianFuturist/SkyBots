@@ -58,73 +58,80 @@ Guidelines:
 - Do not narrate the user's actions.
 - Anti-slop rules: avoid generic filler, be direct.`;
 
-    const model = options.useStep ? config.STEP_MODEL : (options.useCoder ? config.CODER_MODEL : config.LLM_MODEL);
+    const models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
+    if (options.useStep) models.unshift(config.STEP_MODEL);
+    else if (options.useCoder) models.unshift(config.CODER_MODEL);
 
-    let attempts = 0;
-    const maxAttempts = 3;
+    let lastError = null;
 
-    while (attempts < maxAttempts) {
-        attempts++;
-        try {
-          const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
-            },
-            body: JSON.stringify({
-              model: model,
-              messages: [{ role: 'system', content: systemPrompt }, ...messages],
-              temperature: 0.7,
-              max_tokens: 1024
-            }),
-            agent: persistentAgent,
-            signal: options.abortSignal,
-            timeout: 30000 // 30s timeout
-          });
+    for (let i = 0; i < models.length; i++) {
+        const model = models[i];
+        let attempts = 0;
+        const maxAttempts = i === 0 ? 2 : 1; // Retry primary once, others once
 
-          if (!response.ok) {
-              const errorText = await response.text();
-              console.warn(`[LLMService] Attempt ${attempts} failed: HTTP ${response.status} - ${errorText.substring(0, 100)}`);
-              if (response.status === 429 || response.status >= 500) {
-                  await new Promise(r => setTimeout(r, 2000 * attempts));
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+              console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
+              const response = await fetch('https://integrate.api.nvidia.com/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
+                },
+                body: JSON.stringify({
+                  model: model,
+                  messages: [{ role: 'system', content: systemPrompt }, ...messages],
+                  temperature: 0.7,
+                  max_tokens: 1024
+                }),
+                agent: persistentAgent,
+                signal: options.abortSignal,
+                timeout: 180000 // 180s timeout
+              });
+
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  console.warn(`[LLMService] Model ${model} failed: HTTP ${response.status} - ${errorText.substring(0, 100)}`);
+                  if (response.status === 429 || response.status >= 500) {
+                      await new Promise(r => setTimeout(r, 2000 * attempts));
+                      continue;
+                  }
+                  break; // Try next model
+              }
+
+              const rawBody = await response.text();
+              if (!rawBody) {
+                  console.warn(`[LLMService] Model ${model} returned empty body.`);
                   continue;
               }
-              return null;
-          }
 
-          const rawBody = await response.text();
-          if (!rawBody) {
-              console.warn(`[LLMService] Attempt ${attempts} returned empty body.`);
-              await new Promise(r => setTimeout(r, 1000));
-              continue;
-          }
+              let data;
+              try {
+                  data = JSON.parse(rawBody);
+              } catch (e) {
+                  console.error(`[LLMService] JSON parse error from ${model}:`, e.message);
+                  continue;
+              }
 
-          let data;
-          try {
-              data = JSON.parse(rawBody);
-          } catch (e) {
-              console.error(`[LLMService] Attempt ${attempts} - JSON parse error:`, e.message);
-              await new Promise(r => setTimeout(r, 1000));
-              continue;
-          }
-
-          const content = data.choices?.[0]?.message?.content;
-
-          if (options.traceId && this.ds) {
-              await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1].content, response: content });
-          }
-
-          return content;
-        } catch (error) {
-          console.error(`[LLMService] Attempt ${attempts} - NVIDIA NIM Error:`, error.message);
-          if (attempts < maxAttempts) {
-              await new Promise(r => setTimeout(r, 2000 * attempts));
-              continue;
-          }
-          return null;
+              const content = data.choices?.[0]?.message?.content;
+              if (content) {
+                  if (options.traceId && this.ds) {
+                      await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1].content, response: content });
+                  }
+                  return content;
+              }
+            } catch (error) {
+              console.error(`[LLMService] Model ${model} error:`, error.message);
+              lastError = error;
+              if (attempts < maxAttempts) {
+                  await new Promise(r => setTimeout(r, 1000));
+                  continue;
+              }
+            }
         }
     }
+    console.error(`[LLMService] All models failed. Last error:`, lastError?.message);
     return null;
   }
 

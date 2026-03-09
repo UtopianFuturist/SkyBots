@@ -163,28 +163,6 @@ export class Bot {
     setInterval(() => this.performAutonomousPost(), 7200000);
     setInterval(() => this.checkDiscordSpontaneity(), 60000);
     setInterval(() => this.refreshFirehoseKeywords(), 21600000);
-    setInterval(() => this.checkScheduledTasks(), 60000);
-  }
-
-  async checkScheduledTasks() {
-      try {
-          const now = Date.now();
-          const scheduledPosts = dataStore.getScheduledPosts() || [];
-          for (let i = 0; i < scheduledPosts.length; i++) {
-              const post = scheduledPosts[i];
-              if (post?.timestamp && now >= post.timestamp) {
-                  let success = false;
-                  if (post.platform === 'bluesky') {
-                      const res = await blueskyService.post(post.content, post.embed);
-                      if (res) success = true;
-                  }
-                  if (success) {
-                      await dataStore.removeScheduledPost(i);
-                      i--;
-                  }
-              }
-          }
-      } catch (e) {}
   }
 
   async refreshFirehoseKeywords(force = false) {

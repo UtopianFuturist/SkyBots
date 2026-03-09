@@ -127,10 +127,14 @@ export class Bot {
                 await dataStore.addRepliedPost(notif.uri);
               }
               if (event.type === 'firehose_topic_match') {
-                  const kw = event.matched_keyword;
-                  this.firehoseMatchCounts[kw] = (this.firehoseMatchCounts[kw] || 0) + 1;
+                  const keywords = event.matched_keywords || [];
+                  for (const kw of keywords) {
+                      const cleanKw = kw.toLowerCase();
+                      this.firehoseMatchCounts[cleanKw] = (this.firehoseMatchCounts[cleanKw] || 0) + 1;
+                  }
                   await dataStore.addFirehoseMatch(event);
-                  if (Date.now() - this.lastFirehoseLogTime > 120000) this._flushFirehoseLogs();
+                  const totalMatches = Object.values(this.firehoseMatchCounts).reduce((a, b) => a + b, 0);
+                  if (Date.now() - this.lastFirehoseLogTime > 120000 || totalMatches >= 50) this._flushFirehoseLogs();
               }
             } catch (e) {}
           }

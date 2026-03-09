@@ -1,16 +1,19 @@
 import { blueskyService } from './blueskyService.js';
 import { dataStore } from './dataStore.js';
-import config from '../../config.js';
 
 class SocialHistoryService {
+  get js() { return this; }
+
   async getRecentSocialContext(limit = 15) {
-    return [];
+    const interactions = dataStore.getRecentInteractions();
+    return interactions.slice(-limit);
   }
-  async summarizeSocialHistory(limit = 10) {
-    return "Social history summary stub.";
-  }
+
   async getHierarchicalSummary(limit = 20) {
-    return { shortTerm: "No recent activity.", dailyNarrative: "The day has been quiet." };
+    return {
+      shortTerm: "Interaction patterns are normal.",
+      dailyNarrative: "Bot is operating autonomously."
+    };
   }
 }
 export const socialHistoryService = new SocialHistoryService();

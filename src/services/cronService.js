@@ -102,10 +102,11 @@ class CronService {
   async performMonthlyWorldviewAudit() {
     const admin = await discordService.getAdminUser();
     if (!admin) return;
-    const history = dataStore.getDiscordConversation(`dm_${admin.id}`);
-    const worldview = await llmService.generateAdminWorldview(history, dataStore.getAdminInterests());
+    const history = await discordService.fetchAdminHistory(100);
+    const interests = dataStore.getAdminInterests();
+    const worldview = await llmService.generateAdminWorldview(history, interests);
     if (worldview) {
-        await dataStore.db.update(data => { data.admin_worldview = worldview; });
+        await dataStore.update(data => { data.admin_worldview = worldview; });
         if (memoryService.isEnabled()) await memoryService.createMemoryEntry('philosophy', `[WORLDVIEW] ${worldview.summary.substring(0, 150)}`);
     }
   }
@@ -116,7 +117,7 @@ class CronService {
     try {
         const posts = await blueskyService.getUserPosts(adminDid, 50);
         const analysis = await llmService.analyzeBlueskyUsage(adminDid, posts);
-        if (analysis) await dataStore.db.update(data => { data.admin_bluesky_usage = analysis; });
+        if (analysis) await dataStore.update(data => { data.admin_bluesky_usage = analysis; });
     } catch (e) {}
   }
 

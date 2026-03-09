@@ -15,12 +15,14 @@ class DiscordService {
         this.adminId = null;
         this.status = 'offline';
         this.isProcessingAdminRequest = false;
+        this.isInitializing = false;
     }
 
     setBotInstance(bot) { this.botInstance = bot; }
 
     async init() {
-        if (!this.isEnabled) return;
+        if (!this.isEnabled || this.isInitializing) return;
+        this.isInitializing = true;
         this.status = 'connecting';
         try {
             this.client = new Client({
@@ -30,14 +32,19 @@ class DiscordService {
             this.setupEventListeners();
             await this.client.login(this.token);
             this.status = 'online';
+            this.isInitializing = false;
         } catch (e) {
             console.error('[DiscordService] Login failed:', e.message);
             this.status = 'offline';
+            this.isInitializing = false;
         }
     }
 
     setupEventListeners() {
-        this.client.on('ready', () => { this.status = 'online'; });
+        this.client.on('ready', () => {
+            this.status = 'online';
+            console.log(`[DiscordService] Logged in as ${this.client.user.tag}`);
+        });
         this.client.on('messageCreate', async (m) => {
             if (m.author.bot) return;
             const isAdmin = m.author.username === this.adminName;
@@ -80,9 +87,11 @@ class DiscordService {
     async fetchAdminHistory(limit = 50) {
         const admin = await this.getAdminUser();
         if (!admin) return [];
-        const dm = await admin.createDM();
-        const msgs = await dm.messages.fetch({ limit });
-        return msgs.map(m => ({ role: m.author.id === this.client.user.id ? 'assistant' : 'user', content: m.content }));
+        try {
+            const dm = await admin.createDM();
+            const msgs = await dm.messages.fetch({ limit });
+            return msgs.map(m => ({ role: m.author.id === this.client.user.id ? 'assistant' : 'user', content: m.content }));
+        } catch (e) { return []; }
     }
 
     async sendSpontaneousMessage(content) {

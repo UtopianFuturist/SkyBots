@@ -32,7 +32,7 @@ class BlueskyService {
       await rt.detectFacets(this.agent);
       const postData = {
         $type: 'app.bsky.feed.post', text: rt.text, facets: rt.facets, createdAt: new Date().toISOString(),
-        reply: { root: parent.record.reply?.root || parent, parent: parent }
+        reply: { root: parent.record?.reply?.root || parent, parent: parent }
       };
       if (options.embed) postData.embed = options.embed;
       return await this.agent.post(postData);
@@ -86,7 +86,12 @@ class BlueskyService {
     } catch (error) { return { notifications: [] }; }
   }
   async getTimeline() { return { data: { feed: [] } }; }
-  async getDetailedThread() { return null; }
+  async getDetailedThread(uri) {
+      try {
+          const res = await this.agent.api.app.bsky.feed.getPostThread({ uri });
+          return res.data.thread;
+      } catch (e) { return null; }
+  }
   async getPostDetails() { return null; }
   async getPastInteractions() { return []; }
   async getUserActivity() { return []; }

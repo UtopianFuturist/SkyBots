@@ -899,7 +899,7 @@ class DiscordService {
             directive.instruction = newInstruction;
             // Update in place (lowdb reference)
             await dataStore.db.write();
-            await this._send(message.channel, `📝 Edited pending ${directive.type}. New instruction: "${newInstruction}". Use \`/approve\` to save it.`);
+            await this._send(message.channel, `📝 Edited pending ${directive.type}. New instruction: "${newInstruction}". Use `/approve` to save it.`);
             return;
         }
 
@@ -946,13 +946,13 @@ class DiscordService {
             const parts = message.content.split(' ');
             if (parts.length < 2) {
                 const config = dataStore.getConfig();
-                await this._send(message.channel, `Current Configuration:\n\`\`\`json\n${JSON.stringify(config, null, 2)}\n\`\`\``);
+                await this._send(message.channel, `Current Configuration:\n```json\n${JSON.stringify(config, null, 2)}\n````);
                 return;
             }
             const key = parts[1];
             let value = parts.slice(2).join(' ');
             if (!value) {
-                await this._send(message.channel, `Usage: \`/config [key] [value]\``);
+                await this._send(message.channel, `Usage: `/config [key] [value]``);
                 return;
             }
             // Simple type inference
@@ -961,7 +961,7 @@ class DiscordService {
             else if (!isNaN(value)) value = Number(value);
 
             const success = await dataStore.updateConfig(key, value);
-            await this._send(message.channel, success ? `✅ Updated \`${key}\` to \`${value}\`.` : `❌ Failed to update \`${key}\`.`);
+            await this._send(message.channel, success ? `✅ Updated `${key}` to `${value}`.` : `❌ Failed to update `${key}`.`);
             return;
         }
 
@@ -1262,7 +1262,7 @@ ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${persona
    - **TIME**: Reference the transition of the day (e.g., "Late night thoughts?") naturally based on the current time provided below.
    - **EXIT RITUALS**: Handle closures ("goodnight", "gotta go") with personalized, warm closure that reflects your relationship, staying persona-aligned and prompt-agnostic.
 7. If the admin gives you "special instructions" or behavioral feedback, acknowledge them and implement them.
- 8. You can use the \`persist_directive\` tool if the admin gives you long-term instructions.
+ 8. You can use the `persist_directive` tool if the admin gives you long-term instructions.
 9. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate.
 10. Continuity: You have access to the recent chat history. Use it to maintain context and recognize who you are talking to.
 ${config.DISCORD_HEARTBEAT_ADDENDUM ? `10. ADDITIONAL SPECIFICATION: ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}

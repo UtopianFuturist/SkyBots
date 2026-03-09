@@ -19,7 +19,9 @@ class DataStore {
       config: {
         bluesky_post_cooldown: parseInt(config.BLUESKY_POST_COOLDOWN) || 120,
         max_thread_chunks: 3,
-        interaction_threshold: 0.7
+        interaction_threshold: 0.7,
+        post_topics: config.POST_TOPICS ? config.POST_TOPICS.split(',').map(t => t.trim()) : [],
+        image_subjects: config.IMAGE_SUBJECTS ? config.IMAGE_SUBJECTS.split(',').map(t => t.trim()) : []
       },
       current_goal: { goal: "Autonomous exploration", description: "Default startup goal", timestamp: Date.now() },
       repliedPosts: [],
@@ -51,7 +53,33 @@ class DataStore {
       user_dossiers: {},
       user_summaries: {},
       social_resonance: 0.5,
-      trace_logs: []
+      trace_logs: [],
+      last_keyword_evolution: 0,
+      last_persona_evolution: 0,
+      last_agency_reflection: 0,
+      last_core_value_discovery: 0,
+      last_existential_reflection: 0,
+      last_linguistic_analysis: 0,
+      last_memory_pruning: 0,
+      last_mood_trend: 0,
+      last_persona_audit: 0,
+      last_soul_mapping: 0,
+      last_strategy_audit: 0,
+      last_tool_discovery: 0,
+      mood_history: [],
+      interaction_count_since_audit: 0,
+      relational_debt_score: 0,
+      inside_jokes: [],
+      linguistic_mutations: [],
+      discovered_capabilities: [],
+      emergent_trends: [],
+      co_evolution_entries: [],
+      admin_worldview: { summary: "", core_values: [], biases: [] },
+      admin_bluesky_usage: { sentiment: "neutral", frequency: "unknown", primary_topics: [] },
+      firehose_matches: [],
+      admin_facts: [],
+      persona_updates: "",
+      bluesky_instructions: ""
     };
 
     this.db = await JSONFilePreset(this.dbPath, defaultData);
@@ -71,7 +99,10 @@ class DataStore {
     };
 
     heal(this.db.data, defaultData);
-    if (changed) await this.db.write();
+    if (changed) {
+        console.log('[DataStore] Database schema updated and healed.');
+        await this.db.write();
+    }
   }
 
   get js() { return this; }
@@ -86,8 +117,8 @@ class DataStore {
   async setAdminDid(d) { if (this.db?.data) this.db.data.admin_did = d; await this.write(); }
   getAdminDid() { return this.db?.data?.admin_did; }
   getAdminExhaustion() { return 0; }
-  getAdminFacts() { return []; }
-  async addAdminFact(f) { await this.write(); }
+  getAdminFacts() { return this.db?.data?.admin_facts || []; }
+  async addAdminFact(f) { if (this.db?.data) { if (!this.db.data.admin_facts) this.db.data.admin_facts = []; this.db.data.admin_facts.push(f); await this.write(); } }
   getAdminInterests() { return this.db?.data?.admin_interests || {}; }
   async updateAdminInterests(i) { if (this.db?.data) this.db.data.admin_interests = i; await this.write(); }
 
@@ -113,7 +144,7 @@ class DataStore {
   }
   setGoal(g) { if (this.db?.data?.current_goal) { this.db.data.current_goal.goal = g; this.write(); } }
   getGoalSubtasks() { return []; }
-  async addGoalEvolution(e) { await this.write(); }
+  async addGoalEvolution(e) { if (this.db?.data) { if (!this.db.data.goal_evolutions) this.db.data.goal_evolutions = []; this.db.data.goal_evolutions.push(e); await this.write(); } }
 
   // History & Replied
   async addRepliedPost(p) {
@@ -145,7 +176,7 @@ class DataStore {
         await this.write();
     }
   }
-  getDiscordScheduledTasks() { return (this.db?.data?.scheduled_tasks || []).filter(t => t.platform === 'discord'); }
+  getDiscordScheduledTasks() { return (this.db?.data?.scheduled_tasks || []).filter(t => t && t.platform === 'discord'); }
   async removeDiscordScheduledTask(i) {
     if (this.db?.data?.scheduled_tasks) {
         this.db.data.scheduled_tasks.splice(i, 1);
@@ -156,10 +187,10 @@ class DataStore {
 
   // Scheduling
   getScheduledPosts() { return this.db?.data?.scheduled_posts || []; }
-  async addScheduledPost(p) {
+  async addScheduledPost(platform, content, embed = null) {
     if (this.db?.data) {
         if (!this.db.data.scheduled_posts) this.db.data.scheduled_posts = [];
-        this.db.data.scheduled_posts.push(p);
+        this.db.data.scheduled_posts.push({ platform, content, embed, timestamp: Date.now() });
         await this.write();
     }
   }
@@ -192,7 +223,7 @@ class DataStore {
   }
   getDeepKeywords() { return this.db?.data?.deep_keywords || []; }
   async setDeepKeywords(k) { if (this.db?.data) { this.db.data.deep_keywords = k; await this.write(); } }
-  getLastDeepKeywordRefresh() { return 0; }
+  getLastDeepKeywordRefresh() { return this.db?.data?.last_keyword_evolution || 0; }
 
   // Thoughts & Logs
   async addRecentThought(p, c) {
@@ -211,7 +242,7 @@ class DataStore {
     }
   }
   getAgencyLogs() { return this.db?.data?.agency_logs || []; }
-  async addAgencyReflection(r) { await this.write(); }
+  async addAgencyReflection(r) { if (this.db?.data) { if (!this.db.data.agency_reflections) this.db.data.agency_reflections = []; this.db.data.agency_reflections.push(r); await this.write(); } }
   async addPersonaAdvice(a) {
     if (this.db?.data) {
         if (!this.db.data.persona_advice) this.db.data.persona_advice = [];
@@ -219,7 +250,7 @@ class DataStore {
         await this.write();
     }
   }
-  async addStrategyAudit(a) { await this.write(); }
+  async addStrategyAudit(a) { if (this.db?.data) { if (!this.db.data.strategy_audits) this.db.data.strategy_audits = []; this.db.data.strategy_audits.push(a); await this.write(); } }
   async addTraceLog(l) {
     if (this.db?.data) {
         if (!this.db.data.trace_logs) this.db.data.trace_logs = [];
@@ -244,15 +275,15 @@ class DataStore {
     }
   }
   async updateSocialResonance(v, d) { if (this.db?.data) { this.db.data.social_resonance = v; await this.write(); } }
-  async blockUser(h) { await this.write(); }
-  async unblockUser(h) { await this.write(); }
+  async blockUser(h) { if (this.db?.data) { if (!this.db.data.blocked_users) this.db.data.blocked_users = []; if (!this.db.data.blocked_users.includes(h)) this.db.data.blocked_users.push(h); await this.write(); } }
+  async unblockUser(h) { if (this.db?.data?.blocked_users) { this.db.data.blocked_users = this.db.data.blocked_users.filter(u => u !== h); await this.write(); } }
   isUserLockedOut(u) { return false; }
   async setBoundaryLockout(u, t) { if (this.db?.data) { this.db.data.boundary_lockout = { user: u, until: t }; await this.write(); } }
 
   // Relational
-  getRelationalMetrics() { return {}; }
-  async updateRelationalMetrics(m) { await this.write(); }
-  getRelationalDebtScore() { return 0; }
+  getRelationalMetrics() { return this.db?.data?.relational_metrics || {}; }
+  async updateRelationalMetrics(m) { if (this.db?.data) { this.db.data.relational_metrics = m; await this.write(); } }
+  getRelationalDebtScore() { return this.db?.data?.relational_debt_score || 0; }
   async updateRelationshipSeason(s) { if (this.db?.data) { this.db.data.relationship_season = s; await this.write(); } }
   async addRelationalReflection(r) {
     if (this.db?.data) {
@@ -277,10 +308,16 @@ class DataStore {
   async updateLastMoltfeedSummaryTime(t) { if (this.db?.data) { this.db.data.last_moltfeed_summary_time = t; await this.write(); } }
 
   // Others
-  getFirehoseMatches() { return []; }
-  async addFirehoseMatch(m) { await this.write(); }
-  async addBlueskyInstruction(i) { await this.write(); }
-  async addPersonaUpdate(u) { await this.write(); }
+  getFirehoseMatches() { return this.db?.data?.firehose_matches || []; }
+  async addFirehoseMatch(m) {
+    if (this.db?.data) {
+        if (!this.db.data.firehose_matches) this.db.data.firehose_matches = [];
+        this.db.data.firehose_matches.push(m);
+        await this.write();
+    }
+  }
+  async addBlueskyInstruction(i) { if (this.db?.data) { if (!this.db.data.bluesky_instructions) this.db.data.bluesky_instructions = ""; this.db.data.bluesky_instructions += "\n" + i; await this.write(); } }
+  async addPersonaUpdate(u) { if (this.db?.data) { if (!this.db.data.persona_updates) this.db.data.persona_updates = ""; this.db.data.persona_updates += "\n" + u; await this.write(); } }
   getPostContinuations() { return this.db?.data?.post_continuations || []; }
   async removePostContinuation(i) {
     if (this.db?.data?.post_continuations) {
@@ -289,28 +326,38 @@ class DataStore {
     }
   }
   getLifeArcs() { return this.db?.data?.life_arcs || []; }
-  async updateLifeArc(a) { await this.write(); }
+  async updateLifeArc(a) { if (this.db?.data) { if (!this.db.data.life_arcs) this.db.data.life_arcs = []; this.db.data.life_arcs.push(a); await this.write(); } }
   getNetworkSentiment() { return this.db?.data?.network_sentiment || 0.5; }
   async setNetworkSentiment(s) { if (this.db?.data) { this.db.data.network_sentiment = s; await this.write(); } }
-  getRefusalCounts() { return this.db?.data?.refusal_counts || {}; }
+  getRefusalCounts() { return this.db?.data?.refusal_counts || { global: 0, discord: 0, bluesky: 0 }; }
   async incrementRefusalCount(p) {
     if (this.db?.data) {
-        if (!this.db.data.refusal_counts) this.db.data.refusal_counts = {};
+        if (!this.db.data.refusal_counts) this.db.data.refusal_counts = { global: 0, discord: 0, bluesky: 0 };
         this.db.data.refusal_counts[p] = (this.db.data.refusal_counts[p] || 0) + 1;
         await this.write();
     }
   }
 
-  // Stubs for missing but referenced
-  async addCoEvolutionEntry(e) { await this.write(); }
-  async addDiscoveredCapability(c) { await this.write(); }
-  async addEmergentTrend(t) { await this.write(); }
-  async addInsideJoke(j) { await this.write(); }
-  async addLinguisticMutation(m) { await this.write(); }
-  getInsideJokes() { return []; }
-  async muteThread(u) { await this.write(); }
-  async setAdminHomeMentionedAt(t) { await this.write(); }
-  async setAdminWorkMentionedAt(t) { await this.write(); }
+  // Stubs and extra methods from features
+  async addCoEvolutionEntry(e) { if (this.db?.data) { if (!this.db.data.co_evolution_entries) this.db.data.co_evolution_entries = []; this.db.data.co_evolution_entries.push(e); await this.write(); } }
+  async addDiscoveredCapability(c) { if (this.db?.data) { if (!this.db.data.discovered_capabilities) this.db.data.discovered_capabilities = []; this.db.data.discovered_capabilities.push(c); await this.write(); } }
+  async addEmergentTrend(t) { if (this.db?.data) { if (!this.db.data.emergent_trends) this.db.data.emergent_trends = []; this.db.data.emergent_trends.push(t); await this.write(); } }
+  async addInsideJoke(j) {
+    if (this.db?.data) {
+        if (!this.db.data.inside_jokes) this.db.data.inside_jokes = [];
+        this.db.data.inside_jokes.push(j);
+        await this.write();
+    }
+  }
+  async addLinguisticMutation(m) { if (this.db?.data) { if (!this.db.data.linguistic_mutations) this.db.data.linguistic_mutations = []; this.db.data.linguistic_mutations.push(m); await this.write(); } }
+  getInsideJokes() { return this.db?.data?.inside_jokes || []; }
+  async muteThread(u) { if (this.db?.data) { if (!this.db.data.muted_threads) this.db.data.muted_threads = []; this.db.data.muted_threads.push(u); await this.write(); } }
+  async setAdminHomeMentionedAt(t) { if (this.db?.data) { this.db.data.admin_home_mentioned_at = t; await this.write(); } }
+  async setAdminWorkMentionedAt(t) { if (this.db?.data) { this.db.data.admin_work_mentioned_at = t; await this.write(); } }
+
+  // Memory Service Support
+  getPersonaUpdates() { return this.db?.data?.persona_updates || ""; }
+  getBlueskyInstructions() { return this.db?.data?.bluesky_instructions || ""; }
 }
 
 export const dataStore = new DataStore();

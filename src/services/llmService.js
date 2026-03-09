@@ -234,6 +234,14 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
       return { sentiment: "positive", frequency: "active", primary_topics: [] };
   }
 
+  async performDialecticHumor(history) {
+      return "Humorous response stub.";
+  }
+
+  async validateResultRelevance(query, result) {
+      return { relevant: true };
+  }
+
   _formatHistory(history, includeRole = true) {
       if (!history) return "";
       return history.map(h => `${includeRole ? (h.role || h.author) + ': ' : ''}${h.content || h.text}`).join('\n');

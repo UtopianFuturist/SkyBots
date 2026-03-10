@@ -4,22 +4,7 @@ async function fix() {
   const path = 'src/bot.js';
   let content = await fs.readFile(path, 'utf-8');
 
-  const linguisticAnalysisMethod = `  async performLinguisticAnalysis() {
-    console.log('[Bot] Starting Linguistic Analysis task...');
-    // Placeholder for actual implementation
-  }`;
-
-  const keywordEvolutionMethod = `  async performKeywordEvolution() {
-    console.log('[Bot] Starting Keyword Evolution task...');
-    // Placeholder for actual implementation
-  }`;
-
-  const moodSyncMethod = `  async performMoodSync() {
-    console.log('[Bot] Starting Mood Sync task...');
-    // Placeholder for actual implementation
-  }`;
-
-  const soulMappingMethod = `  async performPublicSoulMapping() {
+  const performPublicSoulMappingMethod = `  async performPublicSoulMapping() {
     console.log('[Bot] Starting Public Soul-Mapping task...');
     try {
         const recentInteractions = dataStore.db.data.interactions || [];
@@ -54,6 +39,7 @@ async function fix() {
                     if (dataStore.updateUserSoulMapping) {
                         await dataStore.updateUserSoulMapping(handle, mapping);
                     }
+                    console.log(\`[Bot] Successfully mapped soul for @\${handle}\`);
                 }
             }
         }
@@ -62,16 +48,11 @@ async function fix() {
     }
   }`;
 
-  // Find the last closing brace and insert before it
+  // Insert before the last closing brace
   const lastBrace = content.lastIndexOf('}');
-  content = content.slice(0, lastBrace) + '\n' +
-            linguisticAnalysisMethod + '\n\n' +
-            keywordEvolutionMethod + '\n\n' +
-            moodSyncMethod + '\n\n' +
-            soulMappingMethod + '\n' +
-            content.slice(lastBrace);
+  content = content.slice(0, lastBrace) + '\n' + performPublicSoulMappingMethod + '\n' + content.slice(lastBrace);
 
   await fs.writeFile(path, content);
-  console.log('Restored remaining missing methods to src/bot.js.');
+  console.log('Restored performPublicSoulMapping to src/bot.js.');
 }
 fix();

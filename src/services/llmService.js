@@ -250,12 +250,63 @@ Respond with JSON: { "consent_to_engage": boolean, "reason": "string" }`;
       return { consistent: true };
   }
 
-  async isPostSafe(text) { return { safe: true }; }
-  async isUrlSafe(url) { return true; }
-  async isImageCompliant(buffer) { return { compliant: true }; }
-  async isPersonaAligned(action) { return { aligned: true }; }
+    async isPostSafe(text) {
+    const prompt = `As a content safety auditor, analyze this text for toxicity, self-harm, NSFW, or PII:
+"${text}"
 
-  async auditStrategy(logs) { return { decision: "proceed" }; }
+Respond with JSON: { "safe": boolean, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"safe": true}');
+    } catch (e) { return { safe: true }; }
+  }
+    async isUrlSafe(url) {
+    const prompt = `As a web safety auditor, analyze this URL: "${url}".
+Identify if it is potentially harmful, a known phishing site, or contains explicit NSFW content.
+Respond with JSON: { "safe": boolean, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{ "safe": true }');
+    } catch (e) { return { safe: true }; }
+  }
+    async isImageCompliant(buffer) {
+    console.log('[LLMService] Performing visual safety audit...');
+    try {
+        const analysis = await this.analyzeImage(buffer, "Safety analysis for persona alignment.", { prompt: "Analyze this image for NSFW content, violence, or gore. Respond with 'COMPLIANT' if safe, or 'NON-COMPLIANT | reason' if not." });
+        if (analysis?.toUpperCase().includes('NON-COMPLIANT')) {
+            const reason = analysis.split('|')[1]?.trim() || "Visual safety violation";
+            return { compliant: false, reason };
+        }
+        return { compliant: true };
+    } catch (e) {
+        console.error("[LLMService] Visual safety error:", e);
+        return { compliant: true }; // Fail open for now
+    }
+  }
+    async isPersonaAligned(content, platform = 'bluesky') {
+    const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+Analyze if this draft for ${platform} aligns with your core identity, current mood, and goals.
+
+Draft: "${content}"
+
+Respond with JSON: { "aligned": boolean, "feedback": "string", "refined": "optional improved version" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"aligned": true}');
+    } catch (e) { return { aligned: true }; }
+  }
+
+    async auditStrategy(plans) {
+    const prompt = `As a strategic auditor, review these proposed plans:
+${JSON.stringify(plans)}
+
+Identify risks, inefficiencies, or persona drift.
+Respond with JSON: { "decision": "proceed|revise|abort", "advice": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"decision": "proceed"}');
+    } catch (e) { return { decision: "proceed" }; }
+  }
 
     async extractDeepKeywords(context, count = 15) {
     const prompt = `As a semantic analyst, extract exactly ${count} highly specific, conceptual keywords or phrases based on this context:
@@ -284,22 +335,82 @@ RULES:
       return { decision: 'none' };
   }
 
-  async summarizeWebPage(url, content) {
-      return await this.generateResponse([{ role: 'user', content: `Summarize: ${content.substring(0, 1000)}` }], { useStep: true });
+    async summarizeWebPage(url, content) {
+    const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+Analyze and summarize the content from this web page: ${url}
+
+Content:
+${content.substring(0, 5000)}
+
+INSTRUCTIONS:
+1. Provide a concise, persona-aligned summary of the key points.
+2. Identify any information particularly relevant to your current goals or interests.
+3. Keep it under 1000 characters.`;
+    return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
   }
 
   async performInternalInquiry(query, role) {
       return await this.generateResponse([{ role: 'user', content: `You are ${role}. Research: ${query}` }], { useStep: true });
   }
 
-  async selectBestResult(query, results, type) { return results?.[0]; }
-  async decomposeGoal(goal) { return "Decomposed goal"; }
+    async selectBestResult(query, results, type = 'general') {
+    const prompt = `As an information evaluator, choose the most relevant and high-quality result for this query: "${query}"
+Type: ${type}
 
-  async extractRelationalVibe(history) { return "friendly"; }
+Results:
+${JSON.stringify(results)}
 
-  async extractScheduledTask(content, mood) { return { decision: 'none' }; }
+Respond with JSON: { "best_index": number, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"best_index": 0}');
+        return results[data.best_index] || results[0];
+    } catch (e) { return results[0]; }
+  }
+    async decomposeGoal(goal) {
+    const prompt = `Break down this complex goal into 3-5 manageable subtasks:
+"${goal}"
 
-  async shouldIncludeSensory(persona) { return false; }
+Respond with JSON: { "subtasks": ["task 1", "task 2", ...] }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"subtasks": []}');
+        return data.subtasks;
+    } catch (e) { return []; }
+  }
+
+    async extractRelationalVibe(history) {
+    const prompt = `Analyze the relational tension and tone in this conversation history:
+${JSON.stringify(history)}
+
+Identify the "vibe" (e.g., friendly, distressed, cold, intellectual).
+Respond with ONLY the 1-word label.`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    return res?.trim().toLowerCase() || "neutral";
+  }
+
+    async extractScheduledTask(content, mood) {
+    const prompt = `Analyze if this user request implies a task that should be performed later at a specific time:
+"${content}"
+
+Respond with JSON: { "decision": "schedule|none", "time": "HH:mm", "message": "string", "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"decision": "none"}');
+    } catch (e) { return { decision: "none" }; }
+  }
+
+    async shouldIncludeSensory(persona) {
+    const prompt = `As a persona auditor, analyze if this persona prompt requires detailed sensory/aesthetic descriptions in its visual analysis:
+${persona}
+
+Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"include_sensory": false}');
+        return data.include_sensory;
+    } catch (e) { return false; }
+  }
 
     async analyzeImage(image, alt, options = {}) {
     if (!image) return "No image provided.";
@@ -340,8 +451,23 @@ RULES:
   }
 
 
-  async isReplyRelevant(text) { return true; }
-  async isReplyCoherent(parent, child, history, embed) { return true; }
+    async isReplyRelevant(text) {
+    const prompt = `Is this post relevant enough for you to engage with, given your interests and persona?
+"${text}"
+
+Respond with "YES" or "NO".`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    return res?.toUpperCase().includes('YES');
+  }
+    async isReplyCoherent(parent, child, history, embed) {
+    const prompt = `Critique the coherence of this proposed reply:
+Parent: "${parent}"
+Reply: "${child}"
+
+Respond with "COHERENT" or "INCOHERENT | reason".`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    return !res?.toUpperCase().includes('INCOHERENT');
+  }
   async auditPersonaAlignment(actions) { return { advice: "" }; }
 
   async generalizePrivateThought(thought) {
@@ -353,7 +479,16 @@ Thought: "${thought}"`;
     return res || thought;
   }
 
-  async buildInternalBrief(topic, google, wiki, firehose) { return "Brief"; }
+    async buildInternalBrief(topic, google, wiki, firehose) {
+    const prompt = `Synthesize this research into a concise internal brief for your own use:
+Topic: ${topic}
+Search: ${JSON.stringify(google)}
+Wiki: ${wiki}
+Firehose: ${JSON.stringify(firehose)}
+
+Provide a few bullet points of key insights.`;
+    return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+  }
 
   async generateDrafts(messages, count, options) {
       return [await this.generateResponse(messages, options)];
@@ -363,7 +498,14 @@ Thought: "${thought}"`;
 
   async generateAlternativeAction(reason, platform, context) { return "NONE"; }
 
-  async rateUserInteraction(history) { return 5; }
+    async rateUserInteraction(history) {
+    const prompt = `Rate the quality of this interaction on a scale of 1-10:
+${JSON.stringify(history)}
+
+Respond with ONLY the number.`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    return parseInt(res?.match(/\d+/)?.[0]) || 5;
+  }
 
   async getLatestMoodMemory() { return null; }
 

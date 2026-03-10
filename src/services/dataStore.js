@@ -281,8 +281,24 @@ class DataStore {
   async updateSocialResonance(v, d) { if (this.db?.data) { this.db.data.social_resonance = v; await this.write(); } }
   async blockUser(h) { if (this.db?.data) { if (!this.db.data.blocked_users) this.db.data.blocked_users = []; if (!this.db.data.blocked_users.includes(h)) this.db.data.blocked_users.push(h); await this.write(); } }
   async unblockUser(h) { if (this.db?.data?.blocked_users) { this.db.data.blocked_users = this.db.data.blocked_users.filter(u => u !== h); await this.write(); } }
-  isUserLockedOut(u) { return false; }
-  async setBoundaryLockout(u, t) { if (this.db?.data) { this.db.data.boundary_lockout = { user: u, until: t }; await this.write(); } }
+  isUserLockedOut(did) {
+    const lockouts = this.db.data.boundary_lockouts || {};
+    const lockout = lockouts[did];
+    if (!lockout) return false;
+    if (Date.now() > lockout.expires_at) {
+      delete lockouts[did];
+      return false;
+    }
+    return true;
+  }
+  async setBoundaryLockout(did, minutes = 60) {
+    if (!this.db.data.boundary_lockouts) this.db.data.boundary_lockouts = {};
+    this.db.data.boundary_lockouts[did] = {
+      expires_at: Date.now() + (minutes * 60 * 1000),
+      reason: 'Boundary violation'
+    };
+    await this.db.write();
+  }
 
   // Relational
   getRelationalMetrics() { return this.db?.data?.relational_metrics || {}; }

@@ -480,10 +480,6 @@ export class Bot {
     }
   }
   async run() {
-    // Initialize 5-minute central heartbeat
-    setInterval(() => this.heartbeat(), 300000);
-    this.heartbeat();
-
     console.log('[Bot] Starting main loop...');
 
     // Progress persistence: Note deployment resumption in memory
@@ -2155,17 +2151,5 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     }
 
     console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);
-  }
-
-
-  async heartbeat() {
-    console.log('[Bot] Heartbeat pulse...');
-    try {
-        await this.checkMaintenanceTasks();
-        await this.checkDiscordSpontaneity();
-        // Add more integrated tasks here
-    } catch (e) {
-        console.error('[Bot] Error in heartbeat:', e);
-    }
   }
 }

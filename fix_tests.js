@@ -14,7 +14,7 @@ async function fix() {
   ];
 
   for (const method of methodsToRemove) {
-    const start = content.indexOf(\`describe('\${method}'\`);
+    const start = content.indexOf(`describe('${method}'`);
     if (start !== -1) {
       let count = 1;
       let pos = content.indexOf('{', start) + 1;

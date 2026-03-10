@@ -39,19 +39,35 @@ class LLMService {
     } catch (e) {}
   }
 
-  _prepareMessages(messages, systemPrompt) {
+    _prepareMessages(messages, systemPrompt) {
     const prepared = [];
+
+    // Ensure system prompt is first
     if (systemPrompt) {
       prepared.push({ role: 'system', content: systemPrompt });
     }
 
-    // Filter out invalid or empty messages
-    const validMessages = (messages || []).filter(m => m && m.content && m.content.trim() !== "");
-    prepared.push(...validMessages);
+    // Filter and add other messages
+    const otherMessages = (messages || []).filter(m => m && m.content && m.content.trim() !== "");
+
+    const contextSystemMessages = otherMessages.filter(m => m.role === 'system');
+    const nonSystemMessages = otherMessages.filter(m => m.role !== 'system');
+
+    if (contextSystemMessages.length > 0) {
+      if (prepared.length > 0) {
+        // Append context system messages to the main one
+        const combinedSystem = prepared[0].content + "\n\n" + contextSystemMessages.map(m => m.content).join("\n");
+        prepared[0].content = combinedSystem;
+      } else {
+        const combinedSystem = contextSystemMessages.map(m => m.content).join("\n");
+        prepared.push({ role: 'system', content: combinedSystem });
+      }
+    }
+
+    prepared.push(...nonSystemMessages);
 
     const hasUser = prepared.some(m => m.role === 'user');
     if (!hasUser) {
-      // API requires at least one user message
       prepared.push({ role: 'user', content: 'Proceed.' });
     }
 

@@ -41,7 +41,7 @@ class DiscordService {
     }
 
     setupEventListeners() {
-        this.client.on('ready', () => {
+        this.client.on('clientReady', () => {
             this.status = 'online';
             console.log(`[DiscordService] Logged in as ${this.client.user.tag}`);
         });

@@ -257,9 +257,23 @@ Respond with JSON: { "consent_to_engage": boolean, "reason": "string" }`;
 
   async auditStrategy(logs) { return { decision: "proceed" }; }
 
-  async extractDeepKeywords(text, context, count = 5) {
-      const res = await this.generateResponse([{ role: 'user', content: `Extract ${count} keywords from ${context}` }], { useStep: true });
-      return res?.split(',').map(k => k.trim()) || [];
+    async extractDeepKeywords(context, count = 15) {
+    const prompt = `As a semantic analyst, extract exactly ${count} highly specific, conceptual keywords or phrases based on this context:
+${context}
+
+RULES:
+- Respond with ONLY a comma-separated list of keywords.
+- No numbering, no descriptions, no conversational filler.
+- Each keyword should be 1-3 words max.`;
+
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    if (!res) return [];
+
+    // Clean up response: remove any leading/trailing junk, split by comma, filter empty
+    return res.split(',')
+      .map(k => k.trim().replace(/^[\*\-\d\.\s]+/, ''))
+      .filter(k => k.length > 0 && !k.includes('\n'))
+      .slice(0, count);
   }
 
   async performFollowUpPoll(options) {

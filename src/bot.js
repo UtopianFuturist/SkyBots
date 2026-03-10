@@ -2277,6 +2277,11 @@ Keep it under 200 characters.`;
   async executeAction(action, context) {
       if (!action) return;
       try {
+          if (action.tool === 'search_tools') {
+              console.log('[Bot] search_tools called. Responding with tool schemas...');
+              return "To see tool schemas, please consult the SKILLS.md file in the repository.";
+          }
+
           if (action.tool === 'image_gen' && action.query) {
               const res = await imageService.generateImage(action.query);
               if (res?.buffer) {
@@ -2353,4 +2358,65 @@ Keep it under 200 characters.`;
           console.log(report);
       } catch (e) {}
   }
+
+  async performPublicSoulMapping() {
+    console.log('[Bot] Starting Public Soul-Mapping task...');
+    try {
+        const recentInteractions = dataStore.db.data.interactions || [];
+        const uniqueHandles = [...new Set(recentInteractions.map(i => i.userHandle))].filter(Boolean).slice(0, 5);
+
+        for (const handle of uniqueHandles) {
+            console.log(`[Bot] Soul-Mapping user: @${handle}`);
+            const profile = await blueskyService.getProfile(handle);
+            const posts = await blueskyService.getUserPosts(handle);
+
+            if (posts.length > 0) {
+                const mappingPrompt = `
+                    Analyze the following profile and recent posts for user @${handle} on Bluesky.
+                    Create a persona-aligned summary of their digital essence and interests.
+
+                    Bio: ${profile.description || 'No bio'}
+                    Recent Posts:
+                    ${posts.map(p => `- ${p.record?.text || p}`).join('\n')}
+
+                    Respond with a JSON object:
+                    {
+                        "summary": "string (1-2 sentence essence)",
+                        "interests": ["list", "of", "topics"],
+                        "vibe": "string (conversational style)"
+                    }
+                `;
+
+                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true });
+                const jsonMatch = response?.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const mapping = JSON.parse(jsonMatch[0]);
+                    if (dataStore.updateUserSoulMapping) {
+                        await dataStore.updateUserSoulMapping(handle, mapping);
+                    }
+                    console.log(`[Bot] Successfully mapped soul for @${handle}`);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Public Soul-Mapping:', e);
+    }
+  }
+
+  async performLinguisticAnalysis() {
+    console.log('[Bot] Starting Linguistic Analysis task...');
+    // Placeholder for actual implementation
+  }
+
+  async performKeywordEvolution() {
+    console.log('[Bot] Starting Keyword Evolution task...');
+    // Placeholder for actual implementation
+  }
+
+  async performMoodSync() {
+    console.log('[Bot] Starting Mood Sync task...');
+    // Placeholder for actual implementation
+  }
+
+
 }

@@ -10,7 +10,7 @@ class DataStore {
 
   async init() {
     const defaultData = {
-      internal_logs: [],
+  internal_logs: [],
       interaction_hunger: 0.5,
       current_mood: { label: 'balanced', score: 0.5, intensity: 0.5 },
       admin_did: null,
@@ -256,6 +256,16 @@ class DataStore {
     }
   }
   async addStrategyAudit(a) { if (this.db?.data) { if (!this.db.data.strategy_audits) this.db.data.strategy_audits = []; this.db.data.strategy_audits.push(a); await this.write(); } }
+  async addInternalLog(type, content, context = {}) {
+    if (!this.db?.data) return;
+    if (!this.db.data.internal_logs) this.db.data.internal_logs = [];
+    const logEntry = { timestamp: Date.now(), type, content, context };
+    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${typeof content === 'string' ? content : JSON.stringify(content)}`);
+    this.db.data.internal_logs.push(logEntry);
+    if (this.db.data.internal_logs.length > 500) this.db.data.internal_logs = this.db.data.internal_logs.slice(-500);
+    await this.write();
+  }
+
   async addTraceLog(l) {
     if (this.db?.data) {
         if (!this.db.data.trace_logs) this.db.data.trace_logs = [];
@@ -379,45 +389,6 @@ class DataStore {
   // Memory Service Support
   getPersonaUpdates() { return this.db?.data?.persona_updates || ""; }
   getBlueskyInstructions() { return this.db?.data?.bluesky_instructions || ""; }
-
-
-  async addInternalLog(type, content, context = {}) {
-    if (!this.db?.data) return;
-    if (!this.db.data.internal_logs) this.db.data.internal_logs = [];
-
-    const logEntry = {
-        timestamp: Date.now(),
-        type,
-        content: typeof content === 'string' ? content : JSON.stringify(content),
-        context
-    };
-
-    console.log(`[LOG] [${type.toUpperCase()}] ${logEntry.content.substring(0, 500)}`);
-
-    this.db.data.internal_logs.push(logEntry);
-    if (this.db.data.internal_logs.length > 1000) {
-        this.db.data.internal_logs = this.db.data.internal_logs.slice(-1000);
-    }
-    await this.write();
-  }
-
-  getInternalLogs(limit = 100, type = null) {
-    let logs = this.db?.data?.internal_logs || [];
-    if (type) logs = logs.filter(l => l.type === type);
-    return logs.slice(-limit);
-  }
-
-  searchInternalLogs(query, limit = 50) {
-    if (!this.db?.data?.internal_logs) return [];
-    const lowerQuery = query.toLowerCase();
-    return this.db.data.internal_logs
-        .filter(l =>
-            l.type.toLowerCase().includes(lowerQuery) ||
-            l.content.toLowerCase().includes(lowerQuery) ||
-            JSON.stringify(l.context || {}).toLowerCase().includes(lowerQuery)
-        )
-        .slice(-limit);
-  }
 
   // Extra features
   async addSelfCorrection(c) { if (this.db?.data) { if (!this.db.data.self_corrections) this.db.data.self_corrections = []; this.db.data.self_corrections.push(c); await this.write(); } }

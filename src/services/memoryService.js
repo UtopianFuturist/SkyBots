@@ -77,10 +77,7 @@ Context: ${context}.`;
           return await blueskyService.postReply(this.rootPost, finalContent);
         } else {
           const res = await blueskyService.post(finalContent);
-          if (res) {
-          this.rootPost = res;
-          await dataStore.addInternalLog('memory_entry', finalContent);
-        }
+          if (res) { this.rootPost = res; await dataStore.addInternalLog("memory_entry", finalContent); }
           return res;
         }
       }

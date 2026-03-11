@@ -1,4 +1,5 @@
 import { llmService } from "./llmService.js";
+import { dataStore } from "./dataStore.js";
 import { AtpAgent, RichText } from '@atproto/api';
 import fetch from 'node-fetch';
 import config from '../../config.js';
@@ -23,7 +24,9 @@ class BlueskyService {
       await rt.detectFacets(this.agent);
       const postData = { $type: 'app.bsky.feed.post', text: rt.text, facets: rt.facets, createdAt: new Date().toISOString() };
       if (embed) postData.embed = embed;
-      return await this.agent.post(postData);
+      const res = await this.agent.post(postData);
+      if (res) await dataStore.addInternalLog('bluesky_post', text, { uri: res.uri });
+      return res;
     } catch (error) { return null; }
   }
   async postReply(parent, text, options = {}) {
@@ -35,7 +38,9 @@ class BlueskyService {
         reply: { root: parent.record?.reply?.root || parent, parent: parent }
       };
       if (options.embed) postData.embed = options.embed;
-      return await this.agent.post(postData);
+      const res = await this.agent.post(postData);
+      if (res) await dataStore.addInternalLog('bluesky_reply', text, { uri: res.uri, parent: parent.uri });
+      return res;
     } catch (error) { return null; }
   }
   async searchPosts(query, sort = 'latest', limit = 15) {

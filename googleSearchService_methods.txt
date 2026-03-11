@@ -1,4 +1,0 @@
-js
-search
-searchImages
-searchRepo

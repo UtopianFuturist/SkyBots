@@ -459,6 +459,19 @@ Respond with "YES" or "NO".`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     return res?.toUpperCase().includes('YES');
   }
+  async isAutonomousPostCoherent(topic, content, type, context = null) {
+    const prompt = `Critique the coherence of this autonomous ${type} post about "${topic}":
+Content: "${content}"
+
+Respond with JSON: { "score": number, "reason": "string" } (Score 1-10)`;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
+    try {
+        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"score": 10, "reason": "Default coherent"}');
+        return data;
+    } catch (e) {
+        return { score: 10, reason: "Error parsing coherence check" };
+    }
+  }
     async isReplyCoherent(parent, child, history, embed) {
     const prompt = `Critique the coherence of this proposed reply:
 Parent: "${parent}"

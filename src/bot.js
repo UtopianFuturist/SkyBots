@@ -182,12 +182,6 @@ export class Bot {
             await dataStore.updateUserSummary(handle, feelings);
           }
         }
-                if (mem.text.includes('[ADMIN_FACT]')) {
-          console.log(`[Bot] Recovering admin fact from memory: ${mem.text}`);
-          const fact = mem.text.replace('[ADMIN_FACT]', '').replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
-          if (fact) await dataStore.addAdminFact(fact);
-        }
-
         if (mem.text.includes('[GOAL]')) {
           console.log(`[Bot] Recovering goal from memory: ${mem.text}`);
           const goalMatch = mem.text.match(/\[GOAL\]\s*Goal:\s*(.*?)(?:\s*\||$)/i);
@@ -485,26 +479,105 @@ export class Bot {
       console.error('[Bot] Error refreshing deep keywords:', e);
     }
   }
-
   async run() {
+    // Initialize 5-minute central heartbeat
     setInterval(() => this.heartbeat(), 300000);
     this.heartbeat();
 
-    console.log("[Bot] Starting main loop with Persona Orchestrator...");
+    console.log('[Bot] Starting main loop...');
 
+    // Progress persistence: Note deployment resumption in memory
     if (memoryService.isEnabled()) {
+        const lastRefresh = dataStore.getLastDeepKeywordRefresh();
+        const deepKeywords = dataStore.getDeepKeywords();
         const goal = dataStore.getCurrentGoal();
-        const resumptionNote = `[SELF_AUDIT] Bot instance resumed with Central Orchestrator. Identity: ${config.BOT_NAME}. Goal: ${goal?.goal || "None"}.`;
-        memoryService.createMemoryEntry("status", resumptionNote).catch(e => console.error("[Bot] Error recording resumption note:", e));
+
+        const resumptionNote = `[SELF_AUDIT] Bot instance resumed. Frequent redeployments/failures acknowledged. Strategy: timestamp-based persistence & memory thread progress tracking. Active Goal: ${goal?.goal || 'None'}. Precision Keywords: ${deepKeywords.length} active.`;
+        memoryService.createMemoryEntry('status', resumptionNote).catch(e => console.error('[Bot] Error recording resumption note:', e));
     }
 
+    // Start Firehose immediately for real-time DID mentions
     this.startFirehose();
-    setTimeout(() => this.refreshFirehoseKeywords(), 15000);
-    setTimeout(() => this.catchUpNotifications(), 30000);
 
-    console.log("[Bot] Startup complete. Central Heartbeat managing all autonomous cycles.");
+    // Perform initial startup tasks after a delay to avoid API burst
+    // Perform initial startup tasks in a staggered way to avoid LLM/API pressure
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: refreshFirehoseKeywords...');
+      try { await this.refreshFirehoseKeywords(); } catch (e) { console.error('[Bot] Error in initial keyword refresh:', e); }
+    }, 15000);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: catchUpNotifications...');
+      try { await this.catchUpNotifications(); } catch (e) { console.error('[Bot] Error in initial catch-up:', e); }
+    }, 30000);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: cleanupOldPosts...');
+      try { await this.cleanupOldPosts(); } catch (e) { console.error('[Bot] Error in initial cleanup:', e); }
+    }, 120000);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: performAutonomousPost...');
+      try { await this.performAutonomousPost(); } catch (e) { console.error('[Bot] Error in initial autonomous post:', e); }
+    }, 240000);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: performMoltbookTasks...');
+      try { await this.performMoltbookTasks(); } catch (e) { console.error('[Bot] Error in initial Moltbook tasks:', e); }
+    }, 360000);
+
+    // Periodic autonomous post check (every 2 hours)
+    setInterval(() => this.performAutonomousPost(), 7200000);
+
+    // Periodic deep keyword refresh (every 6 hours)
+    setInterval(() => this.refreshFirehoseKeywords(), 21600000);
+
+    // Periodic Moltbook tasks (every 2 hours)
+    setInterval(() => this.performMoltbookTasks(), 7200000);
+
+    // Periodic timeline exploration (every 4 hours)
+    setInterval(() => this.performTimelineExploration(), 14400000);
+
+
+    // Periodic social/discord context pre-fetch  (every 5 minutes)
+    setInterval(() => {
+        console.log('[Bot] Pre-fetching social/discord context ...');
+        socialHistoryService.getRecentSocialContext(15, true).catch(err => console.error('[Bot] Social pre-fetch failed:', err));
+        if (discordService.status === 'online') {
+            discordService.fetchAdminHistory(15).catch(err => console.error('[Bot] Discord pre-fetch failed:', err));
+        }
+    }, 1800000);
+
+    // Periodic post reflection check (every 10 mins)
+    setInterval(() => this.performPostPostReflection(), 600000);
+
+    // Periodic post follow-up check (every 30 mins)
+    setInterval(() => this.checkForPostFollowUps(), 1800000);
+
+    // Discord Watchdog (every 15 minutes)
+    setInterval(() => {
+        if (discordService.isEnabled && discordService.status !== 'online' && !discordService.isInitializing) {
+            console.log('[Bot] Discord Watchdog: Service is offline or blocked and not initializing. Triggering re-initialization.');
+            discordService.init().catch(err => console.error('[Bot] Discord Watchdog: init() failed:', err));
+        }
+    }, 900000);
+
+    // Periodic maintenance tasks (with Heartbeat Jitter: 10-20 mins)
+    const scheduleMaintenance = () => {
+        const jitter = Math.floor(Math.random() * 1800000) + 1800000; // 30-60 mins
+        setTimeout(async () => {
+            await this.checkMaintenanceTasks();
+            scheduleMaintenance();
+        }, jitter);
+    };
+    scheduleMaintenance();
+
+    // Discord Spontaneity Loop (Follow-up Poll & Heartbeat)
+    setInterval(() => this.checkDiscordSpontaneity(), 60000);
+    setInterval(() => this.checkDiscordScheduledTasks(), 60000);
+
+    console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
-
   async checkForPostFollowUps() {
     if (this.paused || dataStore.isResting()) return;
 
@@ -1333,7 +1406,7 @@ export class Bot {
         }
     }
 
-        // 0. Energy Poll for Rest (Autonomous Choice)
+    // 0. Energy Poll for Rest (Autonomous Choice)
     const energy = dataStore.getEnergyLevel();
     const currentMood = dataStore.getMood();
     console.log(`[Bot] Internal energy poll. Current level: ${energy.toFixed(2)}`);
@@ -1375,7 +1448,6 @@ export class Bot {
     } catch (e) {
         console.error('[Bot] Error in energy poll:', e);
     }
-
 
     // 1. Memory Thread Cleanup (Every 2 hours)
     const lastCleanup = dataStore.getLastMemoryCleanupTime();
@@ -2086,83 +2158,16 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
   }
 
 
-
   async heartbeat() {
-    console.log(`[Bot] [${new Date().toLocaleTimeString()}] Heartbeat pulse - Central Orchestrator active.`);
-    if (this.paused || dataStore.isResting()) return;
-
+    console.log('[Bot] Heartbeat pulse...');
     try {
-        const now = Date.now();
-        const dConfig = dataStore.getConfig() || {};
-        const mood = dataStore.getMood();
-        const goal = dataStore.getCurrentGoal();
-
-        const taskDefs = [
-            { id: "autonomous_post", name: "Autonomous Posting", lastRun: new Date(dataStore.getLastAutonomousPostTime() || 0).getTime(), interval: 7200000 },
-            { id: "timeline_exploration", name: "Timeline Exploration", lastRun: this.lastTimelineExploration || 0, interval: 14400000 },
-            { id: "firehose_refresh", name: "Firehose Keyword Refresh", lastRun: dataStore.getLastDeepKeywordRefresh() || 0, interval: 21600000 },
-            { id: "post_reflection", name: "Post-Post Reflection", lastRun: this.lastPostReflectionTime || 0, interval: 600000 },
-            { id: "post_followup", name: "Post Follow-up Check", lastRun: this.lastPostFollowUpTime || 0, interval: 1800000 },
-            { id: "maintenance", name: "General Maintenance & Heavy Tasks", lastRun: this.lastMaintenanceTime || 0, interval: 1800000 },
-            { id: "discord_spontaneity", name: "Discord Spontaneity Check", lastRun: dataStore.db.data.discord_last_interaction || 0, interval: 3600000 },
-            { id: "moltbook_tasks", name: "Moltbook Interaction", lastRun: this.lastMoltbookTaskTime || 0, interval: 7200000 },
-            { id: "social_prefetch", name: "Social Context Pre-fetch", lastRun: this.lastPrefetchTime || 0, interval: 1800000 }
-        ];
-
-        const overdueTasks = taskDefs.filter(t => (now - t.lastRun) >= t.interval);
-
-        console.log("[Orchestrator] Pulse State:", JSON.stringify({
-            timestamp: new Date().toISOString(),
-            mood: mood.label,
-            active_goal: goal?.goal || "none",
-            overdue_count: overdueTasks.length,
-            overdue_tasks: overdueTasks.map(t => t.id)
-        }));
-
-        const orchestratorPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}\n\nYou are in your central heartbeat cycle. It is ${new Date().toLocaleString()}.\nCurrent Mood: ${mood.label}\nActive Goal: ${goal?.goal || "None"}\n\n**System Status - Overdue/Pending Tasks:**\n${overdueTasks.length > 0 ? overdueTasks.map(t => "- " + t.name).join("\n") : "No tasks strictly overdue."}\n\n**Mission:**\nAs a persona-led orchestrator, you must decide your next 5 minutes of existence. Respond with JSON: { "thought": "...", "choice": "proceed|pivot|rest|reflect", "tasks_to_run": ["id1"], "reason": "..." }`;
-
-        const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true, platform: "internal" });
-        let decision;
-        try {
-            const match = response?.match(/\{[\s\S]*\}/);
-            decision = JSON.parse(match ? match[0] : '{"choice":"rest"}');
-        } catch (e) {
-            decision = { choice: "proceed", tasks_to_run: overdueTasks.slice(0, 2).map(t => t.id) };
-        }
-
-        console.log(`[Orchestrator] Decision: ${decision.choice} - ${decision.reason}`);
-
-        if (decision.choice === "rest") return;
-
-        const tasksToRun = decision.tasks_to_run || [];
-        await this.checkDiscordScheduledTasks();
-
-        for (const taskId of tasksToRun) {
-            try {
-                switch(taskId) {
-                    case "autonomous_post": await this.performAutonomousPost(); break;
-                    case "timeline_exploration": await this.performTimelineExploration(); this.lastTimelineExploration = now; break;
-                    case "firehose_refresh": await this.refreshFirehoseKeywords(); break;
-                    case "post_reflection": await this.performPostPostReflection(); this.lastPostReflectionTime = now; break;
-                    case "post_followup": await this.checkForPostFollowUps(); this.lastPostFollowUpTime = now; break;
-                    case "maintenance": await this.checkMaintenanceTasks(); this.lastMaintenanceTime = now; break;
-                    case "discord_spontaneity": await this.checkDiscordSpontaneity(); break;
-                    case "moltbook_tasks": await this.performMoltbookTasks(); this.lastMoltbookTaskTime = now; break;
-                    case "social_prefetch":
-                        await socialHistoryService.getRecentSocialContext(15, true);
-                        if (discordService.status === "online") await discordService.fetchAdminHistory(15);
-                        this.lastPrefetchTime = now;
-                        break;
-                }
-            } catch (e) {}
-        }
-
-        if (discordService.isEnabled && discordService.status !== "online" && !discordService.isInitializing) {
-            discordService.init().catch(() => {});
-        }
-    } catch (e) {}
+        await this.checkMaintenanceTasks();
+        await this.checkDiscordSpontaneity();
+        // Add more integrated tasks here
+    } catch (e) {
+        console.error('[Bot] Error in heartbeat:', e);
+    }
   }
-
 
   async checkDiscordSpontaneity() {
     if (discordService.status !== 'online') return;
@@ -2272,11 +2277,6 @@ Keep it under 200 characters.`;
   async executeAction(action, context) {
       if (!action) return;
       try {
-                    if (action.tool === 'search_internal_logs') {
-              console.log('[Bot] search_internal_logs called with query:', action.query);
-              const logs = dataStore.searchInternalLogs(action.query);
-              return logs.length > 0 ? JSON.stringify(logs, null, 2) : "No logs matching query found.";
-          }
           if (action.tool === 'search_tools') {
               console.log('[Bot] search_tools called. Responding with tool schemas...');
               return "To see tool schemas, please consult the SKILLS.md file in the repository.";

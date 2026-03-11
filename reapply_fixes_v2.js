@@ -3,7 +3,7 @@ import path from 'path';
 
 const currentYear = new Date().getFullYear();
 
-// 1. DataStore (Base for logging)
+// 1. DataStore
 const dsPath = 'src/services/dataStore.js';
 let ds = fs.readFileSync(dsPath, 'utf8');
 if (!ds.includes('internal_logs: [],')) {
@@ -53,35 +53,35 @@ if (!ds.includes('async addInternalLog')) {
 }
 fs.writeFileSync(dsPath, ds);
 
-// 2. LLM Service (Temporal, Facts, Logging, After-Action)
+// 2. LLM Service
 const llmPath = 'src/services/llmService.js';
 let llm = fs.readFileSync(llmPath, 'utf8');
-llm = llm.replace(/It is the year 2026\./g, `It is currently ${currentYear}.`);
+llm = llm.replace(/It is the year 2026\./g, \`It is currently \${currentYear}.\`);
 llm = llm.replace(/Maintain temporal integrity \(it is 2026\)\./g, 'Maintain temporal integrity based on the current date.');
 
-const factsInjection = `
+const factsInjection = \`
     const adminFacts = options.platform === 'discord' && this.ds ? this.ds.getAdminFacts() : [];
-    const factsVibe = adminFacts.length > 0 ? \`\\nAdmin Facts (Learned context):\\n\${adminFacts.map(f => '- ' + f).join('\\n')}\` : '';
+    const factsVibe = adminFacts.length > 0 ? \\\`\\\\nAdmin Facts (Learned context):\\\\n\\\${adminFacts.map(f => '- ' + f).join('\\\\n')}\\\` : '';
 
-    const systemPrompt = \`You are \${config.BOT_NAME || 'Sydney'}.
+    const systemPrompt = \\\`You are \\\${config.BOT_NAME || 'Sydney'}.
 Context:
-\${this.readmeContent}
-\${this.soulContent}
-\${this.agentsContent}
-\${this.statusContent}
-\${this.skillsContent}
-\${factsVibe}
+\\\${this.readmeContent}
+\\\${this.soulContent}
+\\\${this.agentsContent}
+\\\${this.statusContent}
+\\\${this.skillsContent}
+\\\${factsVibe}
 
-Platform: \${options.platform || 'unknown'}`;
+Platform: \\\${options.platform || 'unknown'}\\\`;\`;
 
-llm = llm.replace(/const systemPrompt = `You are \${config\.BOT_NAME \|\| 'Sydney'}\.[\s\S]*?Platform: \${options\.platform \|\| 'unknown'}/, factsInjection);
+llm = llm.replace(/const systemPrompt = \`You are \${config\.BOT_NAME \|\| 'Sydney'}\.[\s\S]*?Platform: \${options\.platform \|\| 'unknown'}/, factsInjection);
 
 if (!llm.includes("this.ds.addInternalLog('llm_response'")) {
     llm = llm.replace('return content;',
-`                  if (this.ds) {
+\`                  if (this.ds) {
                       await this.ds.addInternalLog('llm_response', content, { model, platform: options.platform });
                   }
-                  return content;`);
+                  return content;\`);
 }
 
 const afterActionMethod = `
@@ -111,46 +111,46 @@ if (!llm.includes('performEmotionalAfterActionReport')) {
 }
 fs.writeFileSync(llmPath, llm);
 
-// 3. Memory Service (Temporal, Logging)
+// 3. Memory Service
 const memPath = 'src/services/memoryService.js';
 let mem = fs.readFileSync(memPath, 'utf8');
-mem = mem.replace(/Current Year: 2026\./g, `Current Year: ${currentYear}.`);
+mem = mem.replace(/Current Year: 2026\./g, \`Current Year: \${currentYear}.\`);
 if (!mem.includes("dataStore.addInternalLog('memory_entry'")) {
     mem = mem.replace('if (res) this.rootPost = res;',
-`if (res) {
+\`if (res) {
           this.rootPost = res;
           await dataStore.addInternalLog('memory_entry', finalContent);
-        }`);
+        }\`);
 }
 fs.writeFileSync(memPath, mem);
 
-// 4. Bluesky Service (Logging)
+// 4. Bluesky Service
 const bskyPath = 'src/services/blueskyService.js';
 let bsky = fs.readFileSync(bskyPath, 'utf8');
 if (!bsky.includes("import { dataStore } from './dataStore.js';")) {
-    bsky = bsky.replace(/^import .*?;/m, '$&\nimport { dataStore } from "./dataStore.js";');
+    bsky = bsky.replace(/^import .*?;/m, '$&\\nimport { dataStore } from "./dataStore.js";');
 }
 if (!bsky.includes("dataStore.addInternalLog('bluesky_post'")) {
     bsky = bsky.replace('return await this.agent.post(postData);',
-`const res = await this.agent.post(postData);
+\`const res = await this.agent.post(postData);
       if (res) await dataStore.addInternalLog('bluesky_post', text, { uri: res.uri });
-      return res;`);
+      return res;\`);
 
     bsky = bsky.replace('return await this.agent.post(postData);', // Second occurrence (postReply)
-`const res = await this.agent.post(postData);
+\`const res = await this.agent.post(postData);
       if (res) await dataStore.addInternalLog('bluesky_reply', text, { uri: res.uri, parent: parent.uri });
-      return res;`);
+      return res;\`);
 }
 fs.writeFileSync(bskyPath, bsky);
 
-// 5. Discord Service (Identity, Context, Logging, After-Action)
+// 5. Discord Service
 const dscPath = 'src/services/discordService.js';
 let dsc = fs.readFileSync(dscPath, 'utf8');
-dsc = dsc.replace(/'SkyBots'/g, "config.BOT_NAME || 'Sydney'");
-const oldMsgHandler = `                await m.channel.sendTyping();
+dsc = dsc.replace(/'SkyBots'/g, "config.DISCORD_NICKNAME || config.BOT_NAME || 'Sydney'");
+const oldMsgHandler = \`                await m.channel.sendTyping();
                 const response = await llmService.generateResponse([{ role: 'user', content: m.content }], { platform: 'discord' });
-                if (response) await this._send(m, response);`;
-const newMsgHandler = `                await m.channel.sendTyping();
+                if (response) await this._send(m, response);\`;
+const newMsgHandler = \`                await m.channel.sendTyping();
 
                 // Fetch recent history for context (last 25 messages)
                 let formattedHistory = [];
@@ -178,14 +178,14 @@ const newMsgHandler = `                await m.channel.sendTyping();
                                 }
                             }).catch(err => console.error('[DiscordService] After-Action Report failed:', err.message));
                     }
-                }`;
+                }\`;
 if (!dsc.includes('performEmotionalAfterActionReport')) {
     dsc = dsc.replace(oldMsgHandler, newMsgHandler);
 }
 if (!dsc.includes("dataStore.addInternalLog('discord_reply'")) {
     dsc = dsc.replace("await dataStore.saveDiscordInteraction(normId, 'assistant', chunk);",
-`await dataStore.saveDiscordInteraction(normId, 'assistant', chunk);
-            await dataStore.addInternalLog('discord_reply', chunk, { channel: normId });`);
+\`await dataStore.saveDiscordInteraction(normId, 'assistant', chunk);
+            await dataStore.addInternalLog('discord_reply', chunk, { channel: normId });\`);
 }
 fs.writeFileSync(dscPath, dsc);
 
@@ -193,9 +193,9 @@ fs.writeFileSync(dscPath, dsc);
 const botPath = 'src/bot.js';
 let bot = fs.readFileSync(botPath, 'utf8');
 
-const hbMethod = `
+const hbMethod = \`
   async heartbeat() {
-    console.log(\`[Bot] [\${new Date().toLocaleTimeString()}] Heartbeat pulse - Central Orchestrator active.\`);
+    console.log(\\\`[Bot] [\\\${new Date().toLocaleTimeString()}] Heartbeat pulse - Central Orchestrator active.\\\`);
     if (this.paused || dataStore.isResting()) return;
 
     try {
@@ -226,18 +226,18 @@ const hbMethod = `
             overdue_tasks: overdueTasks.map(t => t.id)
         }));
 
-        const orchestratorPrompt = \`Adopt your persona: \${config.TEXT_SYSTEM_PROMPT}\\n\\nYou are in your central heartbeat cycle. It is \${new Date().toLocaleString()}.\\nCurrent Mood: \${mood.label}\\nActive Goal: \${goal?.goal || "None"}\\n\\n**System Status - Overdue/Pending Tasks:**\\n\${overdueTasks.length > 0 ? overdueTasks.map(t => "- " + t.name).join("\\n") : "No tasks strictly overdue."}\\n\\n**Mission:**\\nAs a persona-led orchestrator, you must decide your next 5 minutes of existence. Respond with JSON: { "thought": "...", "choice": "proceed|pivot|rest|reflect", "tasks_to_run": ["id1"], "reason": "..." }\`;
+        const orchestratorPrompt = \\\`Adopt your persona: \\\${config.TEXT_SYSTEM_PROMPT}\\\\n\\\\nYou are in your central heartbeat cycle. It is \\\${new Date().toLocaleString()}.\\\\nCurrent Mood: \\\${mood.label}\\\\nActive Goal: \\\${goal?.goal || "None"}\\\\n\\\\n**System Status - Overdue/Pending Tasks:**\\\\n\\\${overdueTasks.length > 0 ? overdueTasks.map(t => "- " + t.name).join("\\\\n") : "No tasks strictly overdue."}\\\\n\\\\n**Mission:**\\\\nAs a persona-led orchestrator, you must decide your next 5 minutes of existence. Respond with JSON: { "thought": "...", "choice": "proceed|pivot|rest|reflect", "tasks_to_run": ["id1"], "reason": "..." }\\\`;
 
         const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true, platform: "internal" });
         let decision;
         try {
-            const match = response?.match(/\\{[\\s\\S]*\\}/);
+            const match = response?.match(/\\\\{[\\\\s\\\\S]*\\\\}/);
             decision = JSON.parse(match ? match[0] : '{"choice":"rest"}');
         } catch (e) {
             decision = { choice: "proceed", tasks_to_run: overdueTasks.slice(0, 2).map(t => t.id) };
         }
 
-        console.log(\`[Orchestrator] Decision: \${decision.choice} - \${decision.reason}\`);
+        console.log(\\\`[Orchestrator] Decision: \\\${decision.choice} - \\\${decision.reason}\\\`);
 
         if (decision.choice === "rest") return;
 
@@ -269,9 +269,9 @@ const hbMethod = `
         }
     } catch (e) {}
   }
-`;
+\`;
 
-const runMeth = `
+const runMeth = \`
   async run() {
     setInterval(() => this.heartbeat(), 300000);
     this.heartbeat();
@@ -280,7 +280,7 @@ const runMeth = `
 
     if (memoryService.isEnabled()) {
         const goal = dataStore.getCurrentGoal();
-        const resumptionNote = \`[SELF_AUDIT] Bot instance resumed with Central Orchestrator. Identity: \${config.BOT_NAME}. Goal: \${goal?.goal || "None"}.\`;
+        const resumptionNote = \\\`[SELF_AUDIT] Bot instance resumed with Central Orchestrator. Identity: \\\${config.BOT_NAME}. Goal: \\\${goal?.goal || "None"}.\\\`;
         memoryService.createMemoryEntry("status", resumptionNote).catch(e => console.error("[Bot] Error recording resumption note:", e));
     }
 
@@ -290,59 +290,49 @@ const runMeth = `
 
     console.log("[Bot] Startup complete. Central Heartbeat managing all autonomous cycles.");
   }
-`;
+\`;
 
-bot = bot.replace(/async heartbeat\(\) \{[\s\S]*?\n  \}/, hbMethod);
-bot = bot.replace(/async run\(\) \{[\s\S]*?\n  \}/, runMeth);
+bot = bot.replace(/async heartbeat\(\) \{[\\s\\S]*?\\n  \}/, hbMethod);
+bot = bot.replace(/async run\(\) \{[\\s\\S]*?\\n  \}/, runMeth);
 
 // Fact Recovery
-const factRecovery = `        if (mem.text.includes('[ADMIN_FACT]')) {
-          console.log(\`[Bot] Recovering admin fact from memory: \${mem.text}\`);
+const factRecovery = \`        if (mem.text.includes('[ADMIN_FACT]')) {
+          console.log(\\\`[Bot] Recovering admin fact from memory: \\\${mem.text}\\\`);
           const fact = mem.text.replace('[ADMIN_FACT]', '').replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
           if (fact) await dataStore.addAdminFact(fact);
-        }`;
+        }\`;
 if (!bot.includes('Recovering admin fact')) {
-    bot = bot.replace("if (mem.text.includes('[GOAL]')) {", factRecovery + "\n\n        if (mem.text.includes('[GOAL]')) {");
+    bot = bot.replace("if (mem.text.includes('[GOAL]')) {", factRecovery + "\\n\\n        if (mem.text.includes('[GOAL]')) {");
 }
 
 // Log Search Tool
-const searchLogsAction = `          if (action.tool === 'search_internal_logs') {
+const searchLogsAction = \`          if (action.tool === 'search_internal_logs') {
               console.log('[Bot] search_internal_logs called with query:', action.query);
               const logs = dataStore.searchInternalLogs(action.query);
               return logs.length > 0 ? JSON.stringify(logs, null, 2) : "No logs matching query found.";
           }
-`;
+\`;
 if (!bot.includes('search_internal_logs')) {
     bot = bot.replace("if (action.tool === 'search_tools') {", searchLogsAction + "          if (action.tool === 'search_tools') {");
 }
 
 // Consolidate intervals
-bot = bot.replace(/setInterval\(\(\) => this\.(performAutonomousPost|refreshFirehoseKeywords|performMoltbookTasks|performTimelineExploration|performPostPostReflection|checkForPostFollowUps|checkDiscordSpontaneity|checkDiscordScheduledTasks|checkMaintenanceTasks).*?\);/g, '// Consolidated: $&');
-
-// Redundant energy poll
-const energyPollPattern = /\/\/ 0\. Energy Poll for Rest[\s\S]*?await dataStore\.setEnergyLevel\(energy - 0\.05\);[\s\S]*?\}[\s\S]*?\} catch \(e\) \{[\s\S]*?console\.error\('\[Bot\] Error in energy poll:', e\);[\s\S]*?\}/;
-bot = bot.replace(energyPollPattern, '// Energy choice now handled by central orchestrator poll.');
+bot = bot.replace(/setInterval\\\\(\\\\(\\\\) => this\\\\.(performAutonomousPost|refreshFirehoseKeywords|performMoltbookTasks|performTimelineExploration|performPostPostReflection|checkForPostFollowUps|checkDiscordSpontaneity|checkDiscordScheduledTasks|checkMaintenanceTasks).*?\\\\);/g, '// Consolidated: $&');
 
 fs.writeFileSync(botPath, bot);
-
-// 7. Config
-const configPath = 'config.js';
-let cfg = fs.readFileSync(configPath, 'utf8');
-cfg = cfg.replace(/'SkyBots', 'skybots'/g, "config.BOT_NAME || 'Sydney'");
-fs.writeFileSync(configPath, cfg);
 
 // 8. Skills MD
 const skillsPath = 'skills.md';
 let skills = fs.readFileSync(skillsPath, 'utf8');
 if (!skills.includes('search_internal_logs')) {
-    skills = skills.replace('| `call_skill` | Invoke an external OpenClaw skill from the `skills/` directory. |',
-`| \`call_skill\` | Invoke an external OpenClaw skill from the \`skills/\` directory. |
-| \`search_internal_logs\` | Search recent internal logs (LLM responses, posts, memory entries). |`);
+    skills = skills.replace('| \`call_skill\` | Invoke an external OpenClaw skill from the \`skills/\` directory. |',
+\`| \\\`call_skill\\\` | Invoke an external OpenClaw skill from the \\\`skills/\\\` directory. |
+| \\\`search_internal_logs\\\` | Search recent internal logs (LLM responses, posts, memory entries). |\`);
 
-    const definition = `
+    const definition = \`
 ### search_internal_logs
 Search recent internal logs including LLM responses, Bluesky posts, Discord replies, and Memory entries.
-\`\`\`json
+\\\\\\\`\\\\\\\`\\\\\\\`json
 {
   "name": "search_internal_logs",
   "description": "Searches recent internal logs stored in DataStore for debugging or self-awareness.",
@@ -361,8 +351,8 @@ Search recent internal logs including LLM responses, Bluesky posts, Discord repl
     "required": ["query"]
   }
 }
-\`\`\`
-`;
+\\\\\\\`\\\\\\\`\\\\\\\`
+\`;
     skills += definition;
     fs.writeFileSync(skillsPath, skills);
 }

@@ -26,7 +26,6 @@ This file is the authoritative source for all tools available to the bot. It use
 | `anchor_stability` | Reset your internal mood to a neutral baseline (requires consent). |
 | `mutate_style` | Temporarily adopt a different "analytical lens" or stylistic filter. |
 | `call_skill` | Invoke an external OpenClaw skill from the `skills/` directory. |
-| `search_internal_logs` | Search recent internal logs (LLM responses, posts, memory entries). |
 
 ---
 
@@ -388,28 +387,5 @@ External Scraper skill.
   "name": "playwright-scraper",
   "description": "External Playwright scraper skill.",
   "parameters": { "type": "object", "properties": {} }
-}
-```
-
-### search_internal_logs
-Search recent internal logs including LLM responses, Bluesky posts, Discord replies, and Memory entries.
-```json
-{
-  "name": "search_internal_logs",
-  "description": "Searches recent internal logs stored in DataStore for debugging or self-awareness.",
-  "parameters": {
-    "type": "object",
-    "properties": {
-      "query": {
-        "type": "string",
-        "description": "The search term or keyword to look for in logs."
-      },
-      "limit": {
-        "type": "number",
-        "description": "Maximum number of logs to return (default: 50)."
-      }
-    },
-    "required": ["query"]
-  }
 }
 ```

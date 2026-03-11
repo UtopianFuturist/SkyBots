@@ -1,3 +1,4 @@
+import { dataStore } from './dataStore.js';
 import { llmService } from "./llmService.js";
 import { AtpAgent, RichText } from '@atproto/api';
 import fetch from 'node-fetch';

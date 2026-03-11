@@ -155,4 +155,3 @@ export default config;
 if (!Array.isArray(config.BOT_NICKNAMES)) {
   config.BOT_NICKNAMES = (process.env.BOT_NICKNAMES || '').split(',').filter(Boolean);
 }
-if (config.BOT_NICKNAMES.length === 0) config.BOT_NICKNAMES = [config.BOT_NAME || "Sydney"];

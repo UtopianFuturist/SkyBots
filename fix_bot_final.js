@@ -1,39 +1,44 @@
-import fs from 'fs/promises';
+import fs from 'fs';
+let bot = fs.readFileSync('src/bot.js', 'utf8');
 
-async function fix() {
-  const path = 'src/bot.js';
-  let content = await fs.readFile(path, 'utf-8');
+const start = bot.indexOf('async heartbeat() {');
+const end = bot.indexOf('async checkDiscordSpontaneity() {');
+if (start !== -1 && end !== -1) {
+    const orchestratorCode = `
+  async heartbeat() {
+    console.log("[Orchestrator] 5-minute heartbeat pulse.");
+    if (this.paused || dataStore.isResting()) return;
 
-  // 1. Remove duplicate performPublicSoulMapping
-  const soulMappingStart = content.indexOf('  async performPublicSoulMapping() {');
-  const secondSoulMappingStart = content.indexOf('  async performPublicSoulMapping() {', soulMappingStart + 1);
-  if (secondSoulMappingStart !== -1) {
-    let count = 1;
-    let pos = content.indexOf('{', secondSoulMappingStart) + 1;
-    while (count > 0 && pos < content.length) {
-      if (content[pos] === '{') count++;
-      else if (content[pos] === '}') count--;
-      pos++;
-    }
-    content = content.slice(0, secondSoulMappingStart) + content.slice(pos);
+    try {
+        await this.checkDiscordScheduledTasks();
+        await this.checkMaintenanceTasks();
+
+        // Persona-led decision
+        const mood = dataStore.getMood();
+        const orchestratorPrompt = "You are " + config.BOT_NAME + ". It is " + new Date().toLocaleString() + ". Decide next action: [\\"post\\", \\"rest\\", \\"reflect\\", \\"explore\\"]. Respond with JSON: {\\"choice\\": \\"...\\", \\"reason\\": \\"...\\"}";
+        const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true });
+
+        let decision;
+        try { decision = JSON.parse(response.match(/\\{[\\s\\S]*\\}/)[0]); } catch(e) { decision = { choice: "rest" }; }
+
+        console.log("[Orchestrator] Decision: " + decision.choice);
+        if (decision.choice === "post") await this.performAutonomousPost();
+        if (decision.choice === "explore") await this.performTimelineExploration();
+        if (decision.choice === "reflect") await this.performPublicSoulMapping();
+
+    } catch (e) { console.error("[Orchestrator] Error:", e); }
   }
 
-  // 2. Add missing executeAction logic for search_tools
-  const executeActionStart = content.indexOf('  async executeAction(action, context) {');
-  if (executeActionStart !== -1) {
-    const searchToolsCode = `          if (action.tool === 'search_tools') {
-              console.log('[Bot] search_tools called. Responding with tool schemas...');
-              return "To see tool schemas, please consult the SKILLS.md file in the repository.";
-          }\n`;
-    const braceStart = content.indexOf('{', executeActionStart);
-    const tryStart = content.indexOf('try {', braceStart);
-    if (tryStart !== -1) {
-      const insertPos = tryStart + 5;
-      content = content.slice(0, insertPos) + '\n' + searchToolsCode + content.slice(insertPos);
-    }
-  }
-
-  await fs.writeFile(path, content);
-  console.log('Cleaned up duplicates and added search_tools to executeAction.');
+`;
+    bot = bot.slice(0, start) + orchestratorCode + bot.slice(end);
 }
-fix();
+
+// Also fix the import duplication if any
+if (bot.includes("import { cronService }") && bot.lastIndexOf("import { cronService }") !== bot.indexOf("import { cronService }")) {
+    const firstImport = bot.indexOf("import { cronService }");
+    const lastImport = bot.lastIndexOf("import { cronService }");
+    const endOfLastImport = bot.indexOf(";", lastImport) + 1;
+    bot = bot.slice(0, lastImport) + bot.slice(endOfLastImport);
+}
+
+fs.writeFileSync('src/bot.js', bot);

@@ -41,7 +41,7 @@ const config = {
   KNOWN_BOTS: process.env.KNOWN_BOTS ? process.env.KNOWN_BOTS.split(',') : [],
 
   // Bot Nicknames
-  BOT_NICKNAMES: process.env.BOT_NICKNAMES ? process.env.BOT_NICKNAMES.split(',') : ['SkyBots', 'skybots'],
+  BOT_NICKNAMES: process.env.BOT_NICKNAMES ? process.env.BOT_NICKNAMES.split(',') : [config.BOT_NAME || 'Sydney'],
 
   // AI Transparency Declaration
   AUTOMATION_LEVEL: process.env.AUTOMATION_LEVEL || 'automated',

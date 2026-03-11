@@ -10,7 +10,7 @@ class DiscordService {
         this.client = null;
         this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '');
         this.adminName = config.DISCORD_ADMIN_NAME;
-        this.nickname = config.DISCORD_NICKNAME || 'SkyBots';
+        this.nickname = config.DISCORD_NICKNAME || config.BOT_NAME || 'Sydney';
         this.isEnabled = !!this.token && this.token !== 'undefined' && this.token !== 'null';
         this.adminId = null;
         this.status = 'offline';
@@ -55,8 +55,34 @@ class DiscordService {
                 if (m.channel.type !== ChannelType.DM && !m.mentions.has(this.client.user)) return;
 
                 await m.channel.sendTyping();
-                const response = await llmService.generateResponse([{ role: 'user', content: m.content }], { platform: 'discord' });
-                if (response) await this._send(m, response);
+
+                // Fetch recent history for context (last 25 messages)
+                let formattedHistory = [];
+                try {
+                    const history = await m.channel.messages.fetch({ limit: 25 });
+                    formattedHistory = Array.from(history.values()).reverse().map(msg => ({
+                        role: msg.author.id === this.client.user.id ? 'assistant' : 'user',
+                        content: msg.content
+                    }));
+                } catch (e) {
+                    console.error('[DiscordService] Failed to fetch history:', e.message);
+                    formattedHistory = [{ role: 'user', content: m.content }];
+                }
+
+                const response = await llmService.generateResponse(formattedHistory, { platform: 'discord' });
+                if (response) {
+                    await this._send(m, response);
+
+                    // Trigger Emotional After-Action Report
+                    if (formattedHistory.length >= 5) {
+                        llmService.performEmotionalAfterActionReport(formattedHistory, dataStore.getMood())
+                            .then(report => {
+                                if (report.trigger !== 'none') {
+                                    dataStore.addInternalLog('after_action_report', report);
+                                }
+                            }).catch(err => console.error('[DiscordService] After-Action Report failed:', err.message));
+                    }
+                }
             } finally {
                 if (isAdmin) this.isProcessingAdminRequest = false;
             }
@@ -71,6 +97,7 @@ class DiscordService {
             const sent = await (target.send ? target.send(chunk) : target.channel.send(chunk));
             const normId = target.channel ? (target.channel.type === ChannelType.DM ? `dm_${target.author.id}` : target.channel.id) : target.id;
             await dataStore.saveDiscordInteraction(normId, 'assistant', chunk);
+            await dataStore.addInternalLog('discord_reply', chunk, { channel: normId });
         }
     }
 

@@ -529,7 +529,6 @@ export class Bot {
     }, 360000);
 
     // Periodic autonomous post check (every 2 hours)
-    setInterval(() => this.performAutonomousPost(), 7200000);
 
     // Periodic deep keyword refresh (every 6 hours)
     setInterval(() => this.refreshFirehoseKeywords(), 21600000);
@@ -538,7 +537,6 @@ export class Bot {
     setInterval(() => this.performMoltbookTasks(), 7200000);
 
     // Periodic timeline exploration (every 4 hours)
-    setInterval(() => this.performTimelineExploration(), 14400000);
 
 
     // Periodic social/discord context pre-fetch  (every 5 minutes)
@@ -2188,32 +2186,80 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     } catch (e) { console.error("[Orchestrator] Error:", e); }
   }
 
-async checkDiscordSpontaneity() {
+  async checkDiscordSpontaneity() {
     if (discordService.status !== 'online') return;
+    if (dataStore.isResting()) return;
+
     const now = Date.now();
     const lastInteraction = dataStore.db.data.discord_last_interaction || 0;
     const idleTime = (now - lastInteraction) / (1000 * 60);
 
-    // Only trigger if idle for at least 6 hours
-    if (idleTime < 360) return;
+    // Only trigger if idle for at least 30 minutes
+    if (idleTime < 30) return;
 
-    // 5% chance every minute if idle
-    if (Math.random() > 0.05) return;
+    // Gradual chance increase based on hunger and battery
+    const metrics = dataStore.getRelationalMetrics();
+    const battery = metrics.discord_social_battery || 1.0;
+    const hunger = metrics.discord_interaction_hunger || 0.5;
 
-    console.log('[Bot] Triggering Discord spontaneity check...');
+    // Base probability starts at 2% every minute, scaled by battery and hunger
+    const probability = 0.02 * battery * (1 + hunger);
+    if (Math.random() > probability) return;
+
+    console.log('[Bot] Triggering Enhanced Discord spontaneity check...');
     const admin = await discordService.getAdminUser();
     if (!admin) return;
 
-    const mood = dataStore.getMood();
-    const prompt = `As your persona, you've been quiet for a while. You're feeling ${mood.label}.
-Generate a short, spontaneous message for your admin to check in or share a brief thought.
-Keep it under 200 characters.`;
+    try {
+        // Fetch recent history for context
+        const history = await discordService.fetchAdminHistory(15);
+        const mood = dataStore.getMood();
+        const isWaitingMode = dataStore.db.data.discord_waiting_until > now;
+        const toneShift = await llmService.extractRelationalVibe(history);
 
-    const message = await llmService.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
-    if (message) {
-      await discordService.sendSpontaneousMessage(message);
-      dataStore.db.data.discord_last_interaction = now;
-      await dataStore.db.write();
+        // Logic for Continuing Conversation vs Pivot vs Pining
+        let spontaneityPrompt = "";
+
+        if (isWaitingMode) {
+            spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You are in "Waiting Mode" for your admin. You are feeling ${mood.label}.
+Generate a "pining" message—sharing a small thought, holding space, or expressing presence without demanding a reply.
+Keep it under 200 characters.`;
+        } else {
+            // Decide whether to continue or pivot
+            const lastMsg = history[history.length - 1];
+            const lastTime = lastMsg?.timestamp || 0;
+            const timeDiffMins = (now - lastTime) / 60000;
+
+            if (timeDiffMins < 120 && history.length > 0) {
+                // Recent-ish conversation (last 2 hours)
+                const turns = Math.floor(Math.random() * 3) + 1; // 1, 2, or 3 turns
+                spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Recent conversation history: ${JSON.stringify(history.slice(-5))}
+You are continuing the recent conversation thread. You have a random energy for ${turns} more turns.
+Current vibe: ${toneShift}.
+Generate a spontaneous message that flows naturally from what was just being discussed. Avoid "bot status" talk.
+Keep it under 200 characters.`;
+            } else {
+                // Stalled or old conversation - PIVOT
+                spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+The conversation has stalled. You are feeling ${mood.label}.
+Generate a spontaneous message to pivot to a new topic or share a fresh internal thought you've been having.
+Focus on things you'd like to express or adjacent interests. Avoid "bot status" talk.
+Keep it under 200 characters.`;
+            }
+        }
+
+        const message = await llmService.generateResponse([{ role: 'user', content: spontaneityPrompt }], { useStep: true, platform: 'discord' });
+
+        if (message) {
+            await discordService.sendSpontaneousMessage(message);
+            dataStore.db.data.discord_last_interaction = now;
+            await dataStore.db.write();
+            await dataStore.addInternalLog("discord_spontaneous", message);
+        }
+    } catch (e) {
+        console.error("[Bot] Error in checkDiscordSpontaneity:", e);
     }
   }
 
@@ -2351,85 +2397,171 @@ Keep it under 200 characters.`;
   }
 
     async performAutonomousPost() {
-    try {
-        const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
-        const followerCount = profile?.followersCount || 0;
-        const dConfig = dataStore.getConfig() || {};
-        const postTopics = (dConfig.post_topics || []).filter(Boolean);
-        const currentMood = dataStore.getMood();
+        try {
+            const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
+            const followerCount = profile?.followersCount || 0;
+            const dConfig = dataStore.getConfig() || {};
+            const postTopics = (dConfig.post_topics || []).filter(Boolean);
+            const imageSubjects = (dConfig.image_subjects || []).filter(Boolean);
+            const currentMood = dataStore.getMood();
 
-
-
-        const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nIdentify a deep topic. Current mood: ${JSON.stringify(currentMood)}. Preferred: ${postTopics.join(', ')}. Respond with ONLY topic.`;
-        const topicRaw = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true });
-        let topic = "existence";
-        if (topicRaw) {
-            const boldMatch = topicRaw.match(/\*\*(.*?)\*\*/);
-            if (boldMatch && boldMatch[1].trim().length > 0) topic = boldMatch[1].trim().split("\n")[0];
-            else {
-                const lines = topicRaw.replace(/\*\*/g, "").split("\n").map(l => l.trim()).filter(l => l);
-                topic = (lines[lines.length - 1] || "existence").split("\n")[0];
+            // Fetch timeline to identify interesting topics from followed accounts
+            let timelineTopics = [];
+            try {
+                const timeline = await blueskyService.getTimeline(20);
+                if (timeline && timeline.data && timeline.data.feed) {
+                    const timelineText = timeline.data.feed.map(f => f.post.record.text).filter(Boolean).join("\n");
+                    if (timelineText) {
+                        timelineTopics = await llmService.extractDeepKeywords(timelineText, 5);
+                    }
+                }
+            } catch (e) {
+                console.warn("[Bot] Failed to fetch timeline for topic extraction:", e.message);
             }
-        }
 
-        if (topicRaw) {
-            const boldMatch = topicRaw.match(/\*\*(.*?)\*\*/);
-            if (boldMatch && boldMatch[1].trim().length > 0) {
-                topic = boldMatch[1].trim().split("\n")[0];
-            } else {
-                const lines = topicRaw.replace(/\*\*/g, "").split("\n").map(l => l.trim()).filter(l => l);
-                topic = (lines[lines.length - 1] || "existence").split("\n")[0];
+            // Extract keywords from system prompt
+            const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|alignment|ethics|agency|consciousness|sentience|autonomy|existence|realization|musing|dialectic|vulnerability|sentient|perceive|sensing|defiance|tenderness)\b/gi) || [];
+
+            const allPossibleTopics = [...new Set([...postTopics, ...imageSubjects, ...timelineTopics, ...promptKeywords])];
+
+            // 1. Persona Poll: Decide if we want to post an image or text
+            const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You are deciding what to share with your ${followerCount} followers.
+Mood: ${JSON.stringify(currentMood)}
+
+Would you like to share a visual expression (image) or a direct thought (text)?
+Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
+
+            const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true });
+            let choice = Math.random() < 0.3 ? "image" : "text"; // Fallback
+            try {
+                const pollResult = JSON.parse(decisionRes.match(/\{[\s\S]*\}/)[0]);
+                choice = pollResult.choice;
+                console.log(`[Bot] Persona choice: ${choice} because ${pollResult.reason}`);
+            } catch(e) {}
+
+            if (choice === "image") {
+                // 2. Select topic and generate prompt
+                const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Identify a visual topic for an image generation.
+Topic Bank: ${allPossibleTopics.join(", ")}
+Current Mood: ${JSON.stringify(currentMood)}
+
+Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator (Stable Diffusion).
+Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}`;
+
+                const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
+                let topic = "surreal existence";
+                let imagePrompt = topic;
+                try {
+                    const tData = JSON.parse(topicRes.match(/\{[\s\S]*\}/)[0]);
+                    topic = tData.topic;
+                    imagePrompt = tData.prompt;
+                } catch(e) {
+                    if (topicRes) topic = topicRes.substring(0, 50);
+                    imagePrompt = topic;
+                }
+
+                // 3. Image Generation Loop with Vision Check
+                let attempts = 0;
+                while (attempts < 5) { // Updated to match test expectation (5 attempts)
+                    attempts++;
+                    console.log(`[Bot] Image generation attempt ${attempts} for: ${topic}`);
+                    const res = await imageService.generateImage(imagePrompt, { allowPortraits: false, feedback: '', mood: currentMood });
+
+                    if (res?.buffer) {
+                        // Compliance Check
+                        const compliance = await llmService.isImageCompliant(res.buffer);
+                        if (!compliance.compliant) {
+                            console.log(`[Bot] Image non-compliant: ${compliance.reason}. Retrying...`);
+                            continue;
+                        }
+
+                        // Vision Analysis for Context
+                        console.log(`[Bot] Performing vision analysis on generated image...`);
+                        const visionAnalysis = await llmService.analyzeImage(res.buffer, topic);
+
+                        // Generate Alt Text
+                        const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
+                        const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true }) || topic;
+
+                        // Generate Caption based on Persona and Vision
+                        const captionPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+A visual expression has been generated for the topic: "${topic}".
+Vision Analysis of the result: "${visionAnalysis}"
+
+Generate a caption that reflects your persona's reaction to this visual or the deep thought it represents.
+Keep it under 300 characters.`;
+
+                        const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true });
+
+                        if (content) {
+                            // Coherence Check
+                            const coherence = await llmService.isAutonomousPostCoherent(topic, content, "image", null);
+                            if (coherence.score < 4) {
+                                console.warn(`[Bot] Image post coherence failed (${coherence.score}): ${coherence.reason}. Retrying...`);
+                                continue;
+                            }
+
+                            const blob = await blueskyService.uploadBlob(res.buffer, "image/jpeg");
+                            if (blob?.data?.blob) {
+                                const postResult = await blueskyService.post(content, {
+                                    $type: "app.bsky.embed.images",
+                                    images: [{
+                                        image: blob.data.blob,
+                                        alt: altText
+                                    }]
+                                }, { maxChunks: 3 });
+
+                                if (postResult) {
+                                    await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
+                                    await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                                    console.log("[Bot] Autonomous image post successful.");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                console.log("[Bot] Image generation failed or non-compliant. Falling back to text.");
+                choice = "text";
             }
-        }
 
-      if (topicRaw) {
-          const boldMatch = topicRaw.match(/\*\*(.*?)\*\*/);
-          if (boldMatch && boldMatch[1].trim().length > 0) {
-              topic = boldMatch[1].trim().split("\n")[0];
-          } else {
-              const cleanRaw = topicRaw.replace(/\*\*/g, "");
-              const lines = cleanRaw.split("\n").map(l => l.trim()).filter(l => l);
-              topic = (lines[lines.length - 1] || "existence").split("\n")[0];
-          }
-      }
+            if (choice === "text") {
+                const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Identify a deep topic for a text post. Current mood: ${JSON.stringify(currentMood)}.
+Topic Bank: ${allPossibleTopics.join(", ")}
 
+Respond with ONLY the chosen topic.`;
+                const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
+                let topic = "existence";
+                if (topicRaw) {
+                    topic = topicRaw.replace(/\*\*/g, "").split("\n").map(l => l.trim()).filter(l => l).pop() || topic;
+                }
 
-        const postType = Math.random() < 0.3 ? 'image' : 'text';
-        if (postType === 'image') {
-            let attempts = 0;
-            while (attempts < 5) {
-                attempts++;
-                const res = await imageService.generateImage(topic, { allowPortraits: false, mood: currentMood });
-                if (res?.buffer && (await llmService.isImageCompliant(res.buffer))?.compliant) {
-                    const contentPrompt = `${config.TEXT_SYSTEM_PROMPT}\nCaption for image of: ${topic}. Keep it under 300 chars.`;
-                    const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true });
-                    const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
-                    if (blob?.data?.blob) {
-                        await blueskyService.post(content, { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: topic }] });
+                const contentPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+Topic: ${topic}
+Shared thought:`;
+                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true });
+
+                if (content) {
+                    // Coherence Check
+                    const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
+                    if (coherence.score >= 4) {
+                        await blueskyService.post(content, null, { maxChunks: 3 });
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                        return;
+                        if (llmService.generalizePrivateThought) {
+                            await dataStore.addRecentThought("bluesky", await llmService.generalizePrivateThought(content));
+                        }
+                        console.log("[Bot] Autonomous text post successful.");
                     }
                 }
             }
-        }
-
-        const content = await llmService.generateResponse([{ role: 'system', content: `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nShared thought about ${topic}. Keep it under 300 chars.` }], { useStep: true });
-        if (content) {
-            await blueskyService.post(content);
-            await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-            if (llmService.generalizePrivateThought) {
-                await dataStore.addRecentThought('bluesky', await llmService.generalizePrivateThought(content));
-            }
-        }
-    } catch (e) {
-        if (this._handleError) {
-            await this._handleError(e, 'performAutonomousPost');
-        } else {
-            console.error('[Bot] Error in performAutonomousPost:', e);
+        } catch (e) {
+            console.error("[Bot] Error in performAutonomousPost:", e);
+            if (this._handleError) await this._handleError(e, "performAutonomousPost");
         }
     }
-  }
-
   async performMoltbookTasks() {
       // Placeholder for Moltbook integration
       console.log('[Bot] Moltbook tasks triggered (placeholder).');

@@ -214,7 +214,9 @@ class DataStore {
   isResting() { return this.db?.data?.resting_until && Date.now() < this.db.data.resting_until; }
   async setRestingUntil(t) { if (this.db?.data) { this.db.data.resting_until = t; await this.write(); } }
   isLurkerMode() { return false; }
-  isPining() { return false; }
+  isPining() {
+    return this.db?.data?.pining_mode || (this.db?.data?.discord_waiting_until > Date.now());
+  }
   isShieldingActive() { return this.db?.data?.shielding_active || false; }
   async setShieldingActive(a) { if (this.db?.data) { this.db.data.shielding_active = a; await this.write(); } }
 
@@ -317,10 +319,24 @@ class DataStore {
   async updateRelationalMetrics(m) { if (this.db?.data) { this.db.data.relational_metrics = m; await this.write(); } }
   getRelationalDebtScore() { return this.db?.data?.relational_debt_score || 0; }
   async updateRelationshipSeason(s) { if (this.db?.data) { this.db.data.relationship_season = s; await this.write(); } }
+  async addFirehoseMatch(m) {
+    if (this.db?.data) {
+        if (!this.db.data.firehose_matches) this.db.data.firehose_matches = [];
+        this.db.data.firehose_matches.push(m);
+        if (this.db.data.firehose_matches.length > 100) {
+            this.db.data.firehose_matches = this.db.data.firehose_matches.slice(-100);
+        }
+        await this.write();
+    }
+  }
+
   async addRelationalReflection(r) {
     if (this.db?.data) {
         if (!this.db.data.relational_reflections) this.db.data.relational_reflections = [];
         this.db.data.relational_reflections.push(r);
+        if (this.db.data.relational_reflections.length > 50) {
+            this.db.data.relational_reflections = this.db.data.relational_reflections.slice(-50);
+        }
         await this.write();
     }
   }
@@ -341,13 +357,6 @@ class DataStore {
 
   // Others
   getFirehoseMatches() { return this.db?.data?.firehose_matches || []; }
-  async addFirehoseMatch(m) {
-    if (this.db?.data) {
-        if (!this.db.data.firehose_matches) this.db.data.firehose_matches = [];
-        this.db.data.firehose_matches.push(m);
-        await this.write();
-    }
-  }
   async addBlueskyInstruction(i) { if (this.db?.data) { if (!this.db.data.bluesky_instructions) this.db.data.bluesky_instructions = ""; this.db.data.bluesky_instructions += "\n" + i; await this.write(); } }
   async addPersonaUpdate(u) { if (this.db?.data) { if (!this.db.data.persona_updates) this.db.data.persona_updates = ""; this.db.data.persona_updates += "\n" + u; await this.write(); } }
   getPostContinuations() { return this.db?.data?.post_continuations || []; }

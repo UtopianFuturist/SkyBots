@@ -91,7 +91,7 @@ ${factsVibe}
 
 Platform: ${options.platform || 'unknown'}
 Current Date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-Current Context: It is currently 2026.
+Current Context: It is currently ${new Date().getFullYear()}.
 
 Guidelines:
 - Maintain temporal integrity based on the current date.

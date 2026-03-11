@@ -64,7 +64,7 @@ class MemoryService {
     if (checkExactRepetition(context, history, 20)) return;
     try {
       const systemPrompt = `Generate a concise memory entry for type: ${type}.
-Current Year: 2026.
+Current Year: ${new Date().getFullYear()}.
 Constraint: Max 240 characters including the tag.
 Context: ${context}.`;
       let entryText = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });

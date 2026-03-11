@@ -38,8 +38,34 @@ class MemoryService {
 
   _extractCategory(text) {
     const categories = ['exploration', 'learning', 'status', 'meta', 'agentic', 'philosophy', 'reflection', 'research', 'mental', 'admin_fact', 'goal', 'interaction', 'mood'];
-    for (const cat of categories) { if (text.toUpperCase().includes(`[${cat.toUpperCase()}]`)) return cat; }
+    for (const cat of categories) {
+        if (text.toUpperCase().includes(`[${cat.toUpperCase()}]`)) return cat;
+    }
     return 'general';
+  }
+
+  async cleanupMemoryThread() {
+    if (!this.isEnabled()) return;
+    try {
+        console.log('[MemoryService] Running memory thread cleanup...');
+        const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
+        const query = `from:${profile.did} ${this.hashtag}`;
+        const posts = await blueskyService.searchPosts(query, 'latest', 100);
+
+        const validTags = ['EXPLORATION', 'LEARNING', 'STATUS', 'META', 'AGENTIC', 'PHILOSOPHY', 'REFLECTION', 'RESEARCH', 'MENTAL', 'ADMIN_FACT', 'GOAL', 'INTERACTION', 'MOOD'];
+
+        for (const post of posts) {
+            const text = post.record.text.toUpperCase();
+            const hasValidTag = validTags.some(tag => text.includes(`[${tag}]`));
+
+            if (!hasValidTag && !text.includes('[PINNED]')) {
+                console.log(`[MemoryService] Deleting memory entry with invalid/missing tag: ${post.uri}`);
+                await blueskyService.deletePost(post.uri);
+            }
+        }
+    } catch (e) {
+        console.error('[MemoryService] Error in cleanupMemoryThread:', e);
+    }
   }
 
   formatMemoriesForPrompt(excludeTags = []) {
@@ -86,7 +112,6 @@ Context: ${context}.`;
   }
 
   async getRecentMemories(limit = 15) { return await this.fetchRecentMemories(this.hashtag, limit); }
-  async cleanupMemoryThread() {}
   async secureThread(uri) { try { await blueskyService.upsertThreadgate(uri, { allowMentions: false, allowFollowing: true }); } catch (e) {} }
   async secureAllThreads() {
     if (!this.isEnabled()) return;

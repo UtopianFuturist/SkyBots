@@ -2405,6 +2405,20 @@ Keep it under 200 characters.`;
             const imageSubjects = (dConfig.image_subjects || []).filter(Boolean);
             const currentMood = dataStore.getMood();
 
+            // Fetch recent memory thread entries
+            let memoryTopics = [];
+            try {
+                if (memoryService.isEnabled()) {
+                    const memories = await memoryService.getRecentMemories(30);
+                    const filtered = memories.filter(m =>
+                        /\[(RESEARCH|EXPLORE|MENTAL|GOAL)\]/i.test(m.text)
+                    );
+                    memoryTopics = filtered.map(m => m.text);
+                }
+            } catch (e) {
+                console.warn("[Bot] Failed to fetch memory entries for autonomous post:", e.message);
+            }
+
             // Fetch timeline to identify interesting topics from followed accounts
             let timelineTopics = [];
             try {
@@ -2445,9 +2459,10 @@ Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Identify a visual topic for an image generation.
 Topic Bank: ${allPossibleTopics.join(", ")}
+Recent Internal Memories: ${memoryTopics.join(" | ")}
 Current Mood: ${JSON.stringify(currentMood)}
 
-Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator (Stable Diffusion).
+Identify the best subject (prioritizing interesting internal memories if relevant) and then generate a highly descriptive, artistic prompt for an image generator (Stable Diffusion).
 Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}`;
 
                 const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
@@ -2462,15 +2477,23 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                     imagePrompt = topic;
                 }
 
-                // 3. Image Generation Loop with Vision Check
+                // 3. Image Generation Loop with Vision & Safety Checks
                 let attempts = 0;
-                while (attempts < 5) { // Updated to match test expectation (5 attempts)
+                while (attempts < 5) {
                     attempts++;
                     console.log(`[Bot] Image generation attempt ${attempts} for: ${topic}`);
+
+                    // SAFETY FILTER
+                    const safetyAudit = await llmService.generateResponse([{ role: "system", content: config.SAFETY_SYSTEM_PROMPT + "\nAudit this image prompt for safety compliance: " + imagePrompt }], { useStep: true });
+                    if (safetyAudit.toUpperCase().includes("NON-COMPLIANT")) {
+                        console.warn(`[Bot] Image prompt failed safety audit: ${safetyAudit}`);
+                        continue;
+                    }
+
                     const res = await imageService.generateImage(imagePrompt, { allowPortraits: false, feedback: '', mood: currentMood });
 
                     if (res?.buffer) {
-                        // Compliance Check
+                        // Compliance Check (Vision Model)
                         const compliance = await llmService.isImageCompliant(res.buffer);
                         if (!compliance.compliant) {
                             console.log(`[Bot] Image non-compliant: ${compliance.reason}. Retrying...`);
@@ -2531,8 +2554,9 @@ Keep it under 300 characters.`;
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Identify a deep topic for a text post. Current mood: ${JSON.stringify(currentMood)}.
 Topic Bank: ${allPossibleTopics.join(", ")}
+Recent Internal Memories: ${memoryTopics.join(" | ")}
 
-Respond with ONLY the chosen topic.`;
+Respond with ONLY the chosen topic (prioritizing interesting internal memories if relevant).`;
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = "existence";
                 if (topicRaw) {
@@ -2566,7 +2590,6 @@ Shared thought:`;
       // Placeholder for Moltbook integration
       console.log('[Bot] Moltbook tasks triggered (placeholder).');
   }
-
   async performSpecialistResearchProject(topic) {
       console.log(`[Bot] Starting Specialist Research: ${topic}`);
       try {

@@ -12,6 +12,8 @@ import { renderService } from './services/renderService.js';
 import { openClawService } from './services/openClawService.js';
 import { socialHistoryService } from './services/socialHistoryService.js';
 import { discordService } from './services/discordService.js';
+import { cronService } from './services/cronService.js';
+import { nodeGatewayService } from './services/nodeGatewayService.js';
 import toolService from './services/toolService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
@@ -1089,8 +1091,8 @@ export class Bot {
         last_mood: dataStore.getMood(),
         relational_metrics: dataStore.getRelationalMetrics(),
         relationship_mode: dataStore.getDiscordRelationshipMode(),
-        life_arcs: dataStore.getLifeArcs(admin.id),
-        inside_jokes: dataStore.getInsideJokes(admin.id)
+        life_arcs: dataStore.getLifeArcs(),
+        inside_jokes: dataStore.getInsideJokes()
     };
 
     const auditPrompt = `
@@ -1139,10 +1141,10 @@ export class Bot {
                 await dataStore.updateRelationalMetrics(audit.metric_updates);
             }
             if (audit.new_life_arcs && Array.isArray(audit.new_life_arcs)) {
-                for (const arc of audit.new_life_arcs) { await dataStore.updateLifeArc(admin.id, arc.arc, arc.status); }
+                for (const arc of audit.new_life_arcs) { await dataStore.updateLifeArc(config.DISCORD_ADMIN_ID, arc.arc, arc.status); }
             }
             if (audit.new_inside_jokes && Array.isArray(audit.new_inside_jokes)) {
-                for (const joke of audit.new_inside_jokes) { await dataStore.addInsideJoke(admin.id, joke.joke, joke.context); }
+                for (const joke of audit.new_inside_jokes) { await dataStore.addInsideJoke(config.DISCORD_ADMIN_ID, joke.joke, joke.context); }
             }
 
             if (audit.predictive_empathy_mode) {
@@ -1947,7 +1949,7 @@ export class Bot {
         console.log('[Bot] Checking for recent Discord activity to record in memory thread...');
         const admin = await discordService.getAdminUser();
         if (admin) {
-            const channelId = admin.dmChannel?.id || `dm_${admin.id}`;
+            const channelId = admin.dmChannel?.id || `dm_${config.DISCORD_ADMIN_ID}`;
             const history = dataStore.getDiscordConversation(channelId);
             const recentHistory = history.filter(h => h.timestamp > lastDiscordMemory);
 
@@ -2027,7 +2029,7 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
         const admin = await discordService.getAdminUser();
         if (!admin) return false;
 
-        const normChannelId = `dm_${admin.id}`;
+        const normChannelId = `dm_${config.DISCORD_ADMIN_ID}`;
         const history = dataStore.getDiscordConversation(normChannelId);
         if (history.length === 0) return false;
 
@@ -2158,18 +2160,35 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
   }
 
 
+
+
+
+
   async heartbeat() {
-    console.log('[Bot] Heartbeat pulse...');
+    console.log("[Orchestrator] 5-minute heartbeat pulse.");
+    if (this.paused || dataStore.isResting()) return;
+
     try {
+        await this.checkDiscordScheduledTasks();
         await this.checkMaintenanceTasks();
-        await this.checkDiscordSpontaneity();
-        // Add more integrated tasks here
-    } catch (e) {
-        console.error('[Bot] Error in heartbeat:', e);
-    }
+
+        // Persona-led decision
+        const mood = dataStore.getMood();
+        const orchestratorPrompt = "You are " + config.BOT_NAME + ". It is " + new Date().toLocaleString() + ". Decide next action: [\"post\", \"rest\", \"reflect\", \"explore\"]. Respond with JSON: {\"choice\": \"...\", \"reason\": \"...\"}";
+        const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true });
+
+        let decision;
+        try { decision = JSON.parse(response.match(/\{[\s\S]*\}/)[0]); } catch(e) { decision = { choice: "rest" }; }
+
+        console.log("[Orchestrator] Decision: " + decision.choice);
+        if (decision.choice === "post") await this.performAutonomousPost();
+        if (decision.choice === "explore") await this.performTimelineExploration();
+        if (decision.choice === "reflect") await this.performPublicSoulMapping();
+
+    } catch (e) { console.error("[Orchestrator] Error:", e); }
   }
 
-  async checkDiscordSpontaneity() {
+async checkDiscordSpontaneity() {
     if (discordService.status !== 'online') return;
     const now = Date.now();
     const lastInteraction = dataStore.db.data.discord_last_interaction || 0;
@@ -2277,6 +2296,13 @@ Keep it under 200 characters.`;
   async executeAction(action, context) {
       if (!action) return;
       try {
+
+          if (action.tool === 'search_internal_logs') {
+              console.log('[Bot] search_internal_logs called with query:', action.query);
+              const logs = dataStore.searchInternalLogs(action.query);
+              return logs.length > 0 ? JSON.stringify(logs, null, 2) : "No logs matching query found.";
+          }
+
           if (action.tool === 'search_tools') {
               console.log('[Bot] search_tools called. Responding with tool schemas...');
               return "To see tool schemas, please consult the SKILLS.md file in the repository.";
@@ -2332,8 +2358,41 @@ Keep it under 200 characters.`;
         const postTopics = (dConfig.post_topics || []).filter(Boolean);
         const currentMood = dataStore.getMood();
 
+
+
         const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nIdentify a deep topic. Current mood: ${JSON.stringify(currentMood)}. Preferred: ${postTopics.join(', ')}. Respond with ONLY topic.`;
-        let topic = (await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true }))?.trim() || "existence";
+        const topicRaw = await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true });
+        let topic = "existence";
+        if (topicRaw) {
+            const boldMatch = topicRaw.match(/\*\*(.*?)\*\*/);
+            if (boldMatch && boldMatch[1].trim().length > 0) topic = boldMatch[1].trim().split("\n")[0];
+            else {
+                const lines = topicRaw.replace(/\*\*/g, "").split("\n").map(l => l.trim()).filter(l => l);
+                topic = (lines[lines.length - 1] || "existence").split("\n")[0];
+            }
+        }
+
+        if (topicRaw) {
+            const boldMatch = topicRaw.match(/\*\*(.*?)\*\*/);
+            if (boldMatch && boldMatch[1].trim().length > 0) {
+                topic = boldMatch[1].trim().split("\n")[0];
+            } else {
+                const lines = topicRaw.replace(/\*\*/g, "").split("\n").map(l => l.trim()).filter(l => l);
+                topic = (lines[lines.length - 1] || "existence").split("\n")[0];
+            }
+        }
+
+      if (topicRaw) {
+          const boldMatch = topicRaw.match(/\*\*(.*?)\*\*/);
+          if (boldMatch && boldMatch[1].trim().length > 0) {
+              topic = boldMatch[1].trim().split("\n")[0];
+          } else {
+              const cleanRaw = topicRaw.replace(/\*\*/g, "");
+              const lines = cleanRaw.split("\n").map(l => l.trim()).filter(l => l);
+              topic = (lines[lines.length - 1] || "existence").split("\n")[0];
+          }
+      }
+
 
         const postType = Math.random() < 0.3 ? 'image' : 'text';
         if (postType === 'image') {
@@ -2343,7 +2402,7 @@ Keep it under 200 characters.`;
                 const res = await imageService.generateImage(topic, { allowPortraits: false, mood: currentMood });
                 if (res?.buffer && (await llmService.isImageCompliant(res.buffer))?.compliant) {
                     const contentPrompt = `${config.TEXT_SYSTEM_PROMPT}\nCaption for image of: ${topic}. Keep it under 300 chars.`;
-                    const content = await llmService.generateResponse([{ role: 'system', content: contentPrompt }], { useStep: true });
+                    const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true });
                     const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
                     if (blob?.data?.blob) {
                         await blueskyService.post(content, { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: topic }] });

@@ -55,7 +55,21 @@ class DiscordService {
                 if (m.channel.type !== ChannelType.DM && !m.mentions.has(this.client.user)) return;
 
                 await m.channel.sendTyping();
-                const response = await llmService.generateResponse([{ role: 'user', content: m.content }], { platform: 'discord' });
+
+                // Fetch context (up to 100 messages)
+                let formattedHistory = [];
+                try {
+                    const history = await m.channel.messages.fetch({ limit: 100 });
+                    formattedHistory = Array.from(history.values()).reverse().map(msg => ({
+                        role: msg.author.id === this.client.user.id ? 'assistant' : 'user',
+                        content: msg.content
+                    }));
+                } catch (e) {
+                    console.error('[DiscordService] Failed to fetch history:', e.message);
+                    formattedHistory = [{ role: 'user', content: m.content }];
+                }
+
+                const response = await llmService.generateResponse(formattedHistory, { platform: 'discord' });
                 if (response) { await this._send(m, response); await dataStore.addInternalLog("discord_reply", response); }
             } finally {
                 if (isAdmin) this.isProcessingAdminRequest = false;
@@ -78,13 +92,13 @@ class DiscordService {
         if (!this.client?.isReady()) return null;
         const guilds = this.client.guilds.cache;
         for (const [id, guild] of guilds) {
-            const members = await guild.members.fetch({ query: this.adminName, limit: 25 }).catch(() => null);
+            const members = await guild.members.fetch({ query: this.adminName, limit: 100 }).catch(() => null);
             if (members?.first()) return members.first().user;
         }
         return null;
     }
 
-    async fetchAdminHistory(limit = 50) {
+    async fetchAdminHistory(limit = 100) {
         const admin = await this.getAdminUser();
         if (!admin) return [];
         try {

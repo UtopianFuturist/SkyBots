@@ -415,7 +415,19 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
     async analyzeImage(image, alt, options = {}) {
     if (!image) return "No image provided.";
 
-    const base64 = typeof image === 'string' ? image : image.toString('base64');
+    let base64;
+    if (typeof image === 'string' && (image.startsWith('http') || image.startsWith('at:'))) {
+        try {
+            const res = await fetch(image);
+            const buffer = await res.buffer();
+            base64 = buffer.toString('base64');
+        } catch (e) {
+            console.error("[LLMService] Failed to download image for analysis:", e.message);
+            return "Vision analysis failed: Image download error.";
+        }
+    } else {
+        base64 = typeof image === 'string' ? image : image.toString('base64');
+    }
     const prompt = options.prompt || `Analyze this image in detail. Focus on: ${alt || 'general visual content'}.`;
 
     const payload = {

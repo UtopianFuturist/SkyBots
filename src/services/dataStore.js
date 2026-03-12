@@ -315,6 +315,8 @@ class DataStore {
   }
 
   // Relational
+  getImageAnalysis(id) { return this.db?.data?.image_analyses?.[id]; }
+  async saveImageAnalysis(id, analysis) { if (this.db?.data) { if (!this.db.data.image_analyses) this.db.data.image_analyses = {}; this.db.data.image_analyses[id] = analysis; await this.write(); } }
   getRelationalMetrics() { return this.db?.data?.relational_metrics || {}; }
   async updateRelationalMetrics(m) { if (this.db?.data) { this.db.data.relational_metrics = m; await this.write(); } }
   getRelationalDebtScore() { return this.db?.data?.relational_debt_score || 0; }

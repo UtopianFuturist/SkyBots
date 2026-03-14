@@ -10,8 +10,7 @@ class DataStore {
 
   async init() {
     const defaultData = {
-  internal_logs: [],
-  internal_logs: [],
+      internal_logs: [],
       interaction_hunger: 0.5,
       current_mood: { label: 'balanced', score: 0.5, intensity: 0.5 },
       admin_did: null,
@@ -80,6 +79,8 @@ class DataStore {
       admin_worldview: { summary: "", core_values: [], biases: [] },
       admin_bluesky_usage: { sentiment: "neutral", frequency: "unknown", primary_topics: [] },
       firehose_matches: [],
+      discord_last_replied: false,
+      discord_admin_availability: true,
       admin_facts: [],
       persona_updates: "",
       bluesky_instructions: "",
@@ -182,6 +183,10 @@ class DataStore {
         await this.write();
     }
   }
+  async setDiscordLastReplied(s) { if (this.db?.data) { this.db.data.discord_last_replied = s; await this.write(); } }
+  getDiscordAdminAvailability() { return this.db?.data?.discord_admin_availability ?? true; }
+  async setDiscordAdminAvailability(s) { if (this.db?.data) { this.db.data.discord_admin_availability = s; await this.write(); } }
+
   getDiscordScheduledTasks() { return (this.db?.data?.scheduled_tasks || []).filter(t => t && t.platform === 'discord'); }
   async removeDiscordScheduledTask(i) {
     if (this.db?.data?.scheduled_tasks) {
@@ -262,10 +267,20 @@ class DataStore {
   async addInternalLog(type, content, context = {}) {
     if (!this.db?.data) return;
     if (!this.db.data.internal_logs) this.db.data.internal_logs = [];
-    const logEntry = { timestamp: Date.now(), type, content, context };
-    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${typeof content === 'string' ? content : JSON.stringify(content)}`);
+    const logEntry = {
+        timestamp: Date.now(),
+        type,
+        content: typeof content === 'string' ? content : JSON.stringify(content),
+        context
+    };
+
+    // Also log to console for Render
+    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${logEntry.content.substring(0, 500)}`);
+
     this.db.data.internal_logs.push(logEntry);
-    if (this.db.data.internal_logs.length > 500) this.db.data.internal_logs = this.db.data.internal_logs.slice(-500);
+    if (this.db.data.internal_logs.length > 500) {
+        this.db.data.internal_logs = this.db.data.internal_logs.slice(-500);
+    }
     await this.write();
   }
 
@@ -401,28 +416,6 @@ class DataStore {
   // Memory Service Support
   getPersonaUpdates() { return this.db?.data?.persona_updates || ""; }
   getBlueskyInstructions() { return this.db?.data?.bluesky_instructions || ""; }
-
-  // Extra features
-
-  async addInternalLog(type, content, context = {}) {
-    if (!this.db?.data) return;
-    if (!this.db.data.internal_logs) this.db.data.internal_logs = [];
-    const logEntry = {
-        timestamp: Date.now(),
-        type,
-        content: typeof content === 'string' ? content : JSON.stringify(content),
-        context
-    };
-
-    // Also log to console for Render
-    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${logEntry.content.substring(0, 500)}`);
-
-    this.db.data.internal_logs.push(logEntry);
-    if (this.db.data.internal_logs.length > 500) {
-        this.db.data.internal_logs = this.db.data.internal_logs.slice(-500);
-    }
-    await this.write();
-  }
 
   searchInternalLogs(query, limit = 50) {
     if (!this.db?.data?.internal_logs) return [];

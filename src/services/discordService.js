@@ -654,8 +654,9 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
 
                      if (action.tool === 'get_render_logs') {
-                         const limit = action.parameters?.limit || 100;
-                         const query = action.query?.toLowerCase() || '';
+                         const limit = action.parameters?.limit || action.query?.limit || 100;
+                         const rawQuery = action.query?.query || action.query || '';
+                         const query = typeof rawQuery === 'string' ? rawQuery.toLowerCase() : '';
                          let logs;
                          if (query.includes('plan') || query.includes('agency') || query.includes('action') || query.includes('function')) {
                              logs = await renderService.getPlanningLogs(limit);

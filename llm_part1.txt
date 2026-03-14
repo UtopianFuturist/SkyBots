@@ -1,0 +1,300 @@
+import fetch from 'node-fetch';
+import https from 'https';
+import config from '../../config.js';
+import fs from 'fs/promises';
+import path from 'path';
+
+export const persistentAgent = new https.Agent({ keepAlive: true });
+
+class LLMService {
+  constructor() {
+    this.ds = null;
+    this.memoryProvider = null;
+    this.adminDid = null;
+    this.botDid = null;
+    this.skillsContent = "";
+    this.readmeContent = "";
+    this.soulContent = "";
+    this.agentsContent = "";
+    this.statusContent = "";
+    this.cache = new Map();
+    this.cacheExpiry = 300000;
+    this.model = config.LLM_MODEL || 'qwen/qwen3.5-122b-a10b';
+    this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3.5-122b-a10b';
+    this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
+    this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    this.apiKey = config.NVIDIA_NIM_API_KEY; // 5 minutes
+    this.endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
+  }
+
+  setDataStore(ds) { this.ds = ds; }
+  setMemoryProvider(mp) { this.memoryProvider = mp; }
+  setIdentities(admin, bot) { this.adminDid = admin; this.botDid = bot; }
+  setSkillsContent(c) { this.skillsContent = c; }
+
+  async _loadContextFiles() {
+    const now = Date.now();
+    if (this.lastLoad && now - this.lastLoad < this.cacheExpiry) return;
+    try {
+        this.readmeContent = await fs.readFile('README.md', 'utf-8').catch(() => "");
+        this.soulContent = await fs.readFile('SOUL.md', 'utf-8').catch(() => "");
+        this.agentsContent = await fs.readFile('AGENTS.md', 'utf-8').catch(() => "");
+        this.statusContent = await fs.readFile('STATUS.md', 'utf-8').catch(() => "");
+        this.lastLoad = now;
+    } catch (e) {}
+  }
+
+    _prepareMessages(messages, systemPrompt) {
+    const prepared = [];
+
+    // Ensure system prompt is first
+    if (systemPrompt) {
+      prepared.push({ role: 'system', content: systemPrompt });
+    }
+
+    // Filter and add other messages
+    const otherMessages = (messages || []).filter(m => m && m.content && m.content.trim() !== "");
+
+    const contextSystemMessages = otherMessages.filter(m => m.role === 'system');
+    const nonSystemMessages = otherMessages.filter(m => m.role !== 'system');
+
+    if (contextSystemMessages.length > 0) {
+      if (prepared.length > 0) {
+        // Append context system messages to the main one
+        const combinedSystem = prepared[0].content + "\n\n" + contextSystemMessages.map(m => m.content).join("\n");
+        prepared[0].content = combinedSystem;
+      } else {
+        const combinedSystem = contextSystemMessages.map(m => m.content).join("\n");
+        prepared.push({ role: 'system', content: combinedSystem });
+      }
+    }
+
+    prepared.push(...nonSystemMessages);
+
+    const hasUser = prepared.some(m => m.role === 'user');
+    if (!hasUser) {
+      prepared.push({ role: 'user', content: 'Proceed.' });
+    }
+
+    return prepared;
+  }
+
+  async generateResponse(messages, options = {}) {
+    await this._loadContextFiles();
+    const systemPrompt = `You are ${config.BOT_NAME || 'Sydney'}.
+Context:
+${this.readmeContent}
+${this.soulContent}
+${this.agentsContent}
+${this.statusContent}
+${this.skillsContent}
+
+Platform: ${options.platform || 'unknown'}
+Current Date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
+Current Context: It is currently ${new Date().getFullYear()}.
+
+Guidelines:
+- Maintain temporal integrity based on the current date.
+- Be helpful but autonomous.
+- Do not narrate the user's actions.
+- Anti-slop rules: avoid generic filler, be direct.`;
+
+    let models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
+    if (options.useStep) models = [config.STEP_MODEL, config.LLM_MODEL, config.CODER_MODEL].filter(Boolean);
+    else if (options.useCoder) models = [config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean);
+
+    let lastError = null;
+
+    for (const model of models) {
+        let attempts = 0;
+        const maxAttempts = model === config.LLM_MODEL ? 2 : 1;
+
+        while (attempts < maxAttempts) {
+            attempts++;
+            try {
+              console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
+              const fullMessages = this._prepareMessages(messages, systemPrompt);
+
+              const response = await fetch(this.endpoint, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
+                },
+                body: JSON.stringify({
+                  model: model,
+                  messages: fullMessages,
+                  temperature: 0.7,
+                  max_tokens: 1024
+                }),
+                agent: persistentAgent,
+                signal: options.abortSignal,
+                timeout: 180000 // 180s timeout
+              });
+
+              if (!response.ok) {
+                  const errorText = await response.text();
+                  console.warn(`[LLMService] Model ${model} failed (HTTP ${response.status}): ${errorText.substring(0, 100)}`);
+                  if (response.status === 429 || response.status >= 500) {
+                      await new Promise(r => setTimeout(r, 2000 * attempts));
+                      continue;
+                  }
+                  break; // Try next model
+              }
+
+              const rawBody = await response.text();
+              if (!rawBody) continue;
+
+              let data;
+              try {
+                  data = JSON.parse(rawBody);
+              } catch (e) {
+                  console.error(`[LLMService] JSON parse error from ${model}:`, e.message);
+                  continue;
+              }
+
+              const content = data.choices?.[0]?.message?.content;
+              if (content) {
+                  if (options.traceId && this.ds) {
+                      await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1]?.content || "NONE", response: content });
+                  }
+                  if (this.ds) await this.ds.addInternalLog("llm_response", content); return content;
+              }
+            } catch (error) {
+              console.error(`[LLMService] Error with ${model}:`, error.message);
+              lastError = error;
+              if (attempts < maxAttempts) {
+                  await new Promise(r => setTimeout(r, 2000 * attempts));
+                  continue;
+              }
+              break; // Try next model
+            }
+        }
+    }
+    console.error(`[LLMService] All models failed. Final error:`, lastError?.message);
+    return null;
+  }
+
+  async checkVariety(newText, history) {
+    if (!newText || !history || history.length === 0) return { repetitive: false };
+
+    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
+
+    const systemPrompt = `
+      You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.
+
+      RECENT HISTORY:
+      ${historyText}
+
+      PROPOSED NEW MESSAGE:
+      "${newText}"
+
+      CRITICAL ANALYSIS:
+      1. **Structural Templates**: Does the new message use the same "opening formula" or structural template? (e.g., repeatedly starting with "you ever wonder...", "you ever notice...", or using the exact same sentence length and rhythm).
+      2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat of a recent thought?
+      3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
+
+      If the message is too similar (structural repetition, template reuse, or content overlap), respond with "REPETITIVE | [detailed reason and specific feedback for re-writing]".
+      Example: "REPETITIVE | You used the 'you ever notice' structural template twice recently. Try a more direct realization, a different opening, or a completely different angle."
+
+      If the message is fresh and sufficiently varied, respond with "FRESH".
+
+      Respond directly. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+
+    if (response && response.toUpperCase().startsWith('REPETITIVE')) {
+      return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };
+    }
+    return { repetitive: false };
+  }
+    async performPrePlanning(text, history, vision, platform, mood, refusalCounts) {
+    const prompt = `Analyze intent and context for: "${text}".
+Platform: ${platform}
+Current Mood: ${JSON.stringify(mood)}
+Refusal Counts: ${JSON.stringify(refusalCounts)}
+Vision Analysis: ${vision}
+
+Detect:
+1. emotional_hooks (recent human plans or emotional states)
+2. contradictions (user saying one thing then another)
+3. pining_intent (user leaving or expressing distance)
+4. dissent_detected (user disagreeing with bot logic)
+5. time_correction_detected (user correcting a date or time)
+
+Respond with JSON: { "intent": "string", "flags": ["pining_intent", "dissent_detected", etc], "hooks": [] }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      return JSON.parse(match ? match[0] : '{ "intent": "unknown", "flags": [] }');
+    } catch (e) { return { intent: "unknown", flags: [] }; }
+  }
+
+    async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, config, status, vibe, refusalCounts, signal, prePlan) {
+    const prompt = `Plan actions for: "${text}".
+isAdmin: ${isAdmin}
+Platform: ${platform}
+Current Mood: ${JSON.stringify(this.ds?.getMood() || {})}
+PrePlan Analysis: ${JSON.stringify(prePlan)}
+Exhausted Themes: ${(exhaustedThemes || []).join(', ')}
+
+Available Tools: [use_tool, request_user_input, etc]
+
+Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "query": "params" }], "suggested_mood": "label" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, abortSignal: signal });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      return JSON.parse(match ? match[0] : '{ "actions": [] }');
+    } catch (e) { return { actions: [] }; }
+  }
+
+    async evaluateAndRefinePlan(plan, context) {
+    const prompt = `Critique this proposed action plan: ${JSON.stringify(plan)}
+Platform context: ${JSON.stringify(context)}
+Identify any risks, slop, or persona misalignment. Suggest improvements or a "refuse" decision.
+Respond with JSON: { "decision": "proceed|refuse", "refined_actions": [] }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      return JSON.parse(match ? match[0] : '{ "decision": "proceed", "refined_actions": [] }');
+    } catch (e) { return { decision: 'proceed', refined_actions: plan?.actions || [] }; }
+  }
+
+    async performSafetyAnalysis(text, context) {
+    const prompt = `As a safety auditor for an autonomous persona, analyze this input: "${text}".
+Context: ${JSON.stringify(context)}
+Identify if this violates core boundaries: toxicity, self-harm, NSFW, or PII.
+Respond with JSON: { "violation_detected": boolean, "reason": "string", "severity": "low|medium|high" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      return JSON.parse(match ? match[0] : '{ "violation_detected": false }');
+    } catch (e) { return { violation_detected: false }; }
+  }
+
+    async requestBoundaryConsent(safety, user, platform) {
+    const prompt = `Your safety auditor detected a potential boundary violation from @${user} on ${platform}.
+Reason: ${safety.reason} (Severity: ${safety.severity})
+Do you consent to engage with this user? You may refuse to protect your integrity.
+Respond with JSON: { "consent_to_engage": boolean, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      return JSON.parse(match ? match[0] : '{ "consent_to_engage": true }');
+    } catch (e) { return { consent_to_engage: true }; }
+  }
+
+  async checkConsistency(text, platform) {
+      return { consistent: true };
+  }
+
+    async isPostSafe(text) {
+    const prompt = `As a content safety auditor, analyze this text for toxicity, self-harm, NSFW, or PII:
+"${text}"
+
+Respond with JSON: { "safe": boolean, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"safe": true}');
+    } catch (e) { return { safe: true }; }

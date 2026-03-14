@@ -147,6 +147,14 @@ export class Bot {
       console.log('[Bot] Memory Thread feature enabled. Fetching recent memories...');
       const memories = await memoryService.getRecentMemories();
 
+      // Persona Blurb Recovery: Scan memory thread for [PERSONA] tags
+      console.log('[Bot] Scanning memory thread for dynamic persona blurbs...');
+      const blurbs = await memoryService.fetchPersonaBlurbs();
+      if (blurbs.length > 0) {
+        console.log(`[Bot] Recovered ${blurbs.length} persona blurbs from memory thread.`);
+        await dataStore.setPersonaBlurbs(blurbs);
+      }
+
       // Persistence Recovery: Scan memories for directives and persona updates to restore state across redeploys
       for (const mem of memories) {
         if (mem.text.includes('[DIRECTIVE]')) {
@@ -1391,7 +1399,8 @@ export class Bot {
         { name: 'Firehose Analysis', method: 'performFirehoseTopicAnalysis', interval: 4 * 60 * 60 * 1000, lastRunKey: 'last_firehose_analysis' },
         { name: 'Self Reflection', method: 'performSelfReflection', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_self_reflection' },
         { name: 'Identity Tracking', method: 'performAIIdentityTracking', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_identity_tracking' },
-        { name: 'Dialectic Humor', method: 'performDialecticHumor', interval: 6 * 60 * 60 * 1000, lastRunKey: 'last_dialectic_humor' }
+        { name: 'Dialectic Humor', method: 'performDialecticHumor', interval: 6 * 60 * 60 * 1000, lastRunKey: 'last_dialectic_humor' },
+        { name: 'Persona Audit', method: 'performPersonaAudit', interval: 6 * 60 * 60 * 1000, lastRunKey: 'last_persona_audit' }
     ];
 
     for (const task of heavyTasks) {
@@ -2168,7 +2177,9 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
 
     try {
         await this.checkDiscordScheduledTasks();
+        await delay(5000 + Math.random() * 5000); // 5-10s jittered delay
         await this.checkMaintenanceTasks();
+        await delay(5000 + Math.random() * 5000); // 5-10s jittered delay
 
         // Persona-led decision
         const mood = dataStore.getMood();
@@ -2179,9 +2190,18 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
         try { decision = JSON.parse(response.match(/\{[\s\S]*\}/)[0]); } catch(e) { decision = { choice: "rest" }; }
 
         console.log("[Orchestrator] Decision: " + decision.choice);
-        if (decision.choice === "post") await this.performAutonomousPost();
-        if (decision.choice === "explore") await this.performTimelineExploration();
-        if (decision.choice === "reflect") await this.performPublicSoulMapping();
+        if (decision.choice === "post") {
+            await delay(5000 + Math.random() * 5000);
+            await this.performAutonomousPost();
+        }
+        if (decision.choice === "explore") {
+            await delay(5000 + Math.random() * 5000);
+            await this.performTimelineExploration();
+        }
+        if (decision.choice === "reflect") {
+            await delay(5000 + Math.random() * 5000);
+            await this.performPublicSoulMapping();
+        }
 
     } catch (e) { console.error("[Orchestrator] Error:", e); }
   }
@@ -2367,8 +2387,40 @@ Keep it under 200 characters.`;
               const searchCount = dataStore.db.data.daily_search_count || 0;
               if (searchCount >= 100) return "Google search limit reached for today.";
               const res = await googleSearchService.search(action.query);
-              await dataStore.update({ daily_search_count: searchCount + 1 });
+              if (dataStore.update) await dataStore.update({ daily_search_count: searchCount + 1 });
               return res;
+          }
+
+          if (action.tool === 'add_persona_blurb') {
+              const content = action.query;
+              const entry = await memoryService.createMemoryEntry('persona', content);
+              if (entry) {
+                  await dataStore.addPersonaBlurb({ uri: entry.uri, text: content });
+                  return `Persona blurb added: "${content}" (URI: ${entry.uri})`;
+              }
+              return "Failed to create persona blurb memory entry.";
+          }
+
+          if (action.tool === 'remove_persona_blurb') {
+              const uri = action.query;
+              const success = await blueskyService.deletePost(uri);
+              if (success) {
+                  const blurbs = dataStore.getPersonaBlurbs().filter(b => b.uri !== uri);
+                  await dataStore.setPersonaBlurbs(blurbs);
+                  return `Persona blurb removed: ${uri}`;
+              }
+              return `Failed to remove persona blurb: ${uri}`;
+          }
+
+          if (action.tool === 'list_persona_blurbs') {
+              const blurbs = dataStore.getPersonaBlurbs();
+              return blurbs.length > 0
+                ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n')
+                : "No persona blurbs currently set.";
+          }
+
+          if (action.tool === 'audit_persona_blurbs') {
+              return await this.performPersonaAudit();
           }
       } catch (e) {
           console.error('[Bot] Error in executeAction:', e);
@@ -2658,7 +2710,56 @@ Shared thought:`;
     // Placeholder for actual implementation
   }
 
+  async performPersonaAudit() {
+    console.log('[Bot] Starting Agentic Persona Audit...');
+    const blurbs = dataStore.getPersonaBlurbs();
+    const systemPrompt = config.TEXT_SYSTEM_PROMPT;
 
+    // Include recent variety critiques to inform the audit
+    const critiques = dataStore.searchInternalLogs('variety_critique', 20);
+    const critiqueContext = critiques.length > 0
+        ? "\nRECENT VARIETY CRITIQUES:\n" + critiques.map(c => `- Feedback: ${c.content?.feedback || 'Repeated recent thought'}`).join('\n')
+        : "";
+
+    const auditPrompt = `
+      As a persona auditor, analyze the following active persona blurbs and recent variety critiques for consistency with the core system prompt.
+
+      CORE SYSTEM PROMPT:
+      "${systemPrompt}"
+
+      ACTIVE PERSONA BLURBS:
+      ${blurbs.length > 0 ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n') : 'None'}
+      ${critiqueContext}
+
+      Identify any contradictions, redundancies, or blurbs that no longer serve the persona's evolution.
+      If a blurb should be removed, identify it by URI. If a new blurb is needed to correct a drift (like "repetitive" or "lacking depth"), suggest one.
+
+      Respond with JSON: { "analysis": "...", "removals": ["uri1", ...], "suggestion": "new blurb content or null" }
+    `;
+
+    const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
+    try {
+        const audit = JSON.parse(response.match(/\{[\s\S]*\}/)[0]);
+        let result = `Audit Analysis: ${audit.analysis}\n`;
+
+        for (const uri of audit.removals || []) {
+            console.log(`[Bot] Audit recommended removal of: ${uri}`);
+            await this.executeAction({ tool: 'remove_persona_blurb', query: uri });
+            result += `- Removed blurb: ${uri}\n`;
+        }
+
+        if (audit.suggestion) {
+            console.log(`[Bot] Audit recommended new blurb: ${audit.suggestion}`);
+            await this.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
+            result += `- Added new blurb: ${audit.suggestion}\n`;
+        }
+
+        return result;
+    } catch (e) {
+        console.error('[Bot] Persona Audit failed:', e);
+        return "Persona Audit failed during analysis.";
+    }
+  }
 
   _extractImages(post) {
     const images = [];

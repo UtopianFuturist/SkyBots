@@ -1,0 +1,27 @@
+<<<<<<< SEARCH
+  async addSelfCorrection(c) { if (this.db?.data) { if (!this.db.data.self_corrections) this.db.data.self_corrections = []; this.db.data.self_corrections.push(c); await this.write(); } }
+}
+
+export const dataStore = new DataStore();
+=======
+  async addSelfCorrection(c) { if (this.db?.data) { if (!this.db.data.self_corrections) this.db.data.self_corrections = []; this.db.data.self_corrections.push(c); await this.write(); } }
+
+  // Persona Blurbs
+  getPersonaBlurbs() { return this.db?.data?.persona_blurbs || []; }
+  async setPersonaBlurbs(blurbs) {
+    if (this.db?.data) {
+      this.db.data.persona_blurbs = blurbs;
+      await this.write();
+    }
+  }
+  async addPersonaBlurb(blurb) {
+    if (this.db?.data) {
+      if (!this.db.data.persona_blurbs) this.db.data.persona_blurbs = [];
+      this.db.data.persona_blurbs.push(blurb);
+      await this.write();
+    }
+  }
+}
+
+export const dataStore = new DataStore();
+>>>>>>> REPLACE

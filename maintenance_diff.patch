@@ -1,0 +1,12 @@
+<<<<<<< SEARCH
+        { name: 'Self Reflection', method: 'performSelfReflection', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_self_reflection' },
+        { name: 'Identity Tracking', method: 'performAIIdentityTracking', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_identity_tracking' },
+        { name: 'Dialectic Humor', method: 'performDialecticHumor', interval: 6 * 60 * 60 * 1000, lastRunKey: 'last_dialectic_humor' }
+    ];
+=======
+        { name: 'Self Reflection', method: 'performSelfReflection', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_self_reflection' },
+        { name: 'Identity Tracking', method: 'performAIIdentityTracking', interval: 12 * 60 * 60 * 1000, lastRunKey: 'last_identity_tracking' },
+        { name: 'Dialectic Humor', method: 'performDialecticHumor', interval: 6 * 60 * 60 * 1000, lastRunKey: 'last_dialectic_humor' },
+        { name: 'Persona Audit', method: 'performPersonaAudit', interval: 6 * 60 * 60 * 1000, lastRunKey: 'last_persona_audit' }
+    ];
+>>>>>>> REPLACE

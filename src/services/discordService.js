@@ -1006,6 +1006,25 @@ INSTRUCTIONS:
         console.log(`[DiscordService] Admin NOT found in any shared guild.`);
         return null;
     }
+    async fetchAdminHistory(limit = 20) {
+        if (!this.isEnabled || !this.client?.isReady()) return [];
+        try {
+            const admin = await this.getAdminUser();
+            if (!admin) return [];
+
+            const dmChannel = admin.dmChannel || await admin.createDM();
+            const messages = await dmChannel.messages.fetch({ limit });
+
+            return messages.map(m => ({
+                role: m.author.id === this.client.user.id ? 'assistant' : 'user',
+                content: m.content,
+                timestamp: m.createdTimestamp
+            })).reverse();
+        } catch (error) {
+            console.error('[DiscordService] Error fetching admin history:', error);
+            return [];
+        }
+    }
 }
 
 export const discordService = new DiscordService();

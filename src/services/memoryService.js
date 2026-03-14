@@ -152,15 +152,45 @@ CRITICAL:
             return null;
         }
 
-        const finalContent = `${finalEntry.substring(0, 248 - this.hashtag.length).trim()} ${this.hashtag}`;
 
-        if (this.rootPost) {
-          return await blueskyService.postReply(this.rootPost, finalContent);
+        const hashtagStr = `\n\n${this.hashtag}`;
+        const maxChars = 295;
+
+        if (!finalEntry.includes(this.hashtag)) {
+            if (finalEntry.length + hashtagStr.length > maxChars) {
+                console.log(`[MemoryService] Entry too long. Truncating to fit hashtag.`);
+                const allowedLength = maxChars - hashtagStr.length;
+                finalEntry = finalEntry.substring(0, allowedLength).trim() + "...";
+            }
+            finalEntry += hashtagStr;
         } else {
-          const res = await blueskyService.post(finalContent);
-          if (res) { this.rootPost = res; await dataStore.addInternalLog("memory_entry", finalContent); }
-          return res;
+            if (finalEntry.length > maxChars) {
+                console.log(`[MemoryService] Entry (with hashtag) too long. Truncating.`);
+                const cleanText = finalEntry.replace(this.hashtag, '').trim();
+                const allowedLength = maxChars - hashtagStr.length;
+                finalEntry = cleanText.substring(0, allowedLength).trim() + "..." + hashtagStr;
+            }
         }
+
+        const latestPost = await this.findLatestMemoryPost();
+        let result = null;
+
+        if (latestPost) {
+            console.log(`[MemoryService] Replying to latest memory post: ${latestPost.uri}`);
+            const parentPost = { uri: latestPost.uri, cid: latestPost.cid, record: latestPost.record };
+            result = await blueskyService.postReply(parentPost, finalEntry);
+        } else {
+            console.log(`[MemoryService] No existing thread found. Initializing new memory thread.`);
+            result = await blueskyService.post(finalEntry);
+            if (result) this.rootPost = result;
+        }
+
+        if (result) {
+            await dataStore.addInternalLog("memory_entry", finalEntry);
+            this.recentMemories.push({ text: finalEntry, indexedAt: new Date().toISOString() });
+            if (this.recentMemories.length > 15) this.recentMemories.shift();
+        }
+        return result;
       }
     } catch (error) {}
     return null;

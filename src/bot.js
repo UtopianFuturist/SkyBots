@@ -248,7 +248,7 @@ constructor() {
   }
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
-    const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
+    const firehosePath = path.resolve(process.cwd(), 'src', 'firehose_monitor.py');
 
     // Extract keywords from post_topics and system prompt
     const dConfig = dataStore.getConfig();

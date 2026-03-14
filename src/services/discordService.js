@@ -845,8 +845,9 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  let attempts = 0;
                  let feedback = '';
                  let rejectedContent = null;
-                 const MAX_ATTEMPTS = 3;
+                 const MAX_ATTEMPTS = 4;
                  const recentThoughts = dataStore.getRecentThoughts();
+                 let lastValidResponse = null;
 
                  while (attempts < MAX_ATTEMPTS) {
                      attempts++;
@@ -855,8 +856,11 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                         ? [...messages, { role: 'system', content: feedbackContext }]
                         : messages;
 
-                     responseText = await llmService.generateResponse(finalMessages, { useQwen: true });
+                     // Use Step (Flash) for retries to ensure speed, keep Qwen for first attempt
+                     const useStep = attempts > 1;
+                     responseText = await llmService.generateResponse(finalMessages, { useQwen: !useStep, useStep: useStep });
                      if (!responseText) break;
+                     lastValidResponse = responseText;
 
                      // Variety & Repetition Check
                      const recentBotMsgs = history.filter(h => h.role === 'assistant').slice(-5).map(h => h.content);
@@ -879,7 +883,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          if (varietyCheck.repetitive && dataStore.addInternalLog) {
                             await dataStore.addInternalLog('variety_critique', {
                                 platform: 'discord',
-                                rejectedContent,
+                                rejectedContent: responseText,
                                 feedback: varietyCheck.feedback
                             });
                          }
@@ -887,6 +891,12 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          rejectedContent = responseText;
                          responseText = null; // Prevent sending the rejected response
                      }
+                 }
+
+                 // Last Resort Policy: If all attempts failed but we have a response, send it anyway
+                 if (!responseText && lastValidResponse) {
+                    console.log("[DiscordService] All variety check attempts failed. Falling back to last generated response to avoid silence.");
+                    responseText = lastValidResponse;
                  }
             } else {
                 responseText = await llmService.generateResponse(messages);

@@ -1,0 +1,8 @@
+<<<<<<< SEARCH
+    // Also log to console for Render
+    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${logEntry.content.substring(0, 500)}`);
+=======
+    // Also log to console for Render
+    const consoleMsg = typeof logEntry.content === 'string' ? logEntry.content : JSON.stringify(logEntry.content);
+    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${consoleMsg.substring(0, 500)}`);
+>>>>>>> REPLACE

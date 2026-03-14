@@ -210,7 +210,7 @@ Guidelines:
       Respond directly. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
 
     if (response && response.toUpperCase().startsWith('REPETITIVE')) {
       return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };

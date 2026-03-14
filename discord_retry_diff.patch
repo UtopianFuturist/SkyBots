@@ -1,0 +1,76 @@
+<<<<<<< SEARCH
+                 let attempts = 0;
+                 let feedback = '';
+                 let rejectedContent = null;
+                 const MAX_ATTEMPTS = 3;
+                 const recentThoughts = dataStore.getRecentThoughts();
+
+                 while (attempts < MAX_ATTEMPTS) {
+                     attempts++;
+                     const feedbackContext = feedback ? `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
+                     const finalMessages = feedback
+                        ? [...messages, { role: 'system', content: feedbackContext }]
+                        : messages;
+
+                     responseText = await llmService.generateResponse(finalMessages, { useQwen: true });
+                     if (!responseText) break;
+
+                     // Variety & Repetition Check
+=======
+                 let attempts = 0;
+                 let feedback = '';
+                 let rejectedContent = null;
+                 const MAX_ATTEMPTS = 4;
+                 const recentThoughts = dataStore.getRecentThoughts();
+                 let lastValidResponse = null;
+
+                 while (attempts < MAX_ATTEMPTS) {
+                     attempts++;
+                     const feedbackContext = feedback ? `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
+                     const finalMessages = feedback
+                        ? [...messages, { role: 'system', content: feedbackContext }]
+                        : messages;
+
+                     // Use Step (Flash) for retries to ensure speed, keep Qwen for first attempt
+                     const useStep = attempts > 1;
+                     responseText = await llmService.generateResponse(finalMessages, { useQwen: !useStep, useStep: useStep });
+                     if (!responseText) break;
+                     lastValidResponse = responseText;
+
+                     // Variety & Repetition Check
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+                         // Log rejected variety critique for recursive self-improvement
+                         if (varietyCheck.repetitive && dataStore.addInternalLog) {
+                            await dataStore.addInternalLog('variety_critique', {
+                                platform: 'discord',
+                                rejectedContent,
+                                feedback: varietyCheck.feedback
+                            });
+                         }
+
+                         rejectedContent = responseText;
+                         responseText = null; // Prevent sending the rejected response
+                     }
+                 }
+=======
+                         // Log rejected variety critique for recursive self-improvement
+                         if (varietyCheck.repetitive && dataStore.addInternalLog) {
+                            await dataStore.addInternalLog('variety_critique', {
+                                platform: 'discord',
+                                rejectedContent: responseText,
+                                feedback: varietyCheck.feedback
+                            });
+                         }
+
+                         rejectedContent = responseText;
+                         responseText = null; // Prevent sending the rejected response
+                     }
+                 }
+
+                 // Last Resort Policy: If all attempts failed but we have a response, send it anyway
+                 if (!responseText && lastValidResponse) {
+                    console.log("[DiscordService] All variety check attempts failed. Falling back to last generated response to avoid silence.");
+                    responseText = lastValidResponse;
+                 }
+>>>>>>> REPLACE

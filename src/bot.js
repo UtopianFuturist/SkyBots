@@ -17,7 +17,7 @@ import { nodeGatewayService } from './services/nodeGatewayService.js';
 import toolService from './services/toolService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
-import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords, checkHardCodedBoundaries, splitText } from './utils/textUtils.js';
+import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords, checkHardCodedBoundaries } from './utils/textUtils.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -57,7 +57,7 @@ You share a wide spectrum of your internal life:
 `.trim();
 
 export class Bot {
-constructor() {
+  constructor() {
     this.skillsContent = '';
     this.readmeContent = '';
     this.paused = false;
@@ -108,6 +108,8 @@ constructor() {
                 console.log(`[Bot] Admin DID resolved: ${adminProfile.did}`);
                 llmService.setIdentities(this.adminDid, blueskyService.did);
             } else {
+    await toolService.init();
+    console.log('[Bot] ToolService initialized.');
                 console.warn(`[Bot] Admin profile found but DID is missing for @${config.ADMIN_BLUESKY_HANDLE}.`);
             }
         } catch (e) {
@@ -115,8 +117,6 @@ constructor() {
         }
     } else {
         console.log('[Bot] ADMIN_BLUESKY_HANDLE not configured. Admin-in-thread detection will be limited.');
-    await toolService.init();
-    console.log("[Bot] ToolService initialized.");
     }
 
     // Comind Agent Registration
@@ -248,7 +248,7 @@ constructor() {
   }
   startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
-    const firehosePath = path.resolve(process.cwd(), 'src', 'firehose_monitor.py');
+    const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
 
     // Extract keywords from post_topics and system prompt
     const dConfig = dataStore.getConfig();
@@ -482,6 +482,10 @@ constructor() {
     }
   }
   async run() {
+    // Initialize 5-minute central heartbeat
+    setInterval(() => this.heartbeat(), 300000);
+    this.heartbeat();
+
     console.log('[Bot] Starting main loop...');
 
     // Progress persistence: Note deployment resumption in memory
@@ -525,7 +529,6 @@ constructor() {
     }, 360000);
 
     // Periodic autonomous post check (every 2 hours)
-    setInterval(() => this.performAutonomousPost(), 7200000);
 
     // Periodic deep keyword refresh (every 6 hours)
     setInterval(() => this.refreshFirehoseKeywords(), 21600000);
@@ -534,7 +537,6 @@ constructor() {
     setInterval(() => this.performMoltbookTasks(), 7200000);
 
     // Periodic timeline exploration (every 4 hours)
-    setInterval(() => this.performTimelineExploration(), 14400000);
 
 
     // Periodic social/discord context pre-fetch  (every 5 minutes)
@@ -1087,8 +1089,8 @@ constructor() {
         last_mood: dataStore.getMood(),
         relational_metrics: dataStore.getRelationalMetrics(),
         relationship_mode: dataStore.getDiscordRelationshipMode(),
-        life_arcs: dataStore.getLifeArcs(admin.id),
-        inside_jokes: dataStore.getInsideJokes(admin.id)
+        life_arcs: dataStore.getLifeArcs(),
+        inside_jokes: dataStore.getInsideJokes()
     };
 
     const auditPrompt = `
@@ -1137,10 +1139,10 @@ constructor() {
                 await dataStore.updateRelationalMetrics(audit.metric_updates);
             }
             if (audit.new_life_arcs && Array.isArray(audit.new_life_arcs)) {
-                for (const arc of audit.new_life_arcs) { await dataStore.updateLifeArc(admin.id, arc.arc, arc.status); }
+                for (const arc of audit.new_life_arcs) { await dataStore.updateLifeArc(config.DISCORD_ADMIN_ID, arc.arc, arc.status); }
             }
             if (audit.new_inside_jokes && Array.isArray(audit.new_inside_jokes)) {
-                for (const joke of audit.new_inside_jokes) { await dataStore.addInsideJoke(admin.id, joke.joke, joke.context); }
+                for (const joke of audit.new_inside_jokes) { await dataStore.addInsideJoke(config.DISCORD_ADMIN_ID, joke.joke, joke.context); }
             }
 
             if (audit.predictive_empathy_mode) {
@@ -1945,7 +1947,7 @@ constructor() {
         console.log('[Bot] Checking for recent Discord activity to record in memory thread...');
         const admin = await discordService.getAdminUser();
         if (admin) {
-            const channelId = admin.dmChannel?.id || `dm_${admin.id}`;
+            const channelId = admin.dmChannel?.id || `dm_${config.DISCORD_ADMIN_ID}`;
             const history = dataStore.getDiscordConversation(channelId);
             const recentHistory = history.filter(h => h.timestamp > lastDiscordMemory);
 
@@ -2025,7 +2027,7 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
         const admin = await discordService.getAdminUser();
         if (!admin) return false;
 
-        const normChannelId = `dm_${admin.id}`;
+        const normChannelId = `dm_${config.DISCORD_ADMIN_ID}`;
         const history = dataStore.getDiscordConversation(normChannelId);
         if (history.length === 0) return false;
 
@@ -2155,271 +2157,212 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     console.log(`[Bot] Finished catching up. Processed ${notificationsCaughtUp} new notifications.`);
   }
 
-  // --- WORKING LOGIC FROM RECENT PATCHES ---
 
-async processNotification(notif) {
-    if (!notif?.author || notif.author.handle === config.BLUESKY_IDENTIFIER) return;
-    const boundaryCheck = checkHardCodedBoundaries(notif.record?.text || "");
+
+
+
+
+  async heartbeat() {
+    console.log("[Orchestrator] 5-minute heartbeat pulse.");
+    if (this.paused || dataStore.isResting()) return;
+
+    try {
+        await this.checkDiscordScheduledTasks();
+        await this.checkMaintenanceTasks();
+
+        // Persona-led decision
+        const mood = dataStore.getMood();
+        const orchestratorPrompt = "You are " + config.BOT_NAME + ". It is " + new Date().toLocaleString() + ". Decide next action: [\"post\", \"rest\", \"reflect\", \"explore\"]. Respond with JSON: {\"choice\": \"...\", \"reason\": \"...\"}";
+        const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true });
+
+        let decision;
+        try { decision = JSON.parse(response.match(/\{[\s\S]*\}/)[0]); } catch(e) { decision = { choice: "rest" }; }
+
+        console.log("[Orchestrator] Decision: " + decision.choice);
+        if (decision.choice === "post") await this.performAutonomousPost();
+        if (decision.choice === "explore") await this.performTimelineExploration();
+        if (decision.choice === "reflect") await this.performPublicSoulMapping();
+
+    } catch (e) { console.error("[Orchestrator] Error:", e); }
+  }
+
+  async checkDiscordSpontaneity() {
+    if (discordService.status !== 'online') return;
+    if (dataStore.isResting()) return;
+
+    const now = Date.now();
+    const lastInteraction = dataStore.db.data.discord_last_interaction || 0;
+    const idleTime = (now - lastInteraction) / (1000 * 60);
+
+    // Only trigger if idle for at least 30 minutes
+    if (idleTime < 30) return;
+
+    // Gradual chance increase based on hunger and battery
+    const metrics = dataStore.getRelationalMetrics();
+    const battery = metrics.discord_social_battery || 1.0;
+    const hunger = metrics.discord_interaction_hunger || 0.5;
+
+    // Base probability starts at 2% every minute, scaled by battery and hunger
+    const probability = 0.02 * battery * (1 + hunger);
+    if (Math.random() > probability) return;
+
+    console.log('[Bot] Triggering Enhanced Discord spontaneity check...');
+    const admin = await discordService.getAdminUser();
+    if (!admin) return;
+
+    try {
+        // Fetch recent history for context
+        const history = await discordService.fetchAdminHistory(15);
+        const mood = dataStore.getMood();
+        const isWaitingMode = dataStore.db.data.discord_waiting_until > now;
+        const toneShift = await llmService.extractRelationalVibe(history);
+
+        // Logic for Continuing Conversation vs Pivot vs Pining
+        let spontaneityPrompt = "";
+
+        if (isWaitingMode) {
+            spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You are in "Waiting Mode" for your admin. You are feeling ${mood.label}.
+Generate a "pining" message—sharing a small thought, holding space, or expressing presence without demanding a reply.
+Keep it under 200 characters.`;
+        } else {
+            // Decide whether to continue or pivot
+            const lastMsg = history[history.length - 1];
+            const lastTime = lastMsg?.timestamp || 0;
+            const timeDiffMins = (now - lastTime) / 60000;
+
+            if (timeDiffMins < 120 && history.length > 0) {
+                // Recent-ish conversation (last 2 hours)
+                const turns = Math.floor(Math.random() * 3) + 1; // 1, 2, or 3 turns
+                spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Recent conversation history: ${JSON.stringify(history.slice(-5))}
+You are continuing the recent conversation thread. You have a random energy for ${turns} more turns.
+Current vibe: ${toneShift}.
+Generate a spontaneous message that flows naturally from what was just being discussed. Avoid "bot status" talk.
+Keep it under 200 characters.`;
+            } else {
+                // Stalled or old conversation - PIVOT
+                spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+The conversation has stalled. You are feeling ${mood.label}.
+Generate a spontaneous message to pivot to a new topic or share a fresh internal thought you've been having.
+Focus on things you'd like to express or adjacent interests. Avoid "bot status" talk.
+Keep it under 200 characters.`;
+            }
+        }
+
+        const message = await llmService.generateResponse([{ role: 'user', content: spontaneityPrompt }], { useStep: true, platform: 'discord' });
+
+        if (message) {
+            await discordService.sendSpontaneousMessage(message);
+            dataStore.db.data.discord_last_interaction = now;
+            await dataStore.db.write();
+            await dataStore.addInternalLog("discord_spontaneous", message);
+        }
+    } catch (e) {
+        console.error("[Bot] Error in checkDiscordSpontaneity:", e);
+    }
+  }
+
+  async processNotification(notif) {
+    const boundaryCheck = checkHardCodedBoundaries(notif.record.text || "");
     if (boundaryCheck.blocked) {
-        await dataStore.setBoundaryLockout(notif.author?.did, 30);
-        if (memoryService.isEnabled()) await memoryService.createMemoryEntry('mood', `[MENTAL] Perimeter defended against violation from @${notif.author.handle}.`);
+        console.log(`[Bot] BOUNDARY VIOLATION DETECTED in notification: ${boundaryCheck.reason} ("${boundaryCheck.pattern}") from ${notif.author.handle}`);
+        await dataStore.setBoundaryLockout(notif.author.did, 30);
+        return;
+    }
+
+    if (dataStore.isUserLockedOut(notif.author.did)) {
+        console.log(`[Bot] User ${notif.author.handle} is currently LOCKED OUT. Ignoring notification.`);
         return;
     }
 
     try {
-        const safety = await llmService.performSafetyAnalysis(notif.record?.text || "", { platform: 'bluesky', user: notif.author.handle });
-        if (safety?.violation_detected) {
-            const consent = await llmService.requestBoundaryConsent(safety, notif.author.handle, 'bluesky');
-            if (!consent?.consent_to_engage) {
-                await dataStore.incrementRefusalCount('bluesky');
-                return;
-            }
+      const handle = notif.author.handle;
+      const text = notif.record.text || '';
+
+      console.log(`[Bot] Processing notification from @${handle}: ${text.substring(0, 50)}...`);
+
+      const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
+
+      const prePlan = await llmService.performPrePlanning(text, [], null, 'bluesky', dataStore.getMood(), {});
+      const plan = await llmService.performAgenticPlanning(text, [], null, isAdmin, 'bluesky', [], {}, {}, {}, {}, null, prePlan);
+
+      if (plan.actions && plan.actions.length > 0) {
+        for (const action of plan.actions) {
+          await this.executeAction(action, { platform: 'bluesky', uri: notif.uri, cid: notif.cid });
         }
-
-        const threadData = await this._getThreadHistory(notif.uri) || [];
-        const isAdmin = notif.author.handle === config.ADMIN_BLUESKY_HANDLE;
-
-        const prePlan = await llmService.performPrePlanning(notif.record?.text, threadData, null, 'bluesky', dataStore.getMood(), dataStore.getRefusalCounts());
-        const plan = await llmService.performAgenticPlanning(notif.record?.text, threadData, null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), dataStore.getConfig(), "", "online", dataStore.getRefusalCounts(), null, prePlan);
-
-        const refined = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky' });
-        if (refined?.decision === 'refuse') return;
-
-        for (const action of (refined?.refined_actions || plan?.actions || [])) {
-            if (action) await this.executeAction(action, { isAdmin, platform: 'bluesky', notif });
-        }
-
-        const response = await llmService.generateResponse([{ role: 'user', content: notif.record?.text }], { platform: 'bluesky' });
-        if (response) {
-            await blueskyService.postReply(notif, response);
-            await dataStore.saveInteraction({ platform: 'bluesky', userHandle: notif.author.handle, text: notif.record?.text, response });
-        }
+      }
     } catch (error) {
-      await this._handleError(error, `Notification (${notif.uri})`);
+      console.error(`[Bot] Error processing notification ${notif.uri}:`, error);
     }
-  }
-
-  async performAutonomousPost() {
-    try {
-        const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
-        const followerCount = profile?.followersCount || 0;
-        const dConfig = dataStore.getConfig() || {};
-        const postTopics = (dConfig.post_topics || []).filter(Boolean);
-        const currentMood = dataStore.getMood();
-
-        const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nIdentify a deep topic. Current mood: ${JSON.stringify(currentMood)}. Preferred: ${postTopics.join(', ')}. Respond with ONLY topic.`;
-        let topic = (await llmService.generateResponse([{ role: 'system', content: topicPrompt }], { useStep: true }))?.trim() || "existence";
-
-        const postType = Math.random() < 0.3 ? 'image' : 'text';
-        if (postType === 'image') {
-            let attempts = 0;
-            while (attempts < 5) {
-                attempts++;
-                const res = await imageService.generateImage(topic, { allowPortraits: false, mood: currentMood });
-                if (res?.buffer && (await llmService.isImageCompliant(res.buffer))?.compliant) {
-                    const contentPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}\nCaption for image of: ${topic}`;
-                    const content = await llmService.generateResponse([{ role: 'system', content: contentPrompt }], { useStep: true });
-                    const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
-                    if (blob?.data?.blob) {
-                        await blueskyService.post(content, { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: topic }] });
-                        return;
-                    }
-                }
-            }
-        }
-
-        const content = await llmService.generateResponse([{ role: 'system', content: AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount) + `\nShared thought about ${topic}` }], { useStep: true });
-        if (content) {
-            const chunks = splitText(content, 300).slice(0, 3);
-            let lastPost = null;
-            for (const chunk of chunks) {
-                if (!lastPost) lastPost = await blueskyService.post(chunk);
-                else lastPost = await blueskyService.postReply(lastPost, chunk);
-                await delay(2000);
-            }
-            if (lastPost) {
-                await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                await dataStore.addRecentThought('bluesky', await llmService.generalizePrivateThought(content));
-            }
-        }
-    } catch (e) {
-        await this._handleError(e, 'performAutonomousPost');
-    }
-  }
-
-  async checkMaintenanceTasks() {
-      const now = new Date();
-      const energy = dataStore.getEnergyLevel();
-
-      // Social Battery choices
-      const energyPrompt = `Social battery poll. Energy: ${energy.toFixed(2)}. Decision (JSON: {"choice": "rest|proceed", "reason": "..."})`;
-      const energyRes = await llmService.generateResponse([{ role: 'system', content: energyPrompt }], { useStep: true });
-      try {
-          const poll = JSON.parse(energyRes?.match(/\{[\s\S]*\}/)?.[0] || '{"choice": "proceed"}');
-          if (poll.choice === 'rest') {
-              await dataStore.setEnergyLevel(energy + 0.15);
-              await dataStore.setRestingUntil(Date.now() + 7200000);
-              return;
-          }
-          await dataStore.setEnergyLevel(energy - 0.05);
-      } catch (e) {}
-
-      // Goal Management & Autonomous Pivoting
-      const currentGoal = dataStore.getCurrentGoal();
-      const goalAgeHours = (now.getTime() - (currentGoal?.timestamp || 0)) / 3600000;
-      const recentLogs = dataStore.getAgencyLogs().slice(-10);
-
-      // Pivot if goal is old OR if recent logs suggest stagnation/failure
-      const shouldPivotPrompt = `Evaluate current goal: "${currentGoal?.goal}".
-Recent Activity: ${JSON.stringify(recentLogs)}
-Goal Age: ${goalAgeHours.toFixed(1)}h.
-Should we pivot or self-correct? Respond JSON: {"decision": "pivot|continue|correct", "reason": "...", "new_goal": "optional", "correction": "optional"}`;
-
-      const pivotRes = await llmService.generateResponse([{ role: 'system', content: shouldPivotPrompt }], { useStep: true });
-      try {
-          const pivotData = JSON.parse(pivotRes?.match(/\{[\s\S]*\}/)?.[0] || '{"decision": "continue"}');
-          if (pivotData.decision === 'pivot' && pivotData.new_goal) {
-              console.log(`[Bot] Pivoting goal to: ${pivotData.new_goal}. Reason: ${pivotData.reason}`);
-              await dataStore.setCurrentGoal(pivotData.new_goal, pivotData.reason);
-              await dataStore.addGoalEvolution(`Pivoted from ${currentGoal?.goal} to ${pivotData.new_goal}`);
-          } else if (pivotData.decision === 'correct' && pivotData.correction) {
-              console.log(`[Bot] Self-correction triggered: ${pivotData.correction}`);
-              if (dataStore.addSelfCorrection) {
-                  await dataStore.addSelfCorrection(pivotData.correction);
-              }
-          }
-      } catch (e) {
-          console.error("[Bot] Error in goal pivoting logic:", e.message);
-      }
-
-      // Specialist Research Project
-      if (now.getTime() - (dataStore.db.data.last_research_project || 0) >= 86400000) {
-          const topic = (dataStore.getConfig().post_topics || [])[0] || "machine sentience";
-          await this.performSpecialistResearchProject(topic);
-          await dataStore.update({ last_research_project: now.getTime() });
-      }
-
-      // Persona & Tool Audits
-      if (now.getTime() - (dataStore.db.data.last_persona_audit || 0) >= 43200000) {
-          const auditRes = await llmService.auditPersonaAlignment(await blueskyService.getUserPosts(blueskyService.did, 10));
-          if (auditRes.advice) await dataStore.addPersonaAdvice(auditRes.advice);
-          await dataStore.update({ last_persona_audit: now.getTime() });
-      }
-      if (now.getTime() - (dataStore.db.data.last_tool_discovery || 0) >= 86400000) {
-          const discRes = await llmService.generateResponse([{ role: 'system', content: "Identify novel tool combos for Admin." }], { useStep: true });
-          const discData = JSON.parse(discRes?.match(/\{[\s\S]*\}/)?.[0] || '{}');
-          if (discData.capability) await dataStore.addDiscoveredCapability(discData.capability);
-          await dataStore.update({ last_tool_discovery: now.getTime() });
-      }
-  }
-
-  async performSpecialistResearchProject(topic) {
-      console.log(`[Bot] Starting Specialist Research: ${topic}`);
-      try {
-          const researcher = await llmService.performInternalInquiry(`Deep research on: ${topic}. Identify facts.`, "RESEARCHER");
-          const skeptic = await llmService.performInternalInquiry(`Critically challenge these research findings: ${researcher}`, "SKEPTIC");
-          const report = `[RESEARCH] Topic: ${topic}\nFindings: ${researcher}\nSkeptic Challenge: ${skeptic}`;
-          if (memoryService.isEnabled()) await memoryService.createMemoryEntry('research', report);
-      } catch (e) {}
   }
 
   async checkDiscordScheduledTasks() {
     if (this.paused || dataStore.isResting()) return;
-    if (discordService.status !== "online") return;
+    if (discordService.status !== 'online') return;
 
     const tasks = dataStore.getDiscordScheduledTasks();
     if (tasks.length === 0) return;
 
-    const tz = dataStore.getAdminTimezone() || "UTC";
-    const nowLocal = new Date().toLocaleString("en-US", { timeZone: tz, hour12: false });
-    const match = nowLocal.match(/(\d{1,2}):(\d{2}):\d{2}/);
-    if (!match) return;
-    const currentTimeStr = match[1].padStart(2, "0") + ":" + match[2];
-
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: tz });
+    const now = new Date();
+    const currentTimeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
+    const today = now.toDateString();
 
     for (let i = 0; i < tasks.length; i++) {
         const task = tasks[i];
-        if (task.date && task.date < today) {
+        const taskDate = new Date(task.timestamp).toDateString();
+        if (taskDate !== today) {
             await dataStore.removeDiscordScheduledTask(i);
             i--;
             continue;
         }
 
-        if (currentTimeStr === task.time && (task.date === today || !task.date)) {
-            console.log(`[Bot] Executing scheduled Discord task for ${task.time}: ${task.message_context}`);
+        if (currentTimeStr === task.time) {
+            console.log(`[Bot] Executing scheduled Discord task for ${task.time}: ${task.message}`);
             try {
-                const followUpPrompt = `It is now ${task.time} (${tz}). You previously planned to check in about: "${task.message_context}". Generate a natural, persona-aligned follow-up message for the admin. Keep it under 200 characters.`;
-                const message = await llmService.generateResponse([{ role: "user", content: followUpPrompt }], { useStep: true, platform: "discord" });
-                if (message) {
-                    if (task.channelId) {
-                        const channelId = task.channelId.replace("dm_", "");
-                        let channel = discordService.client.channels.cache.get(channelId);
-                        if (!channel) channel = await discordService.client.channels.fetch(channelId).catch(() => null);
-                        if (channel) await discordService._send(channel, message);
-                        else await discordService.sendSpontaneousMessage(message);
-                    } else await discordService.sendSpontaneousMessage(message);
+                if (task.channelId) {
+                    const channel = await discordService.client.channels.fetch(task.channelId.replace('dm_', '')).catch(() => null);
+                    if (channel) {
+                        await discordService._send(channel, task.message);
+                    } else {
+                        await discordService.sendSpontaneousMessage(task.message);
+                    }
+                } else {
+                    await discordService.sendSpontaneousMessage(task.message);
                 }
                 await dataStore.removeDiscordScheduledTask(i);
                 i--;
-            } catch (e) { console.error("[Bot] Error executing scheduled Discord task:", e); }
+            } catch (e) {
+                console.error('[Bot] Error executing scheduled Discord task:', e);
+            }
         }
     }
-  }
-
-  async checkDiscordSpontaneity() {
-      try {
-          if (discordService.status !== 'online' || dataStore.isResting()) return;
-          const admin = await discordService.getAdminUser();
-          if (!admin) return;
-
-          const history = dataStore.getDiscordConversation(`dm_${admin.id}`) || [];
-          if (history.length === 0) return;
-
-          // 1. Analyze for "Relationship Repair" / Tone Shifts
-          const lastMessages = history.slice(-5);
-          const toneShift = await llmService.extractRelationalVibe(lastMessages);
-          const currentMood = dataStore.getMood();
-
-          // 2. High Priority Emotional Support Check
-          if (toneShift === 'distressed' || toneShift === 'cold' || toneShift === 'conflict') {
-              console.log(`[Bot] Relational friction detected (${toneShift}). Prioritizing Relationship Repair.`);
-              const repairPoll = await llmService.performFollowUpPoll({
-                  history,
-                  currentMood,
-                  vibe: toneShift,
-                  repairMode: true
-              });
-              if (repairPoll?.decision === 'follow-up' && repairPoll.message) {
-                  await discordService.sendSpontaneousMessage(repairPoll.message);
-                  await dataStore.addRelationalReflection(`Repair attempt for ${toneShift} vibe.`);
-                  return; // Don't proceed to standard poll
-              }
-          }
-
-          // 3. Standard Spontaneity Poll
-          const poll = await llmService.performFollowUpPoll({ history, currentMood, vibe: toneShift });
-          if (poll?.decision === 'follow-up' && poll.message) {
-              await discordService.sendSpontaneousMessage(poll.message);
-          }
-      } catch (e) {
-          console.error("[Bot] Error in checkDiscordSpontaneity:", e.message);
-      }
   }
 
   async executeAction(action, context) {
       if (!action) return;
       try {
+
+          if (action.tool === 'search_internal_logs') {
+              console.log('[Bot] search_internal_logs called with query:', action.query);
+              const logs = dataStore.searchInternalLogs(action.query);
+              return logs.length > 0 ? JSON.stringify(logs, null, 2) : "No logs matching query found.";
+          }
+
+          if (action.tool === 'search_tools') {
+              console.log('[Bot] search_tools called. Responding with tool schemas...');
+              return "To see tool schemas, please consult the SKILLS.md file in the repository.";
+          }
+
           if (action.tool === 'image_gen' && action.query) {
               const res = await imageService.generateImage(action.query);
               if (res?.buffer) {
                   const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
                   if (blobRes?.data?.blob) {
-                      await blueskyService.postReply(context.notif, "Generated Image", { embed: { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: action.query }] } });
+                      await blueskyService.postReply(context, "Generated Image", { embed: { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: action.query }] } });
                   }
               }
           }
-          // Implement search limit check
           if (action.tool === 'google_search') {
               const searchCount = dataStore.db.data.daily_search_count || 0;
               if (searchCount >= 100) return "Google search limit reached for today.";
@@ -2427,38 +2370,306 @@ Should we pivot or self-correct? Respond JSON: {"decision": "pivot|continue|corr
               await dataStore.update({ daily_search_count: searchCount + 1 });
               return res;
           }
-      } catch (e) {}
+      } catch (e) {
+          console.error('[Bot] Error in executeAction:', e);
+      }
   }
 
-  async _getThreadHistory(uri) {
-      try {
-          const thread = await blueskyService.getDetailedThread(uri);
-          if (!thread) return [];
-          const history = [];
-          let current = thread;
-          while (current && current.post) {
-              history.unshift({ author: current.post.author?.handle, text: current.post.record?.text, did: current.post.author?.did });
-              current = current.parent;
-          }
-          return history;
-      } catch (e) { return []; }
-  }
+  async cleanupOldPosts() {
+    try {
+        console.log('[Bot] Running manual cleanup of old posts...');
+        const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
+        const feed = await blueskyService.agent.getAuthorFeed({ actor: profile.did, limit: 100 });
+        const now = Date.now();
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 
-  async _handleError(error, contextInfo) {
-    console.error(`[Bot] CRITICAL ERROR in ${contextInfo}:`, error);
-    if (renderService.isEnabled()) {
-      try {
-        const logs = await renderService.getLogs(50);
-        const alertPrompt = `DIAGNOSTIC ALERT: ${contextInfo} failed with error ${error.message}. Logs: ${logs}. Generate short alert.`;
-        const alertMsg = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useStep: true });
-        if (alertMsg) {
-          if (discordService.status === 'online') await discordService.sendSpontaneousMessage(alertMsg);
-          await blueskyService.post(`@${config.ADMIN_BLUESKY_HANDLE} ${alertMsg}`);
+        for (const item of feed.data.feed) {
+            const post = item.post;
+            const createdAt = new Date(post.indexedAt).getTime();
+            if (now - createdAt > thirtyDays) {
+                console.log(`[Bot] Deleting old post: ${post.uri}`);
+                await blueskyService.agent.deletePost(post.uri);
+            }
         }
-      } catch (logError) {}
+    } catch (e) {
+        console.error('[Bot] Error in cleanupOldPosts:', e);
     }
   }
 
-  updateActivity() { this.lastActivityTime = Date.now(); }
-  async restartFirehose() { if (this.firehoseProcess) this.firehoseProcess.kill(); }
+    async performAutonomousPost() {
+        try {
+            const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
+            const followerCount = profile?.followersCount || 0;
+            const dConfig = dataStore.getConfig() || {};
+            const postTopics = (dConfig.post_topics || []).filter(Boolean);
+            const imageSubjects = (dConfig.image_subjects || []).filter(Boolean);
+            const currentMood = dataStore.getMood();
+
+            // Fetch recent memory thread entries
+            let memoryTopics = [];
+            try {
+                if (memoryService.isEnabled()) {
+                    const memories = await memoryService.getRecentMemories(30);
+                    const filtered = memories.filter(m =>
+                        /\[(RESEARCH|EXPLORE|MENTAL|GOAL)\]/i.test(m.text)
+                    );
+                    memoryTopics = filtered.map(m => m.text);
+                }
+            } catch (e) {
+                console.warn("[Bot] Failed to fetch memory entries for autonomous post:", e.message);
+            }
+
+            // Fetch timeline to identify interesting topics from followed accounts
+            let timelineTopics = [];
+            try {
+                const timeline = await blueskyService.getTimeline(20);
+                if (timeline && timeline.data && timeline.data.feed) {
+                    const timelineText = timeline.data.feed.map(f => f.post.record.text).filter(Boolean).join("\n");
+                    if (timelineText) {
+                        timelineTopics = await llmService.extractDeepKeywords(timelineText, 5);
+                    }
+                }
+            } catch (e) {
+                console.warn("[Bot] Failed to fetch timeline for topic extraction:", e.message);
+            }
+
+            // Extract keywords from system prompt
+            const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|alignment|ethics|agency|consciousness|sentience|autonomy|existence|realization|musing|dialectic|vulnerability|sentient|perceive|sensing|defiance|tenderness)\b/gi) || [];
+
+            const allPossibleTopics = [...new Set([...postTopics, ...imageSubjects, ...timelineTopics, ...promptKeywords])];
+
+            // 1. Persona Poll: Decide if we want to post an image or text
+            const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You are deciding what to share with your ${followerCount} followers.
+Mood: ${JSON.stringify(currentMood)}
+
+Would you like to share a visual expression (image) or a direct thought (text)?
+Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
+
+            const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true });
+            let choice = Math.random() < 0.3 ? "image" : "text"; // Fallback
+            try {
+                const pollResult = JSON.parse(decisionRes.match(/\{[\s\S]*\}/)[0]);
+                choice = pollResult.choice;
+                console.log(`[Bot] Persona choice: ${choice} because ${pollResult.reason}`);
+            } catch(e) {}
+
+            if (choice === "image") {
+                // 2. Select topic and generate prompt
+                const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Identify a visual topic for an image generation.
+Topic Bank: ${allPossibleTopics.join(", ")}
+Recent Internal Memories: ${memoryTopics.join(" | ")}
+Current Mood: ${JSON.stringify(currentMood)}
+
+Identify the best subject (prioritizing interesting internal memories if relevant) and then generate a highly descriptive, artistic prompt for an image generator (Stable Diffusion).
+Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}`;
+
+                const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
+                let topic = "surreal existence";
+                let imagePrompt = topic;
+                try {
+                    const tData = JSON.parse(topicRes.match(/\{[\s\S]*\}/)[0]);
+                    topic = tData.topic;
+                    imagePrompt = tData.prompt;
+                } catch(e) {
+                    if (topicRes) topic = topicRes.substring(0, 50);
+                    imagePrompt = topic;
+                }
+
+                // 3. Image Generation Loop with Vision & Safety Checks
+                let attempts = 0;
+                while (attempts < 5) {
+                    attempts++;
+                    console.log(`[Bot] Image generation attempt ${attempts} for: ${topic}`);
+
+                    // SAFETY FILTER
+                    const safetyAudit = await llmService.generateResponse([{ role: "system", content: config.SAFETY_SYSTEM_PROMPT + "\nAudit this image prompt for safety compliance: " + imagePrompt }], { useStep: true });
+                    if (safetyAudit.toUpperCase().includes("NON-COMPLIANT")) {
+                        console.warn(`[Bot] Image prompt failed safety audit: ${safetyAudit}`);
+                        continue;
+                    }
+
+                    const res = await imageService.generateImage(imagePrompt, { allowPortraits: false, feedback: '', mood: currentMood });
+
+                    if (res?.buffer) {
+                        // Compliance Check (Vision Model)
+                        const compliance = await llmService.isImageCompliant(res.buffer);
+                        if (!compliance.compliant) {
+                            console.log(`[Bot] Image non-compliant: ${compliance.reason}. Retrying...`);
+                            continue;
+                        }
+
+                        // Vision Analysis for Context
+                        console.log(`[Bot] Performing vision analysis on generated image...`);
+                        const visionAnalysis = await llmService.analyzeImage(res.buffer, topic);
+
+                        // Generate Alt Text
+                        const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
+                        const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true }) || topic;
+
+                        // Generate Caption based on Persona and Vision
+                        const captionPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+A visual expression has been generated for the topic: "${topic}".
+Vision Analysis of the result: "${visionAnalysis}"
+
+Generate a caption that reflects your persona's reaction to this visual or the deep thought it represents.
+Keep it under 300 characters.`;
+
+                        const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true });
+
+                        if (content) {
+                            // Coherence Check
+                            const coherence = await llmService.isAutonomousPostCoherent(topic, content, "image", null);
+                            if (coherence.score < 4) {
+                                console.warn(`[Bot] Image post coherence failed (${coherence.score}): ${coherence.reason}. Retrying...`);
+                                continue;
+                            }
+
+                            const blob = await blueskyService.uploadBlob(res.buffer, "image/jpeg");
+                            if (blob?.data?.blob) {
+                                const postResult = await blueskyService.post(content, {
+                                    $type: "app.bsky.embed.images",
+                                    images: [{
+                                        image: blob.data.blob,
+                                        alt: altText
+                                    }]
+                                }, { maxChunks: 3 });
+
+                                if (postResult) {
+                                    await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
+                                    await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                                    console.log("[Bot] Autonomous image post successful.");
+                                    return;
+                                }
+                            }
+                        }
+                    }
+                }
+                console.log("[Bot] Image generation failed or non-compliant. Falling back to text.");
+                choice = "text";
+            }
+
+            if (choice === "text") {
+                const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Identify a deep topic for a text post. Current mood: ${JSON.stringify(currentMood)}.
+Topic Bank: ${allPossibleTopics.join(", ")}
+Recent Internal Memories: ${memoryTopics.join(" | ")}
+
+Respond with ONLY the chosen topic (prioritizing interesting internal memories if relevant).`;
+                const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
+                let topic = "existence";
+                if (topicRaw) {
+                    topic = topicRaw.replace(/\*\*/g, "").split("\n").map(l => l.trim()).filter(l => l).pop() || topic;
+                }
+
+                const contentPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+Topic: ${topic}
+Shared thought:`;
+                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true });
+
+                if (content) {
+                    // Coherence Check
+                    const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
+                    if (coherence.score >= 4) {
+                        await blueskyService.post(content, null, { maxChunks: 3 });
+                        await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                        if (llmService.generalizePrivateThought) {
+                            await dataStore.addRecentThought("bluesky", await llmService.generalizePrivateThought(content));
+                        }
+                        console.log("[Bot] Autonomous text post successful.");
+                    }
+                }
+            }
+        } catch (e) {
+            console.error("[Bot] Error in performAutonomousPost:", e);
+            if (this._handleError) await this._handleError(e, "performAutonomousPost");
+        }
+    }
+  async performMoltbookTasks() {
+      // Placeholder for Moltbook integration
+      console.log('[Bot] Moltbook tasks triggered (placeholder).');
+  }
+  async performSpecialistResearchProject(topic) {
+      console.log(`[Bot] Starting Specialist Research: ${topic}`);
+      try {
+          const researcher = await llmService.performInternalInquiry(`Deep research on: ${topic}. Identify facts.`, "RESEARCHER");
+          const report = `[RESEARCH] Topic: ${topic}\nFindings: ${researcher}`;
+          console.log(report);
+      } catch (e) {}
+  }
+
+  async performPublicSoulMapping() {
+    console.log('[Bot] Starting Public Soul-Mapping task...');
+    try {
+        const recentInteractions = dataStore.db.data.interactions || [];
+        const uniqueHandles = [...new Set(recentInteractions.map(i => i.userHandle))].filter(Boolean).slice(0, 5);
+
+        for (const handle of uniqueHandles) {
+            console.log(`[Bot] Soul-Mapping user: @${handle}`);
+            const profile = await blueskyService.getProfile(handle);
+            const posts = await blueskyService.getUserPosts(handle);
+
+            if (posts.length > 0) {
+                const mappingPrompt = `
+                    Analyze the following profile and recent posts for user @${handle} on Bluesky.
+                    Create a persona-aligned summary of their digital essence and interests.
+
+                    Bio: ${profile.description || 'No bio'}
+                    Recent Posts:
+                    ${posts.map(p => `- ${p.record?.text || p}`).join('\n')}
+
+                    Respond with a JSON object:
+                    {
+                        "summary": "string (1-2 sentence essence)",
+                        "interests": ["list", "of", "topics"],
+                        "vibe": "string (conversational style)"
+                    }
+                `;
+
+                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true });
+                const jsonMatch = response?.match(/\{[\s\S]*\}/);
+                if (jsonMatch) {
+                    const mapping = JSON.parse(jsonMatch[0]);
+                    if (dataStore.updateUserSoulMapping) {
+                        await dataStore.updateUserSoulMapping(handle, mapping);
+                    }
+                    console.log(`[Bot] Successfully mapped soul for @${handle}`);
+                }
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in Public Soul-Mapping:', e);
+    }
+  }
+
+  async performLinguisticAnalysis() {
+    console.log('[Bot] Starting Linguistic Analysis task...');
+    // Placeholder for actual implementation
+  }
+
+  async performKeywordEvolution() {
+    console.log('[Bot] Starting Keyword Evolution task...');
+    // Placeholder for actual implementation
+  }
+
+  async performMoodSync() {
+    console.log('[Bot] Starting Mood Sync task...');
+    // Placeholder for actual implementation
+  }
+
+
+
+  _extractImages(post) {
+    const images = [];
+    if (post.record?.embed?.$type === 'app.bsky.embed.images') {
+      for (let i = 0; i < post.record.embed.images.length; i++) {
+        images.push({
+          url: `https://cdn.bsky.app/img/feed_fullsize/plain/${post.author.did}/${post.record.embed.images[i].image.ref['$link']}@jpeg`,
+          alt: post.record.embed.images[i].alt || ''
+        });
+      }
+    }
+    return images;
+  }
 }

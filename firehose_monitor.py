@@ -36,12 +36,12 @@ async def main():
 
     keywords = []
     if args.keywords:
-        keywords = [k.strip().lower() for k in args.keywords.split(',') if k.strip()]
+        keywords = [k.strip().lower() for k in args.keywords.split('|') if k.strip()]
         print(f"Monitoring firehose for keywords: {keywords}", file=sys.stderr)
 
     negatives = []
     if args.negatives:
-        negatives = [k.strip().lower() for k in args.negatives.split(',') if k.strip()]
+        negatives = [k.strip().lower() for k in args.negatives.split('|') if k.strip()]
         print(f"Filtering out negative keywords: {negatives}", file=sys.stderr)
 
     actors = []
@@ -105,7 +105,7 @@ async def main():
                     if not is_mention_of_bot:
                         for facet in facets:
                             for feature in facet.get('features', []):
-                                if feature.get('') == 'app.bsky.richtext.facet#mention' and feature.get('did') == bot_did:
+                                if feature.get('$type') == 'app.bsky.richtext.facet#mention' and feature.get('did') == bot_did:
                                     is_mention_of_bot = True
                                     break
                             if is_mention_of_bot:
@@ -113,12 +113,20 @@ async def main():
 
                     embed = record_raw.get('embed', {})
                     is_quote_of_bot = False
-                    if embed.get('') == 'app.bsky.embed.record':
-                        record_uri = embed.get('record', {}).get('uri', '')
+                    # Handle both app.bsky.embed.record and app.bsky.embed.recordWithMedia
+                    quote_embed = None
+                    if embed.get('$type') == 'app.bsky.embed.record':
+                        quote_embed = embed
+                    elif embed.get('$type') == 'app.bsky.embed.recordWithMedia':
+                        quote_embed = embed.get('record')
+
+                    if quote_embed:
+                        record_uri = quote_embed.get('record', {}).get('uri', '')
                         if bot_did in record_uri:
                             is_quote_of_bot = True
 
                     if is_reply_to_bot or is_mention_of_bot or is_quote_of_bot:
+                        print(f"[Firehose Monitor] Detected {'mention' if is_mention_of_bot else ('quote' if is_quote_of_bot else 'reply')} from {commit.repo}", file=sys.stderr)
                         if is_mention_of_bot:
                             reason = "mention"
                         elif is_quote_of_bot:
@@ -140,7 +148,7 @@ async def main():
                         print(json.dumps(event), flush=True)
                         continue # Already handled
 
-                    # 1b. Check for specifically tracked actors (Proposal 4)
+                    # 1b. Check for specifically tracked actors
                     if actors and commit.repo in actors:
                         event = {
                             "type": "firehose_actor_match",
@@ -157,7 +165,7 @@ async def main():
 
                     # 2. Check for keyword matches
                     if keywords:
-                        # Item 11: Anti-Spam Keyword Negation
+                        # Anti-Spam Keyword Negation
                         is_spam = any(n in text for n in negatives)
                         if is_spam:
                             continue

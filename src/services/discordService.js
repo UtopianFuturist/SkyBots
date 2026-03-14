@@ -226,6 +226,11 @@ class DiscordService {
             await dataStore.setDiscordLastReplied(true);
         }
 
+        if (dataStore.db?.data) {
+            dataStore.db.data.discord_last_interaction = Date.now();
+            await dataStore.db.write();
+        }
+
         // Handle commands
         if (message.content.startsWith('/')) {
             await this.handleCommand(message);
@@ -856,9 +861,9 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                         ? [...messages, { role: 'system', content: feedbackContext }]
                         : messages;
 
-                     // Use Step (Flash) for retries to ensure speed, keep Qwen for first attempt
-                     const useStep = attempts > 1;
-                     responseText = await llmService.generateResponse(finalMessages, { useQwen: !useStep, useStep: useStep });
+                     // High priority low-latency response: use Step (Flash) for ALL attempts in Discord
+                     // This prioritizes response speed over deep reasoning for social interactions
+                     responseText = await llmService.generateResponse(finalMessages, { useStep: true });
                      if (!responseText) break;
                      lastValidResponse = responseText;
 

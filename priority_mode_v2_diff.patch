@@ -1,0 +1,19 @@
+<<<<<<< SEARCH
+    // Conversation Priority Mode: Skip heavy tasks if actively chatting on Discord
+    const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
+    const chattingOnDiscord = (Date.now() - lastDiscord) < 5 * 60 * 1000;
+    if (chattingOnDiscord) {
+        console.log("[Orchestrator] Active Discord conversation detected. Prioritizing social responsiveness over maintenance.");
+        return;
+    }
+=======
+    // Conversation Priority Mode: Skip heavy tasks if actively chatting on Discord or Bluesky
+    const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
+    const lastBluesky = dataStore.db.data.last_notification_processed_at || 0;
+    const isChatting = (Date.now() - lastDiscord) < 5 * 60 * 1000 || (Date.now() - lastBluesky) < 5 * 60 * 1000;
+
+    if (isChatting) {
+        console.log("[Orchestrator] Active conversation detected. Prioritizing social responsiveness over maintenance.");
+        return;
+    }
+>>>>>>> REPLACE

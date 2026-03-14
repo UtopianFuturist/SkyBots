@@ -1,0 +1,9 @@
+<<<<<<< SEARCH
+                     // Use Step (Flash) for retries to ensure speed, keep Qwen for first attempt
+                     const useStep = attempts > 1;
+                     responseText = await llmService.generateResponse(finalMessages, { useQwen: !useStep, useStep: useStep });
+=======
+                     // High priority low-latency response: use Step (Flash) for ALL attempts in Discord
+                     // This prioritizes response speed over deep reasoning for social interactions
+                     responseText = await llmService.generateResponse(finalMessages, { useStep: true });
+>>>>>>> REPLACE

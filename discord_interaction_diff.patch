@@ -1,0 +1,18 @@
+<<<<<<< SEARCH
+        if (isAdmin) {
+            await dataStore.setDiscordLastReplied(true);
+        }
+
+        // Handle commands
+=======
+        if (isAdmin) {
+            await dataStore.setDiscordLastReplied(true);
+        }
+
+        if (dataStore.db?.data) {
+            dataStore.db.data.discord_last_interaction = Date.now();
+            await dataStore.db.write();
+        }
+
+        // Handle commands
+>>>>>>> REPLACE

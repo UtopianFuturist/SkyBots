@@ -1,0 +1,17 @@
+<<<<<<< SEARCH
+  async heartbeat() {
+    console.log("[Orchestrator] 5-minute heartbeat pulse.");
+    if (this.paused || dataStore.isResting()) return;
+=======
+  async heartbeat() {
+    console.log("[Orchestrator] 5-minute heartbeat pulse.");
+    if (this.paused || dataStore.isResting()) return;
+
+    // Conversation Priority Mode: Skip heavy tasks if actively chatting on Discord
+    const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
+    const chattingOnDiscord = (Date.now() - lastDiscord) < 5 * 60 * 1000;
+    if (chattingOnDiscord) {
+        console.log("[Orchestrator] Active Discord conversation detected. Prioritizing social responsiveness over maintenance.");
+        return;
+    }
+>>>>>>> REPLACE

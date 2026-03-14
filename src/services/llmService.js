@@ -113,7 +113,15 @@ Guidelines:
 
     let lastError = null;
 
+    const now = Date.now();
     for (const model of models) {
+        // Circuit Breaker: Skip high-latency models if we've had recent timeouts and aren't forcing 'Deep' reasoning
+        const isHighLatencyModel = model === config.LLM_MODEL || model === config.CODER_MODEL;
+        if (isHighLatencyModel && !options.useCoder && this.lastTimeout && (now - this.lastTimeout < 300000)) {
+            console.warn(`[LLMService] Circuit breaker active for ${model}. Skipping due to recent timeout.`);
+            continue;
+        }
+
         let attempts = 0;
         const maxAttempts = model === config.LLM_MODEL ? 2 : 1;
 
@@ -122,6 +130,9 @@ Guidelines:
             try {
               console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
               const fullMessages = this._prepareMessages(messages, systemPrompt);
+
+              // Per-model timeouts to prevent hanging on unresponsive endpoints
+              const modelTimeout = model.includes('step') ? 60000 : 120000; // 60s for Step, 120s for others
 
               const response = await fetch(this.endpoint, {
                 method: 'POST',
@@ -137,7 +148,7 @@ Guidelines:
                 }),
                 agent: persistentAgent,
                 signal: options.abortSignal,
-                timeout: 180000 // 180s timeout
+                timeout: modelTimeout
               });
 
               if (!response.ok) {
@@ -170,6 +181,9 @@ Guidelines:
               }
             } catch (error) {
               console.error(`[LLMService] Error with ${model}:`, error.message);
+              if (error.name === 'AbortError' || error.message.includes('timeout')) {
+                  this.lastTimeout = Date.now();
+              }
               lastError = error;
               if (attempts < maxAttempts) {
                   await new Promise(r => setTimeout(r, 2000 * attempts));

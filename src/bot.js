@@ -2175,6 +2175,16 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     console.log("[Orchestrator] 5-minute heartbeat pulse.");
     if (this.paused || dataStore.isResting()) return;
 
+    // Conversation Priority Mode: Skip heavy tasks if actively chatting on Discord or Bluesky
+    const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
+    const lastBluesky = dataStore.db.data.last_notification_processed_at || 0;
+    const isChatting = (Date.now() - lastDiscord) < 5 * 60 * 1000 || (Date.now() - lastBluesky) < 5 * 60 * 1000;
+
+    if (isChatting) {
+        console.log("[Orchestrator] Active conversation detected. Prioritizing social responsiveness over maintenance.");
+        return;
+    }
+
     try {
         await this.checkDiscordScheduledTasks();
         await delay(5000 + Math.random() * 5000); // 5-10s jittered delay
@@ -2299,6 +2309,11 @@ Keep it under 200 characters.`;
     try {
       const handle = notif.author.handle;
       const text = notif.record.text || '';
+
+      if (dataStore.db?.data) {
+          dataStore.db.data.last_notification_processed_at = Date.now();
+          await dataStore.db.write();
+      }
 
       console.log(`[Bot] Processing notification from @${handle}: ${text.substring(0, 50)}...`);
 

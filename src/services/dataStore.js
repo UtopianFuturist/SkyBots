@@ -270,12 +270,13 @@ class DataStore {
     const logEntry = {
         timestamp: Date.now(),
         type,
-        content: typeof content === 'string' ? content : JSON.stringify(content),
+        content: content, // Keep as object if it is one, searchInternalLogs will handle stringification for search
         context
     };
 
     // Also log to console for Render
-    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${logEntry.content.substring(0, 500)}`);
+    const consoleMsg = typeof logEntry.content === 'string' ? logEntry.content : JSON.stringify(logEntry.content);
+    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${consoleMsg.substring(0, 500)}`);
 
     this.db.data.internal_logs.push(logEntry);
     if (this.db.data.internal_logs.length > 500) {
@@ -421,10 +422,11 @@ class DataStore {
     if (!this.db?.data?.internal_logs) return [];
     const lowerQuery = query.toLowerCase();
     return this.db.data.internal_logs
-        .filter(l =>
-            l.type.toLowerCase().includes(lowerQuery) ||
-            l.content.toLowerCase().includes(lowerQuery)
-        )
+        .filter(l => {
+            const contentStr = typeof l.content === 'string' ? l.content : JSON.stringify(l.content);
+            return l.type.toLowerCase().includes(lowerQuery) ||
+                   contentStr.toLowerCase().includes(lowerQuery);
+        })
         .slice(-limit);
   }
 

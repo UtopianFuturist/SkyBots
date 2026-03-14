@@ -1,0 +1,39 @@
+<<<<<<< SEARCH
+    const logEntry = {
+        timestamp: Date.now(),
+        type,
+        content: typeof content === 'string' ? content : JSON.stringify(content),
+        context
+    };
+=======
+    const logEntry = {
+        timestamp: Date.now(),
+        type,
+        content: content, // Keep as object if it is one, searchInternalLogs will handle stringification for search
+        context
+    };
+>>>>>>> REPLACE
+<<<<<<< SEARCH
+  searchInternalLogs(query, limit = 50) {
+    if (!this.db?.data?.internal_logs) return [];
+    const lowerQuery = query.toLowerCase();
+    return this.db.data.internal_logs
+        .filter(l =>
+            l.type.toLowerCase().includes(lowerQuery) ||
+            l.content.toLowerCase().includes(lowerQuery)
+        )
+        .slice(-limit);
+  }
+=======
+  searchInternalLogs(query, limit = 50) {
+    if (!this.db?.data?.internal_logs) return [];
+    const lowerQuery = query.toLowerCase();
+    return this.db.data.internal_logs
+        .filter(l => {
+            const contentStr = typeof l.content === 'string' ? l.content : JSON.stringify(l.content);
+            return l.type.toLowerCase().includes(lowerQuery) ||
+                   contentStr.toLowerCase().includes(lowerQuery);
+        })
+        .slice(-limit);
+  }
+>>>>>>> REPLACE

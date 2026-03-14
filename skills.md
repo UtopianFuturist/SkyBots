@@ -13,6 +13,7 @@ This file is the authoritative source for all tools available to the bot. It use
 | `read_link` | Directly read and summarize the content of specific web URLs. |
 | `search_firehose` | Real-time and historical search for topics on the Bluesky network. |
 | `image_gen` | Create a unique, artistic visual prompt for image generation. |
+| `vision_model` | Vision Analysis. "See" and analyze images from the timeline or attachments. |
 | `internal_inquiry` | Perform deep internal reasoning or "think through" a complex problem. |
 | `discord_message` | Send a proactive message to the administrator on Discord. |
 | `bsky_post` | Create a new post or thread on the Bluesky platform. |
@@ -90,6 +91,24 @@ Create a unique, descriptive, and artistic visual prompt.
 }
 ```
 
+
+### vision_model
+Vision Analysis. "See" and analyze images from the timeline, attachments, or profile pictures.
+```json
+{
+  "name": "vision_model",
+  "description": "Analyzes an image and provides a detailed description of its contents, style, and mood. Use this when a user shares an image or asks 'what's in this post?'.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "image_url": { "type": "string", "description": "The URL or AT-URI of the image to analyze." },
+      "alt_text": { "type": "string", "description": "Optional existing alt-text to provide context." },
+      "focus": { "type": "string", "description": "Optional specific area or detail to focus on." }
+    },
+    "required": ["image_url"]
+  }
+}
+```
 ### read_link
 Directly read and summarize web pages.
 ```json

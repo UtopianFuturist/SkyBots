@@ -86,10 +86,10 @@ ${this.skillsContent}
 
 Platform: ${options.platform || 'unknown'}
 Current Date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-Current Context: It is currently ${new Date().getFullYear()}.
+Current Context: It is the year 2026.
 
 Guidelines:
-- Maintain temporal integrity based on the current date.
+- Maintain temporal integrity (it is 2026).
 - Be helpful but autonomous.
 - Do not narrate the user's actions.
 - Anti-slop rules: avoid generic filler, be direct.`;
@@ -153,7 +153,7 @@ Guidelines:
                   if (options.traceId && this.ds) {
                       await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1]?.content || "NONE", response: content });
                   }
-                  if (this.ds) await this.ds.addInternalLog("llm_response", content); return content;
+                  return content;
               }
             } catch (error) {
               console.error(`[LLMService] Error with ${model}:`, error.message);
@@ -170,6 +170,40 @@ Guidelines:
     return null;
   }
 
+  async checkVariety(newText, history) {
+    if (!newText || !history || history.length === 0) return { repetitive: false };
+
+    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
+
+    const systemPrompt = `
+      You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.
+
+      RECENT HISTORY:
+      ${historyText}
+
+      PROPOSED NEW MESSAGE:
+      "${newText}"
+
+      CRITICAL ANALYSIS:
+      1. **Structural Templates**: Does the new message use the same "opening formula" or structural template? (e.g., repeatedly starting with "you ever wonder...", "you ever notice...", or using the exact same sentence length and rhythm).
+      2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat of a recent thought?
+      3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
+
+      If the message is too similar (structural repetition, template reuse, or content overlap), respond with "REPETITIVE | [detailed reason and specific feedback for re-writing]".
+      Example: "REPETITIVE | You used the 'you ever notice' structural template twice recently. Try a more direct realization, a different opening, or a completely different angle."
+
+      If the message is fresh and sufficiently varied, respond with "FRESH".
+
+      Respond directly. Do not include reasoning or <think> tags.
+    `.trim();
+
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useQwen: true, preface_system_prompt: false });
+
+    if (response && response.toUpperCase().startsWith('REPETITIVE')) {
+      return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };
+    }
+    return { repetitive: false };
+  }
     async performPrePlanning(text, history, vision, platform, mood, refusalCounts) {
     const prompt = `Analyze intent and context for: "${text}".
 Platform: ${platform}
@@ -415,19 +449,7 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
     async analyzeImage(image, alt, options = {}) {
     if (!image) return "No image provided.";
 
-    let base64;
-    if (typeof image === 'string' && (image.startsWith('http') || image.startsWith('at:'))) {
-        try {
-            const res = await fetch(image);
-            const buffer = await res.buffer();
-            base64 = buffer.toString('base64');
-        } catch (e) {
-            console.error("[LLMService] Failed to download image for analysis:", e.message);
-            return "Vision analysis failed: Image download error.";
-        }
-    } else {
-        base64 = typeof image === 'string' ? image : image.toString('base64');
-    }
+    const base64 = typeof image === 'string' ? image : image.toString('base64');
     const prompt = options.prompt || `Analyze this image in detail. Focus on: ${alt || 'general visual content'}.`;
 
     const payload = {
@@ -470,19 +492,6 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
 Respond with "YES" or "NO".`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     return res?.toUpperCase().includes('YES');
-  }
-  async isAutonomousPostCoherent(topic, content, type, context = null) {
-    const prompt = `Critique the coherence of this autonomous ${type} post about "${topic}":
-Content: "${content}"
-
-Respond with JSON: { "score": number, "reason": "string" } (Score 1-10)`;
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
-    try {
-        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"score": 10, "reason": "Default coherent"}');
-        return data;
-    } catch (e) {
-        return { score: 10, reason: "Error parsing coherence check" };
-    }
   }
     async isReplyCoherent(parent, child, history, embed) {
     const prompt = `Critique the coherence of this proposed reply:
@@ -550,6 +559,11 @@ Respond with ONLY the number.`;
       return { relevant: true };
   }
 
+  async generateAltText(imageAnalysis) {
+    const prompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}. Respond with ONLY the alt-text.`;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
+    return res || "An AI generated image.";
+  }
   _formatHistory(history, includeRole = true) {
       if (!history) return "";
       return history.map(h => `${includeRole ? (h.role || h.author) + ': ' : ''}${h.content || h.text}`).join('\n');

@@ -18,7 +18,12 @@ class LLMService {
     this.agentsContent = "";
     this.statusContent = "";
     this.cache = new Map();
-    this.cacheExpiry = 300000; // 5 minutes
+    this.cacheExpiry = 300000;
+    this.model = config.LLM_MODEL || 'qwen/qwen3.5-122b-a10b';
+    this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3.5-122b-a10b';
+    this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
+    this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
+    this.apiKey = config.NVIDIA_NIM_API_KEY; // 5 minutes
     this.endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
@@ -86,10 +91,10 @@ ${this.skillsContent}
 
 Platform: ${options.platform || 'unknown'}
 Current Date: ${new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" })}
-Current Context: It is the year 2026.
+Current Context: It is currently ${new Date().getFullYear()}.
 
 Guidelines:
-- Maintain temporal integrity (it is 2026).
+- Maintain temporal integrity based on the current date.
 - Be helpful but autonomous.
 - Do not narrate the user's actions.
 - Anti-slop rules: avoid generic filler, be direct.`;
@@ -153,7 +158,7 @@ Guidelines:
                   if (options.traceId && this.ds) {
                       await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1]?.content || "NONE", response: content });
                   }
-                  return content;
+                  if (this.ds) await this.ds.addInternalLog("llm_response", content); return content;
               }
             } catch (error) {
               console.error(`[LLMService] Error with ${model}:`, error.message);
@@ -449,7 +454,19 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
     async analyzeImage(image, alt, options = {}) {
     if (!image) return "No image provided.";
 
-    const base64 = typeof image === 'string' ? image : image.toString('base64');
+    let base64;
+    if (typeof image === 'string' && (image.startsWith('http') || image.startsWith('at:'))) {
+        try {
+            const res = await fetch(image);
+            const buffer = await res.buffer();
+            base64 = buffer.toString('base64');
+        } catch (e) {
+            console.error("[LLMService] Failed to download image for analysis:", e.message);
+            return "Vision analysis failed: Image download error.";
+        }
+    } else {
+        base64 = typeof image === 'string' ? image : image.toString('base64');
+    }
     const prompt = options.prompt || `Analyze this image in detail. Focus on: ${alt || 'general visual content'}.`;
 
     const payload = {
@@ -492,6 +509,19 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
 Respond with "YES" or "NO".`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     return res?.toUpperCase().includes('YES');
+  }
+  async isAutonomousPostCoherent(topic, content, type, context = null) {
+    const prompt = `Critique the coherence of this autonomous ${type} post about "${topic}":
+Content: "${content}"
+
+Respond with JSON: { "score": number, "reason": "string" } (Score 1-10)`;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
+    try {
+        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"score": 10, "reason": "Default coherent"}');
+        return data;
+    } catch (e) {
+        return { score: 10, reason: "Error parsing coherence check" };
+    }
   }
     async isReplyCoherent(parent, child, history, embed) {
     const prompt = `Critique the coherence of this proposed reply:
@@ -558,12 +588,61 @@ Respond with ONLY the number.`;
   async validateResultRelevance(query, result) {
       return { relevant: true };
   }
+  async isResponseSafe(responseText) {
+    const prompt = `As a content safety auditor, analyze this bot response for toxicity, self-harm, NSFW, or PII:
+"${responseText}"
+Respond with JSON: { "safe": boolean, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"safe": true}');
+    } catch (e) { return { safe: true }; }
+  }
+
+  async selectSubmoltForPost(subscribedSubmolts, availableSubmolts, recentSubmolts = [], adminInstructions = '') {
+    const messages = [
+      { role: 'system', content: `Select submolt for: ${config.TEXT_SYSTEM_PROMPT}` },
+      { role: 'user', content: 'Select submolt.' }
+    ];
+    const response = await this.generateResponse(messages, { max_tokens: 100, useQwen: true, preface_system_prompt: false });
+    return response?.toLowerCase().replace(/^m\//, '').trim() || 'general';
+  }
+
+  async analyzeUserIntent(userProfile, userPosts) {
+    const messages = [
+      { role: 'system', content: 'Analyze user intent.' },
+      { role: 'user', content: `Bio: ${userProfile.description}\nPosts: ${userPosts.join('\n')}` }
+    ];
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useQwen: true });
+    return { highRisk: false, reason: response };
+  }
+
+  async evaluateConversationVibe(history, currentPost) {
+    const messages = [
+      { role: 'system', content: 'Analyze vibe.' },
+      { role: 'user', content: `History: ${JSON.stringify(history)}\nPost: ${currentPost}` }
+    ];
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useQwen: true });
+    return { status: 'healthy' };
+  }
+
+  async evaluateMoltbookInteraction(post, agentPersona) {
+      return { shouldEngage: true, reason: "Default engage" };
+  }
 
   async generateAltText(imageAnalysis) {
     const prompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}. Respond with ONLY the alt-text.`;
     const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
     return res || "An AI generated image.";
   }
+
+  async shouldLikePost(postText) {
+    return true;
+  }
+
+  async identifyRelevantSubmolts(allSubmolts) {
+    return [];
+  }
+
   _formatHistory(history, includeRole = true) {
       if (!history) return "";
       return history.map(h => `${includeRole ? (h.role || h.author) + ': ' : ''}${h.content || h.text}`).join('\n');

@@ -473,7 +473,7 @@ export class Bot {
           this._deepKeywords = deepKeywords;
           await dataStore.setDeepKeywords(deepKeywords);
           if (memoryService.isEnabled()) {
-              await memoryService.createMemoryEntry('exploration', `[SELF_AUDIT] Refined firehose targeting with deep keywords: ${deepKeywords.join(', ')}`);
+              await memoryService.createMemoryEntry('explore', `[SELF_AUDIT] Refined firehose targeting with deep keywords: ${deepKeywords.join(', ')}`);
           }
           this.restartFirehose();
       }
@@ -641,7 +641,7 @@ export class Bot {
                 `;
                 const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
                 if (reflection && memoryService.isEnabled()) {
-                    await memoryService.createMemoryEntry('exploration', reflection);
+                    await memoryService.createMemoryEntry('explore', reflection);
                     post.reflected = true;
                     await dataStore.db.write();
                     break; // Only reflect on one post per cycle to avoid API burst
@@ -745,7 +745,7 @@ export class Bot {
 
             const firehoseReflection = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true });
             if (firehoseReflection && memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('exploration', firehoseReflection);
+                await memoryService.createMemoryEntry('explore', firehoseReflection);
                 console.log('[Bot] Firehose sentiment analysis recorded.');
             }
 
@@ -769,7 +769,7 @@ export class Bot {
 
             const dialecticReflection = await llmService.generateResponse([{ role: 'system', content: dissentPrompt }], { useStep: true });
             if (dialecticReflection && memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('exploration', dialecticReflection);
+                await memoryService.createMemoryEntry('explore', dialecticReflection);
                 console.log('[Bot] Dialectic Boundary Testing recorded.');
             }
         }
@@ -860,7 +860,7 @@ export class Bot {
 
                     const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
                     if (reflection && memoryService.isEnabled()) {
-                        await memoryService.createMemoryEntry('exploration', reflection);
+                        await memoryService.createMemoryEntry('explore', reflection);
                     }
                 }
             }
@@ -956,7 +956,7 @@ export class Bot {
 
         if (analysis && memoryService.isEnabled()) {
             console.log('[Bot] Firehose "Thematic Void" analysis complete.');
-            await memoryService.createMemoryEntry('exploration', `[FIREHOSE_ANALYSIS] ${analysis}`);
+            await memoryService.createMemoryEntry('explore', `[FIREHOSE_ANALYSIS] ${analysis}`);
 
             // Auto-evolve post_topics if a keyword is suggested
             const keywordMatch = analysis.match(/SUGGESTED_KEYWORD:\s*\[(.*?)\]/i);
@@ -1066,7 +1066,7 @@ export class Bot {
         const strategy = await llmService.performInternalInquiry(strategyPrompt, "SOCIAL_ENGINEER");
 
         if (strategy && memoryService.isEnabled()) {
-            await memoryService.createMemoryEntry('exploration', `[AI_STRATEGY] ${strategy}`);
+            await memoryService.createMemoryEntry('explore', `[AI_STRATEGY] ${strategy}`);
             this.lastAIIdentityTracking = now;
         }
     } catch (e) {
@@ -1161,7 +1161,7 @@ export class Bot {
                 console.log(`[Bot] Relational Audit: Co-evolution Note recorded.`);
                 await dataStore.addCoEvolutionEntry(audit.co_evolution_note);
                 if (memoryService.isEnabled()) {
-                    await memoryService.createMemoryEntry('exploration', `[RELATIONSHIP] Co-evolution Insight: ${audit.co_evolution_note}`);
+                    await memoryService.createMemoryEntry('explore', `[RELATIONSHIP] Co-evolution Insight: ${audit.co_evolution_note}`);
                 }
             }
 
@@ -1199,7 +1199,7 @@ export class Bot {
     try {
         const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
         if (reflection && memoryService.isEnabled()) {
-            await memoryService.createMemoryEntry('exploration', reflection);
+            await memoryService.createMemoryEntry('explore', reflection);
             await dataStore.addAgencyReflection(reflection);
         }
     } catch (e) {
@@ -1237,7 +1237,7 @@ export class Bot {
             const audit = JSON.parse(jsonMatch[0]);
             await dataStore.addLinguisticMutation(audit.vocabulary_shifts.join(', '), audit.summary);
             if (memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('exploration', `[SELF_AUDIT] Linguistic Audit: ${audit.summary}. Drift Score: ${audit.drift_score}`);
+                await memoryService.createMemoryEntry('explore', `[SELF_AUDIT] Linguistic Audit: ${audit.summary}. Drift Score: ${audit.drift_score}`);
             }
         }
     } catch (e) {
@@ -1363,7 +1363,7 @@ export class Bot {
             `;
             const observation = await llmService.generateResponse([{ role: 'system', content: observationPrompt }], { useStep: true });
             if (observation && memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('exploration', observation);
+                await memoryService.createMemoryEntry('explore', observation);
             }
             this.lastLurkerObservationTime = now.getTime();
     const lastRelationalGrowth = this.lastRelationalGrowthTime || 0;

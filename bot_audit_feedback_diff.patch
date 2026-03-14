@@ -1,0 +1,40 @@
+<<<<<<< SEARCH
+  async performPersonaAudit() {
+    console.log('[Bot] Starting Agentic Persona Audit...');
+    const blurbs = dataStore.getPersonaBlurbs();
+    const systemPrompt = config.TEXT_SYSTEM_PROMPT;
+
+    const auditPrompt = `
+      As a persona auditor, analyze the following active persona blurbs for consistency with the core system prompt.
+
+      CORE SYSTEM PROMPT:
+      "${systemPrompt}"
+
+      ACTIVE PERSONA BLURBS:
+      ${blurbs.length > 0 ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n') : 'None'}
+
+      Identify any contradictions, redundancies, or blurbs that no longer serve the persona's evolution.
+=======
+  async performPersonaAudit() {
+    console.log('[Bot] Starting Agentic Persona Audit...');
+    const blurbs = dataStore.getPersonaBlurbs();
+    const systemPrompt = config.TEXT_SYSTEM_PROMPT;
+
+    // Include recent variety critiques to inform the audit
+    const critiques = dataStore.searchInternalLogs('variety_critique', 20);
+    const critiqueContext = critiques.length > 0
+        ? "\nRECENT VARIETY CRITIQUES:\n" + critiques.map(c => `- Feedback: ${c.content?.feedback || 'Repeated recent thought'}`).join('\n')
+        : "";
+
+    const auditPrompt = `
+      As a persona auditor, analyze the following active persona blurbs and recent variety critiques for consistency with the core system prompt.
+
+      CORE SYSTEM PROMPT:
+      "${systemPrompt}"
+
+      ACTIVE PERSONA BLURBS:
+      ${blurbs.length > 0 ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n') : 'None'}
+      ${critiqueContext}
+
+      Identify any contradictions, redundancies, or blurbs that no longer serve the persona's evolution.
+>>>>>>> REPLACE

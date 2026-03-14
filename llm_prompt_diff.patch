@@ -1,0 +1,33 @@
+<<<<<<< SEARCH
+  async generateResponse(messages, options = {}) {
+    await this._loadContextFiles();
+    const systemPrompt = `You are ${config.BOT_NAME || 'Sydney'}.
+Context:
+${this.readmeContent}
+${this.soulContent}
+${this.agentsContent}
+${this.statusContent}
+${this.skillsContent}
+
+Platform: ${options.platform || 'unknown'}
+=======
+  async generateResponse(messages, options = {}) {
+    await this._loadContextFiles();
+
+    // Dynamically load persona blurbs from DataStore
+    const dynamicBlurbs = this.ds ? this.ds.getPersonaBlurbs() : [];
+    const dynamicPersonaBlock = dynamicBlurbs.length > 0
+        ? "\n\n**Dynamic Behavioral Updates (Active):**\n" + dynamicBlurbs.map(b => `- ${b.text}`).join('\n')
+        : "";
+
+    const systemPrompt = `You are ${config.BOT_NAME || 'Sydney'}.
+Context:
+${this.readmeContent}
+${this.soulContent}
+${this.agentsContent}
+${this.statusContent}
+${this.skillsContent}
+${dynamicPersonaBlock}
+
+Platform: ${options.platform || 'unknown'}
+>>>>>>> REPLACE

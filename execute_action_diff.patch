@@ -1,0 +1,51 @@
+<<<<<<< SEARCH
+          if (action.tool === 'google_search') {
+              const searchCount = dataStore.db.data.daily_search_count || 0;
+              if (searchCount >= 100) return "Google search limit reached for today.";
+              const res = await googleSearchService.search(action.query);
+              await dataStore.update({ daily_search_count: searchCount + 1 });
+              return res;
+          }
+      } catch (e) {
+=======
+          if (action.tool === 'google_search') {
+              const searchCount = dataStore.db.data.daily_search_count || 0;
+              if (searchCount >= 100) return "Google search limit reached for today.";
+              const res = await googleSearchService.search(action.query);
+              if (dataStore.update) await dataStore.update({ daily_search_count: searchCount + 1 });
+              return res;
+          }
+
+          if (action.tool === 'add_persona_blurb') {
+              const content = action.query;
+              const entry = await memoryService.createMemoryEntry('persona', content);
+              if (entry) {
+                  await dataStore.addPersonaBlurb({ uri: entry.uri, text: content });
+                  return `Persona blurb added: "${content}" (URI: ${entry.uri})`;
+              }
+              return "Failed to create persona blurb memory entry.";
+          }
+
+          if (action.tool === 'remove_persona_blurb') {
+              const uri = action.query;
+              const success = await blueskyService.deletePost(uri);
+              if (success) {
+                  const blurbs = dataStore.getPersonaBlurbs().filter(b => b.uri !== uri);
+                  await dataStore.setPersonaBlurbs(blurbs);
+                  return `Persona blurb removed: ${uri}`;
+              }
+              return `Failed to remove persona blurb: ${uri}`;
+          }
+
+          if (action.tool === 'list_persona_blurbs') {
+              const blurbs = dataStore.getPersonaBlurbs();
+              return blurbs.length > 0
+                ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n')
+                : "No persona blurbs currently set.";
+          }
+
+          if (action.tool === 'audit_persona_blurbs') {
+              return await this.performPersonaAudit();
+          }
+      } catch (e) {
+>>>>>>> REPLACE

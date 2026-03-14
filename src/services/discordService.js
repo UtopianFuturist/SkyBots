@@ -873,6 +873,16 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      } else {
                          feedback = containsSlop ? "REJECTED: Response contained metaphorical slop." : (varietyCheck.feedback || "REJECTED: Response was too similar to recent history.");
                          console.log(`[DiscordService] Response attempt ${attempts} rejected: ${feedback}`);
+
+                         // Log rejected variety critique for recursive self-improvement
+                         if (varietyCheck.repetitive && dataStore.addInternalLog) {
+                            await dataStore.addInternalLog('variety_critique', {
+                                platform: 'discord',
+                                rejectedContent,
+                                feedback: varietyCheck.feedback
+                            });
+                         }
+
                          rejectedContent = responseText;
                          responseText = null; // Prevent sending the rejected response
                      }

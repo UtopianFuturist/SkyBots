@@ -75,7 +75,13 @@ class MemoryService {
     if (!this.isEnabled() || this.recentMemories.length === 0) return "No recent memories available.";
     const pinned = this.recentMemories.filter(m => m.text.includes("[PINNED]"));
     const normal = this.recentMemories.filter(m => !m.text.includes("[PINNED]"));
-    return [...pinned, ...normal].filter(m => !excludeTags.some(tag => m.text.toUpperCase().includes(tag.toUpperCase()))).map(m => `[${new Date(m.timestamp).toLocaleDateString()}] ${m.text}`).join('\n');
+    return [...pinned, ...normal]
+        .filter(m => !excludeTags.some(tag => m.text.toUpperCase().includes(tag.toUpperCase())))
+        .map(m => {
+            const cleanText = m.text.replace(new RegExp(this.hashtag, 'g'), '').trim();
+            return `[${new Date(m.timestamp).toLocaleDateString()}] ${cleanText}`;
+        })
+        .join('\n');
   }
 
   async createMemoryEntry(type, context, timestamp = null) {
@@ -216,6 +222,18 @@ CRITICAL:
   async getLatestMoodMemory() { return null; }
   async searchMemories(query) { return (this.recentMemories || []).filter(m => m.text.includes(query)); }
   async deleteMemory(uri) { try { await blueskyService.deletePost(uri); return true; } catch (e) { return false; } }
+
+  async fetchPersonaBlurbs() {
+    if (!this.isEnabled()) return [];
+    try {
+      const memories = await this.fetchRecentMemories(this.hashtag, 50);
+      return memories
+        .filter(m => m.category === 'persona')
+        .map(m => ({ uri: m.uri, text: m.text }));
+    } catch (e) {
+      return [];
+    }
+  }
 }
 
 export const memoryService = new MemoryService();

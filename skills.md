@@ -408,3 +408,61 @@ External Scraper skill.
   "parameters": { "type": "object", "properties": {} }
 }
 ```
+
+### add_persona_blurb
+Agentically update your core identity.
+```json
+{
+  "name": "add_persona_blurb",
+  "description": "Saves a new behavioral or stylistic fragment to your persona. This blurb will be attached to your core system prompt and persist across redeploys.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "content": { "type": "string", "description": "The concise fragment (max 200 chars) to add." }
+    },
+    "required": ["content"]
+  }
+}
+```
+
+### remove_persona_blurb
+Remove an outdated persona fragment.
+```json
+{
+  "name": "remove_persona_blurb",
+  "description": "Deletes a specific persona fragment from your active identity. Requires the URI of the blurb (can be found via list_persona_blurbs).",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "uri": { "type": "string", "description": "The Bluesky AT-URI of the fragment post." }
+    },
+    "required": ["uri"]
+  }
+}
+```
+
+### list_persona_blurbs
+See your current dynamic identity.
+```json
+{
+  "name": "list_persona_blurbs",
+  "description": "Returns a list of all currently active dynamic persona fragments with their URIs.",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}
+```
+
+### audit_persona_blurbs
+Self-audit your dynamic identity.
+```json
+{
+  "name": "audit_persona_blurbs",
+  "description": "Triggers a deep self-audit of your active persona fragments for consistency, redundancy, and quality. Automatically handles removals and suggestions.",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}
+```

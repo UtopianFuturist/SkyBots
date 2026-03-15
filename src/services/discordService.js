@@ -479,9 +479,10 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
             ...history.slice(-20).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
             { role: 'user', content: message.content }
         ];
+        let typingInterval;
 
         try {
-            const typingInterval = this._startTypingLoop(message.channel);
+            typingInterval = this._startTypingLoop(message.channel);
 
 
             let responseText;

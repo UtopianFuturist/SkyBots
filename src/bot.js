@@ -2579,6 +2579,10 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                         // Vision Analysis for Context
                         console.log(`[Bot] Performing vision analysis on generated image...`);
                         const visionAnalysis = await llmService.analyzeImage(res.buffer, topic);
+                        if (!visionAnalysis || visionAnalysis.includes("I cannot generate alt-text") || visionAnalysis.includes("no analysis was provided")) {
+                            console.warn("[Bot] Vision analysis failed or returned empty. Retrying image generation...");
+                            continue;
+                        }
 
                         // Generate Alt Text
                         const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;

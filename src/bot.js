@@ -2312,32 +2312,51 @@ CRITICAL STEERAGE: You MUST respect the recent conversation history. If the admi
 
 Generate ${messageCount} separate messages/thoughts, each on a new line. Keep each under 200 characters.`;
 
-        let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { useStep: true, platform: "discord" });
+        let messages = [];
+        let attempts = 0;
+        let lastFeedback = "";
+        const historyObjects = await discordService.fetchAdminHistory(20);
 
-        if (rawResponse) {
-            let messages = rawResponse.split("\n").filter(m => m.trim().length > 0).slice(0, messageCount);
+        while (attempts < 3) {
+            attempts++;
+            let currentPrompt = spontaneityPrompt;
+            if (lastFeedback) {
+                currentPrompt += `\n\nRETRY FEEDBACK FROM PREVIOUS ATTEMPT: ${lastFeedback}\n\nPlease try again with a completely different structure and angle.`;
+            }
 
-            // Variety Check
-            const historyObjects = await discordService.fetchAdminHistory(20);
-            const filteredMessages = [];
-            for (const msg of messages) {
+            let rawResponse = await llmService.generateResponse([{ role: "user", content: currentPrompt }], { useStep: true, platform: "discord" });
+            if (!rawResponse) break;
+
+            let candidateMessages = rawResponse.split("\n").filter(m => m.trim().length > 0).slice(0, messageCount);
+            let attemptFiltered = [];
+            let attemptFeedback = [];
+
+            for (const msg of candidateMessages) {
                 const variety = await llmService.checkVariety(msg, historyObjects, { platform: 'discord' });
                 if (!variety.repetitive) {
-                    filteredMessages.push(msg);
+                    attemptFiltered.push(msg);
                 } else {
-                    console.log(`[Bot] Spontaneous message rejected for variety: "${msg.substring(0, 30)}..." | Reason: ${variety.feedback}`);
+                    console.log(`[Bot] Spontaneous message rejected for variety (Attempt ${attempts}): "${msg.substring(0, 30)}..." | Reason: ${variety.feedback}`);
+                    attemptFeedback.push(variety.feedback);
                 }
             }
 
-            if (filteredMessages.length > 0) {
-                for (const msg of filteredMessages) {
-                    await discordService.sendSpontaneousMessage(msg);
-                    if (filteredMessages.length > 1) await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
-                }
-                dataStore.db.data.discord_last_interaction = now;
-                await dataStore.db.write();
-                await dataStore.addInternalLog("discord_spontaneous", { count: filteredMessages.length, content: filteredMessages, reason: triggerReason });
+            if (attemptFiltered.length > 0) {
+                messages = attemptFiltered;
+                break;
+            } else {
+                lastFeedback = attemptFeedback.join(" | ");
             }
+        }
+
+        if (messages.length > 0) {
+            for (const msg of messages) {
+                await discordService.sendSpontaneousMessage(msg);
+                if (messages.length > 1) await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+            }
+            dataStore.db.data.discord_last_interaction = now;
+            await dataStore.db.write();
+            await dataStore.addInternalLog("discord_spontaneous", { count: messages.length, content: messages, reason: triggerReason });
         }
     } catch (e) {
         console.error("[Bot] Error in checkDiscordSpontaneity:", e);
@@ -2468,13 +2487,25 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
           }
 
           if (action.tool === 'image_gen' && action.query) {
-              const res = await imageService.generateImage(action.query);
+              const res = await imageService.generateImage(action.query, { allowPortraits: true });
               if (res?.buffer) {
+                  // Re-integrate a robust captioned flow for image replies
+                  const visionAnalysis = await llmService.analyzeImage(res.buffer, action.query);
+                  const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+A visual expression has been generated in response to an interaction.
+Topic/Prompt: "${action.query}"
+Vision Analysis of result: "${visionAnalysis}"
+
+Generate a short, persona-aligned caption (under 250 characters) for this image that addresses the context of the conversation.`;
+                  const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
+
                   const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
                   if (blobRes?.data?.blob) {
-                      await blueskyService.postReply(context, "Generated Image", { embed: { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: action.query }] } });
+                      await blueskyService.postReply(context, caption || "Generated Image", { embed: { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: action.query }] } });
                   }
+                  return `[Successfully generated and posted image for prompt: "${action.query}"]`;
               }
+              return "[Failed to generate image]";
           }
           if (action.tool === 'read_link') {
               const urls = action.parameters?.urls || action.query?.urls || [];

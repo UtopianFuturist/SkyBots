@@ -74,6 +74,10 @@ export class Bot {
     console.log('[Bot] [v3] Initializing services...');
     await dataStore.init();
     console.log('[Bot] DataStore initialized.');
+    if (!dataStore.db.data.discord_last_interaction) {
+        dataStore.db.data.discord_last_interaction = Date.now();
+        await dataStore.db.write();
+    }
     llmService.setDataStore(dataStore);
 
     // await moltbookService.init();

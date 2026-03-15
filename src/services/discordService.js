@@ -29,6 +29,22 @@ class DiscordService {
         this._lastMessageFetch = {};
         console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
     }
+    _startTypingLoop(channel) {
+        if (!channel || typeof channel.sendTyping !== "function") return null;
+        channel.sendTyping().catch(err => console.error("[DiscordService] Error sending initial typing:", err));
+        const intervalId = setInterval(() => {
+            channel.sendTyping().catch(err => {
+                console.error("[DiscordService] Error in typing loop:", err);
+                clearInterval(intervalId);
+            });
+        }, 9000);
+        return intervalId;
+    }
+
+    _stopTypingLoop(intervalId) {
+        if (intervalId) clearInterval(intervalId);
+    }
+
 
     setBotInstance(bot) {
         this.botInstance = bot;
@@ -441,6 +457,7 @@ ${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${persona
  8. You can use the \`persist_directive\` tool if the admin gives you long-term instructions.
 9. Time Awareness: Today is ${new Date().toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}. The current time is ${new Date().toLocaleTimeString()}. Be time-appropriate.
 10. Continuity: You have access to the recent chat history. Use it to maintain context and recognize who you are talking to.
+11. **TURN AUTONOMY**: You are encouraged to send multiple messages (1-4) in a single response turn if you have multiple distinct thoughts or follow-up questions. Provide each message on a new line.
 ${config.DISCORD_HEARTBEAT_ADDENDUM ? `10. ADDITIONAL SPECIFICATION: ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}
 
 --- SOCIAL NARRATIVE ---
@@ -464,8 +481,8 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
         ];
 
         try {
-            console.log(`[DiscordService] Sending typing indicator...`);
-            await message.channel.sendTyping();
+            const typingInterval = this._startTypingLoop(message.channel);
+
 
             let responseText;
             if (isAdmin) {
@@ -904,16 +921,22 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                     responseText = lastValidResponse;
                  }
             } else {
-                responseText = await llmService.generateResponse(messages);
+                responseText = await llmService.generateResponse(messages, { useStep: true, platform: "discord" });
             }
 
             console.log(`[DiscordService] LLM Response received: ${responseText ? responseText.substring(0, 50) + '...' : 'NULL'}`);
 
             if (responseText) {
                 console.log(`[DiscordService] Sending response to Discord...`);
-                await this._send(message.channel, responseText);
+                const messages = responseText.split("\n").filter(m => m.trim().length > 0).slice(0, 4);
+                for (const msg of messages) {
+                    await this._send(message.channel, msg);
+                    if (messages.length > 1) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000));
+                }
             }
+            this._stopTypingLoop(typingInterval);
         } catch (error) {
+            this._stopTypingLoop(typingInterval);
             console.error('[DiscordService] Error responding to message:', error);
         }
     }
@@ -1051,6 +1074,7 @@ INSTRUCTIONS:
             return [];
         }
     }
+    get status() { return this.isEnabled && this.client?.isReady() ? "online" : "offline"; }
 }
 
 export const discordService = new DiscordService();

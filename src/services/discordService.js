@@ -309,7 +309,7 @@ class DiscordService {
         if (content.startsWith('/on') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(true);
             const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications back ON (you can now message them spontaneously). Generate a short, natural welcome back message. CRITICAL: Do NOT introduce yourself or announce who you are.`;
-            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
+            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, platform: 'discord', preface_system_prompt: false });
             await this._send(message.channel, response || "Welcome back! I'm glad you're available. I'll keep you updated on what I'm up to.");
             return;
         }
@@ -317,7 +317,7 @@ class DiscordService {
         if (content.startsWith('/off') && isAdmin) {
             await dataStore.setDiscordAdminAvailability(false);
             const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}. The admin just turned your notifications OFF (you should stop messaging them spontaneously). Generate a short, natural acknowledgment of their need for focus. CRITICAL: Do NOT introduce yourself or announce who you are.`;
-            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useQwen: true, preface_system_prompt: false });
+            const response = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, platform: 'discord', preface_system_prompt: false });
             await this._send(message.channel, response || "Understood. I'll keep my thoughts to myself for now so you can focus. I'll still be here if you need me!");
             return;
         }
@@ -765,7 +765,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                                           Title: [Title]
                                           Content: [Content]
                                      `;
-                                     const retryRaw = await llmService.generateResponse([{ role: 'system', content: retryPrompt }], { useQwen: true });
+                                     const retryRaw = await llmService.generateResponse([{ role: 'system', content: retryPrompt }], { useStep: true, platform: 'discord' });
                                      if (retryRaw) {
                                          const tMatch = retryRaw.match(/Title:\s*(.*)/i);
                                          const cMatch = retryRaw.match(/Content:\s*([\s\S]*)/i);
@@ -782,7 +782,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                                      ...recentThoughts.map(t => ({ platform: t.platform, content: t.content }))
                                  ];
 
-                                 const varietyCheck = await llmService.checkVariety(currentContent, formattedHistory);
+                                 const varietyCheck = await llmService.checkVariety(currentContent, formattedHistory, { platform: 'discord' });
                                  const containsSlop = isSlop(currentContent);
 
                                  if (!varietyCheck.repetitive && !containsSlop) {
@@ -892,7 +892,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
                      // High priority low-latency response: use Step (Flash) for ALL attempts in Discord
                      // This prioritizes response speed over deep reasoning for social interactions
-                     responseText = await llmService.generateResponse(finalMessages, { useStep: true });
+                     responseText = await llmService.generateResponse(finalMessages, { useStep: true, platform: 'discord' });
                      if (!responseText) break;
                      lastValidResponse = responseText;
 
@@ -905,7 +905,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
                      const isJaccardRepetitive = checkSimilarity(responseText, formattedHistory.map(h => h.content), dConfig.repetition_similarity_threshold);
                      const containsSlop = isSlop(responseText);
-                     const varietyCheck = await llmService.checkVariety(responseText, formattedHistory);
+                     const varietyCheck = await llmService.checkVariety(responseText, formattedHistory, { platform: 'discord' });
 
                      if (!isJaccardRepetitive && !containsSlop && !varietyCheck.repetitive) {
                          break;
@@ -1002,7 +1002,7 @@ INSTRUCTIONS:
 `;
 
         try {
-            const response = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useQwen: true, preface_system_prompt: false });
+            const response = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useStep: true, platform: 'discord', preface_system_prompt: false });
             if (response) {
                 await this.sendSpontaneousMessage(`🚨 **System Diagnostic**: ${response}`);
             }

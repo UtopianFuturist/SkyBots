@@ -1,7 +1,0 @@
-<<<<<<< SEARCH
-      const prePlan = await llmService.performPrePlanning(text, [], null, 'bluesky', dataStore.getMood(), {});
-      const plan = await llmService.performAgenticPlanning(text, [], null, isAdmin, 'bluesky', [], {}, {}, {}, {}, null, prePlan);
-=======
-      const prePlan = await llmService.performPrePlanning(text, [], null, 'bluesky', dataStore.getMood(), {});
-      const plan = await llmService.performAgenticPlanning(text, [], null, isAdmin, 'bluesky', [], {}, {}, {}, {}, null, prePlan);
->>>>>>> REPLACE

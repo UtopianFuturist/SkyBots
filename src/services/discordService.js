@@ -490,7 +490,18 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
                  const exhaustedThemes = dataStore.getExhaustedThemes();
                  const dConfig = dataStore.getConfig();
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, null, null, null, null, { useStep: true });
+                 const memories = memoryService.isEnabled() ? await memoryService.getRecentMemories(20) : [];
+                 let plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, null, null, null, null, { useStep: true, memories });
+
+                 // Re-integrate evaluateAndRefinePlan
+                 const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'discord', isAdmin: true });
+                 if (evaluation.decision === 'proceed') {
+                     plan.actions = evaluation.refined_actions || plan.actions;
+                 } else {
+                     console.log('[DiscordService] Agentic plan rejected by evaluation.');
+                     this._stopTypingLoop(typingInterval);
+                     return;
+                 }
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  if (plan.strategy?.theme) {
@@ -933,6 +944,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                 for (const msg of messages) {
                     await this._send(message.channel, msg);
                     if (messages.length > 1) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000));
+                }
+                const eaar = await llmService.performEmotionalAfterActionReport(history, responseText);
+                if (eaar && eaar.internal_reflection) {
+                    await dataStore.addInternalLog("discord_eaar", eaar);
+                    if (memoryService.isEnabled()) {
+                        await memoryService.createMemoryEntry('interaction', `[EAAR] ${eaar.internal_reflection}`);
+                    }
                 }
             }
             this._stopTypingLoop(typingInterval);

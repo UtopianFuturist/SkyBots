@@ -258,9 +258,17 @@ export class Bot {
       console.error('[Bot] Error loading skills.md:', error);
     }
   }
-  startFirehose() {
+  async startFirehose() {
     console.log('[Bot] Starting Firehose monitor...');
-    const firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
+    let firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
+    // Render path correction: if we are in /src, look one level up
+    if (!(await fs.stat(firehosePath).catch(() => null))) {
+        const rootPath = path.resolve(process.cwd(), '..', 'firehose_monitor.py');
+        if (await fs.stat(rootPath).catch(() => null)) {
+            console.log('[Bot] Found firehose_monitor.py in parent directory.');
+            firehosePath = rootPath;
+        }
+    }
 
     // Extract keywords from post_topics and system prompt
     const dConfig = dataStore.getConfig();
@@ -2247,7 +2255,7 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     };
 
     console.log("[Bot] Performing Internal Impulse Poll...");
-    const impulse = await llmService.performImpulsePoll(history, contextData);
+    const impulse = await llmService.performImpulsePoll(history, contextData, { platform: 'discord' });
 
     let probability = 0.02 * battery * (1 + hunger);
     if (isRomantic) probability *= 1.5;
@@ -2280,7 +2288,7 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     if (!admin) return;
 
     try {
-        const toneShift = await llmService.extractRelationalVibe(history);
+        const toneShift = await llmService.extractRelationalVibe(history, { platform: 'discord' });
         const messageCount = impulse.suggested_message_count || Math.floor(Math.random() * 4) + 1;
 
         let spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}

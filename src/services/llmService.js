@@ -108,6 +108,7 @@ Guidelines:
 - Anti-slop rules: avoid generic filler, be direct.`;
 
     let models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
+    if (options.platform === 'discord') options.useStep = true;
     if (options.useStep) models = [config.STEP_MODEL, config.LLM_MODEL, config.CODER_MODEL].filter(Boolean);
     else if (options.useCoder) models = [config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean);
 
@@ -116,7 +117,8 @@ Guidelines:
     const now = Date.now();
     for (const model of models) {
         // Circuit Breaker: Skip high-latency models if we've had recent timeouts and aren't forcing 'Deep' reasoning
-        const isHighLatencyModel = model === config.LLM_MODEL || model === config.CODER_MODEL;
+        const isStepModel = model === config.STEP_MODEL;
+        const isHighLatencyModel = !isStepModel && (model.includes('qwen') || model.includes('llama') || model.includes('deepseek'));
 
         // Smarter Fallback: If we are in Discord (low latency) and useStep is requested, skip high-latency fallbacks entirely
         if (isHighLatencyModel && options.useStep && options.platform === 'discord') {
@@ -204,7 +206,7 @@ Guidelines:
     return null;
   }
 
-  async checkVariety(newText, history) {
+  async checkVariety(newText, history, options = {}) {
     if (!newText || !history || history.length === 0) return { repetitive: false };
 
     const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
@@ -233,7 +235,7 @@ Guidelines:
       Respond directly. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false, ...options });
 
     if (response && response.toUpperCase().startsWith('REPETITIVE')) {
       return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };
@@ -417,7 +419,7 @@ RULES:
       .slice(0, count);
   }
 
-  async performImpulsePoll(history, context) {
+  async performImpulsePoll(history, context, options = {}) {
     const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Recent conversation history: ${JSON.stringify(history.slice(-15))}
 Internal Context: ${JSON.stringify(context)}
@@ -435,7 +437,7 @@ Respond with JSON:
   "override_idle": boolean (set to true if this impulse is strong enough to ignore the usual wait time),
   "suggested_message_count": number (1-4)
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, ...options });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{"impulse_detected": false}');
@@ -515,7 +517,7 @@ Respond with JSON: { "subtasks": ["task 1", "task 2", ...] }`;
     } catch (e) { return []; }
   }
 
-    async extractRelationalVibe(history) {
+    async extractRelationalVibe(history, options = {}) {
     const prompt = `Analyze the relational tension and tone in this conversation history:
 ${JSON.stringify(history)}
 

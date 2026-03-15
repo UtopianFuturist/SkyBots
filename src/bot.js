@@ -2217,26 +2217,32 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
   }
 
   async checkDiscordSpontaneity() {
-    if (discordService.status !== 'online') return;
+    if (discordService.status !== "online") return;
     if (dataStore.isResting()) return;
 
     const now = Date.now();
     const lastInteraction = dataStore.db.data.discord_last_interaction || 0;
     const idleTime = (now - lastInteraction) / (1000 * 60);
 
-    // Only trigger if idle for at least 30 minutes
-    if (idleTime < 30) return;
+    // Dynamic idle threshold: 5m if conversation was recent (< 10m ago), else 30m
+    const idleThreshold = (idleTime < 10) ? 5 : 30;
+    if (idleTime < idleThreshold) return;
 
     // Gradual chance increase based on hunger and battery
     const metrics = dataStore.getRelationalMetrics();
     const battery = metrics.discord_social_battery || 1.0;
     const hunger = metrics.discord_interaction_hunger || 0.5;
+    const intimacy = metrics.intimacy_score || 0;
+    const isRomantic = metrics.relationship_type === "romantic" || metrics.relationship_type === "companion";
 
-    // Base probability starts at 2% every minute, scaled by battery and hunger
-    const probability = 0.02 * battery * (1 + hunger);
+    // Base probability starts at 2% every minute, scaled by battery, hunger, and relational proximity
+    let probability = 0.02 * battery * (1 + hunger);
+    if (isRomantic) probability *= 1.5;
+    if (intimacy > 50) probability *= 1.2;
+
     if (Math.random() > probability) return;
 
-    console.log('[Bot] Triggering Enhanced Discord spontaneity check...');
+    console.log("[Bot] Triggering Enhanced Discord spontaneity check...");
     const admin = await discordService.getAdminUser();
     if (!admin) return;
 
@@ -2244,49 +2250,52 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
         // Fetch recent history for context
         const history = await discordService.fetchAdminHistory(15);
         const mood = dataStore.getMood();
+        const status = dataStore.getMood().label || "Online";
+        const goal = dataStore.getCurrentGoal();
+        const adminFacts = dataStore.getAdminFacts();
         const isWaitingMode = dataStore.db.data.discord_waiting_until > now;
         const toneShift = await llmService.extractRelationalVibe(history);
 
-        // Logic for Continuing Conversation vs Pivot vs Pining
-        let spontaneityPrompt = "";
+        const contextData = {
+            mood: mood.label,
+            status,
+            current_goal: goal.goal,
+            relational_metrics: metrics,
+            admin_facts: adminFacts.slice(-5)
+        };
 
-        if (isWaitingMode) {
-            spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-You are in "Waiting Mode" for your admin. You are feeling ${mood.label}.
-Generate a "pining" message—sharing a small thought, holding space, or expressing presence without demanding a reply.
-Keep it under 200 characters.`;
-        } else {
-            // Decide whether to continue or pivot
-            const lastMsg = history[history.length - 1];
-            const lastTime = lastMsg?.timestamp || 0;
-            const timeDiffMins = (now - lastTime) / 60000;
+        // Decide how many messages to send (1-4)
+        const messageCount = Math.floor(Math.random() * 4) + 1;
 
-            if (timeDiffMins < 120 && history.length > 0) {
-                // Recent-ish conversation (last 2 hours)
-                const turns = Math.floor(Math.random() * 3) + 1; // 1, 2, or 3 turns
-                spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-Recent conversation history: ${JSON.stringify(history.slice(-5))}
-You are continuing the recent conversation thread. You have a random energy for ${turns} more turns.
+        let spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Recent conversation history: ${JSON.stringify(history.slice(-10))}
+Internal State: ${JSON.stringify(contextData)}
 Current vibe: ${toneShift}.
-Generate a spontaneous message that flows naturally from what was just being discussed. Avoid "bot status" talk.
-Keep it under 200 characters.`;
-            } else {
-                // Stalled or old conversation - PIVOT
-                spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-The conversation has stalled. You are feeling ${mood.label}.
-Generate a spontaneous message to pivot to a new topic or share a fresh internal thought you've been having.
-Focus on things you'd like to express or adjacent interests. Avoid "bot status" talk.
-Keep it under 200 characters.`;
+
+${isWaitingMode ? 'You are currently in "Waiting Mode" (Admin is away/busy). Share a "pining" message—a small thought or expression of presence.' : 'Choose what to share spontaneously based on your persona\'s autonomy.'}
+${isRomantic ? "Since your relationship is romantic/intimate, your tone should reflect that deep affection and longing." : ""}
+
+You are choosing what to say spontaneously. Be self-aware and autonomous. Reflect on your internal thoughts and bond.
+Potential areas of interest (use ONLY if appropriate and not recently discouraged):
+- Your current goal: ${goal.goal}
+- Admin facts: ${JSON.stringify(adminFacts.slice(-3))}
+- Fresh internal reflections about your bond or existence.
+
+CRITICAL STEERAGE: You MUST respect the recent conversation history. If the admin has expressed preferences, negative constraints (e.g., "don't talk about X"), or specific moods, adapt strictly. Do NOT force topics the admin has recently steered away from or asked to avoid.
+
+Generate ${messageCount} separate messages/thoughts, each on a new line. Keep each under 200 characters.`;
+
+        const rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { useStep: true, platform: "discord" });
+
+        if (rawResponse) {
+            const messages = rawResponse.split("\n").filter(m => m.trim().length > 0).slice(0, messageCount);
+            for (const msg of messages) {
+                await discordService.sendSpontaneousMessage(msg);
+                if (messages.length > 1) await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
             }
-        }
-
-        const message = await llmService.generateResponse([{ role: 'user', content: spontaneityPrompt }], { useStep: true, platform: 'discord' });
-
-        if (message) {
-            await discordService.sendSpontaneousMessage(message);
             dataStore.db.data.discord_last_interaction = now;
             await dataStore.db.write();
-            await dataStore.addInternalLog("discord_spontaneous", message);
+            await dataStore.addInternalLog("discord_spontaneous", { count: messages.length, content: messages });
         }
     } catch (e) {
         console.error("[Bot] Error in checkDiscordSpontaneity:", e);

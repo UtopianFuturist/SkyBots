@@ -2410,7 +2410,7 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
 
       if (plan.actions && plan.actions.length > 0) {
         for (const action of plan.actions) {
-          await this.executeAction(action, { platform: 'bluesky', uri: notif.uri, cid: notif.cid });
+          await this.executeAction(action, { ...notif, platform: 'bluesky' });
         }
       }
     } catch (error) {
@@ -2462,17 +2462,15 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
 
   async executeAction(action, context) {
       if (!action) return;
+
+      // Harden parameter extraction
+      const params = action.parameters || action.arguments || (typeof action.query === 'object' ? action.query : {});
+      const query = typeof action.query === 'string' ? action.query : (params.query || params.text || params.instruction);
+
       try {
-
           if (action.tool === 'search_internal_logs') {
-              console.log('[Bot] search_internal_logs called with query:', action.query);
-              const logs = dataStore.searchInternalLogs(action.query);
-              return logs.length > 0 ? JSON.stringify(logs, null, 2) : "No logs matching query found.";
-          }
-
-          if (action.tool === 'search_tools') {
-              console.log('[Bot] search_tools called. Responding with tool schemas...');
-              return "To see tool schemas, please consult the SKILLS.md file in the repository.";
+              const logs = dataStore.searchInternalLogs(query);
+              return logs.length > 0 ? JSON.stringify(logs, null, 2) : "No logs found.";
           }
 
           if (action.tool === 'check_internal_state') {
@@ -2480,155 +2478,141 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
               const mood = dataStore.getMood();
               const metrics = dataStore.getRelationalMetrics();
               const memories = await memoryService.getRecentMemories(20);
-              const explorationMemories = memories.filter(m => m.text.includes('[EXPLORE]'));
-              const goalMemories = memories.filter(m => m.text.includes('[GOAL]'));
-
               return JSON.stringify({
                   current_goal: currentGoal,
                   current_mood: mood,
                   relational_metrics: metrics,
-                  recent_exploration_memories: explorationMemories.slice(-5),
-                  recent_goal_memories: goalMemories.slice(-5)
+                  recent_memories: memories.slice(-5)
               }, null, 2);
           }
 
-          if (action.tool === 'image_gen') {
-              console.log('[Bot] Rerouting image_gen tool call to performAutonomousPost flow.');
-              // Trigger autonomous post flow (which handles image generation, analysis, and captioning internally)
-              // We do not await it here to avoid blocking the reply flow, but it will execute its logic.
-              this.performAutonomousPost();
-              return "[Rerouted image generation to autonomous post flow]";
-          }
-          if (action.tool === 'read_link') {
-              const urls = action.parameters?.urls || action.query?.urls || [];
-              if (urls.length > 0) {
-                  const results = [];
-                  for (const url of urls) {
-                      const summary = await webReaderService.fetchContent(url);
-                      results.push(`Summary of ${url}: ${summary}`);
-                  }
-                  return results.join('\n\n');
-              }
-              return "No URLs provided for read_link.";
+          if (action.tool === 'update_mood') {
+              const { valence, arousal, stability, label } = params;
+              await dataStore.setMood({
+                  valence: valence !== undefined ? parseFloat(valence) : undefined,
+                  arousal: arousal !== undefined ? parseFloat(arousal) : undefined,
+                  stability: stability !== undefined ? parseFloat(stability) : undefined,
+                  label: label || undefined
+              });
+              return `Mood updated to ${label || 'new state'}.`;
           }
 
-          if (action.tool === 'wikipedia') {
-              const query = action.parameters?.query || action.query;
-              if (query) {
-                  const results = await wikipediaService.search(query);
-                  return results;
-              }
-              return "No query provided for wikipedia.";
-          }
-
-          if (action.tool === 'youtube') {
-              const query = action.parameters?.query || action.query;
-              if (query) {
-                  const results = await youtubeService.search(query);
-                  return results;
-              }
-              return "No query provided for youtube.";
-          }
-
-          if (action.tool === 'google_search') {
-              const searchCount = dataStore.db.data.daily_search_count || 0;
-              if (searchCount >= 100) return "Google search limit reached for today.";
-              const res = await googleSearchService.search(action.query);
-              if (dataStore.update) await dataStore.update({ daily_search_count: searchCount + 1 });
-              return res;
-          }
-
-                    if (action.tool === 'set_goal') {
-              const { goal, description } = action.parameters || action.query || {};
-              if (goal) {
-                  await dataStore.setCurrentGoal(goal, description);
+          if (action.tool === 'set_goal') {
+              const { goal, description } = params;
+              const finalGoal = goal || query;
+              if (finalGoal) {
+                  await dataStore.setCurrentGoal(finalGoal, description || finalGoal);
                   if (memoryService.isEnabled()) {
-                      await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${goal} | Description: ${description || goal}`);
+                      await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${finalGoal}`);
                   }
-                  return `Goal set: ${goal}`;
+                  return `Goal set: ${finalGoal}`;
               }
               return "Goal name missing.";
           }
 
+          if (action.tool === 'image_gen') {
+              const prompt = query || params.prompt;
+              if (prompt) {
+                  const res = await imageService.generateImage(prompt, { allowPortraits: true });
+                  if (res?.buffer) {
+                      const visionAnalysis = await llmService.analyzeImage(res.buffer, prompt);
+                      const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nTopic: "${prompt}"\nGenerate a short, persona-aligned caption for this image.`;
+                      const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
+
+                      const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
+                      if (blobRes?.data?.blob) {
+                          const embed = { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: prompt }] };
+                          let result;
+                          if (context?.uri) {
+                              result = await blueskyService.postReply(context, caption || "Generated Image", { embed });
+                          } else {
+                              result = await blueskyService.post(caption || "Generated Image", embed);
+                          }
+                          if (result) {
+                              await blueskyService.postReply(result, `Generation Prompt: ${prompt}`);
+                          }
+                          return `[Successfully generated and posted image for prompt: "${prompt}"]`;
+                      }
+                  }
+              }
+              return "[Failed to generate image]";
+          }
+
+          if (action.tool === 'bsky_post') {
+              let text = params.text || query;
+              if (text) {
+                  let embed = null;
+                  const imgPrompt = params.prompt_for_image;
+                  if (imgPrompt) {
+                      const res = await imageService.generateImage(imgPrompt);
+                      if (res?.buffer) {
+                          // Vision analysis for bsky_post images
+                          const visionAnalysis = await llmService.analyzeImage(res.buffer, imgPrompt);
+                          const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nOriginal text: "${text}"\nGenerate a short, persona-aligned caption for this image.`;
+                          const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
+                          if (caption) text = caption;
+
+                          const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
+                          if (blob?.data?.blob) {
+                              embed = { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: imgPrompt }] };
+                          }
+                      }
+                  }
+
+                  let result;
+                  if (context?.uri) {
+                      result = await blueskyService.postReply(context, text, { embed });
+                  } else {
+                      result = await blueskyService.post(text, embed);
+                  }
+
+                  if (result && imgPrompt) {
+                      await blueskyService.postReply(result, `Generation Prompt: ${imgPrompt}`);
+                  }
+                  return result ? `Posted to Bluesky: ${result.uri}` : "Failed to post.";
+              }
+              return "Post text missing.";
+          }
+
           if (action.tool === 'update_persona') {
-              const instruction = action.parameters?.instruction || action.query;
+              const instruction = params.instruction || query;
               if (instruction) {
                   await dataStore.addPersonaUpdate(instruction);
                   if (memoryService.isEnabled()) {
                       await memoryService.createMemoryEntry('persona_update', instruction);
                   }
-                  return "Persona updated with new instruction.";
+                  return "Persona updated.";
               }
-              return "Instruction missing.";
           }
 
-          if (action.tool === 'bsky_post') {
-              const { text, include_image, prompt_for_image } = action.parameters || action.query || {};
-              if (text) {
-                  let embed = null;
-                  if (prompt_for_image) {
-                      const res = await imageService.generateImage(prompt_for_image);
-                      if (res?.buffer) {
-                          // Perform vision analysis and captioning for tool-triggered images
-                          console.log('[Bot] Performing vision analysis for bsky_post image...');
-                          const visionAnalysis = await llmService.analyzeImage(res.buffer, prompt_for_image);
-                          const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-Vision Analysis of result: "${visionAnalysis}"
-Original text: "${text}"
-Generate a short, persona-aligned caption for this image.`;
-                          const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
-                          const finalContent = caption || text;
-
-                          const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
-                          if (blob?.data?.blob) {
-                              embed = { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: prompt_for_image }] };
-                          }
-                          const result = await blueskyService.post(finalContent, embed);
-                          if (result) {
-                              await blueskyService.postReply(result, `Generation Prompt: ${prompt_for_image}`);
-                          }
-                          return result ? `Posted to Bluesky: ${result.uri}` : "Failed to post to Bluesky.";
-                      }
+          // Fallback for search tools
+          if (action.tool === 'google_search' || action.tool === 'search') {
+              const res = await googleSearchService.search(query);
+              return JSON.stringify(res);
+          }
+          if (action.tool === 'wikipedia') {
+              const res = await wikipediaService.search(query);
+              return JSON.stringify(res);
+          }
+          if (action.tool === 'youtube') {
+              const res = await youtubeService.search(query);
+              return JSON.stringify(res);
+          }
+          if (action.tool === 'read_link') {
+              const urls = params.urls || [query];
+              const results = [];
+              for (const url of urls) {
+                  if (typeof url === 'string' && url.startsWith('http')) {
+                      const summary = await webReaderService.fetchContent(url);
+                      results.push(`Summary of ${url}: ${summary}`);
                   }
-                  const result = await blueskyService.post(text, embed);
-                  return result ? `Posted to Bluesky: ${result.uri}` : "Failed to post to Bluesky.";
               }
-              return "Post text missing.";
+              return results.join('\n\n') || "No valid URLs found.";
           }
 
-          if (action.tool === 'add_persona_blurb') {
-              const content = action.query;
-              const entry = await memoryService.createMemoryEntry('persona', content);
-              if (entry) {
-                  await dataStore.addPersonaBlurb({ uri: entry.uri, text: content });
-                  return `Persona blurb added: "${content}" (URI: ${entry.uri})`;
-              }
-              return "Failed to create persona blurb memory entry.";
-          }
-
-          if (action.tool === 'remove_persona_blurb') {
-              const uri = action.query;
-              const success = await blueskyService.deletePost(uri);
-              if (success) {
-                  const blurbs = dataStore.getPersonaBlurbs().filter(b => b.uri !== uri);
-                  await dataStore.setPersonaBlurbs(blurbs);
-                  return `Persona blurb removed: ${uri}`;
-              }
-              return `Failed to remove persona blurb: ${uri}`;
-          }
-
-          if (action.tool === 'list_persona_blurbs') {
-              const blurbs = dataStore.getPersonaBlurbs();
-              return blurbs.length > 0
-                ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n')
-                : "No persona blurbs currently set.";
-          }
-
-          if (action.tool === 'audit_persona_blurbs') {
-              return await this.performPersonaAudit();
-          }
       } catch (e) {
           console.error('[Bot] Error in executeAction:', e);
+          return `Error: ${e.message}`;
       }
   }
 

@@ -14,9 +14,9 @@ export const cleanKeywords = (keywords) => {
   const list = Array.isArray(keywords) ? keywords : [keywords];
   return [...new Set(
     list
-      .flatMap(k => (typeof k === "string" ? k.split(",") : [k]))
+      .flatMap(k => (typeof k === "string" ? k.split(/[,\n\r]+/) : [k]))
       .map(k => (typeof k === "string" ? k.trim().toLowerCase() : k))
-      .filter(k => typeof k === "string" &&  (k.length >= 4) && !KEYWORD_BLACKLIST.includes(k))
+      .filter(k => typeof k === "string" && (k.length >= 4) && !KEYWORD_BLACKLIST.includes(k))
   )];
 };
 import config from '../../config.js';

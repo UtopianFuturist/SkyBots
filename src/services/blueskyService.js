@@ -302,6 +302,27 @@ class BlueskyService {
     }
   }
 
+  async resolveDid(did) {
+    try {
+      const { data } = await this.agent.getProfile({ actor: did });
+      return data.handle;
+    } catch (error) {
+      console.error(`[BlueskyService] Error resolving DID ${did}:`, error);
+      return did;
+    }
+  }
+
+  async uploadBlob(imageBuffer, encoding = "image/jpeg") {
+    try {
+      const result = await this.agent.uploadBlob(imageBuffer, { encoding });
+      console.log("[BlueskyService] Blob uploaded successfully.");
+      return result;
+    } catch (error) {
+      console.error("[BlueskyService] Error uploading blob:", error);
+      return null;
+    }
+  }
+
   async getProfile(actor) {
     const { data } = await this.agent.getProfile({ actor });
     return data;
@@ -424,18 +445,7 @@ class BlueskyService {
     }
   }
 
-  async uploadBlob(imageBuffer, encoding = "image/jpeg") {
-    try {
-      const result = await this.agent.uploadBlob(imageBuffer, { encoding });
-      console.log("[BlueskyService] Blob uploaded successfully.");
-      return result;
-    } catch (error) {
-      console.error("[BlueskyService] Error uploading blob:", error);
-      return null;
-    }
-  }
-
-  async uploadImages(imagesToUpload) {
+    async uploadImages(imagesToUpload) {
     try {
       const uploadedImages = [];
       for (const image of imagesToUpload) {

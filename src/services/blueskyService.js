@@ -424,6 +424,17 @@ class BlueskyService {
     }
   }
 
+  async uploadBlob(imageBuffer, encoding = "image/jpeg") {
+    try {
+      const result = await this.agent.uploadBlob(imageBuffer, { encoding });
+      console.log("[BlueskyService] Blob uploaded successfully.");
+      return result;
+    } catch (error) {
+      console.error("[BlueskyService] Error uploading blob:", error);
+      return null;
+    }
+  }
+
   async uploadImages(imagesToUpload) {
     try {
       const uploadedImages = [];

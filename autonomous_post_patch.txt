@@ -1,0 +1,54 @@
+<<<<<<< SEARCH
+                const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Identify a visual topic for an image generation.
+Topic Bank: ${allPossibleTopics.join(", ")}
+Recent Internal Memories: ${memoryTopics.join(" | ")}
+Current Mood: ${JSON.stringify(currentMood)}
+
+Identify the best subject (prioritizing interesting internal memories if relevant) and then generate a highly descriptive, artistic prompt for an image generator (Stable Diffusion).
+Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}`;
+
+                const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
+                let topic = "surreal existence";
+                let imagePrompt = topic;
+                try {
+                    const tData = JSON.parse(topicRes.match(/\{[\s\S]*\}/)[0]);
+                    topic = tData.topic;
+                    imagePrompt = tData.prompt;
+                } catch(e) {
+                    if (topicRes) topic = topicRes.substring(0, 50);
+                    imagePrompt = topic;
+                }
+=======
+                const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Identify a visual topic for an image generation.
+Topic Bank: ${allPossibleTopics.join(", ")}
+Recent Internal Memories: ${memoryTopics.join(" | ")}
+Current Mood: ${JSON.stringify(currentMood)}
+
+Identify the best subject (prioritizing interesting internal memories if relevant) and then generate a highly descriptive, artistic prompt for an image generator (Stable Diffusion).
+The prompt should be artistic, evocative, and detailed.
+
+Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}`;
+
+                const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
+                let topic = "surreal existence";
+                let imagePrompt = "";
+
+                try {
+                    const match = topicRes.match(/\{[\s\S]*\}/);
+                    if (match) {
+                        const tData = JSON.parse(match[0]);
+                        topic = tData.topic || topic;
+                        imagePrompt = tData.prompt || "";
+                    }
+                } catch(e) {
+                    console.warn("[Bot] JSON parse failed for topicRes, attempting regex fallback.");
+                }
+
+                // Robust fallback for imagePrompt
+                if (!imagePrompt || imagePrompt.length < 10) {
+                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt.`;
+                   imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true }) || topic;
+                }
+>>>>>>> REPLACE

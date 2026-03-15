@@ -2513,25 +2513,33 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
           if (action.tool === 'image_gen') {
               const prompt = query || params.prompt;
               if (prompt) {
+                  // Reroute to a unified high-quality generation flow
                   const res = await imageService.generateImage(prompt, { allowPortraits: true });
                   if (res?.buffer) {
                       const visionAnalysis = await llmService.analyzeImage(res.buffer, prompt);
-                      const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nTopic: "${prompt}"\nGenerate a short, persona-aligned caption for this image.`;
+                      if (!visionAnalysis || visionAnalysis.includes("I cannot generate alt-text") || visionAnalysis.includes("no analysis was provided")) {
+                         return "[Failed vision analysis on generated image]";
+                      }
+
+                      const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
+                      const altText = await llmService.generateResponse([{ role: 'system', content: altPrompt }], { useStep: true }) || prompt;
+
+                      const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nTopic/Prompt: "${prompt}"\nGenerate a short, persona-aligned caption for this image.`;
                       const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
 
                       const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
                       if (blobRes?.data?.blob) {
-                          const embed = { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: prompt }] };
+                          const embed = { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: altText }] };
                           let result;
                           if (context?.uri) {
                               result = await blueskyService.postReply(context, caption || "Generated Image", { embed });
                           } else {
                               result = await blueskyService.post(caption || "Generated Image", embed);
                           }
-                          if (result) {
+                          if (result && prompt) {
                               await blueskyService.postReply(result, `Generation Prompt: ${prompt}`);
                           }
-                          return `[Successfully generated and posted image for prompt: "${prompt}"]`;
+                          return `[Successfully generated and posted image for: "${prompt}"]`;
                       }
                   }
               }
@@ -2704,18 +2712,29 @@ Recent Internal Memories: ${memoryTopics.join(" | ")}
 Current Mood: ${JSON.stringify(currentMood)}
 
 Identify the best subject (prioritizing interesting internal memories if relevant) and then generate a highly descriptive, artistic prompt for an image generator (Stable Diffusion).
+The prompt should be artistic, evocative, and detailed.
+
 Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}`;
 
                 const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = "surreal existence";
-                let imagePrompt = topic;
+                let imagePrompt = "";
+
                 try {
-                    const tData = JSON.parse(topicRes.match(/\{[\s\S]*\}/)[0]);
-                    topic = tData.topic;
-                    imagePrompt = tData.prompt;
+                    const match = topicRes.match(/\{[\s\S]*\}/);
+                    if (match) {
+                        const tData = JSON.parse(match[0]);
+                        topic = tData.topic || topic;
+                        imagePrompt = tData.prompt || "";
+                    }
                 } catch(e) {
-                    if (topicRes) topic = topicRes.substring(0, 50);
-                    imagePrompt = topic;
+                    console.warn("[Bot] JSON parse failed for topicRes, attempting regex fallback.");
+                }
+
+                // Robust fallback for imagePrompt
+                if (!imagePrompt || imagePrompt.length < 10) {
+                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt.`;
+                   imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true }) || topic;
                 }
 
                 // 3. Image Generation Loop with Vision & Safety Checks

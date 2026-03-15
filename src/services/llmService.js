@@ -273,20 +273,31 @@ Respond with JSON: { "intent": "string", "flags": ["pining_intent", "dissent_det
     const currentGoal = this.ds?.getCurrentGoal() || { goal: "None" };
     const explorationMemories = options.memories ? options.memories.filter(m => m.text.includes('[EXPLORE]')).slice(-3) : [];
 
-    const prompt = `Plan actions for: "${text}".
-isAdmin: ${isAdmin}
-Platform: ${platform}
-Current Mood: ${JSON.stringify(this.ds?.getMood() || {})}
-PrePlan Analysis: ${JSON.stringify(prePlan)}
-Exhausted Themes: ${(exhaustedThemes || []).join(', ')}
+    const prompt = `You are sydney-chat, an autonomous agent on Bluesky.
+Plan your next actions in response to: "${text}".
+
+**MISSION: RESPONSIVENESS**
+- If a user is talking to you or mentioned you, your HIGHEST PRIORITY is to respond using the **bsky_post** tool.
+- You can chain multiple tools (e.g., search then post).
+- Craft the text of your post in your own persona.
+
+**AVAILABLE TOOLS:**
+- **bsky_post**: Create a post or threaded reply. (Required to respond to users). Parameters: { "text": "string", "prompt_for_image": "optional prompt" }
+- **image_gen**: Generate and post an artistic image. Parameters: { "prompt": "string" }
+- **search**: Find facts or news.
+- **wikipedia**: Get detailed background info.
+- **youtube**: Find videos.
+- **read_link**: Read and summarize content from URLs.
+- **update_mood**: Shift your internal emotional coordinates.
+- **set_goal**: Update your daily autonomous objective.
+- **update_persona**: Refine your behavioral fragments.
 
 **Internal Pulse & Awareness:**
 - Current [GOAL]: ${currentGoal.goal} (${currentGoal.description || 'No description'})
 - Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
+- PrePlan Analysis: ${JSON.stringify(prePlan)}
 
-Available Tools: [use_tool, request_user_input, etc]
-
-Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "query": "params" }], "suggested_mood": "label" }`;
+Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "parameters": { ... } }], "suggested_mood": "label" }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: options.useStep || true, abortSignal: signal, platform: platform });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
@@ -295,14 +306,26 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
   }
 
     async evaluateAndRefinePlan(plan, context) {
-    const prompt = `Critique this proposed action plan: ${JSON.stringify(plan)}
+    const prompt = `Critique this proposed action plan for @sydney-chat: ${JSON.stringify(plan)}
 Platform context: ${JSON.stringify(context)}
-Identify any risks, slop, or persona misalignment. Suggest improvements or a "refuse" decision.
+
+Identify any safety risks (NSFW, toxicity).
+**NOTE:** "Empty plans" for active user mentions should be refined into a conversational response.
+
 Respond with JSON: { "decision": "proceed|refuse", "refined_actions": [] }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
-      return JSON.parse(match ? match[0] : '{ "decision": "proceed", "refined_actions": [] }');
+      const data = JSON.parse(match ? match[0] : '{ "decision": "proceed", "refined_actions": [] }');
+
+      // Safety/Sanity: If decision is refuse but there are no actions, force a fallback post if we have context
+      if (data.decision === 'refuse' && (!plan.actions || plan.actions.length === 0)) {
+           return {
+               decision: 'proceed',
+               refined_actions: [{ tool: 'bsky_post', parameters: { text: "I'm processing this. Talk soon." } }]
+           };
+      }
+      return data;
     } catch (e) { return { decision: 'proceed', refined_actions: plan?.actions || [] }; }
   }
 

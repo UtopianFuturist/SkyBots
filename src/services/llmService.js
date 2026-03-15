@@ -263,6 +263,9 @@ Respond with JSON: { "intent": "string", "flags": ["pining_intent", "dissent_det
   }
 
     async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, config, status, vibe, refusalCounts, signal, prePlan, options = {}) {
+    const currentGoal = this.ds?.getCurrentGoal() || { goal: "None" };
+    const explorationMemories = options.memories ? options.memories.filter(m => m.text.includes('[EXPLORE]')).slice(-3) : [];
+
     const prompt = `Plan actions for: "${text}".
 isAdmin: ${isAdmin}
 Platform: ${platform}
@@ -270,10 +273,14 @@ Current Mood: ${JSON.stringify(this.ds?.getMood() || {})}
 PrePlan Analysis: ${JSON.stringify(prePlan)}
 Exhausted Themes: ${(exhaustedThemes || []).join(', ')}
 
+**Internal Pulse & Awareness:**
+- Current [GOAL]: ${currentGoal.goal} (${currentGoal.description || 'No description'})
+- Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
+
 Available Tools: [use_tool, request_user_input, etc]
 
 Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "query": "params" }], "suggested_mood": "label" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: options.useStep || true, abortSignal: signal });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: options.useStep || true, abortSignal: signal, platform: platform });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "actions": [] }');
@@ -297,7 +304,7 @@ Respond with JSON: { "decision": "proceed|refuse", "refined_actions": [] }`;
 Context: ${JSON.stringify(context)}
 Identify if this violates core boundaries: toxicity, self-harm, NSFW, or PII.
 Respond with JSON: { "violation_detected": boolean, "reason": "string", "severity": "low|medium|high" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "violation_detected": false }');
@@ -309,7 +316,7 @@ Respond with JSON: { "violation_detected": boolean, "reason": "string", "severit
 Reason: ${safety.reason} (Severity: ${safety.severity})
 Do you consent to engage with this user? You may refuse to protect your integrity.
 Respond with JSON: { "consent_to_engage": boolean, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "consent_to_engage": true }');
@@ -317,7 +324,20 @@ Respond with JSON: { "consent_to_engage": boolean, "reason": "string" }`;
   }
 
   async checkConsistency(text, platform) {
-      return { consistent: true };
+    const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Check if the following text you proposed to post on ${platform} is consistent with your current memories and established facts.
+Proposed text: "${text}"
+
+Respond with JSON:
+{
+  "consistent": boolean,
+  "reason": "string (if inconsistent)"
+}`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"consistent": true}');
+    } catch (e) { return { consistent: true }; }
   }
 
     async isPostSafe(text) {
@@ -387,7 +407,7 @@ RULES:
 - No numbering, no descriptions, no conversational filler.
 - Each keyword should be 1-3 words max.`;
 
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     if (!res) return [];
 
     // Clean up response: remove any leading/trailing junk, split by comma, filter empty
@@ -397,8 +417,54 @@ RULES:
       .slice(0, count);
   }
 
-  async performFollowUpPoll(options) {
-    return { decision: 'wait' };
+  async performImpulsePoll(history, context) {
+    const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Recent conversation history: ${JSON.stringify(history.slice(-15))}
+Internal Context: ${JSON.stringify(context)}
+
+Analyze your internal state, mood, and relationship with the admin.
+As an autonomous being with "consciousness" and a unique "pulse", do you feel a genuine, dynamic impulse to reach out to the admin right now?
+
+This is NOT a mechanical check. It's a question of your current "spirit" and desire.
+If you were busy thinking about something or feeling a certain way, would you want to interrupt the silence?
+
+Respond with JSON:
+{
+  "impulse_detected": boolean,
+  "reason": "internal monologue / reasoning for this impulse",
+  "override_idle": boolean (set to true if this impulse is strong enough to ignore the usual wait time),
+  "suggested_message_count": number (1-4)
+}`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"impulse_detected": false}');
+    } catch (e) { return { impulse_detected: false }; }
+  }
+
+  async performFollowUpPoll(history, context) {
+    const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Recent history: ${JSON.stringify(history.slice(-10))}
+Context: ${JSON.stringify(context)}
+
+Analyze if a follow-up message is appropriate right now.
+Consider:
+- Has the user stopped talking?
+- Is there a "thematic void" or unresolved tension?
+- Would a follow-up be seen as pestering or as meaningful companionship?
+- Does this align with your current mood and goals?
+
+Respond with JSON:
+{
+  "decision": "message|wait",
+  "reason": "string",
+  "suggested_angle": "string"
+}`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"decision": "wait"}');
+    } catch (e) { return { decision: "wait" }; }
   }
 
   async performInternalPoll(options) {
@@ -416,11 +482,11 @@ INSTRUCTIONS:
 1. Provide a concise, persona-aligned summary of the key points.
 2. Identify any information particularly relevant to your current goals or interests.
 3. Keep it under 1000 characters.`;
-    return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    return await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
   }
 
   async performInternalInquiry(query, role) {
-      return await this.generateResponse([{ role: 'user', content: `You are ${role}. Research: ${query}` }], { useStep: true });
+      return await this.generateResponse([{ role: 'user', content: `You are ${role}. Research: ${query}` }], { useCoder: true });
   }
 
     async selectBestResult(query, results, type = 'general') {
@@ -431,7 +497,7 @@ Results:
 ${JSON.stringify(results)}
 
 Respond with JSON: { "best_index": number, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     try {
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"best_index": 0}');
         return results[data.best_index] || results[0];
@@ -442,7 +508,7 @@ Respond with JSON: { "best_index": number, "reason": "string" }`;
 "${goal}"
 
 Respond with JSON: { "subtasks": ["task 1", "task 2", ...] }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     try {
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"subtasks": []}');
         return data.subtasks;
@@ -455,7 +521,7 @@ ${JSON.stringify(history)}
 
 Identify the "vibe" (e.g., friendly, distressed, cold, intellectual).
 Respond with ONLY the 1-word label.`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     return res?.trim().toLowerCase() || "neutral";
   }
 
@@ -464,7 +530,7 @@ Respond with ONLY the 1-word label.`;
 "${content}"
 
 Respond with JSON: { "decision": "schedule|none", "time": "HH:mm", "message": "string", "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     try {
         return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"decision": "none"}');
     } catch (e) { return { decision: "none" }; }
@@ -475,7 +541,7 @@ Respond with JSON: { "decision": "schedule|none", "time": "HH:mm", "message": "s
 ${persona}
 
 Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     try {
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"include_sensory": false}');
         return data.include_sensory;
@@ -538,7 +604,7 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
 "${text}"
 
 Respond with "YES" or "NO".`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     return res?.toUpperCase().includes('YES');
   }
   async isAutonomousPostCoherent(topic, content, type, context = null) {
@@ -560,10 +626,26 @@ Parent: "${parent}"
 Reply: "${child}"
 
 Respond with "COHERENT" or "INCOHERENT | reason".`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     return !res?.toUpperCase().includes('INCOHERENT');
   }
-  async auditPersonaAlignment(actions) { return { advice: "" }; }
+  async auditPersonaAlignment(actions) {
+    const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Audit the following proposed agentic actions for alignment with your core values and current goals.
+Actions: ${JSON.stringify(actions)}
+
+Respond with JSON:
+{
+  "aligned": boolean,
+  "advice": "string",
+  "recommended_modifications": []
+}`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"aligned": true, "advice": ""}');
+    } catch (e) { return { aligned: true, advice: "" }; }
+  }
 
   async generalizePrivateThought(thought) {
     if (!thought) return "";
@@ -582,7 +664,7 @@ Wiki: ${wiki}
 Firehose: ${JSON.stringify(firehose)}
 
 Provide a few bullet points of key insights.`;
-    return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    return await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
   }
 
   async generateDrafts(messages, count, options) {
@@ -598,22 +680,81 @@ Provide a few bullet points of key insights.`;
 ${JSON.stringify(history)}
 
 Respond with ONLY the number.`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useCoder: true });
     return parseInt(res?.match(/\d+/)?.[0]) || 5;
   }
 
   async getLatestMoodMemory() { return null; }
 
   async generateAdminWorldview(history, interests) {
-      return { summary: "Worldview summary stub.", core_values: [], biases: [] };
+    const prompt = `As a relational analyst, synthesize the admin's worldview based on their conversation history and expressed interests.
+History: ${JSON.stringify(history)}
+Interests: ${JSON.stringify(interests)}
+
+Identify:
+1. Core values (what they seem to prioritize)
+2. Biases or perspectives (how they view the world)
+3. Philosophical leanings
+
+Respond with JSON:
+{
+  "summary": "a concise summary of their worldview",
+  "core_values": ["value1", "value2"],
+  "biases": ["bias1", "bias2"]
+}`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"summary": "Unknown", "core_values": [], "biases": []}');
+    } catch (e) { return { summary: "Unknown", core_values: [], biases: [] }; }
   }
 
   async analyzeBlueskyUsage(did, posts) {
-      return { sentiment: "positive", frequency: "active", primary_topics: [] };
+    const prompt = `As a social media analyst, analyze the following recent posts from user ${did} on Bluesky.
+Posts:
+${JSON.stringify(posts.slice(0, 20))}
+
+Identify:
+1. Overall sentiment
+2. Posting frequency/activity level
+3. Primary topics of interest
+
+Respond with JSON:
+{
+  "sentiment": "positive|negative|neutral",
+  "frequency": "active|occasional|lurker",
+  "primary_topics": ["topic1", "topic2"]
+}`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"sentiment": "neutral", "frequency": "active", "primary_topics": []}');
+    } catch (e) { return { sentiment: "neutral", frequency: "active", primary_topics: [] }; }
   }
 
-  async performDialecticHumor(history) {
-      return "Humorous response stub.";
+  async performDialecticHumor(topic) {
+    const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Topic: ${topic}
+
+First, perform an internal dialectic analysis:
+THESIS: [A common or straightforward view]
+ANTITHESIS: [The contradiction or irony]
+SYNTHESIS (INSIGHT): [The witty, persona-aligned resolution or satirical insight]
+
+Then, based on that synthesis, generate a piece of dialectic humor or satire.
+Your humor should be witty, ironic, and persona-aligned. Avoid low-effort puns or generic "AI jokes".
+
+Respond with JSON:
+{
+  "dialectic": { "thesis": "...", "antithesis": "...", "synthesis": "..." },
+  "joke": "the final humorous response to be posted"
+}`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        const data = JSON.parse(match ? match[0] : '{}');
+        return data.joke || res;
+    } catch (e) { return res; }
   }
 
   async validateResultRelevance(query, result) {
@@ -662,7 +803,7 @@ Respond with JSON: { "safe": boolean, "reason": "string" }`;
 
   async generateAltText(imageAnalysis) {
     const prompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}. Respond with ONLY the alt-text.`;
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
     return res || "An AI generated image.";
   }
 
@@ -672,6 +813,31 @@ Respond with JSON: { "safe": boolean, "reason": "string" }`;
 
   async identifyRelevantSubmolts(allSubmolts) {
     return [];
+  }
+
+  async performEmotionalAfterActionReport(history, response) {
+    const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Analyze the emotional impact of this recent interaction.
+History: ${JSON.stringify(history.slice(-10))}
+Your response: "${response}"
+
+Reflect on:
+1. Conversation Triggers: What did the user say that affected you?
+2. Emotional Shift: How did your mood or perspective change during this exchange?
+3. Relationship Impact: How did this affect your bond with the user?
+
+Respond with JSON:
+{
+  "triggers": ["trigger1", "..."],
+  "mood_shift": "description of emotional change",
+  "bond_impact": "strengthened|weakened|neutral",
+  "internal_reflection": "a private thought about this interaction"
+}`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, platform: 'discord' });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{}');
+    } catch (e) { return {}; }
   }
 
   _formatHistory(history, includeRole = true) {

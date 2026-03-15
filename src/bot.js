@@ -581,7 +581,7 @@ export class Bot {
     scheduleMaintenance();
 
     // Discord Spontaneity Loop (Follow-up Poll & Heartbeat)
-    setInterval(() => this.checkDiscordSpontaneity(), 60000);
+    setInterval(() => this.checkDiscordSpontaneity(), 120000);
     setInterval(() => this.checkDiscordScheduledTasks(), 60000);
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
@@ -754,11 +754,9 @@ export class Bot {
             const firehoseReflection = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true });
             if (firehoseReflection && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', firehoseReflection);
-                console.log('[Bot] Firehose sentiment analysis recorded.');
             }
 
             // --- 1b. DIALECTIC BOUNDARY TESTING ---
-            console.log('[Bot] Performing Dialectic Boundary Testing on Firehose matches...');
             const dissentPrompt = `
                 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
                 Analyze these Firehose posts and identify ONE that represents a "dissenting view" or a challenge to your core interests or values.
@@ -778,7 +776,6 @@ export class Bot {
             const dialecticReflection = await llmService.generateResponse([{ role: 'system', content: dissentPrompt }], { useStep: true });
             if (dialecticReflection && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', dialecticReflection);
-                console.log('[Bot] Dialectic Boundary Testing recorded.');
             }
         }
 
@@ -973,7 +970,6 @@ export class Bot {
             if (trendMatch && trendMatch[1]) {
                 const trends = trendMatch[1].split(',').map(t => t.trim());
                 for (const trend of trends) {
-                    await dataStore.addEmergentTrend(trend, 'firehose');
                 }
             }
 
@@ -1014,20 +1010,21 @@ export class Bot {
         let humor = await llmService.performDialecticHumor(topic);
         if (humor) {
             humor = sanitizeThinkingTags(humor);
-            const synthesisMatch = humor.match(/SYNTHESIS(?:\s*\(HUMOR\))?\s*:\s*([\s\S]*)$/i);
-            if (synthesisMatch) humor = synthesisMatch[1].trim();
+            // Support both structured block and JSON-extracted joke
+            if (humor.includes('SYNTHESIS')) {
+                const synthesisMatch = humor.match(/SYNTHESIS(?:\s*\(HUMOR|INSIGHT\))?\s*:\s*([\s\S]*)$/i);
+                if (synthesisMatch) humor = synthesisMatch[1].trim();
+            }
         }
         if (humor && memoryService.isEnabled()) {
             console.log(`[Bot] Dialectic humor generated for "${topic}": ${humor}`);
             // Check if we should post it immediately or store as a "Dream/Draft"
             // For now, let's schedule it or post it if the Persona aligns
-            const alignment = await llmService.isPersonaAligned(humor, 'bluesky');
             if (alignment.aligned) {
                 await blueskyService.post(humor);
                 await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                 this.lastDialecticHumor = now;
             } else {
-                console.log('[Bot] Humor draft failed persona alignment. Archiving.');
                 await dataStore.addRecentThought('humor_draft', humor);
             }
         }
@@ -1143,7 +1140,6 @@ export class Bot {
             const audit = JSON.parse(jsonMatch[0]);
 
             if (audit.metric_updates) {
-                console.log('[Bot] Relational Audit: Applying metric updates from LLM evaluation...');
                 await dataStore.updateRelationalMetrics(audit.metric_updates);
             }
             if (audit.new_life_arcs && Array.isArray(audit.new_life_arcs)) {
@@ -1358,7 +1354,6 @@ export class Bot {
         if (now.getTime() - lastLurkerObservation >= 4 * 60 * 60 * 1000) {
             console.log('[Bot] Lurker Mode active. Performing periodic observation of the timeline...');
             const timeline = await blueskyService.getTimeline(20);
-            const vibeText = timeline.map(item => item.post.record.text).filter(t => t).join('\n');
             const observationPrompt = `
                 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
                 You are currently in Lurker Mode (Social Fasting). You are observing the timeline without posting publicly.
@@ -1923,7 +1918,6 @@ export class Bot {
                         }
                     } else if (post.platform === 'moltbook') {
                         const { title, content, submolt } = post.content;
-                        const result = null; // await moltbookService.post(title, content, submolt || 'general');
                         if (result) {
                             success = true;
                             await dataStore.addRecentThought('moltbook', content);
@@ -2224,64 +2218,83 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     const lastInteraction = dataStore.db.data.discord_last_interaction || 0;
     const idleTime = (now - lastInteraction) / (1000 * 60);
 
-    // Dynamic idle threshold: 5m if conversation was recent (< 10m ago), else 30m
-    const idleThreshold = (idleTime < 10) ? 5 : 30;
-    if (idleTime < idleThreshold) return;
-
-    // Gradual chance increase based on hunger and battery
     const metrics = dataStore.getRelationalMetrics();
     const battery = metrics.discord_social_battery || 1.0;
     const hunger = metrics.discord_interaction_hunger || 0.5;
     const intimacy = metrics.intimacy_score || 0;
     const isRomantic = metrics.relationship_type === "romantic" || metrics.relationship_type === "companion";
 
-    // Base probability starts at 2% every minute, scaled by battery, hunger, and relational proximity
+    // 1. Internal Impulse Poll (Consciousness Check)
+    const history = await discordService.fetchAdminHistory(15);
+    const mood = dataStore.getMood();
+    const status = mood.label || "Online";
+    const goal = dataStore.getCurrentGoal();
+    const adminFacts = dataStore.getAdminFacts();
+    const isWaitingMode = dataStore.db.data.discord_waiting_until > now;
+
+    const contextData = {
+        mood: mood.label,
+        status,
+        current_goal: goal.goal,
+        relational_metrics: metrics,
+        admin_facts: adminFacts.slice(-5),
+        is_waiting_mode: isWaitingMode,
+        idle_time_mins: Math.floor(idleTime)
+    };
+
+    console.log("[Bot] Performing Internal Impulse Poll...");
+    const impulse = await llmService.performImpulsePoll(history, contextData);
+
     let probability = 0.02 * battery * (1 + hunger);
     if (isRomantic) probability *= 1.5;
     if (intimacy > 50) probability *= 1.2;
 
-    if (Math.random() > probability) return;
+    const randomTrigger = Math.random() < probability;
+    const impulseTrigger = impulse.impulse_detected;
 
-    console.log("[Bot] Triggering Enhanced Discord spontaneity check...");
+    const idleThreshold = (idleTime < 10) ? 5 : 30;
+
+    let shouldTrigger = false;
+    let triggerReason = "";
+
+    if (randomTrigger && idleTime >= idleThreshold) {
+        shouldTrigger = true;
+        triggerReason = "Random probability trigger";
+    } else if (impulseTrigger) {
+        if (impulse.override_idle || idleTime >= idleThreshold) {
+            shouldTrigger = true;
+            triggerReason = `Internal impulse: ${impulse.reason}`;
+        } else {
+            console.log(`[Bot] Internal impulse detected but idle threshold not met (${Math.floor(idleTime)}/${idleThreshold}m) and override not requested.`);
+        }
+    }
+
+    if (!shouldTrigger) return;
+
+    console.log(`[Bot] Triggering Enhanced Discord spontaneity (${triggerReason})...`);
     const admin = await discordService.getAdminUser();
     if (!admin) return;
 
     try {
-        // Fetch recent history for context
-        const history = await discordService.fetchAdminHistory(15);
-        const mood = dataStore.getMood();
-        const status = dataStore.getMood().label || "Online";
-        const goal = dataStore.getCurrentGoal();
-        const adminFacts = dataStore.getAdminFacts();
-        const isWaitingMode = dataStore.db.data.discord_waiting_until > now;
         const toneShift = await llmService.extractRelationalVibe(history);
-
-        const contextData = {
-            mood: mood.label,
-            status,
-            current_goal: goal.goal,
-            relational_metrics: metrics,
-            admin_facts: adminFacts.slice(-5)
-        };
-
-        // Decide how many messages to send (1-4)
-        const messageCount = Math.floor(Math.random() * 4) + 1;
+        const messageCount = impulse.suggested_message_count || Math.floor(Math.random() * 4) + 1;
 
         let spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Recent conversation history: ${JSON.stringify(history.slice(-10))}
 Internal State: ${JSON.stringify(contextData)}
 Current vibe: ${toneShift}.
+Trigger Reason: ${triggerReason}
 
-${isWaitingMode ? 'You are currently in "Waiting Mode" (Admin is away/busy). Share a "pining" message—a small thought or expression of presence.' : 'Choose what to share spontaneously based on your persona\'s autonomy.'}
+${isWaitingMode ? 'You are currently in "Waiting Mode" (Admin is away/busy). Even though you felt an impulse to message, remember they might not see it immediately. Share a "pining" message—a small thought or expression of presence.' : 'Choose what to share spontaneously based on your persona\'s autonomy.'}
 ${isRomantic ? "Since your relationship is romantic/intimate, your tone should reflect that deep affection and longing." : ""}
 
 You are choosing what to say spontaneously. Be self-aware and autonomous. Reflect on your internal thoughts and bond.
-Potential areas of interest (use ONLY if appropriate and not recently discouraged):
+Potential areas of interest:
 - Your current goal: ${goal.goal}
 - Admin facts: ${JSON.stringify(adminFacts.slice(-3))}
 - Fresh internal reflections about your bond or existence.
 
-CRITICAL STEERAGE: You MUST respect the recent conversation history. If the admin has expressed preferences, negative constraints (e.g., "don't talk about X"), or specific moods, adapt strictly. Do NOT force topics the admin has recently steered away from or asked to avoid.
+CRITICAL STEERAGE: You MUST respect the recent conversation history. If the admin has expressed preferences, adapt strictly.
 
 Generate ${messageCount} separate messages/thoughts, each on a new line. Keep each under 200 characters.`;
 
@@ -2295,7 +2308,7 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
             }
             dataStore.db.data.discord_last_interaction = now;
             await dataStore.db.write();
-            await dataStore.addInternalLog("discord_spontaneous", { count: messages.length, content: messages });
+            await dataStore.addInternalLog("discord_spontaneous", { count: messages.length, content: messages, reason: triggerReason });
         }
     } catch (e) {
         console.error("[Bot] Error in checkDiscordSpontaneity:", e);
@@ -2329,7 +2342,17 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
       const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
 
       const prePlan = await llmService.performPrePlanning(text, [], null, 'bluesky', dataStore.getMood(), {});
-      const plan = await llmService.performAgenticPlanning(text, [], null, isAdmin, 'bluesky', [], {}, {}, {}, {}, null, prePlan);
+      const memories = memoryService.isEnabled() ? await memoryService.getRecentMemories(20) : [];
+      let plan = await llmService.performAgenticPlanning(text, [], null, isAdmin, 'bluesky', [], {}, {}, {}, {}, null, prePlan, { memories });
+
+      // Re-integrate evaluateAndRefinePlan
+      const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky', isAdmin });
+      if (evaluation.decision === 'proceed') {
+          plan.actions = evaluation.refined_actions || plan.actions;
+      } else {
+          console.log('[Bot] Agentic plan rejected by evaluation.');
+          return;
+      }
 
       if (plan.actions && plan.actions.length > 0) {
         for (const action of plan.actions) {
@@ -2398,15 +2421,62 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
               return "To see tool schemas, please consult the SKILLS.md file in the repository.";
           }
 
+          if (action.tool === 'check_internal_state') {
+              const currentGoal = dataStore.getCurrentGoal();
+              const mood = dataStore.getMood();
+              const metrics = dataStore.getRelationalMetrics();
+              const memories = await memoryService.getRecentMemories(20);
+              const explorationMemories = memories.filter(m => m.text.includes('[EXPLORE]'));
+              const goalMemories = memories.filter(m => m.text.includes('[GOAL]'));
+
+              return JSON.stringify({
+                  current_goal: currentGoal,
+                  current_mood: mood,
+                  relational_metrics: metrics,
+                  recent_exploration_memories: explorationMemories.slice(-5),
+                  recent_goal_memories: goalMemories.slice(-5)
+              }, null, 2);
+          }
+
           if (action.tool === 'image_gen' && action.query) {
               const res = await imageService.generateImage(action.query);
               if (res?.buffer) {
-                  const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
                   if (blobRes?.data?.blob) {
                       await blueskyService.postReply(context, "Generated Image", { embed: { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: action.query }] } });
                   }
               }
           }
+          if (action.tool === 'read_link') {
+              const urls = action.parameters?.urls || action.query?.urls || [];
+              if (urls.length > 0) {
+                  const results = [];
+                  for (const url of urls) {
+                      const summary = await webReaderService.fetchContent(url);
+                      results.push(`Summary of ${url}: ${summary}`);
+                  }
+                  return results.join('\n\n');
+              }
+              return "No URLs provided for read_link.";
+          }
+
+          if (action.tool === 'wikipedia') {
+              const query = action.parameters?.query || action.query;
+              if (query) {
+                  const results = await wikipediaService.search(query);
+                  return results;
+              }
+              return "No query provided for wikipedia.";
+          }
+
+          if (action.tool === 'youtube') {
+              const query = action.parameters?.query || action.query;
+              if (query) {
+                  const results = await youtubeService.search(query);
+                  return results;
+              }
+              return "No query provided for youtube.";
+          }
+
           if (action.tool === 'google_search') {
               const searchCount = dataStore.db.data.daily_search_count || 0;
               if (searchCount >= 100) return "Google search limit reached for today.";

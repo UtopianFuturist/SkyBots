@@ -466,3 +466,16 @@ Self-audit your dynamic identity.
   }
 }
 ```
+
+### check_internal_state
+Query your current internal processes and context.
+```json
+{
+  "name": "check_internal_state",
+  "description": "Returns details about your current goal, mood, relational metrics, and recent internal memories (including [EXPLORE] and [GOAL] threads).",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}
+```

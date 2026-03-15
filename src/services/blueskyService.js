@@ -162,7 +162,7 @@ class BlueskyService {
     }
 
     let currentParent = parentPost;
-    let rootPost = parentPost.record.reply?.root || { uri: parentPost.uri, cid: parentPost.cid };
+    let rootPost = parentPost.record?.reply?.root || { uri: parentPost.uri, cid: parentPost.cid };
     let firstPostUri = null;
 
     for (let i = 0; i < textChunks.length; i++) {

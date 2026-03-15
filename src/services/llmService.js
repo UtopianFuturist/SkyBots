@@ -117,6 +117,13 @@ Guidelines:
     for (const model of models) {
         // Circuit Breaker: Skip high-latency models if we've had recent timeouts and aren't forcing 'Deep' reasoning
         const isHighLatencyModel = model === config.LLM_MODEL || model === config.CODER_MODEL;
+
+        // Smarter Fallback: If we are in Discord (low latency) and useStep is requested, skip high-latency fallbacks entirely
+        if (isHighLatencyModel && options.useStep && options.platform === 'discord') {
+            console.log(`[LLMService] Skipping high-latency fallback (${model}) for Discord priority request.`);
+            continue;
+        }
+
         if (isHighLatencyModel && !options.useCoder && this.lastTimeout && (now - this.lastTimeout < 300000)) {
             console.warn(`[LLMService] Circuit breaker active for ${model}. Skipping due to recent timeout.`);
             continue;
@@ -216,6 +223,8 @@ Guidelines:
       2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat of a recent thought?
       3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
 
+      SOCIAL LENIENCY: Be permissive of standard short social expressions (e.g., "Me too", "Good morning", "I'm here", "💙") even if used recently, as long as they aren't part of a long repetitive paragraph. Only flag as REPETITIVE if the core intellectual substance or complex structure is being recycled.
+
       If the message is too similar (structural repetition, template reuse, or content overlap), respond with "REPETITIVE | [detailed reason and specific feedback for re-writing]".
       Example: "REPETITIVE | You used the 'you ever notice' structural template twice recently. Try a more direct realization, a different opening, or a completely different angle."
 
@@ -253,7 +262,7 @@ Respond with JSON: { "intent": "string", "flags": ["pining_intent", "dissent_det
     } catch (e) { return { intent: "unknown", flags: [] }; }
   }
 
-    async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, config, status, vibe, refusalCounts, signal, prePlan) {
+    async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, config, status, vibe, refusalCounts, signal, prePlan, options = {}) {
     const prompt = `Plan actions for: "${text}".
 isAdmin: ${isAdmin}
 Platform: ${platform}
@@ -264,7 +273,7 @@ Exhausted Themes: ${(exhaustedThemes || []).join(', ')}
 Available Tools: [use_tool, request_user_input, etc]
 
 Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "query": "params" }], "suggested_mood": "label" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, abortSignal: signal });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: options.useStep || true, abortSignal: signal });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "actions": [] }');

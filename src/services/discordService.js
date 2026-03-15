@@ -472,7 +472,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  console.log(`[DiscordService] Admin detected, performing agentic planning...`);
                  const exhaustedThemes = dataStore.getExhaustedThemes();
                  const dConfig = dataStore.getConfig();
-                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig);
+                 const plan = await llmService.performAgenticPlanning(message.content, history.map(h => ({ author: h.role === 'user' ? 'User' : 'You', text: h.content })), imageAnalysisResult, true, 'discord', exhaustedThemes, dConfig, null, null, null, null, { useStep: true });
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
 
                  if (plan.strategy?.theme) {

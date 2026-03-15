@@ -382,6 +382,9 @@ describe('Bot', () => {
 
     dataStore.hasReplied.mockReturnValue(false);
     bot._getThreadHistory = jest.fn().mockResolvedValue(mockThreadContext);
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     llmService.isPostSafe.mockResolvedValue({ safe: true });
     llmService.generateResponse.mockResolvedValue('This is a test response.');
     llmService.shouldLikePost.mockResolvedValue(false);
@@ -394,11 +397,14 @@ describe('Bot', () => {
     dataStore.getInteractionsByUser.mockReturnValue([]);
 
     console.log(`[Test] Calling bot.processNotification for ${mockNotif.uri}`);
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(bot._getThreadHistory).toHaveBeenCalledWith(mockNotif.uri);
-    expect(llmService.generateDrafts).toHaveBeenCalled();
-    expect(blueskyService.postReply).toHaveBeenCalled();
+    expect(llmService.performAgenticPlanning).toHaveBeenCalled();
+    expect(bot.executeAction).toHaveBeenCalled();
   });
 
   describe('catchUpNotifications', () => {
@@ -564,11 +570,14 @@ describe('Bot', () => {
       intent: 'Informational'
     });
 
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(googleSearchService.search).toHaveBeenCalledWith('sky is blue');
     expect(llmService.selectBestResult).toHaveBeenCalledWith('sky is blue', mockGoogleResults, 'general');
-    expect(llmService.generateDrafts).toHaveBeenCalled();
+    expect(llmService.performAgenticPlanning).toHaveBeenCalled();
     expect(blueskyService.postReply).toHaveBeenCalledWith(
       expect.anything(),
       'Yes, the sky is blue due to a phenomenon called Rayleigh scattering.',
@@ -599,6 +608,9 @@ describe('Bot', () => {
     const postReplySpy = jest.spyOn(blueskyService, 'postReply');
 
     llmService.generateDrafts.mockResolvedValue(['?']);
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(postReplySpy).toHaveBeenCalledWith(expect.anything(), '?', expect.anything());
@@ -631,6 +643,9 @@ describe('Bot', () => {
     dataStore.getInteractionsByUser.mockReturnValue([]);
 
 
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'The sky is blue.', expect.anything());
@@ -674,6 +689,9 @@ describe('Bot', () => {
     llmService.isPostSafe.mockResolvedValue({ safe: true });
     llmService.generateResponse.mockResolvedValue('Thank you for the compliment!');
 
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.getPostDetails).toHaveBeenCalledWith('at://did:plc:bot/app.bsky.feed.post/original_post');
@@ -715,6 +733,9 @@ describe('Bot', () => {
 
     bot.processNotification = jest.fn(bot.processNotification);
 
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.postReply).not.toHaveBeenCalled();
@@ -735,6 +756,9 @@ describe('Bot', () => {
     llmService.evaluateConversationVibe.mockResolvedValue({ status: 'hostile', reason: 'harassment' });
     llmService.generateResponse.mockResolvedValue('I cannot continue this conversation as it violates my guidelines regarding harassment.');
 
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'I cannot continue this conversation as it violates my guidelines regarding harassment.');
@@ -763,6 +787,9 @@ describe('Bot', () => {
     llmService.evaluateConversationVibe.mockResolvedValue({ status: 'monotonous' });
     llmService.generateResponse.mockResolvedValue('Fair enough, talk soon!');
 
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'Fair enough, talk soon!');
@@ -789,6 +816,9 @@ describe('Bot', () => {
     });
     blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/post/concise' });
 
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'casual', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({ actions: [{ tool: 'reply', parameters: { text: 'The sky is blue.' } }] });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'The conversation ended.');

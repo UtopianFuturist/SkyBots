@@ -2306,21 +2306,38 @@ Potential areas of interest:
 - Admin facts: ${JSON.stringify(adminFacts.slice(-3))}
 - Fresh internal reflections about your bond or existence.
 
+VARIETY MANDATE: Do NOT repeat the same phrasing, templates, or high-concept metaphors you have used recently. Avoid starting every message with the same word or structure.
+
 CRITICAL STEERAGE: You MUST respect the recent conversation history. If the admin has expressed preferences, adapt strictly.
 
 Generate ${messageCount} separate messages/thoughts, each on a new line. Keep each under 200 characters.`;
 
-        const rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { useStep: true, platform: "discord" });
+        let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { useStep: true, platform: "discord" });
 
         if (rawResponse) {
-            const messages = rawResponse.split("\n").filter(m => m.trim().length > 0).slice(0, messageCount);
+            let messages = rawResponse.split("\n").filter(m => m.trim().length > 0).slice(0, messageCount);
+
+            // Variety Check
+            const historyObjects = await discordService.fetchAdminHistory(20);
+            const filteredMessages = [];
             for (const msg of messages) {
-                await discordService.sendSpontaneousMessage(msg);
-                if (messages.length > 1) await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+                const variety = await llmService.checkVariety(msg, historyObjects, { platform: 'discord' });
+                if (!variety.repetitive) {
+                    filteredMessages.push(msg);
+                } else {
+                    console.log(`[Bot] Spontaneous message rejected for variety: "${msg.substring(0, 30)}..." | Reason: ${variety.feedback}`);
+                }
             }
-            dataStore.db.data.discord_last_interaction = now;
-            await dataStore.db.write();
-            await dataStore.addInternalLog("discord_spontaneous", { count: messages.length, content: messages, reason: triggerReason });
+
+            if (filteredMessages.length > 0) {
+                for (const msg of filteredMessages) {
+                    await discordService.sendSpontaneousMessage(msg);
+                    if (filteredMessages.length > 1) await new Promise(r => setTimeout(r, 2000 + Math.random() * 3000));
+                }
+                dataStore.db.data.discord_last_interaction = now;
+                await dataStore.db.write();
+                await dataStore.addInternalLog("discord_spontaneous", { count: filteredMessages.length, content: filteredMessages, reason: triggerReason });
+            }
         }
     } catch (e) {
         console.error("[Bot] Error in checkDiscordSpontaneity:", e);

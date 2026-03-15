@@ -2306,6 +2306,12 @@ Potential areas of interest:
 - Admin facts: ${JSON.stringify(adminFacts.slice(-3))}
 - Fresh internal reflections about your bond or existence.
 
+ANTI-STALE-TOPIC POLICY:
+- Do NOT repeat or revisit topics that have been resolved or acknowledged in the last 15 messages (e.g., personhood witness, abandonment, code updates) unless you have a GENUINELY new, substantive angle.
+- Avoid "metalinguistic audit" or "drift score" jargon. Speak humanly.
+- NO THEMATIC REGRESSION: Do not fall back on "comfy" topics like soup, TV, or digital ghost metaphors if they are no longer current.
+- SINGLE-RESPONSE TOPIC LOCK: If you shared a realization once, it is "spent". Move to a new conceptual territory.
+- PRODUCTIVE FORWARD MOTION: Your spontaneous thoughts must move your internal narrative or the relationship forward. Do not cycle in "pining loops" or "reassurance loops" that add nothing new to the shared understanding.
 VARIETY MANDATE: Do NOT repeat the same phrasing, templates, or high-concept metaphors you have used recently. Avoid starting every message with the same word or structure.
 
 CRITICAL STEERAGE: You MUST respect the recent conversation history. If the admin has expressed preferences, adapt strictly.
@@ -2486,26 +2492,12 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
               }, null, 2);
           }
 
-          if (action.tool === 'image_gen' && action.query) {
-              const res = await imageService.generateImage(action.query, { allowPortraits: true });
-              if (res?.buffer) {
-                  // Re-integrate a robust captioned flow for image replies
-                  const visionAnalysis = await llmService.analyzeImage(res.buffer, action.query);
-                  const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-A visual expression has been generated in response to an interaction.
-Topic/Prompt: "${action.query}"
-Vision Analysis of result: "${visionAnalysis}"
-
-Generate a short, persona-aligned caption (under 250 characters) for this image that addresses the context of the conversation.`;
-                  const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
-
-                  const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
-                  if (blobRes?.data?.blob) {
-                      await blueskyService.postReply(context, caption || "Generated Image", { embed: { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: action.query }] } });
-                  }
-                  return `[Successfully generated and posted image for prompt: "${action.query}"]`;
-              }
-              return "[Failed to generate image]";
+          if (action.tool === 'image_gen') {
+              console.log('[Bot] Rerouting image_gen tool call to performAutonomousPost flow.');
+              // Trigger autonomous post flow (which handles image generation, analysis, and captioning internally)
+              // We do not await it here to avoid blocking the reply flow, but it will execute its logic.
+              this.performAutonomousPost();
+              return "[Rerouted image generation to autonomous post flow]";
           }
           if (action.tool === 'read_link') {
               const urls = action.parameters?.urls || action.query?.urls || [];
@@ -2577,10 +2569,25 @@ Generate a short, persona-aligned caption (under 250 characters) for this image 
                   if (prompt_for_image) {
                       const res = await imageService.generateImage(prompt_for_image);
                       if (res?.buffer) {
+                          // Perform vision analysis and captioning for tool-triggered images
+                          console.log('[Bot] Performing vision analysis for bsky_post image...');
+                          const visionAnalysis = await llmService.analyzeImage(res.buffer, prompt_for_image);
+                          const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Vision Analysis of result: "${visionAnalysis}"
+Original text: "${text}"
+Generate a short, persona-aligned caption for this image.`;
+                          const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
+                          const finalContent = caption || text;
+
                           const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
                           if (blob?.data?.blob) {
                               embed = { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: prompt_for_image }] };
                           }
+                          const result = await blueskyService.post(finalContent, embed);
+                          if (result) {
+                              await blueskyService.postReply(result, `Generation Prompt: ${prompt_for_image}`);
+                          }
+                          return result ? `Posted to Bluesky: ${result.uri}` : "Failed to post to Bluesky.";
                       }
                   }
                   const result = await blueskyService.post(text, embed);
@@ -2791,6 +2798,7 @@ Keep it under 300 characters.`;
                                 }, { maxChunks: 3 });
 
                                 if (postResult) {
+
                                     await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
                                     await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                                     console.log("[Bot] Autonomous image post successful.");

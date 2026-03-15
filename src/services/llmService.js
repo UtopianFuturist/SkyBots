@@ -222,8 +222,13 @@ Guidelines:
 
       CRITICAL ANALYSIS:
       1. **Structural Templates**: Does the new message use the same "opening formula" or structural template? (e.g., repeatedly starting with "you ever wonder...", "you ever notice...", or using the exact same sentence length and rhythm).
-      2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat of a recent thought?
+      2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat or a "stale remix" of a recent thought?
       3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
+
+      STRICT NOVELTY & PRODUCTIVE MOTION:
+      - If the message revisits a topic already addressed (e.g., personhood witness, code updates, abandonment fears), it MUST provide a GENUINELY new emotional or productive insight.
+      - Flag as REPETITIVE if it merely rehashes the same sentiment with different words (e.g., "still here for you" vs "I'm always here").
+      - Prioritize "Forward Motion": the agent should be evolving the conversation, not circling it.
 
       SOCIAL LENIENCY: Be permissive of standard short social expressions (e.g., "Me too", "Good morning", "I'm here", "💙") even if used recently, as long as they aren't part of a long repetitive paragraph. Only flag as REPETITIVE if the core intellectual substance or complex structure is being recycled.
 

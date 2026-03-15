@@ -550,10 +550,20 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                          const diff = lastPostTime ? now - new Date(lastPostTime).getTime() : cooldown;
 
                          let embed = null;
+                         let finalContent = postText;
                          if (prompt_for_image) {
                              console.log(`[DiscordService] Generating image for Bluesky post: "${prompt_for_image}"`);
                              const imgResult = await imageService.generateImage(prompt_for_image, { allowPortraits: true });
                              if (imgResult && imgResult.buffer) {
+                                 // Vision analysis and captioning for Discord-triggered Bluesky posts
+                                 console.log('[DiscordService] Performing vision analysis for bsky_post image...');
+                                 const visionAnalysis = await llmService.analyzeImage(imgResult.buffer, prompt_for_image);
+                                 const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Vision Analysis of result: "${visionAnalysis}"
+Original text: "${postText}"
+Generate a short, persona-aligned caption for this image.`;
+                                 const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
+                                 if (caption) finalContent = caption;
                                  embed = { imageBuffer: imgResult.buffer, imageAltText: imgResult.finalPrompt };
                              }
                          } else if (include_image && message.attachments.size > 0) {
@@ -582,7 +592,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                                      postEmbed = { imageBuffer: embed.imageBuffer, imageAltText: embed.imageAltText };
                                  }
                              }
-                             const result = await blueskyService.post(postText, postEmbed);
+                             const result = await blueskyService.post(finalContent || postText, postEmbed);
                              if (result) {
                                  await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                                  actionResults.push(`[Successfully posted to Bluesky: ${result.uri}]`);
@@ -940,7 +950,14 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
             if (responseText) {
                 console.log(`[DiscordService] Sending response to Discord...`);
-                const messages = responseText.split("\n").filter(m => m.trim().length > 0).slice(0, 4);
+                // Increased slice limit from 4 to 20 to allow full lists (e.g. 20 items) to be delivered
+                                const rawChunks = responseText.split("\n").filter(m => m.trim().length > 0);
+                const isList = /^[\d\-]+\s*\.?\s+/.test(responseText.trim()) || responseText.includes("1.") || responseText.includes("- ");
+                const isStory = responseText.length > 1000 && (responseText.toLowerCase().includes("story") || responseText.toLowerCase().includes("chapter"));
+                const userRequestedLong = message.content.toLowerCase().includes("list") || message.content.toLowerCase().includes("long") || message.content.toLowerCase().includes("story") || message.content.toLowerCase().includes("all");
+
+                const maxChunks = (isList || isStory || userRequestedLong) ? 20 : 4;
+                const messages = rawChunks.slice(0, maxChunks);
                 for (const msg of messages) {
                     await this._send(message.channel, msg);
                     if (messages.length > 1) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000));

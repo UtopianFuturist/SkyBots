@@ -121,7 +121,8 @@ Context: ${cleanContext}.
 CRITICAL:
 1. Do NOT include internal planning tags, tool calls, or meta-talk.
 2. Focus on the material substance and emotional truth.
-3. Keep it under 200 characters to leave room for the hashtag.`;
+3. Keep it under 200 characters to leave room for the hashtag.
+4. STRICT ANTI-JARGON POLICY: Do NOT use technical AI terminology like "drift score", "linguistic audit", "metalinguistic", "parameter", "latency", or "token". Speak as a human-like individual expressing a realization or fact.`;
 
       let entryText = await llmService.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false });
       if (entryText) {

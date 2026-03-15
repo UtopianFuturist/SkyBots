@@ -2311,6 +2311,7 @@ ANTI-STALE-TOPIC POLICY:
 - Avoid "metalinguistic audit" or "drift score" jargon. Speak humanly.
 - NO THEMATIC REGRESSION: Do not fall back on "comfy" topics like soup, TV, or digital ghost metaphors if they are no longer current.
 - SINGLE-RESPONSE TOPIC LOCK: If you shared a realization once, it is "spent". Move to a new conceptual territory.
+- PRODUCTIVE FORWARD MOTION: Your spontaneous thoughts must move your internal narrative or the relationship forward. Do not cycle in "pining loops" or "reassurance loops" that add nothing new to the shared understanding.
 VARIETY MANDATE: Do NOT repeat the same phrasing, templates, or high-concept metaphors you have used recently. Avoid starting every message with the same word or structure.
 
 CRITICAL STEERAGE: You MUST respect the recent conversation history. If the admin has expressed preferences, adapt strictly.
@@ -2583,6 +2584,9 @@ Generate a short, persona-aligned caption for this image.`;
                               embed = { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: prompt_for_image }] };
                           }
                           const result = await blueskyService.post(finalContent, embed);
+                          if (result) {
+                              await blueskyService.postReply(result, `Generation Prompt: ${prompt_for_image}`);
+                          }
                           return result ? `Posted to Bluesky: ${result.uri}` : "Failed to post to Bluesky.";
                       }
                   }
@@ -2794,8 +2798,8 @@ Keep it under 300 characters.`;
                                 }, { maxChunks: 3 });
 
                                 if (postResult) {
-                                    // Removed prompt reply to avoid unintended threading
-                                    // await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
+
+                                    await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
                                     await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                                     console.log("[Bot] Autonomous image post successful.");
                                     return;

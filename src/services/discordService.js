@@ -594,6 +594,9 @@ Generate a short, persona-aligned caption for this image.`;
                              }
                              const result = await blueskyService.post(finalContent || postText, postEmbed);
                              if (result) {
+                                 if (prompt_for_image) {
+                                     await blueskyService.postReply(result, `Generation Prompt: ${prompt_for_image}`);
+                                 }
                                  await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                                  actionResults.push(`[Successfully posted to Bluesky: ${result.uri}]`);
                              } else {

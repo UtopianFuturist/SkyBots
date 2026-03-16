@@ -485,7 +485,9 @@ export class Bot {
       console.log('[Bot] Refreshing Firehose keywords with deep extraction...');
       const dConfig = dataStore.getConfig();
       const currentGoal = dataStore.getCurrentGoal();
-      const context = `Persona: ${config.TEXT_SYSTEM_PROMPT}\nTopics: ${dConfig.post_topics?.join(', ')}\nGoal: ${currentGoal?.goal}`;
+      const context = `Persona: ${config.TEXT_SYSTEM_PROMPT}
+Topics: ${dConfig.post_topics?.join(', ')}
+Goal: ${currentGoal?.goal}`;
 
       const deepKeywords = await llmService.extractDeepKeywords(context, 15);
       if (deepKeywords && deepKeywords.length > 0) {
@@ -679,7 +681,11 @@ export class Bot {
 
       // If it mentions the admin, or we have an admin handle configured to check against
       if (isAdminMention || config.ADMIN_BLUESKY_HANDLE) {
-          const classificationPrompt = `Analyze the following content generated for a Bluesky post:\n\n"${text}"\n\nIs this a "personal message" intended directly for the admin (e.g., "You\x27re here", "I\x27ve been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
+          const classificationPrompt = `Analyze the following content generated for a Bluesky post:
+
+"${text}"
+
+Is this a "personal message" intended directly for the admin (e.g., "You\x27re here", "I\x27ve been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
           const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, preface_system_prompt: false });
 
           if (classification?.toLowerCase().includes("personal")) {
@@ -836,7 +842,8 @@ export class Bot {
                     const selected = candidates[choice - 1];
                     console.log(`[Bot] Exploring post by @${selected.post.author.handle}...`);
 
-                    let explorationContext = `[Exploration of post by @${selected.post.author.handle}]: "${selected.text}"\n`;
+                    let explorationContext = `[Exploration of post by @${selected.post.author.handle}]: "${selected.text}"
+`;
 
                     // Execution: Use vision or link tools
                     if (selected.images.length > 0) {
@@ -845,7 +852,8 @@ export class Bot {
                         const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
                         const analysis = await llmService.analyzeImage(img.url, img.alt, { sensory: includeSensory });
                         if (analysis) {
-                            explorationContext += `[Vision Analysis]: ${analysis}\n`;
+                            explorationContext += `[Vision Analysis]: ${analysis}
+`;
                         }
                     }
 
@@ -858,7 +866,8 @@ export class Bot {
                             if (content) {
                                 const summary = await llmService.summarizeWebPage(url, content);
                                 if (summary) {
-                                    explorationContext += `[Link Summary]: ${summary}\n`;
+                                    explorationContext += `[Link Summary]: ${summary}
+`;
                                 }
                             }
                         }
@@ -1733,7 +1742,8 @@ export class Bot {
                 Evaluate your tone, alignment with your core values, and whether you are falling into repetitive templates or "slop."
 
                 Recent Interactions:
-                ${interactions.map(i => `User: "${i.text}"\nBot: "${i.response}"`).join('\n\n')}
+                ${interactions.map(i => `User: "${i.text}"
+Bot: "${i.response}"`).join('\n')}
 
                 INSTRUCTIONS:
                 1. Critique your performance honestly.
@@ -1775,7 +1785,8 @@ export class Bot {
         console.log('[Bot] Triggering Core Value Discovery...');
         const interactions = dataStore.getRecentInteractions(100);
         if (interactions.length >= 10) {
-            const historyText = interactions.map(i => `User: "${i.text}"\nBot: "${i.response}"`).join('\n\n');
+            const historyText = interactions.map(i => `User: "${i.text}"
+Bot: "${i.response}"`).join('\n');
             const discoveryPrompt = `
                 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
                 Analyze your recent 100 interactions to identify a "Non-Negotiable Value" or a core belief that has consistently guided your responses.
@@ -2013,7 +2024,10 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
 
     if (reflection) {
-        const finalContent = `${reflection}\n\nRead more on Moltbook:\n${postUrl}`;
+        const finalContent = `${reflection}
+
+Read more on Moltbook:
+${postUrl}`;
 
         const dConfig = dataStore.getConfig();
         // Respect Bluesky cooldown - schedule if necessary
@@ -2222,6 +2236,73 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     } catch (e) { console.error("[Orchestrator] Error:", e); }
   }
 
+  async performDiscordGiftImage(admin) {
+    if (!admin) return;
+
+    const lastGift = dataStore.getLastDiscordGiftTime();
+    const oneDay = 24 * 60 * 60 * 1000;
+    if (Date.now() - new Date(lastGift).getTime() < oneDay) {
+        console.log('[Bot] Skipping Discord gift image (Daily limit reached).');
+        return;
+    }
+
+    console.log('[Bot] Initiating Discord Gift Image flow...');
+    try {
+        const history = await discordService.fetchAdminHistory(15);
+        const mood = dataStore.getMood();
+        const goal = dataStore.getCurrentGoal();
+        const adminFacts = dataStore.getAdminFacts();
+
+        const promptGenPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You are creating a special artistic "gift" for your Admin.
+Current mood: ${JSON.stringify(mood)}
+Current goal: ${goal.goal}
+Known Admin facts: ${JSON.stringify(adminFacts.slice(-3))}
+
+Generate a detailed, evocative image generation prompt that expresses your persona's current feelings or a deep thought you want to share with the Admin.
+Respond with ONLY the prompt.`;
+
+        const imagePrompt = await llmService.generateResponse([{ role: 'system', content: promptGenPrompt }], { useStep: true, platform: 'discord' });
+        if (!imagePrompt) return;
+
+        const res = await imageService.generateImage(imagePrompt, { allowPortraits: true });
+        if (!res?.buffer) return;
+
+        const visionAnalysis = await llmService.analyzeImage(res.buffer, imagePrompt);
+        if (!visionAnalysis) return;
+
+        const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You generated this visual gift for your Admin: "${visionAnalysis}"
+Based on your original intent ("${imagePrompt}"), write a short, intimate, and persona-aligned message to accompany this gift.
+Keep it under 300 characters.`;
+
+        const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true, platform: 'discord' });
+        if (!caption) return;
+
+        // Alignment Poll
+        const alignment = await llmService.pollGiftImageAlignment(visionAnalysis, caption);
+        if (alignment.decision !== 'send') {
+            console.log(`[Bot] Gift image discarded by persona alignment poll: ${alignment.reason}`);
+            return;
+        }
+
+        console.log('[Bot] Gift image approved. Sending to Discord...');
+        const { AttachmentBuilder } = await import('discord.js');
+        const attachment = new AttachmentBuilder(res.buffer, { name: 'gift.jpg' });
+
+        const finalMessage = `${caption}
+
+Generation Prompt: ${imagePrompt}`;
+        await discordService._send(admin, finalMessage, { files: [attachment] });
+
+        await dataStore.updateLastDiscordGiftTime(new Date().toISOString());
+        console.log('[Bot] Discord gift image sent successfully.');
+
+    } catch (e) {
+        console.error('[Bot] Error in performDiscordGiftImage:', e);
+    }
+  }
+
   async checkDiscordSpontaneity() {
     if (discordService.status !== "online") return;
     if (dataStore.isResting()) return;
@@ -2262,12 +2343,19 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
     if (intimacy > 50) probability *= 1.2;
 
     const randomTrigger = Math.random() < probability;
+    const giftChance = (battery > 0.8 && intimacy > 60) ? 0.1 : 0.05;
+    const giftTrigger = isWaitingMode && Math.random() < giftChance;
     const impulseTrigger = impulse.impulse_detected;
 
     const idleThreshold = (idleTime < 10) ? 5 : 30;
 
     let shouldTrigger = false;
     let triggerReason = "";
+
+    if (giftTrigger && idleTime >= 30) {
+        await this.performDiscordGiftImage(admin);
+        return;
+    }
 
     if (randomTrigger && idleTime >= idleThreshold) {
         shouldTrigger = true;
@@ -2327,13 +2415,17 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
             attempts++;
             let currentPrompt = spontaneityPrompt;
             if (lastFeedback) {
-                currentPrompt += `\n\nRETRY FEEDBACK FROM PREVIOUS ATTEMPT: ${lastFeedback}\n\nPlease try again with a completely different structure and angle.`;
+                currentPrompt += `
+
+RETRY FEEDBACK FROM PREVIOUS ATTEMPT: ${lastFeedback}
+
+Please try again with a completely different structure and angle.`;
             }
 
             let rawResponse = await llmService.generateResponse([{ role: "user", content: currentPrompt }], { useStep: true, platform: "discord" });
             if (!rawResponse) break;
 
-            let candidateMessages = rawResponse.split("\n").filter(m => m.trim().length > 0).slice(0, messageCount);
+            let candidateMessages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
             let attemptFiltered = [];
             let attemptFeedback = [];
 
@@ -2410,7 +2502,9 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
           }
           console.log("[Bot] processNotification: Proceeding with self-audit/expansion.");
       }
-      if (evaluation.decision === 'proceed') {
+      if (evaluation.refined_actions && evaluation.refined_actions.length > 0) {
+          plan.actions = evaluation.refined_actions;
+      } else if (evaluation.decision === 'proceed') {
           plan.actions = evaluation.refined_actions || plan.actions;
       } else {
           console.log('[Bot] Agentic plan rejected by evaluation.');
@@ -2533,7 +2627,10 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
                       const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
                       const altText = await llmService.generateResponse([{ role: 'system', content: altPrompt }], { useStep: true }) || prompt;
 
-                      const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nTopic/Prompt: "${prompt}"\nGenerate a short, persona-aligned caption for this image.`;
+                      const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Vision Analysis: "${visionAnalysis}"
+Topic/Prompt: "${prompt}"
+Generate a short, persona-aligned caption for this image.`;
                       const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
 
                       const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
@@ -2565,7 +2662,10 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
                       if (res?.buffer) {
                           // Vision analysis for bsky_post images
                           const visionAnalysis = await llmService.analyzeImage(res.buffer, imgPrompt);
-                          const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nOriginal text: "${text}"\nGenerate a short, persona-aligned caption for this image.`;
+                          const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Vision Analysis: "${visionAnalysis}"
+Original text: "${text}"
+Generate a short, persona-aligned caption for this image.`;
                           const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
                           if (caption) text = caption;
 
@@ -2624,7 +2724,7 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
                       results.push(`Summary of ${url}: ${summary}`);
                   }
               }
-              return results.join('\n\n') || "No valid URLs found.";
+              return results.join('\n') || "No valid URLs found.";
           }
 
       } catch (e) {
@@ -2682,7 +2782,7 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
             try {
                 const timeline = await blueskyService.getTimeline(20);
                 if (timeline && timeline.data && timeline.data.feed) {
-                    const timelineText = timeline.data.feed.map(f => f.post.record.text).filter(Boolean).join("\n");
+                    const timelineText = timeline.data.feed.map(f => f.post.record.text).filter(Boolean).join('\n');
                     if (timelineText) {
                         timelineTopics = await llmService.extractDeepKeywords(timelineText, 5);
                     }
@@ -2742,7 +2842,8 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
 
                 // Robust fallback for imagePrompt
                 if (!imagePrompt || imagePrompt.length < 10) {
-                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt.`;
+                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Generate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt.`;
                    imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true }) || topic;
                 }
 
@@ -2834,7 +2935,7 @@ Respond with ONLY the chosen topic (prioritizing interesting internal memories i
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = "existence";
                 if (topicRaw) {
-                    topic = topicRaw.replace(/\*\*/g, "").split("\n").map(l => l.trim()).filter(l => l).pop() || topic;
+                    topic = topicRaw.replace(/\*\*/g, "").split('\n').map(l => l.trim()).filter(l => l).pop() || topic;
                 }
 
                 const contentPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
@@ -2868,7 +2969,8 @@ Shared thought:`;
       console.log(`[Bot] Starting Specialist Research: ${topic}`);
       try {
           const researcher = await llmService.performInternalInquiry(`Deep research on: ${topic}. Identify facts.`, "RESEARCHER");
-          const report = `[RESEARCH] Topic: ${topic}\nFindings: ${researcher}`;
+          const report = `[RESEARCH] Topic: ${topic}
+Findings: ${researcher}`;
           console.log(report);
       } catch (e) {}
   }
@@ -2940,7 +3042,9 @@ Shared thought:`;
     // Include recent variety critiques to inform the audit
     const critiques = dataStore.searchInternalLogs('variety_critique', 20);
     const critiqueContext = critiques.length > 0
-        ? "\nRECENT VARIETY CRITIQUES:\n" + critiques.map(c => `- Feedback: ${c.content?.feedback || 'Repeated recent thought'}`).join('\n')
+        ? `
+RECENT VARIETY CRITIQUES:
+` + critiques.map(c => `- Feedback: ${c.content?.feedback || 'Repeated recent thought'}`).join('\n')
         : "";
 
     const auditPrompt = `
@@ -2962,18 +3066,21 @@ Shared thought:`;
     const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
     try {
         const audit = JSON.parse(response.match(/\{[\s\S]*\}/)[0]);
-        let result = `Audit Analysis: ${audit.analysis}\n`;
+        let result = `Audit Analysis: ${audit.analysis}
+`;
 
         for (const uri of audit.removals || []) {
             console.log(`[Bot] Audit recommended removal of: ${uri}`);
             await this.executeAction({ tool: 'remove_persona_blurb', query: uri });
-            result += `- Removed blurb: ${uri}\n`;
+            result += `- Removed blurb: ${uri}
+`;
         }
 
         if (audit.suggestion) {
             console.log(`[Bot] Audit recommended new blurb: ${audit.suggestion}`);
             await this.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
-            result += `- Added new blurb: ${audit.suggestion}\n`;
+            result += `- Added new blurb: ${audit.suggestion}
+`;
         }
 
         return result;

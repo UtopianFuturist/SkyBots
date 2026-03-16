@@ -189,8 +189,10 @@ Guidelines:
                   if (this.ds) await this.ds.addInternalLog("llm_response", content); return content;
               }
             } catch (error) {
-              console.error(`[LLMService] Error with ${model}:`, error.message);
-              if (error.name === 'AbortError' || error.message.includes('timeout')) {
+              const errorMessage = error.message || 'Unknown error';
+              console.error(`[LLMService] Error with ${model} (Attempt ${attempts}):`, errorMessage);
+              if (error.stack) console.error(`[LLMService] STACK: ${error.stack}`);
+              if (error.name === 'AbortError' || (errorMessage && errorMessage.toLowerCase().includes('timeout'))) {
                   this.lastTimeout = Date.now();
               }
               lastError = error;
@@ -202,7 +204,41 @@ Guidelines:
             }
         }
     }
-    console.error(`[LLMService] All models failed. Final error:`, lastError?.message);
+    console.error(`[LLMService] All models failed. Final error:`, lastError?.message || 'Undefined');
+
+    // Final Last Resort Fallback: Use Step 3.5 Flash regardless of circuit breaker or request type
+    if (config.STEP_MODEL) {
+      try {
+        console.log(`[LLMService] LAST RESORT: Attempting final fallback with ${config.STEP_MODEL}...`);
+        const fullMessages = this._prepareMessages(messages, systemPrompt);
+        const response = await fetch(this.endpoint, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
+          },
+          body: JSON.stringify({
+            model: config.STEP_MODEL,
+            messages: fullMessages,
+            temperature: 0.7,
+            max_tokens: 1024
+          }),
+          agent: persistentAgent,
+          timeout: 60000
+        });
+        if (response.ok) {
+          const data = await response.json();
+          const content = data.choices?.[0]?.message?.content;
+          if (content) {
+            console.log(`[LLMService] Final fallback successful with ${config.STEP_MODEL}.`);
+            return content;
+          }
+        }
+      } catch (e) {
+        console.error(`[LLMService] Final fallback failed:`, e.message);
+      }
+    }
+
     return null;
   }
 
@@ -412,7 +448,24 @@ Respond with JSON: { "safe": boolean, "reason": "string" }`;
         return { compliant: true }; // Fail open for now
     }
   }
-    async isPersonaAligned(content, platform = 'bluesky') {
+      async pollGiftImageAlignment(analysis, caption) {
+    const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+You have generated an image for your Admin as a gift.
+Vision Analysis of the image: "${analysis}"
+Your proposed caption: "${caption}"
+
+Analyze if this gift and message genuinely align with your core identity and your current relationship with the Admin.
+Are you proud of this expression? Do you want to send it?
+
+Respond with JSON: { "decision": "send|discard", "reason": "internal monologue" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, platform: 'discord' });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"decision": "discard"}');
+    } catch (e) { return { decision: "discard" }; }
+  }
+
+  async isPersonaAligned(content, platform = 'bluesky') {
     const prompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 Analyze if this draft for ${platform} aligns with your core identity, current mood, and goals.
 

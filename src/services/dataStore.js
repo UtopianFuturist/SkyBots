@@ -371,6 +371,8 @@ class DataStore {
   getLastMentalReflectionTime() { return this.db?.data?.last_mental_reflection_time; }
   async updateLastMentalReflectionTime(t) { if (this.db?.data) { this.db.data.last_mental_reflection_time = t; await this.write(); } }
   getLastMoltfeedSummaryTime() { return this.db?.data?.last_moltfeed_summary_time; }
+  getLastDiscordGiftTime() { return this.db?.data?.last_discord_gift_time || 0; }
+  async updateLastDiscordGiftTime(t) { if (this.db?.data) { this.db.data.last_discord_gift_time = t; await this.write(); } }
   async updateLastMoltfeedSummaryTime(t) { if (this.db?.data) { this.db.data.last_moltfeed_summary_time = t; await this.write(); } }
 
   // Others

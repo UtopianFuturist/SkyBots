@@ -92,8 +92,8 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   MAX_REPLIED_POSTS: parseInt(process.env.MAX_REPLIED_POSTS || '1000'),
   LLM_MODEL: process.env.LLM_MODEL || process.env.TEXT_MODEL || 'stepfun-ai/step-3.5-flash',
   IMAGE_GENERATION_MODEL: process.env.IMAGE_GENERATION_MODEL || 'stabilityai/stable-diffusion-3-medium',
-  QWEN_MODEL: process.env.QWEN_MODEL || 'qwen/qwen3.5-122b-a10b',
-  CODER_MODEL: process.env.CODER_MODEL || 'qwen/qwen3.5-122b-a10b',
+  QWEN_MODEL: process.env.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct',
+  CODER_MODEL: process.env.CODER_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct',
   VISION_MODEL: process.env.VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct',
   STEP_MODEL: process.env.STEP_MODEL || "stepfun-ai/step-3.5-flash",
 

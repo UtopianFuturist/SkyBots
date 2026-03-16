@@ -311,6 +311,7 @@ describe('Bot', () => {
     llmService.shouldLikePost.mockResolvedValue(false);
     llmService.isImageCompliant.mockResolvedValue({ compliant: true, reason: null });
     llmService.rateUserInteraction.mockResolvedValue(3);
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'informational', flags: [], hooks: [], stale_hooks: [] });
     llmService.performAgenticPlanning.mockResolvedValue({
       actions: [],
       intent: 'Friendly',

@@ -117,7 +117,7 @@ class DiscordService {
 
         this.client.on('debug', (info) => {
             // Log everything for now to catch where it hangs
-            console.log('[DiscordService] DEBUG:', info);
+            // console.log('[DiscordService] DEBUG:', info);
         });
 
         this.client.on('shardError', (error) => {

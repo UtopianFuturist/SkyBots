@@ -2370,6 +2370,7 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
   }
 
   async processNotification(notif) {
+    const isSelf = !!notif.author.did && notif.author.did === blueskyService.agent?.session?.did;
     const boundaryCheck = checkHardCodedBoundaries(notif.record.text || "");
     if (boundaryCheck.blocked) {
         console.log(`[Bot] BOUNDARY VIOLATION DETECTED in notification: ${boundaryCheck.reason} ("${boundaryCheck.pattern}") from ${notif.author.handle}`);
@@ -2401,6 +2402,14 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
 
       // Re-integrate evaluateAndRefinePlan
       const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky', isAdmin });
+      if (isSelf) {
+          const selfAuditIntents = ["informational", "analytical", "critical_analysis"];
+          if (!selfAuditIntents.includes(prePlan.intent)) {
+              console.log("[Bot] processNotification: Self-notification intent is not for audit or expansion. Skipping.");
+              return;
+          }
+          console.log("[Bot] processNotification: Proceeding with self-audit/expansion.");
+      }
       if (evaluation.decision === 'proceed') {
           plan.actions = evaluation.refined_actions || plan.actions;
       } else {

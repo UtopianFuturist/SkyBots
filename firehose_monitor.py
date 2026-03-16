@@ -79,7 +79,6 @@ async def main():
             except Exception:
                 # Silently skip malformed blocks
                 return
-
             for op in commit.ops:
                 if op.action != 'create' or not op.path.startswith('app.bsky.feed.post/'):
                     continue

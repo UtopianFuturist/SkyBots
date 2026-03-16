@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, Partials, ChannelType } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, ChannelType, AttachmentBuilder } from 'discord.js';
 import config from '../../config.js';
 import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
@@ -346,7 +346,50 @@ class DiscordService {
         }
     }
 
+    async sendContextualImage(target, type) {
+        console.log(`[DiscordService] Sending contextual ${type} image...`);
+        try {
+            const prompt = type === 'morning' ?
+                "An abstract, artistic and beautiful sunrise, warm light, soft colors, high quality" :
+                "An abstract, artistic and beautiful moon, night sky, cool light, serene atmosphere, high quality";
+
+            const imgResult = await imageService.generateImage(prompt, { allowPortraits: true });
+            if (imgResult && imgResult.buffer) {
+
+                const attachment = new AttachmentBuilder(imgResult.buffer, { name: `${type}.jpg` });
+
+                const visionAnalysis = await llmService.analyzeImage(imgResult.buffer, prompt);
+                const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Vision Analysis: "${visionAnalysis}"
+You are saying ${type === 'morning' ? 'good morning' : 'goodnight'} to your Admin with this image. Generate a very short (1 sentence), persona-aligned greeting. CRITICAL: Do NOT start with the same greeting used recently (e.g. if you said "Morning ☀️" recently, say something else). Vary your opening.`;
+                const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true, platform: 'discord' });
+
+                const finalMessage = `${caption || (type === 'morning' ? 'Good morning.' : 'Goodnight.')}
+
+Generation Prompt: ${prompt}`;
+                await this._send(target, finalMessage, { files: [attachment] });
+            }
+        } catch (e) {
+            console.error(`[DiscordService] Error sending contextual ${type} image:`, e);
+        }
+    }
+
     async respond(message) {
+        const text = message.content.toLowerCase();
+        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+
+        if (isAdmin) {
+            if (text.includes('good morning') || text.includes('gm')) {
+                // 30% chance or check cooldown
+                if (Math.random() < 0.3) {
+                    this.sendContextualImage(message.author, 'morning');
+                }
+            } else if (text.includes('goodnight') || text.includes('gn') || text.includes('good night')) {
+                if (Math.random() < 0.3) {
+                    this.sendContextualImage(message.author, 'night');
+                }
+            }
+        }
         const normChannelId = this.getNormalizedChannelId(message);
         console.log(`[DiscordService] Generating response for channel: ${message.channel.id} (normalized: ${normChannelId})`);
 
@@ -420,7 +463,7 @@ class DiscordService {
 
         await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
 
-        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        // isAdmin already declared at top of respond()
         console.log(`[DiscordService] User is admin: ${isAdmin}`);
 
         // Hierarchical Social Context
@@ -435,9 +478,15 @@ You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.au
 ${isAdmin ? `Your admin's Bluesky handle is @${config.ADMIN_BLUESKY_HANDLE}.` : ''}
 Your persona: ${config.TEXT_SYSTEM_PROMPT}
 
-${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY): \n${blueskyDirectives}\n---` : ''}
-${moltbookDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR MOLTBOOK): \n${moltbookDirectives}\n---` : ''}
-${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS): \n${personaUpdates}\n---` : ''}
+${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY):
+${blueskyDirectives}
+---` : ''}
+${moltbookDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR MOLTBOOK):
+${moltbookDirectives}
+---` : ''}
+${personaUpdates ? `--- AGENTIC PERSONA UPDATES (SELF-INSTRUCTIONS):
+${personaUpdates}
+---` : ''}
 
 **VISION:** You have vision capabilities. Use the descriptions provided in the context to understand images attached to messages. Treat these descriptions as your own visual perception.
 
@@ -495,7 +544,9 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
                  // Re-integrate evaluateAndRefinePlan
                  const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'discord', isAdmin: true });
-                 if (evaluation.decision === 'proceed') {
+                 if (evaluation.refined_actions && evaluation.refined_actions.length > 0) {
+                     plan.actions = evaluation.refined_actions;
+                 } else if (evaluation.decision === 'proceed') {
                      plan.actions = evaluation.refined_actions || plan.actions;
                  } else {
                      console.log('[DiscordService] Agentic plan rejected by evaluation.');
@@ -630,7 +681,9 @@ Generate a short, persona-aligned caption for this image.`;
                                      console.log(`[DiscordService] READ_LINK TOOL: STEP 3 - Content fetched successfully for ${url} (${content.length} chars). Summarizing...`);
                                      const summary = await llmService.summarizeWebPage(url, content);
                                      console.log(`[DiscordService] READ_LINK TOOL: STEP 4 - Summary generated for ${url}. Adding to context.`);
-                                     actionResults.push(`--- CONTENT FROM URL: ${url} ---\n${summary}\n---`);
+                                     actionResults.push(`--- CONTENT FROM URL: ${url} ---
+${summary}
+---`);
                                  } else {
                                      console.warn(`[DiscordService] READ_LINK TOOL: STEP 3 (FAILED) - Failed to read content from ${url}`);
                                      actionResults.push(`[Failed to read content from ${url}]`);
@@ -688,7 +741,8 @@ Generate a short, persona-aligned caption for this image.`;
                          const activities = await blueskyService.getUserActivity(handle, 100);
                          if (activities.length > 0) {
                              const summary = activities.map(a => `[${a.type}] ${a.text.substring(0, 100)}`).join('\n');
-                             actionResults.push(`[Profile Analysis for @${handle} (Recent activity):\n${summary.substring(0, 2000)}]`);
+                             actionResults.push(`[Profile Analysis for @${handle} (Recent activity):
+${summary.substring(0, 2000)}]`);
                          } else {
                              actionResults.push(`[No recent activity found for @${handle}]`);
                          }
@@ -710,13 +764,17 @@ Generate a short, persona-aligned caption for this image.`;
                          } else {
                              logs = await renderService.getLogs(limit);
                          }
-                         actionResults.push(`[Render Logs (Latest ${limit} lines):\n${logs}\n]`);
+                         actionResults.push(`[Render Logs (Latest ${limit} lines):
+${logs}
+]`);
                      }
 
                      if (action.tool === 'get_social_history') {
                          const limit = action.parameters?.limit || 15;
                          const history = await socialHistoryService.summarizeSocialHistory(limit);
-                         actionResults.push(`[Bluesky Social History:\n${history}\n]`);
+                         actionResults.push(`[Bluesky Social History:
+${history}
+]`);
                      }
 
                      if (action.tool === 'discord_message') {
@@ -886,7 +944,8 @@ Generate a short, persona-aligned caption for this image.`;
                  }
 
                  if (actionResults.length > 0) {
-                     messages.push({ role: 'system', content: `TOOL EXECUTION RESULTS (Acknowledge naturally):\n${actionResults.join('\n')}` });
+                     messages.push({ role: 'system', content: `TOOL EXECUTION RESULTS (Acknowledge naturally):
+${actionResults.join('\n')}` });
                  }
 
                  let attempts = 0;
@@ -898,7 +957,9 @@ Generate a short, persona-aligned caption for this image.`;
 
                  while (attempts < MAX_ATTEMPTS) {
                      attempts++;
-                     const feedbackContext = feedback ? `\n[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `\n[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
+                     const feedbackContext = feedback ? `
+[RETRY FEEDBACK]: ${feedback}${rejectedContent ? `
+[PREVIOUS ATTEMPT (AVOID THIS)]: "${rejectedContent}"` : ''}` : '';
                      const finalMessages = feedback
                         ? [...messages, { role: 'system', content: feedbackContext }]
                         : messages;

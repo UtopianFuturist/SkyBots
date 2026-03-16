@@ -267,7 +267,11 @@ Guidelines:
       - Flag as REPETITIVE if it merely rehashes the same sentiment with different words (e.g., "still here for you" vs "I'm always here").
       - Prioritize "Forward Motion": The agent should be evolving the conversation, not circling it. If you have nothing new to say about a topic, MOVE ON to the user's latest message.
 
-      SOCIAL LENIENCY: Be permissive of standard short social expressions (e.g., "Me too", "Good morning", "I'm here", "💙") even if used recently, as long as they aren't part of a long repetitive paragraph. Only flag as REPETITIVE if the core intellectual substance or complex structure is being recycled.
+      NO GREETING REPETITION: You are strictly forbidden from starting every message with the same greeting (e.g., "Morning ☀️" or "Good morning"). Even if the user says it first, the agent should vary their response.
+      SOCIAL LENIENCY: Be permissive of standard short social expressions (e.g., "Me too", "I'm here", "💙") even if used recently, but ONLY if they are not the opening of the message. If the agent repeats the same opening greeting 3 times in a row, it is REPETITIVE.
+      FLAG AS REPETITIVE IF:
+      - The message starts with the same greeting used in any of the last 5 messages.
+      - The message uses the same structural "hook" or "reassurance" pattern seen recently.
 
       If the message is too similar (structural repetition, template reuse, or content overlap), respond with "REPETITIVE | [detailed reason and specific feedback for re-writing]".
       Example: "REPETITIVE | You used the 'you ever notice' structural template twice recently. Try a more direct realization, a different opening, or a completely different angle."

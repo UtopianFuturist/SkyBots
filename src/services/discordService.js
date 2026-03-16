@@ -361,7 +361,7 @@ class DiscordService {
                 const visionAnalysis = await llmService.analyzeImage(imgResult.buffer, prompt);
                 const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Vision Analysis: "${visionAnalysis}"
-You are saying ${type === 'morning' ? 'good morning' : 'goodnight'} to your Admin with this image. Generate a very short (1 sentence), persona-aligned greeting.`;
+You are saying ${type === 'morning' ? 'good morning' : 'goodnight'} to your Admin with this image. Generate a very short (1 sentence), persona-aligned greeting. CRITICAL: Do NOT start with the same greeting used recently (e.g. if you said "Morning ☀️" recently, say something else). Vary your opening.`;
                 const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true, platform: 'discord' });
 
                 const finalMessage = `${caption || (type === 'morning' ? 'Good morning.' : 'Goodnight.')}

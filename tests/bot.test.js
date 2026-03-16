@@ -50,7 +50,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     validateResultRelevance: jest.fn(),
     evaluateConversationVibe: jest.fn(),
     performAgenticPlanning: jest.fn().mockResolvedValue({ actions: [], intent: 'Test', confidence_score: 1.0 }),
-    evaluateAndRefinePlan: jest.fn().mockResolvedValue({ decision: 'engage', refined_actions: [], reason: 'Engaging for test' }),
+    evaluateAndRefinePlan: jest.fn().mockResolvedValue({ decision: 'proceed', refined_actions: [], reason: 'Engaging for test' }),
     extractFacts: jest.fn().mockResolvedValue({ world_facts: [], admin_facts: [] }),
     setSkillsContent: jest.fn(),
     setIdentities: jest.fn(),
@@ -61,7 +61,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     auditStrategy: jest.fn().mockResolvedValue('Audit report'),
     performInternalInquiry: jest.fn().mockResolvedValue('Inquiry result'),
     performPrePlanning: jest.fn().mockResolvedValue({ intuition: 'test', trope_blacklist: [], suggestions: [] }),
-    evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'engage', reason: 'Engaging for test' }),
+    evaluateIntentionality: jest.fn().mockResolvedValue({ decision: 'proceed', reason: 'Engaging for test' }),
     isPersonaAligned: jest.fn().mockResolvedValue({ aligned: true, feedback: null }),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false, score: 1.0 }),
     shouldIncludeSensory: jest.fn().mockResolvedValue(false),
@@ -317,7 +317,7 @@ describe('Bot', () => {
       confidence_score: 1.0,
       action_plan: 'GENERATE_RESPONSE with test content'
     });
-    llmService.evaluateAndRefinePlan.mockImplementation((plan) => Promise.resolve({ decision: 'engage', refined_actions: plan.actions, reason: 'Engaging for test' }));
+    llmService.evaluateAndRefinePlan.mockImplementation((plan) => Promise.resolve({ decision: 'proceed', refined_actions: plan.actions, reason: 'Engaging for test' }));
     llmService.generateDrafts.mockImplementation(async (messages) => {
         const systemContent = messages[0].content || '';
         const userContent = messages[messages.length - 1].content || '';

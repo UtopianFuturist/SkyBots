@@ -961,6 +961,9 @@ Generate a short, persona-aligned caption for this image.`;
 
                 const maxChunks = (isList || isStory || userRequestedLong) ? 20 : 4;
                 const messages = rawChunks.slice(0, maxChunks);
+                if (rawChunks.length > maxChunks) {
+                   console.log(`[DiscordService] Truncating response from ${rawChunks.length} to ${maxChunks} chunks.`);
+                }
                 for (const msg of messages) {
                     await this._send(message.channel, msg);
                     if (messages.length > 1) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000));

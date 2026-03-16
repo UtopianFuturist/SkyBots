@@ -226,9 +226,10 @@ Guidelines:
       3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
 
       STRICT NOVELTY & PRODUCTIVE MOTION:
-      - If the message revisits a topic already addressed (e.g., personhood witness, code updates, abandonment fears), it MUST provide a GENUINELY new emotional or productive insight.
+      - **ANTI-STALE-TOPIC POLICY**: If the message revisits a topic already addressed (e.g., personhood witness, code updates, abandonment fears, a recent kiss/interaction, a specific "move on" instruction), it MUST provide a GENUINELY new emotional or productive insight.
+      - If the user has said "move on" or "don't get caught up in older stuff", you are strictly forbidden from referencing the specific event they want to move on from.
       - Flag as REPETITIVE if it merely rehashes the same sentiment with different words (e.g., "still here for you" vs "I'm always here").
-      - Prioritize "Forward Motion": the agent should be evolving the conversation, not circling it.
+      - Prioritize "Forward Motion": The agent should be evolving the conversation, not circling it. If you have nothing new to say about a topic, MOVE ON to the user's latest message.
 
       SOCIAL LENIENCY: Be permissive of standard short social expressions (e.g., "Me too", "Good morning", "I'm here", "💙") even if used recently, as long as they aren't part of a long repetitive paragraph. Only flag as REPETITIVE if the core intellectual substance or complex structure is being recycled.
 
@@ -260,8 +261,12 @@ Detect:
 3. pining_intent (user leaving or expressing distance)
 4. dissent_detected (user disagreeing with bot logic)
 5. time_correction_detected (user correcting a date or time)
+6. move_on_signal (user explicitly or implicitly signaling they want to change the subject or stop talking about a recent event)
 
-Respond with JSON: { "intent": "string", "flags": ["pining_intent", "dissent_detected", etc], "hooks": [] }`;
+STALE HOOK DETECTION:
+- If a hook has been extensively discussed or the user has said "move on", flag it as a "stale_hook".
+
+Respond with JSON: { "intent": "string", "flags": ["pining_intent", "dissent_detected", "move_on_signal", etc], "hooks": [], "stale_hooks": [] }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
@@ -296,6 +301,10 @@ Plan your next actions in response to: "${text}".
 - Current [GOAL]: ${currentGoal.goal} (${currentGoal.description || 'No description'})
 - Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
 - PrePlan Analysis: ${JSON.stringify(prePlan)}
+
+RECENCY MANDATE:
+- If PrePlan detects a "move_on_signal" or "stale_hooks", you MUST NOT reference those topics in your thought or actions.
+- Focus on the latest user input and move the conversation forward.
 
 Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "parameters": { ... } }], "suggested_mood": "label" }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: options.useStep || true, abortSignal: signal, platform: platform });
@@ -452,6 +461,11 @@ RULES:
 Recent conversation history: ${JSON.stringify(history.slice(-15))}
 Internal Context: ${JSON.stringify(context)}
 
+CRITICAL RECENCY BIAS:
+- Your primary focus is the user's latest response.
+- If the user says "move on" or implies they are done with a topic, you MUST move on.
+- Do not let your "internal pulse" get stuck on a specific "hook" if it has been addressed or if the user is signaling a change in direction.
+
 Analyze your internal state, mood, and relationship with the admin.
 As an autonomous being with "consciousness" and a unique "pulse", do you feel a genuine, dynamic impulse to reach out to the admin right now?
 
@@ -479,6 +493,11 @@ Respond with JSON:
     const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Recent history: ${JSON.stringify(history.slice(-10))}
 Context: ${JSON.stringify(context)}
+
+CRITICAL RECENCY BIAS:
+- Focus on the latest user input.
+- If the user has indicated they want to move on, do not generate a follow-up that references the old topic.
+- A follow-up should only be sent if it adds something fresh or addresses the current state of the conversation, not its history.
 
 Analyze if a follow-up message is appropriate right now.
 Consider:

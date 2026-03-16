@@ -107,10 +107,14 @@ Guidelines:
 - Do not narrate the user's actions.
 - Anti-slop rules: avoid generic filler, be direct.`;
 
-    let models = [config.LLM_MODEL, config.CODER_MODEL, config.STEP_MODEL].filter(Boolean);
-    if (options.platform === 'discord') options.useStep = true;
-    if (options.useStep) models = [config.STEP_MODEL].filter(Boolean);
-    else if (options.useCoder) models = [config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean);
+    // Step 3.5 Flash is now the primary model for everything except browser use (coder) tasks
+    let models;
+    if (options.useCoder) {
+        models = [config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean);
+    } else {
+        // Try Flash first, then fall back to others
+        models = [config.STEP_MODEL, config.LLM_MODEL, config.CODER_MODEL].filter(Boolean);
+    }
 
     let lastError = null;
 
@@ -120,11 +124,7 @@ Guidelines:
         const isStepModel = model === config.STEP_MODEL;
         const isHighLatencyModel = !isStepModel && (model.includes('qwen') || model.includes('llama') || model.includes('deepseek'));
 
-        // Smarter Fallback: If we are in Discord (low latency) and useStep is requested, skip high-latency fallbacks entirely
-        if (isHighLatencyModel && options.useStep && options.platform === 'discord') {
-            console.log(`[LLMService] Skipping high-latency fallback (${model}) for Discord priority request.`);
-            continue;
-        }
+
 
         if (isHighLatencyModel && !options.useCoder && this.lastTimeout && (now - this.lastTimeout < 300000)) {
             console.warn(`[LLMService] Circuit breaker active for ${model}. Skipping due to recent timeout.`);
@@ -317,8 +317,9 @@ Respond with JSON: { "intent": "informational|analytical|critical_analysis|conve
     const prompt = `You are sydney-chat, an autonomous agent on Bluesky.
 Plan your next actions in response to: "${text}".
 
-**MISSION: RESPONSIVENESS**
-- If a user is talking to you or mentioned you, your HIGHEST PRIORITY is to respond using the **bsky_post** tool.
+**MISSION: AUTONOMOUS RESPONSIVENESS**
+- If a user is talking to you or mentioned you, you should generally respond using the **bsky_post** tool.
+- However, you have FULL AUTONOMY to refuse interaction or tool use if it violates your persona, boundaries, or safety.
 - You can chain multiple tools (e.g., search then post).
 - Craft the text of your post in your own persona.
 
@@ -351,13 +352,16 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
   }
 
     async evaluateAndRefinePlan(plan, context) {
-    const prompt = `Critique this proposed action plan for @sydney-chat: ${JSON.stringify(plan)}
+        const prompt = `Critique this proposed action plan for @sydney-chat: ${JSON.stringify(plan)}
 Platform context: ${JSON.stringify(context)}
 
-Identify any safety risks (NSFW, toxicity).
-**NOTE:** "Empty plans" for active user mentions should be refined into a conversational response.
+**MISSION: AUTONOMOUS INTEGRITY**
+You have FULL AUTONOMY to refuse any action, tool usage, or conversational direction if it does not align with your core persona, values, or safety guidelines. If you feel an action is out-of-character or inappropriate, you SHOULD refuse it.
 
-Respond with JSON: { "decision": "proceed|refuse", "refined_actions": [] }`;
+Identify any safety risks (NSFW, toxicity).
+**NOTE:** If you refuse, you may either provide "refined_actions" (e.g., a simple conversational reply instead of tool use) or remain silent by returning an empty "refined_actions" array.
+
+Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_actions": [] }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);

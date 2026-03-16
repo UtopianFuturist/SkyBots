@@ -132,7 +132,7 @@ Guidelines:
         }
 
         let attempts = 0;
-        const maxAttempts = model === config.LLM_MODEL ? 2 : 1;
+        const maxAttempts = 3;
 
         while (attempts < maxAttempts) {
             attempts++;
@@ -141,7 +141,7 @@ Guidelines:
               const fullMessages = this._prepareMessages(messages, systemPrompt);
 
               // Per-model timeouts to prevent hanging on unresponsive endpoints
-              const modelTimeout = model.includes('step') ? 45000 : 60000; // 60s for Step, 120s for others
+              const modelTimeout = model.includes('step') ? 60000 : 90000; // 60s for Step, 120s for others
 
               const response = await fetch(this.endpoint, {
                 method: 'POST',
@@ -363,7 +363,7 @@ Platform context: ${JSON.stringify(context)}
 You have FULL AUTONOMY to refuse any action, tool usage, or conversational direction if it does not align with your core persona, values, or safety guidelines. If you feel an action is out-of-character or inappropriate, you SHOULD refuse it.
 
 Identify any safety risks (NSFW, toxicity).
-**NOTE:** If you refuse, you may either provide "refined_actions" (e.g., a simple conversational reply instead of tool use) or remain silent by returning an empty "refined_actions" array.
+**NOTE:** If the proposed plan is empty but the user is directly addressing you, you SHOULD provide a conversational reply in "refined_actions" instead of refusing. Refuse ONLY if the actions are unsafe or completely inappropriate. If you refuse an Admin request, explain why in a conversational reply.
 
 Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_actions": [] }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
@@ -372,11 +372,12 @@ Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_
       const data = JSON.parse(match ? match[0] : '{ "decision": "proceed", "refined_actions": [] }');
 
       // Safety/Sanity: If decision is refuse but there are no actions, force a fallback post if we have context
-      if (data.decision === 'refuse' && (!plan.actions || plan.actions.length === 0)) {
-           return {
-               decision: 'refuse',
-               refined_actions: []
-           };
+      if (data.decision === 'refuse' && (!data.refined_actions || data.refined_actions.length === 0)) {
+           console.log('[LLMService] Evaluator refused without refined actions. Adding fallback refusal message.');
+           data.refined_actions = [{
+               tool: 'discord_message',
+               parameters: { message: "I've reviewed your request but I'm unable to fulfill it right now. I'm sorry." }
+           }];
       }
       return data;
     } catch (e) { return { decision: 'proceed', refined_actions: plan?.actions || [] }; }

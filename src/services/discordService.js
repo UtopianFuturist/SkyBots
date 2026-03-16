@@ -780,11 +780,11 @@ ${history}
                      if (action.tool === 'discord_message') {
                          const msg = action.parameters?.message || action.query;
                          if (msg) {
-                             // HARDCODED FIX: Avoid double-posting.
-                             // If we are already in the respond() flow on Discord, we don't need to send another DM.
-                             // We just acknowledge the intent so the LLM can incorporate it into its natural response.
-                             console.log(`[DiscordService] Suppressing discord_message tool to prevent double-post on Discord.`);
-                             actionResults.push(`[System: The discord_message tool was suppressed because you are already talking to the admin on Discord. Do NOT send another message via tool; just respond naturally in this conversation.]`);
+                             // If we are in the respond() flow, we can just add it to actionResults to be acknowledged naturally.
+                             // However, if this is an explicit refusal or separate thought, sending it as a message is safer.
+                             console.log(`[DiscordService] Processing discord_message tool: ${msg}`);
+                             await this._send(message.channel, msg);
+                             actionResults.push(`[System: Message sent via tool: "${msg}"]`);
                          }
                      }
                      if (action.tool === 'moltbook_post') {
@@ -899,7 +899,7 @@ ${history}
                                  await this._send(message.channel, `Generated image: "${imgResult.finalPrompt}"`, {
                                      files: [{ attachment: imgResult.buffer, name: 'art.jpg' }]
                                  });
-                                 actionResults.push(`[Successfully generated image for prompt: "${prompt}"]`);
+                                 actionResults.push(`[SYSTEM CONFIRMATION: The image for prompt "${prompt}" was SUCCESSFULLY generated and sent to the Discord channel as an attachment. You can now tell the user about it.]`);
                              } else {
                                  actionResults.push(`[Failed to generate image]`);
                              }

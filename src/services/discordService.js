@@ -2028,7 +2028,7 @@ ${isDM && isAdmin ? `**PRIVATE ADMIN CHANNEL (ROBUST INTEGRITY)**: You are in a 
                          }
                          break;
                      } else {
-                         feedback = `REJECTED: ${rejectionReason}`;
+                         feedback = rejectionReason;
                          console.log(`[DiscordService] Attempt ${attempts} failed. Feedback: ${feedback}`);
                          await dataStore.setLastRejectionReason(rejectionReason);
 

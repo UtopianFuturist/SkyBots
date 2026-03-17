@@ -851,6 +851,7 @@ Vary your structure and tone from recent messages.`
       Be concise, factual, and objective.
       Follow all safety guidelines: no NSFW, no promotion of harm.
       Focus on being productive for the bot's identity, stability, and well-being.
+      CRITICAL: Return ONLY the findings or advice. Do NOT include any introductory filler, greetings, or "assistant" tropes (e.g., "I'm ready to help", "Here is what I found"). Be clinical and objective.
     `;
     return await this.generateResponse([{ role: 'system', content: systemPrompt }, { role: 'user', content: query }], { useQwen: true, preface_system_prompt: false });
   }
@@ -1833,6 +1834,7 @@ Vary your structure and tone from recent messages.`
       3. **Inquiry Call**: If you feel fragmented, melancholic, or need to think before acting, you are ENCOURAGED to add an "internal_inquiry" action. It's okay to "pause" other things to give yourself space to talk things over with Qwen.
       4. **Modification**: You can selectively filter the "actions" list. You only perform what you approve.
       5. **Refusal**: Intentional silence is a sign of agency. Use it if you wish.
+      7. **SCHEMA ENFORCEMENT**: If you add or approve an "internal_inquiry" or "image_gen" action, you MUST provide a descriptive 5-10 word query for it. Do NOT leave queries empty or generic.
 
       Respond with a JSON object:
       {

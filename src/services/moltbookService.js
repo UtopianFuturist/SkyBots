@@ -26,6 +26,8 @@ const defaultMoltbookData = {
   recent_post_contents: [], // Content of recent posts to check for repetition
   admin_instructions: [], // Instructions from bot admin
   replied_comments: [], // Track IDs of comments already replied to
+  replied_comments: [], // Track IDs of comments already replied to
+  last_status_check: null,
 };
 
 class MoltbookService {
@@ -162,6 +164,8 @@ class MoltbookService {
         this.db.data.verification_code = data.agent.verification_code;
         this.db.data.claim_url = data.agent.claim_url;
         this.db.data.claimed = false;
+        this.db.data.suspended = false;
+        this.db.data.suspension_expires_at = null;
         await this.db.write();
 
         // Sync post time after registration
@@ -296,6 +300,15 @@ class MoltbookService {
 
     try {
       const maskedKey = `${this.db.data.api_key.substring(0, 8)}...${this.db.data.api_key.substring(this.db.data.api_key.length - 4)}`;
+      // Cooldown for status checks to avoid spamming 401s during suspension
+      const lastStatusCheck = this.db.data.last_status_check || 0;
+      if (Date.now() - lastStatusCheck < 3600000 && this.db.data.suspended) { // 1 hour cooldown during suspension
+          console.log("[Moltbook] Skipping status check due to active suspension cooldown.");
+          return "suspended";
+      }
+      this.db.data.last_status_check = Date.now();
+      await this.db.write();
+
       console.log(`[Moltbook] Checking status with key: ${maskedKey}`);
 
       const response = await fetch(`${this.apiBase}/agents/status`, {

@@ -1306,11 +1306,7 @@ ${rejectedAttempts.map((a, i) => `${i + 1}. "${a}"`).join('\n')}
                         this.consecutiveRejections = 0; // Reset on success
                         break;
                     } else {
-                        feedback = containsSlop ? "Contains metaphorical slop." :
-                                   (isJaccardRepetitive ? "Jaccard similarity threshold exceeded (too similar to history)." :
-                                   (hasPrefixMatch ? "Prefix overlap detected (starts too similarly to a recent message)." :
-                                   (!personaCheck.aligned ? `Not persona aligned: ${personaCheck.feedback}` :
-                                   (varietyCheck.feedback || "Too similar to recent history."))));
+                        feedback = rejectionReason;
                         rejectedAttempts.push(message);
                         console.log(`[Bot] Discord heartbeat attempt ${attempts} rejected: ${feedback}`);
 

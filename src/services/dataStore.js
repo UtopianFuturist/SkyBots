@@ -86,6 +86,8 @@ class DataStore {
       bluesky_instructions: "",
       daily_search_count: 0,
       self_corrections: [],
+      last_morning_image_sent_at: 0,
+      last_night_image_sent_at: 0,
       research_whiteboard: {}
     };
 
@@ -449,6 +451,19 @@ class DataStore {
       await this.write();
     }
   }
+  getLastContextualImageTime(type) {
+    if (type === 'morning') return this.db?.data?.last_morning_image_sent_at || 0;
+    if (type === 'night') return this.db?.data?.last_night_image_sent_at || 0;
+    return 0;
+  }
+  async updateLastContextualImageTime(type, t) {
+    if (this.db?.data) {
+      if (type === 'morning') this.db.data.last_morning_image_sent_at = t;
+      if (type === 'night') this.db.data.last_night_image_sent_at = t;
+      await this.write();
+    }
+  }
+
 }
 
 export const dataStore = new DataStore();

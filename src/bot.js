@@ -1650,7 +1650,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
                 You are analyzing your emotional shifts over the last 48 hours to identify patterns.
                 Mood History:
-                ${history.slice(-20).map(m => `- ${m.label} (V:${m.valence}, S:${m.stability})`).join('\n')}
+                ${history.slice(-50).map(m => `- ${m.label} (V:${m.valence}, S:${m.stability})`).join('\n')}
 
                 Summarize your "pattern of feeling" and how your emotional landscape has evolved.
                 Respond with a memory entry tagged [MOOD_TREND].
@@ -2384,7 +2384,7 @@ Generation Prompt: ${imagePrompt}`;
         const messageCount = impulse.suggested_message_count || Math.floor(Math.random() * 4) + 1;
 
         let spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-Recent conversation history: ${JSON.stringify(history.slice(-10))}
+Recent conversation history: ${JSON.stringify(history.slice(-50))}
 Internal State: ${JSON.stringify(contextData)}
 Current vibe: ${toneShift}.
 Trigger Reason: ${triggerReason}

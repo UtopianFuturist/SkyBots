@@ -15,11 +15,25 @@ class BlueskyService {
   }
 
   async authenticate() {
-    await this.agent.login({
-      identifier: config.BLUESKY_IDENTIFIER,
-      password: config.BLUESKY_APP_PASSWORD,
-    });
-    console.log('[BlueskyService] Authenticated successfully');
+    let attempts = 0;
+    const maxAttempts = 5;
+    while (attempts < maxAttempts) {
+      attempts++;
+      try {
+        console.log(`[BlueskyService] Attempting authentication (Attempt ${attempts})...`);
+        await this.agent.login({
+          identifier: config.BLUESKY_IDENTIFIER,
+          password: config.BLUESKY_APP_PASSWORD,
+        });
+        console.log('[BlueskyService] Authenticated successfully');
+        return;
+      } catch (e) {
+        console.error(`[BlueskyService] Authentication attempt ${attempts} failed: ${e.message}`);
+        if (attempts >= maxAttempts) throw e;
+        const delay = Math.pow(2, attempts) * 1000 + Math.random() * 1000;
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
+    }
   }
 
   async getNotifications(cursor) {

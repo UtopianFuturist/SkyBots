@@ -95,11 +95,15 @@ export class Bot {
         .catch(err => console.error('[Bot] DiscordService.init() background failure:', err));
 
     console.log('[Bot] Proceeding to Bluesky authentication...');
-    await blueskyService.authenticate();
-    console.log('[Bot] Bluesky authenticated.');
-
-    await blueskyService.submitAutonomyDeclaration();
-    console.log('[Bot] Autonomy declaration submitted.');
+    try {
+        await blueskyService.authenticate();
+        console.log('[Bot] Bluesky authenticated.');
+        await blueskyService.submitAutonomyDeclaration();
+        console.log('[Bot] Autonomy declaration submitted.');
+    } catch (e) {
+        console.error('[Bot] CRITICAL: Bluesky authentication failed after retries. Operating in degraded mode (Discord only).');
+        this.paused = true; // Pause Bluesky tasks
+    }
 
     // Resolve Admin DID
     if (config.ADMIN_BLUESKY_HANDLE) {
@@ -111,10 +115,6 @@ export class Bot {
                 await dataStore.setAdminDid(adminProfile.did);
                 console.log(`[Bot] Admin DID resolved: ${adminProfile.did}`);
                 llmService.setIdentities(this.adminDid, blueskyService.did);
-            } else {
-    await toolService.init();
-    console.log('[Bot] ToolService initialized.');
-                console.warn(`[Bot] Admin profile found but DID is missing for @${config.ADMIN_BLUESKY_HANDLE}.`);
             }
         } catch (e) {
             console.warn(`[Bot] Failed to resolve admin DID for @${config.ADMIN_BLUESKY_HANDLE}: ${e.message}`);
@@ -122,6 +122,9 @@ export class Bot {
     } else {
         console.log('[Bot] ADMIN_BLUESKY_HANDLE not configured. Admin-in-thread detection will be limited.');
     }
+
+    await toolService.init();
+    console.log('[Bot] ToolService initialized.');
 
     // Comind Agent Registration
     const capabilities = [

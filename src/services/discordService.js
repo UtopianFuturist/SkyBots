@@ -377,6 +377,7 @@ Generation Prompt: ${prompt}`;
     async respond(message) {
         const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        this.isResponding = true;
 
         if (isAdmin) {
             if (text.includes('good morning') || text.includes('gm')) {
@@ -551,6 +552,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  } else {
                      console.log('[DiscordService] Agentic plan rejected by evaluation.');
                      this._stopTypingLoop(typingInterval);
+            this.isResponding = false;
                      return;
                  }
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
@@ -1038,8 +1040,10 @@ ${actionResults.join('\n')}` });
                 }
             }
             this._stopTypingLoop(typingInterval);
+            this.isResponding = false;
         } catch (error) {
             this._stopTypingLoop(typingInterval);
+            this.isResponding = false;
             console.error('[DiscordService] Error responding to message:', error);
         }
     }

@@ -110,10 +110,10 @@ Guidelines:
     // Step 3.5 Flash is now the primary model for everything except browser use (coder) tasks
     let models;
     if (options.useCoder) {
-        models = [config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean);
+        models = [...new Set([config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean))];
     } else {
         // Try Flash first, then fall back to others
-        models = [config.STEP_MODEL, config.LLM_MODEL, config.CODER_MODEL].filter(Boolean);
+        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL, config.CODER_MODEL].filter(Boolean))];
     }
 
     let lastError = null;
@@ -124,7 +124,10 @@ Guidelines:
         const isStepModel = model === config.STEP_MODEL;
         const isHighLatencyModel = !isStepModel && (model.includes('qwen') || model.includes('llama') || model.includes('deepseek'));
 
-
+        if (isHighLatencyModel && options.platform === 'discord') {
+            console.log(`[LLMService] Skipping high-latency fallback (${model}) for Discord priority request.`);
+            continue;
+        }
 
         if (isHighLatencyModel && !options.useCoder && this.lastTimeout && (now - this.lastTimeout < 300000)) {
             console.warn(`[LLMService] Circuit breaker active for ${model}. Skipping due to recent timeout.`);
@@ -206,7 +209,6 @@ Guidelines:
     }
     console.error(`[LLMService] All models failed. Final error:`, lastError?.message || 'Undefined');
 
-    // Final Last Resort Fallback: Use Step 3.5 Flash regardless of circuit breaker or request type
     if (config.STEP_MODEL) {
       try {
         console.log(`[LLMService] LAST RESORT: Attempting final fallback with ${config.STEP_MODEL}...`);
@@ -226,6 +228,7 @@ Guidelines:
           agent: persistentAgent,
           timeout: 60000
         });
+
         if (response.ok) {
           const data = await response.json();
           const content = data.choices?.[0]?.message?.content;
@@ -238,14 +241,7 @@ Guidelines:
         console.error(`[LLMService] Final fallback failed:`, e.message);
       }
     }
-
     return null;
-  }
-
-  async checkVariety(newText, history, options = {}) {
-    if (!newText || !history || history.length === 0) return { repetitive: false };
-
-    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
 
     const systemPrompt = `
       You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.

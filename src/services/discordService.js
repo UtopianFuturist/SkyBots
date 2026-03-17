@@ -634,7 +634,14 @@ class DiscordService {
                 if (options.reply && typeof target.reply === 'function') {
                     sentMessage = await target.reply(msgOptions);
                 } else {
-                    sentMessage = await target.send(msgOptions);
+                    // Item 34: Handle cases where target is a Message but needs .channel.send
+                    const sendTarget = (typeof target.send === 'function') ? target : (target.channel && typeof target.channel.send === 'function' ? target.channel : null);
+                    if (sendTarget) {
+                        sentMessage = await sendTarget.send(msgOptions);
+                    } else {
+                        console.error('[DiscordService] No valid send method found on target:', target.constructor.name);
+                        break;
+                    }
                 }
 
                 if (!firstSentMessage) firstSentMessage = sentMessage;

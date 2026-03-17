@@ -73,7 +73,7 @@ class LLMService {
 
     const hasUser = prepared.some(m => m.role === 'user');
     if (!hasUser) {
-      prepared.push({ role: 'user', content: 'Proceed.' });
+      prepared.push({ role: 'user', content: '[INTERNAL_PULSE_RESUME]' });
     }
 
     return prepared;

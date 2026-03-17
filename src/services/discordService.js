@@ -347,6 +347,12 @@ class DiscordService {
     }
 
     async sendContextualImage(target, type) {
+        const lastSent = dataStore.getLastContextualImageTime(type);
+        const twelveHours = 12 * 60 * 60 * 1000;
+        if (Date.now() - lastSent < twelveHours) {
+            console.log(`[DiscordService] Skipping contextual ${type} image (cooldown active).`);
+            return;
+        }
         console.log(`[DiscordService] Sending contextual ${type} image...`);
         try {
             const prompt = type === 'morning' ?
@@ -367,6 +373,7 @@ You are saying ${type === 'morning' ? 'good morning' : 'goodnight'} to your Admi
                 const finalMessage = `${caption || (type === 'morning' ? 'Good morning.' : 'Goodnight.')}
 
 Generation Prompt: ${prompt}`;
+                await dataStore.updateLastContextualImageTime(type, Date.now());
                 await this._send(target, finalMessage, { files: [attachment] });
             }
         } catch (e) {
@@ -424,7 +431,7 @@ Generation Prompt: ${prompt}`;
                 this._lastMessageFetch[normChannelId] = now;
                 try {
                     console.log(`[DiscordService] Local history empty, fetching from Discord...`);
-                    const fetchedMessages = await message.channel.messages.fetch({ limit: 20 });
+                    const fetchedMessages = await message.channel.messages.fetch({ limit: 50 });
                 history = fetchedMessages
                     .reverse()
                     .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
@@ -526,7 +533,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
 
         const messages = [
             { role: 'system', content: systemPrompt },
-            ...history.slice(-20).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
+            ...history.slice(-50).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
             { role: 'user', content: message.content }
         ];
         let typingInterval;
@@ -906,11 +913,12 @@ ${history}
                              } else {
                                  actionResults.push(`[Failed to generate image]`);
                              }
+                         }
                      }
                      if (action.tool === 'moltbook_action') {
                          const { action: mbAction, topic, submolt, display_name, description } = action.parameters || {};
                          if (mbAction === 'create_submolt') {
-                             const submoltName = submolt || (topic || 'new-community').toLowerCase().replace(/\s+/g, '-' ).replace(/[^a-z0-9-]/g, ');
+                             const submoltName = submolt || (topic || 'new-community').toLowerCase().replace(/\s+/g, '-' ).replace(/[^a-z0-9-]/g, '');
                              const result = await moltbookService.createSubmolt(submoltName, display_name || topic || submoltName, description || `Community for ${topic}`);
                              actionResults.push(`[Moltbook create_submolt ${submoltName}: ${result ? 'SUCCESS' : 'FAILED'}]`);
                          }
@@ -1162,7 +1170,7 @@ INSTRUCTIONS:
         console.log(`[DiscordService] Admin NOT found in any shared guild.`);
         return null;
     }
-    async fetchAdminHistory(limit = 20) {
+    async fetchAdminHistory(limit = 50) {
         if (!this.isEnabled || !this.client?.isReady()) return [];
         try {
             const admin = await this.getAdminUser();

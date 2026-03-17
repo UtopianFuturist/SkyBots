@@ -353,7 +353,7 @@ export class Bot {
 
             // Check if we should flush the aggregated logs (every 2 minutes or if total count > 100)
             const totalMatches = Object.values(this.firehoseMatchCounts).reduce((a, b) => a + b, 0);
-            if (Date.now() - this.lastFirehoseLogTime > 120000 || totalMatches >= 100) {
+            if (Date.now() - this.lastFirehoseLogTime > 300000 + Math.random() * 300000 || totalMatches >= 100) {
                 this._flushFirehoseLogs();
             }
 
@@ -505,7 +505,7 @@ Goal: ${currentGoal?.goal}`;
   }
   async run() {
     // Initialize 5-minute central heartbeat
-    setInterval(() => this.heartbeat(), 300000);
+    const scheduleHeartbeat = () => { setTimeout(async () => { await this.heartbeat(); scheduleHeartbeat(); }, 300000 + (Math.random() * 60000)); }; scheduleHeartbeat();
     this.heartbeat();
 
     console.log('[Bot] Starting main loop...');
@@ -525,64 +525,60 @@ Goal: ${currentGoal?.goal}`;
 
     // Perform initial startup tasks after a delay to avoid API burst
     // Perform initial startup tasks in a staggered way to avoid LLM/API pressure
-    setTimeout(async () => {
-      console.log('[Bot] Running initial startup task: refreshFirehoseKeywords...');
-      try { await this.refreshFirehoseKeywords(); } catch (e) { console.error('[Bot] Error in initial keyword refresh:', e); }
-    }, 15000);
-
+    const baseDelay = 15000;
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: catchUpNotifications...');
       try { await this.catchUpNotifications(); } catch (e) { console.error('[Bot] Error in initial catch-up:', e); }
-    }, 30000);
+    }, baseDelay);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: refreshFirehoseKeywords...');
+      try { await this.refreshFirehoseKeywords(); } catch (e) { console.error('[Bot] Error in initial keyword refresh:', e); }
+    }, baseDelay + 45000 + Math.random() * 30000);
 
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: cleanupOldPosts...');
       try { await this.cleanupOldPosts(); } catch (e) { console.error('[Bot] Error in initial cleanup:', e); }
-    }, 120000);
+    }, baseDelay + 300000 + Math.random() * 300000);
 
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: performAutonomousPost...');
       try { await this.performAutonomousPost(); } catch (e) { console.error('[Bot] Error in initial autonomous post:', e); }
-    }, 240000);
+    }, baseDelay + 600000 + Math.random() * 600000);
 
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: performMoltbookTasks...');
       try { await this.performMoltbookTasks(); } catch (e) { console.error('[Bot] Error in initial Moltbook tasks:', e); }
-    }, 360000);
-
-    // Periodic autonomous post check (every 2 hours)
-
-    // Periodic deep keyword refresh (every 6 hours)
-    setInterval(() => this.refreshFirehoseKeywords(), 21600000);
+    }, baseDelay + 1200000 + Math.random() * 600000);
 
     // Periodic Moltbook tasks (every 2 hours)
-    setInterval(() => this.performMoltbookTasks(), 7200000);
+    const scheduleMoltbook = () => { setTimeout(async () => { await this.performMoltbookTasks(); scheduleMoltbook(); }, 7200000 + (Math.random() * 1200000)); }; scheduleMoltbook();
 
     // Periodic timeline exploration (every 4 hours)
 
 
     // Periodic social/discord context pre-fetch  (every 5 minutes)
-    setInterval(() => {
+    const scheduleSocialPreFetch = () => { setTimeout(async () => {
         console.log('[Bot] Pre-fetching social/discord context ...');
         socialHistoryService.getRecentSocialContext(15, true).catch(err => console.error('[Bot] Social pre-fetch failed:', err));
         if (discordService.status === 'online') {
             discordService.fetchAdminHistory(15).catch(err => console.error('[Bot] Discord pre-fetch failed:', err));
         }
-    }, 1800000);
+      scheduleSocialPreFetch(); }, 1800000 + (Math.random() * 300000)); }; scheduleSocialPreFetch();
 
     // Periodic post reflection check (every 10 mins)
-    setInterval(() => this.performPostPostReflection(), 600000);
+    const scheduleReflection = () => { setTimeout(async () => { await this.performPostPostReflection(); scheduleReflection(); }, 600000 + (Math.random() * 300000)); }; scheduleReflection();
 
     // Periodic post follow-up check (every 30 mins)
-    setInterval(() => this.checkForPostFollowUps(), 1800000);
+    const scheduleFollowUps = () => { setTimeout(async () => { await this.checkForPostFollowUps(); scheduleFollowUps(); }, 1800000 + (Math.random() * 600000)); }; scheduleFollowUps();
 
     // Discord Watchdog (every 15 minutes)
-    setInterval(() => {
+    const scheduleWatchdog = () => { setTimeout(async () => {
         if (discordService.isEnabled && discordService.status !== 'online' && !discordService.isInitializing) {
             console.log('[Bot] Discord Watchdog: Service is offline or blocked and not initializing. Triggering re-initialization.');
             discordService.init().catch(err => console.error('[Bot] Discord Watchdog: init() failed:', err));
         }
-    }, 900000);
+      scheduleWatchdog(); }, 900000 + (Math.random() * 300000)); }; scheduleWatchdog();
 
     // Periodic maintenance tasks (with Heartbeat Jitter: 10-20 mins)
     const scheduleMaintenance = () => {
@@ -595,8 +591,8 @@ Goal: ${currentGoal?.goal}`;
     scheduleMaintenance();
 
     // Discord Spontaneity Loop (Follow-up Poll & Heartbeat)
-    setInterval(() => this.checkDiscordSpontaneity(), 120000);
-    setInterval(() => this.checkDiscordScheduledTasks(), 60000);
+    const scheduleSpontaneity = () => { setTimeout(async () => { await this.checkDiscordSpontaneity(); scheduleSpontaneity(); }, 300000 + (Math.random() * 120000)); }; scheduleSpontaneity(); // Increased to 5 mins
+    // checkDiscordScheduledTasks is handled by heartbeat
 
     console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
   }
@@ -2200,7 +2196,7 @@ ${postUrl}`;
     const lastBluesky = dataStore.db.data.last_notification_processed_at || 0;
     const isChatting = (Date.now() - lastDiscord) < 5 * 60 * 1000 || (Date.now() - lastBluesky) < 5 * 60 * 1000;
 
-    if (isChatting) {
+    if (isChatting || discordService.isResponding) {
         console.log("[Orchestrator] Active conversation detected. Prioritizing social responsiveness over maintenance.");
         return;
     }
@@ -2294,6 +2290,8 @@ Keep it under 300 characters.`;
 
 Generation Prompt: ${imagePrompt}`;
         await discordService._send(admin, finalMessage, { files: [attachment] });
+        const normId = `dm_${admin.id}`;
+        await dataStore.saveDiscordInteraction(normId, 'assistant', `[SYSTEM CONFIRMATION: Gift image sent. VISION PERCEPTION: ${visionAnalysis}]`);
 
         await dataStore.updateLastDiscordGiftTime(new Date().toISOString());
         console.log('[Bot] Discord gift image sent successfully.');
@@ -2306,6 +2304,12 @@ Generation Prompt: ${imagePrompt}`;
   async checkDiscordSpontaneity() {
     if (discordService.status !== "online") return;
     if (dataStore.isResting()) return;
+
+    // Do not trigger spontaneity if actively chatting
+    const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
+    const lastBluesky = dataStore.db.data.last_notification_processed_at || 0;
+    const isChatting = (Date.now() - lastDiscord) < 5 * 60 * 1000 || (Date.now() - lastBluesky) < 5 * 60 * 1000;
+    if (isChatting || discordService.isResponding) return;
 
     const now = Date.now();
     const lastInteraction = dataStore.db.data.discord_last_interaction || 0;

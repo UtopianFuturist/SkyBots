@@ -332,7 +332,7 @@ class DiscordService {
             try {
                 const result = await imageService.generateImage(prompt, { allowPortraits: true });
                 if (result && result.buffer) {
-                    await this._send(message.channel, `Here is the art for: "${result.finalPrompt}"`, {
+                    await this._send(message.channel, `Here is the art for: "${result.prompt}"`, {
                         files: [{ attachment: result.buffer, name: 'art.jpg' }]
                     });
                 } else {
@@ -377,6 +377,7 @@ Generation Prompt: ${prompt}`;
     async respond(message) {
         const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        this.isResponding = true;
 
         if (isAdmin) {
             if (text.includes('good morning') || text.includes('gm')) {
@@ -551,6 +552,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                  } else {
                      console.log('[DiscordService] Agentic plan rejected by evaluation.');
                      this._stopTypingLoop(typingInterval);
+            this.isResponding = false;
                      return;
                  }
                  console.log(`[DiscordService] Agentic plan: ${JSON.stringify(plan)}`);
@@ -615,7 +617,7 @@ Original text: "${postText}"
 Generate a short, persona-aligned caption for this image.`;
                                  const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
                                  if (caption) finalContent = caption;
-                                 embed = { imageBuffer: imgResult.buffer, imageAltText: imgResult.finalPrompt };
+                                 embed = { imageBuffer: imgResult.buffer, imageAltText: imgResult.prompt };
                              }
                          } else if (include_image && message.attachments.size > 0) {
                              const img = Array.from(message.attachments.values()).find(a => a.contentType?.startsWith('image/'));
@@ -896,19 +898,19 @@ ${history}
                          if (prompt) {
                              const imgResult = await imageService.generateImage(prompt, { allowPortraits: true });
                              if (imgResult && imgResult.buffer) {
-                                 await this._send(message.channel, `Generated image: "${imgResult.finalPrompt}"`, {
+                                 await this._send(message.channel, `Generated image: "${imgResult.prompt}"`, {
                                      files: [{ attachment: imgResult.buffer, name: 'art.jpg' }]
                                  });
-                                 actionResults.push(`[SYSTEM CONFIRMATION: The image for prompt "${prompt}" was SUCCESSFULLY generated and sent to the Discord channel as an attachment. You can now tell the user about it.]`);
+                                 const visionAnalysis = await llmService.analyzeImage(imgResult.buffer, prompt);
+                                 actionResults.push(`[SYSTEM CONFIRMATION: The image for prompt "${prompt}" was SUCCESSFULLY generated and sent to the Discord channel as an attachment. VISION PERCEPTION: ${visionAnalysis}. You can now tell the user about it.]`);
                              } else {
                                  actionResults.push(`[Failed to generate image]`);
                              }
-                         }
                      }
                      if (action.tool === 'moltbook_action') {
                          const { action: mbAction, topic, submolt, display_name, description } = action.parameters || {};
                          if (mbAction === 'create_submolt') {
-                             const submoltName = submolt || (topic || 'new-community').toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+                             const submoltName = submolt || (topic || 'new-community').toLowerCase().replace(/\s+/g, '-' ).replace(/[^a-z0-9-]/g, ');
                              const result = await moltbookService.createSubmolt(submoltName, display_name || topic || submoltName, description || `Community for ${topic}`);
                              actionResults.push(`[Moltbook create_submolt ${submoltName}: ${result ? 'SUCCESS' : 'FAILED'}]`);
                          }
@@ -1038,8 +1040,10 @@ ${actionResults.join('\n')}` });
                 }
             }
             this._stopTypingLoop(typingInterval);
+            this.isResponding = false;
         } catch (error) {
             this._stopTypingLoop(typingInterval);
+            this.isResponding = false;
             console.error('[DiscordService] Error responding to message:', error);
         }
     }

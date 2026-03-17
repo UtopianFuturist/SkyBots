@@ -2290,6 +2290,8 @@ Keep it under 300 characters.`;
 
 Generation Prompt: ${imagePrompt}`;
         await discordService._send(admin, finalMessage, { files: [attachment] });
+        const normId = `dm_${admin.id}`;
+        await dataStore.saveDiscordInteraction(normId, 'assistant', `[SYSTEM CONFIRMATION: Gift image sent. VISION PERCEPTION: ${visionAnalysis}]`);
 
         await dataStore.updateLastDiscordGiftTime(new Date().toISOString());
         console.log('[Bot] Discord gift image sent successfully.');

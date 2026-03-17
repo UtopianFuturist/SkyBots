@@ -325,7 +325,7 @@ Plan your next actions in response to: "${text}".
 
 **AVAILABLE TOOLS:**
 - **bsky_post**: Create a post or threaded reply. (Required to respond to users). Parameters: { "text": "string", "prompt_for_image": "optional prompt" }
-- **image_gen**: Generate and post an artistic image. Parameters: { "prompt": "string" }
+- **image_gen**: Generate and post an artistic image. Use this for requests like "Show me an image of", "Paint", "Draw", or "Send a random picture". Parameters: { "prompt": "string" }
 - **search**: Find facts or news.
 - **wikipedia**: Get detailed background info.
 - **youtube**: Find videos.

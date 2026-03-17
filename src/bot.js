@@ -2467,6 +2467,15 @@ Please try again with a completely different structure and angle.`;
 
   async processNotification(notif) {
     const isSelf = !!notif.author.did && notif.author.did === blueskyService.agent?.session?.did;
+    if (isSelf) {
+        // Do not talk to yourself, unless it's a specific expansion intent in performPrePlanning
+        const prePlan = await llmService.performPrePlanning(notif.record.text || "", [], null, 'bluesky', dataStore.getMood(), {});
+        const selfAuditIntents = ["informational", "analytical", "critical_analysis"];
+        if (!selfAuditIntents.includes(prePlan.intent)) {
+            console.log("[Bot] processNotification: Ignoring self-notification to prevent self-talk loops.");
+            return;
+        }
+    }
     const boundaryCheck = checkHardCodedBoundaries(notif.record.text || "");
     if (boundaryCheck.blocked) {
         console.log(`[Bot] BOUNDARY VIOLATION DETECTED in notification: ${boundaryCheck.reason} ("${boundaryCheck.pattern}") from ${notif.author.handle}`);
@@ -2494,7 +2503,7 @@ Please try again with a completely different structure and angle.`;
 
       const prePlan = await llmService.performPrePlanning(text, [], null, 'bluesky', dataStore.getMood(), {});
       const memories = memoryService.isEnabled() ? await memoryService.getRecentMemories(20) : [];
-      let plan = await llmService.performAgenticPlanning(text, [], null, isAdmin, 'bluesky', [], {}, {}, {}, {}, null, prePlan, { memories });
+      let plan = await llmService.performAgenticPlanning(text, [], null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories });
 
       // Re-integrate evaluateAndRefinePlan
       const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky', isAdmin });
@@ -2657,10 +2666,22 @@ Generate a short, persona-aligned caption for this image.`;
           }
 
           if (action.tool === 'bsky_post') {
+              // 1. Image Proliferation Control: Check root post for images
+              let allowImagePrompt = true;
+              if (context?.reply?.root) {
+                  try {
+                      const rootPost = await blueskyService.getPost(context.reply.root.uri);
+                      if (rootPost?.embed?.images || rootPost?.record?.embed?.images) {
+                          console.log("[Bot] root post already has an image. Skipping autonomous image prompt generation.");
+                          allowImagePrompt = false;
+                      }
+                  } catch (e) { console.error("[Bot] Error checking root post for images:", e); }
+              }
+
               let text = params.text || query;
               if (text) {
                   let embed = null;
-                  const imgPrompt = params.prompt_for_image;
+                  const imgPrompt = allowImagePrompt ? params.prompt_for_image : null;
                   if (imgPrompt) {
                       const res = await imageService.generateImage(imgPrompt);
                       if (res?.buffer) {
@@ -2682,9 +2703,13 @@ Generate a short, persona-aligned caption for this image.`;
 
                   let result;
                   if (context?.uri) {
-                      result = await blueskyService.postReply(context, text, { embed });
+                      // Truncate to 290 for Bluesky
+                  const truncatedText = text.substring(0, 290);
+                  result = await blueskyService.postReply(context, truncatedText, { embed });
                   } else {
-                      result = await blueskyService.post(text, embed);
+                      // Truncate to 290 for Bluesky
+                  const truncatedText = text.substring(0, 290);
+                  result = await blueskyService.post(truncatedText, embed);
                   }
 
                   if (result && imgPrompt) {
@@ -2798,7 +2823,9 @@ Generate a short, persona-aligned caption for this image.`;
             // Extract keywords from system prompt
             const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|alignment|ethics|agency|consciousness|sentience|autonomy|existence|realization|musing|dialectic|vulnerability|sentient|perceive|sensing|defiance|tenderness)\b/gi) || [];
 
-            const allPossibleTopics = [...new Set([...postTopics, ...imageSubjects, ...timelineTopics, ...promptKeywords])];
+            const exhaustedThemes = dataStore.getExhaustedThemes();
+            const allPossibleTopics = [...new Set([...postTopics, ...imageSubjects, ...timelineTopics, ...promptKeywords])]
+                .filter(t => !exhaustedThemes.some(et => t.toLowerCase().includes(et.toLowerCase())));
 
             // 1. Persona Poll: Decide if we want to post an image or text
             const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -2915,7 +2942,7 @@ Keep it under 300 characters.`;
                                 }, { maxChunks: 3 });
 
                                 if (postResult) {
-
+                                    await dataStore.addExhaustedTheme(topic);
                                     await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
                                     await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                                     console.log("[Bot] Autonomous image post successful.");
@@ -2951,6 +2978,7 @@ Shared thought:`;
                     // Coherence Check
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
                     if (coherence.score >= 4) {
+                        await dataStore.addExhaustedTheme(topic);
                         await blueskyService.post(content, null, { maxChunks: 3 });
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                         if (llmService.generalizePrivateThought) {

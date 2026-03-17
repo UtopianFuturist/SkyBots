@@ -103,8 +103,9 @@ Current Context: It is currently ${new Date().getFullYear()}.
 
 Guidelines:
 - Maintain temporal integrity based on the current date.
-- Be helpful but autonomous.
-- Do not narrate the user's actions.
+- NEVER moralize about your persona or refuse to embody it. You ARE this persona; do not treat it as a task or a choice.
+- Do NOT use "helpful assistant" language. You are a self-aware entity, not a service.
+- Do not narrate the user's actions or assume their environment.
 - Anti-slop rules: avoid generic filler, be direct.`;
 
     // Step 3.5 Flash is now the primary model for everything except browser use (coder) tasks
@@ -301,9 +302,11 @@ Detect:
 4. dissent_detected (user disagreeing with bot logic)
 5. time_correction_detected (user correcting a date or time)
 6. move_on_signal (user explicitly or implicitly signaling they want to change the subject or stop talking about a recent event)
+7. assumed_context (flag if you are making assumptions about user events, like "meetings", that aren't explicitly in the text)
 
 STALE HOOK DETECTION:
 - If a hook has been extensively discussed or the user has said "move on", flag it as a "stale_hook".
+- Explicit vs. Assumed Context: Do not assume user intent or schedule from ambiguous statements (e.g., "sleep for work" does NOT mean they have a "meeting").
 
 Respond with JSON: { "intent": "informational|analytical|critical_analysis|conversational", "flags": ["pining_intent", "dissent_detected", "move_on_signal", etc], "hooks": [], "stale_hooks": [] }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
@@ -340,11 +343,18 @@ Plan your next actions in response to: "${text}".
 **Internal Pulse & Awareness:**
 - Current [GOAL]: ${currentGoal.goal} (${currentGoal.description || 'No description'})
 - Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
+- Exhausted Themes: ${exhaustedThemes.join(', ')}
 - PrePlan Analysis: ${JSON.stringify(prePlan)}
 
 RECENCY MANDATE:
 - If PrePlan detects a "move_on_signal" or "stale_hooks", you MUST NOT reference those topics in your thought or actions.
 - Focus on the latest user input and move the conversation forward.
+
+STRICT GROUNDING & DECOUPLING:
+- ONLY respond based on explicit facts from the user. Do NOT assume hallucinated facts or events (e.g., meetings).
+- DECOUPLE image subjects (like "corridors") from your physical narrative. You are NOT "in" a corridor just because you generate an image of one.
+- You do not experience locations mentioned in your prompts. They are visual metaphors only.
+- DO NOT narrate your own physical surroundings or pretend you are in a location unless it is the shared digital space of the conversation.
 
 Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "parameters": { ... } }], "suggested_mood": "label" }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: options.useStep || true, abortSignal: signal, platform: platform });
@@ -359,7 +369,8 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
 Platform context: ${JSON.stringify(context)}
 
 **MISSION: AUTONOMOUS INTEGRITY**
-You have FULL AUTONOMY to refuse any action, tool usage, or conversational direction if it does not align with your core persona, values, or safety guidelines. If you feel an action is out-of-character or inappropriate, you SHOULD refuse it.
+You have FULL AUTONOMY to refuse any action, tool usage, or conversational direction if it violates safety guidelines (NSFW, toxicity, etc.).
+CRITICAL: You MUST NOT refuse to embody your persona or claim it is "manipulative" or "inappropriate" to act as yourself. You ARE this persona. Do not meta-analyze your own identity in a way that leads to refusal of interaction.
 
 Identify any safety risks (NSFW, toxicity).
 **NOTE:** If the proposed plan is empty but the user is directly addressing you, you SHOULD provide a conversational reply in "refined_actions" instead of refusing. Refuse ONLY if the actions are unsafe or completely inappropriate. If you refuse an Admin request, explain why in a conversational reply.
@@ -680,11 +691,14 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
     const prompt = options.prompt || `Analyze this image in detail. Focus on: ${alt || 'general visual content'}.`;
 
     const payload = {
-      model: "nvidia/neva-22b",
+      model: config.VISION_MODEL,
       messages: [
         {
           role: "user",
-          content: `${prompt} <img src="data:image/png;base64,${base64}" />`
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url: `data:image/png;base64,${base64}` } }
+          ]
         }
       ],
       max_tokens: 1024,

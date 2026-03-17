@@ -242,10 +242,13 @@ Guidelines:
       }
     }
     return null;
+  }
+  async checkVariety(newText, history, options = {}) {
+    if (!newText || !history || history.length === 0) return { repetitive: false };
 
+    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
     const systemPrompt = `
       You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.
-
       RECENT HISTORY:
       ${historyText}
 

@@ -385,9 +385,6 @@ Generation Prompt: ${prompt}`;
         const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
-        if (isAdmin) {
-            // Background temporal awareness check
-        }
         this.isResponding = true;
 
         if (isAdmin) {

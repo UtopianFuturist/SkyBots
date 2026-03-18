@@ -223,6 +223,10 @@ class DiscordService {
 
         const isDM = message.channel.type === ChannelType.DM;
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        if (isAdmin) {
+            // Background temporal awareness check
+            llmService.performTemporalAwarenessUpdate(message.content, history, 'discord').catch(err => console.error('[DiscordService] Error in temporal awareness update:', err));
+        }
         const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
 
         console.log(`[DiscordService] Evaluating message from ${message.author.username}. isDM: ${isDM}, isAdmin: ${isAdmin}, isMentioned: ${isMentioned}`);
@@ -304,6 +308,10 @@ class DiscordService {
 
     async handleCommand(message) {
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        if (isAdmin) {
+            // Background temporal awareness check
+            llmService.performTemporalAwarenessUpdate(message.content, history, 'discord').catch(err => console.error('[DiscordService] Error in temporal awareness update:', err));
+        }
         const content = message.content.toLowerCase();
 
         if (content.startsWith('/on') && isAdmin) {
@@ -384,6 +392,10 @@ Generation Prompt: ${prompt}`;
     async respond(message) {
         const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        if (isAdmin) {
+            // Background temporal awareness check
+            llmService.performTemporalAwarenessUpdate(message.content, history, 'discord').catch(err => console.error('[DiscordService] Error in temporal awareness update:', err));
+        }
         this.isResponding = true;
 
         if (isAdmin) {

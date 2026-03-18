@@ -2388,6 +2388,7 @@ Recent conversation history: ${JSON.stringify(history.slice(-50))}
 Internal State: ${JSON.stringify(contextData)}
 Current vibe: ${toneShift}.
 Trigger Reason: ${triggerReason}
+TEMPORAL CONTEXT: The last conversation interaction was ${Math.floor(idleTime)} minutes ago. Use this 'gap' to inform your tone (e.g. checking in after a long silence vs a short pause).
 
 ${isWaitingMode ? 'You are currently in "Waiting Mode" (Admin is away/busy). Even though you felt an impulse to message, remember they might not see it immediately. Share a "pining" message—a small thought or expression of presence.' : 'Choose what to share spontaneously based on your persona\'s autonomy.'}
 ${isRomantic ? "Since your relationship is romantic/intimate, your tone should reflect that deep affection and longing." : ""}

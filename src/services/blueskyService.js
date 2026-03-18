@@ -7,6 +7,7 @@ class BlueskyService {
   constructor() {
     this.agent = new AtpAgent({
       service: 'https://bsky.social',
+      headers: { 'User-Agent': 'SydneyBot/1.0 (Render; +https://dearest-llama.onrender.com)' }
     });
   }
 
@@ -15,6 +16,7 @@ class BlueskyService {
   }
 
   async authenticate() {
+    console.log(`[BlueskyService] Authenticating as ${config.BLUESKY_IDENTIFIER}...`);
     await this.agent.login({
       identifier: config.BLUESKY_IDENTIFIER,
       password: config.BLUESKY_APP_PASSWORD,

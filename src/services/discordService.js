@@ -223,12 +223,7 @@ class DiscordService {
 
         const isDM = message.channel.type === ChannelType.DM;
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
-        if (isAdmin) {
-            // Background temporal awareness check
-            llmService.performTemporalAwarenessUpdate(message.content, history, 'discord').catch(err => console.error('[DiscordService] Error in temporal awareness update:', err));
-        }
         const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
-
         console.log(`[DiscordService] Evaluating message from ${message.author.username}. isDM: ${isDM}, isAdmin: ${isAdmin}, isMentioned: ${isMentioned}`);
 
         if (!isDM && !isMentioned) {
@@ -308,10 +303,7 @@ class DiscordService {
 
     async handleCommand(message) {
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
-        if (isAdmin) {
-            // Background temporal awareness check
-            llmService.performTemporalAwarenessUpdate(message.content, history, 'discord').catch(err => console.error('[DiscordService] Error in temporal awareness update:', err));
-        }
+        const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
         const content = message.content.toLowerCase();
 
         if (content.startsWith('/on') && isAdmin) {
@@ -392,9 +384,9 @@ Generation Prompt: ${prompt}`;
     async respond(message) {
         const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        const isMentioned = message.mentions.has(this.client.user) || message.content.includes(this.nickname);
         if (isAdmin) {
             // Background temporal awareness check
-            llmService.performTemporalAwarenessUpdate(message.content, history, 'discord').catch(err => console.error('[DiscordService] Error in temporal awareness update:', err));
         }
         this.isResponding = true;
 
@@ -431,6 +423,10 @@ Generation Prompt: ${prompt}`;
         }
 
         let history = dataStore.getDiscordConversation(normChannelId);
+        if (isAdmin) {
+            // Background temporal awareness check
+            llmService.performTemporalAwarenessUpdate(message.content, history, "discord").catch(err => console.error("[DiscordService] Error in temporal awareness update:", err));
+        }
 
         // If local history is empty, try to fetch from Discord channel
         if (history.length === 0) {

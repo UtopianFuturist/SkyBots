@@ -7,7 +7,7 @@ class BlueskyService {
   constructor() {
     this.agent = new AtpAgent({
       service: 'https://bsky.social',
-      headers: { 'User-Agent': 'SydneyBot/1.0 (Render; +https://dearest-llama.onrender.com)' }
+      headers: [['User-Agent', 'SydneyBot/1.0 (Render; +https://dearest-llama.onrender.com)']]
     });
   }
 

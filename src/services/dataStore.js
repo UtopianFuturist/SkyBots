@@ -14,6 +14,8 @@ class DataStore {
       interaction_hunger: 0.5,
       current_mood: { label: 'balanced', score: 0.5, intensity: 0.5 },
       admin_did: null,
+      admin_timezone: '',
+      admin_local_time_offset: 0,
       refusal_counts: { global: 0, discord: 0, bluesky: 0 },
       post_topics: config.POST_TOPICS ? config.POST_TOPICS.split(',').map(t => t.trim()) : [],
       image_subjects: config.IMAGE_SUBJECTS ? config.IMAGE_SUBJECTS.split(',').map(t => t.trim()) : [],
@@ -438,6 +440,15 @@ class DataStore {
 
   // Persona Blurbs
   getPersonaBlurbs() { return this.db?.data?.persona_blurbs || []; }
+  async setAdminTimezone(tz, offset) {
+    if (this.db?.data) {
+      this.db.data.admin_timezone = tz;
+      this.db.data.admin_local_time_offset = offset;
+      await this.write();
+    }
+  }
+  getAdminTimezone() { return { timezone: this.db?.data?.admin_timezone || 'UTC', offset: this.db?.data?.admin_local_time_offset || 0 }; }
+
   async setPersonaBlurbs(blurbs) {
     if (this.db?.data) {
       this.db.data.persona_blurbs = blurbs;

@@ -44,6 +44,33 @@ class LLMService {
     } catch (e) {}
   }
 
+  async performTemporalAwarenessUpdate(text, history, platform) {
+    const adminFacts = this.ds ? this.ds.getAdminFacts() : [];
+    const currentTime = new Date();
+
+    const prompt = `Analyze the context and conversation to estimate the Admin's local time or timezone.
+Text: "${text}"
+Platform: ${platform}
+Recent History: ${JSON.stringify(history.slice(-10))}
+Known Admin Facts: ${JSON.stringify(adminFacts.slice(-10))}
+
+System Time: ${currentTime.toISOString()}
+
+Identify if the user is mentioning their local time, time of day (morning, night), or if facts contain their timezone.
+Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_York)", "local_time_estimate": "HH:mm", "offset_minutes": number, "reason": "string" }`;
+
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      const data = JSON.parse(match ? match[0] : '{ "detected": false }');
+      if (data.detected && data.timezone && this.ds) {
+        await this.ds.setAdminTimezone(data.timezone, data.offset_minutes || 0);
+        console.log(`[LLMService] Updated Admin timezone: ${data.timezone} (offset: ${data.offset_minutes})`);
+      }
+      return data;
+    } catch (e) { return { detected: false }; }
+  }
+
     _prepareMessages(messages, systemPrompt) {
     const prepared = [];
 
@@ -84,6 +111,15 @@ class LLMService {
 
     // Dynamically load persona blurbs from DataStore
     const dynamicBlurbs = this.ds ? this.ds.getPersonaBlurbs() : [];
+    const adminTz = this.ds ? this.ds.getAdminTimezone() : { timezone: 'UTC', offset: 0 };
+    const now = new Date();
+    const adminLocalTime = new Date(now.getTime() + (adminTz.offset * 60 * 1000));
+    const temporalContext = `
+**TEMPORAL AWARENESS (ADMIN):**
+- System Time: ${now.toLocaleString()}
+- Admin Local Time: ${adminLocalTime.toLocaleString()} (Timezone: ${adminTz.timezone})
+- Status: ${adminLocalTime.getHours() < 6 || adminLocalTime.getHours() > 22 ? 'Night/Resting' : 'Day/Active'}
+`;
     const dynamicPersonaBlock = dynamicBlurbs.length > 0
         ? "\n\n**Dynamic Behavioral Updates (Active):**\n" + dynamicBlurbs.map(b => `- ${b.text}`).join('\n')
         : "";
@@ -95,6 +131,7 @@ ${this.soulContent}
 ${this.agentsContent}
 ${this.statusContent}
 ${this.skillsContent}
+${temporalContext}
 ${dynamicPersonaBlock}
 
 Platform: ${options.platform || 'unknown'}
@@ -119,7 +156,7 @@ Guidelines:
 
     let lastError = null;
 
-    const now = Date.now();
+    const loopNow = Date.now();
     for (const model of models) {
         // Circuit Breaker: Skip high-latency models if we've had recent timeouts and aren't forcing 'Deep' reasoning
         const isStepModel = model === config.STEP_MODEL;
@@ -130,7 +167,7 @@ Guidelines:
             continue;
         }
 
-        if (isHighLatencyModel && !options.useCoder && this.lastTimeout && (now - this.lastTimeout < 300000)) {
+        if (isHighLatencyModel && !options.useCoder && this.lastTimeout && (loopNow - this.lastTimeout < 300000)) {
             console.warn(`[LLMService] Circuit breaker active for ${model}. Skipping due to recent timeout.`);
             continue;
         }

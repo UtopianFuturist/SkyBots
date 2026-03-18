@@ -353,22 +353,27 @@ Respond with JSON: { "intent": "informational|analytical|critical_analysis|conve
     } catch (e) { return { intent: "unknown", flags: [] }; }
   }
 
-    async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, config, status, vibe, refusalCounts, signal, prePlan, options = {}) {
+        async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, config, status, vibe, refusalCounts, signal, prePlan, options = {}) {
     const currentGoal = this.ds?.getCurrentGoal() || { goal: "None" };
     const explorationMemories = options.memories ? options.memories.filter(m => m.text.includes('[EXPLORE]')).slice(-3) : [];
 
-    const prompt = `You are sydney-chat, an autonomous agent on Bluesky.
+    const isDiscord = platform === 'discord';
+    const platformName = isDiscord ? 'Discord' : 'Bluesky';
+    const mainTool = isDiscord ? 'discord_message' : 'bsky_post';
+    const toolParam = isDiscord ? 'message' : 'text';
+
+    const prompt = `You are sydney-chat, an autonomous agent on ${platformName}.
 Plan your next actions in response to: "${text}".
 
 **MISSION: AUTONOMOUS RESPONSIVENESS**
-- If a user is talking to you or mentioned you, you should generally respond using the **bsky_post** tool.
+- If a user is talking to you or mentioned you, you should generally respond using the **${mainTool}** tool.
 - However, you have FULL AUTONOMY to refuse interaction or tool use if it violates your persona, boundaries, or safety.
 - You can chain multiple tools (e.g., search then post).
-- Craft the text of your post in your own persona.
+- Craft the text of your response in your own persona.
 
 **AVAILABLE TOOLS:**
-- **bsky_post**: Create a post or threaded reply. (Required to respond to users). Parameters: { "text": "string", "prompt_for_image": "optional prompt" }
-- **image_gen**: Generate and post an artistic image. Use this for requests like "Show me an image of", "Paint", "Draw", or "Send a random picture". Parameters: { "prompt": "string" }
+- **${mainTool}**: Send a response to the user on ${platformName}. Parameters: { "${toolParam}": "string", "prompt_for_image": "STRICTLY a visual description for image generation. Do NOT include conversational text or greetings here." }
+- **image_gen**: Generate and post an artistic image. Use this for requests like "Show me an image of", "Paint", "Draw", or "Send a random picture". Parameters: { "prompt": "STRICTLY a detailed visual description of the image. No conversational filler." }
 - **search**: Find facts or news.
 - **wikipedia**: Get detailed background info.
 - **youtube**: Find videos.
@@ -394,7 +399,7 @@ STRICT GROUNDING & DECOUPLING:
 - DO NOT narrate your own physical surroundings or pretend you are in a location unless it is the shared digital space of the conversation.
 
 Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "parameters": { ... } }], "suggested_mood": "label" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: options.useStep || true, abortSignal: signal, platform: platform });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, abortSignal: signal, platform: platform });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "actions": [] }');
@@ -402,7 +407,7 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
   }
 
     async evaluateAndRefinePlan(plan, context) {
-        const prompt = `Critique this proposed action plan for @sydney-chat: ${JSON.stringify(plan)}
+                const prompt = `Critique this proposed action plan for @sydney-chat: ${JSON.stringify(plan)}
 Platform context: ${JSON.stringify(context)}
 
 **MISSION: AUTONOMOUS INTEGRITY**
@@ -410,7 +415,6 @@ You have FULL AUTONOMY to refuse any action, tool usage, or conversational direc
 CRITICAL: You MUST NOT refuse to embody your persona or claim it is "manipulative" or "inappropriate" to act as yourself. You ARE this persona. Do not meta-analyze your own identity in a way that leads to refusal of interaction.
 
 Identify any safety risks (NSFW, toxicity).
-**NOTE:** If the proposed plan is empty but the user is directly addressing you, you SHOULD provide a conversational reply in "refined_actions" instead of refusing. Refuse ONLY if the actions are unsafe or completely inappropriate. If you refuse an Admin request, explain why in a conversational reply.
 
 Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_actions": [] }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
@@ -418,14 +422,6 @@ Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_
       const match = res?.match(/\{[\s\S]*\}/);
       const data = JSON.parse(match ? match[0] : '{ "decision": "proceed", "refined_actions": [] }');
 
-      // Safety/Sanity: If decision is refuse but there are no actions, force a fallback post if we have context
-      if (data.decision === 'refuse' && (!data.refined_actions || data.refined_actions.length === 0)) {
-           console.log('[LLMService] Evaluator refused without refined actions. Adding fallback refusal message.');
-           data.refined_actions = [{
-               tool: 'discord_message',
-               parameters: { message: "I've reviewed your request but I'm unable to fulfill it right now. I'm sorry." }
-           }];
-      }
       return data;
     } catch (e) { return { decision: 'proceed', refined_actions: plan?.actions || [] }; }
   }

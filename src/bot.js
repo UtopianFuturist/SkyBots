@@ -538,7 +538,7 @@ Goal: ${currentGoal?.goal}`;
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: performAutonomousPost...');
       try { await this.performAutonomousPost(); } catch (e) { console.error('[Bot] Error in initial autonomous post:', e); }
-    }, baseDelay + 600000 + Math.random() * 600000);
+    }, baseDelay + 120000 + Math.random() * 120000);
 
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: performMoltbookTasks...');

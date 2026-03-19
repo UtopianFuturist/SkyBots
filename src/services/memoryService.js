@@ -136,7 +136,7 @@ CRITICAL:
 
         // Enforce Format: [TAG] [m/d/year] Content
         const tag = type.toUpperCase();
-        const finalEntry = entryText.startsWith(`[${tag}]`) ? entryText : `[${tag}] [${dateStr}] ${entryText.replace(/^\[.*?\]\s*(\[\d+\/\d+\/\d+\])?\s*/, '')}`;
+        const finalEntry = (entryText.includes(`[${tag}]`) && /\[\d+\/\d+\/\d+\]/.test(entryText)) ? entryText : `[${tag}] [${dateStr}] ${entryText.replace(/^\[.*?\]\s*(\[\d+\/\d+\/\d+\])?\s*/, "")}`;
 
         // Final Quality & Substance Check (Old filter logic integration)
         const evaluationPrompt = `
@@ -145,7 +145,7 @@ CRITICAL:
           Type: ${type}
 
           CRITICAL RULES:
-          1. TAG VALIDATION: The entry MUST contain the tag [${tag}].
+          1. TAG VALIDATION: The entry MUST contain the tag [${tag}] and the date in [m/d/year] format.
           2. Meaningful Substance: Does this entry contain material substance regarding the bot's functioning, memory, persona, or insights?
           3. No Jargon: Does it avoid internal planning jargon, tool calls, or agent reasoning?
           4. Coherence: Is the entry logically sound and in-persona?

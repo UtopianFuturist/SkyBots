@@ -148,13 +148,6 @@ export class Bot {
     console.log('[Bot] Comind agent registration submitted.');
 
     if (memoryService.isEnabled()) {
-      console.log('[Bot] Memory Thread feature enabled. Fetching recent memories...');
-      const memories = await memoryService.getRecentMemories();
-
-      // Persona Blurb Recovery: Scan memory thread for [PERSONA] tags
-      console.log('[Bot] Scanning memory thread for dynamic persona blurbs...');
-      const blurbs = await memoryService.fetchPersonaBlurbs();
-      if (blurbs.length > 0) {
         console.log(`[Bot] Recovered ${blurbs.length} persona blurbs from memory thread.`);
         await dataStore.setPersonaBlurbs(blurbs);
       }
@@ -432,7 +425,6 @@ export class Bot {
             if (analysis && !analysis.toUpperCase().includes('NONE')) {
                 await dataStore.addAdminFact(analysis);
                 if (memoryService.isEnabled()) {
-                    await memoryService.createMemoryEntry('admin_fact', analysis);
                 }
             }
           }
@@ -495,7 +487,7 @@ Goal: ${currentGoal?.goal}`;
           this._deepKeywords = deepKeywords;
           await dataStore.setDeepKeywords(deepKeywords);
           if (memoryService.isEnabled()) {
-              await memoryService.createMemoryEntry('explore', `[SELF_AUDIT] Refined firehose targeting with deep keywords: ${deepKeywords.join(', ')}`);
+              await memoryService.createMemoryEntry('explore', `Refined firehose targeting with deep keywords: ${deepKeywords.join(', ')}`);
           }
           this.restartFirehose();
       }
@@ -510,21 +502,23 @@ Goal: ${currentGoal?.goal}`;
 
     console.log('[Bot] Starting main loop...');
 
-    // Progress persistence: Note deployment resumption in memory
-    if (memoryService.isEnabled()) {
-        const lastRefresh = dataStore.getLastDeepKeywordRefresh();
-        const deepKeywords = dataStore.getDeepKeywords();
-        const goal = dataStore.getCurrentGoal();
-
-        const resumptionNote = `[SELF_AUDIT] Bot instance resumed. Frequent redeployments/failures acknowledged. Strategy: timestamp-based persistence & memory thread progress tracking. Active Goal: ${goal?.goal || 'None'}. Precision Keywords: ${deepKeywords.length} active.`;
-        memoryService.createMemoryEntry('status', resumptionNote).catch(e => console.error('[Bot] Error recording resumption note:', e));
-    }
-
-    // Start Firehose immediately for real-time DID mentions
     this.startFirehose();
 
     // Perform initial startup tasks after a delay to avoid API burst
     // Perform initial startup tasks in a staggered way to avoid LLM/API pressure
+    // Progress persistence: Note deployment resumption in memory
+    if (memoryService.isEnabled()) {
+        const goal = dataStore.getCurrentGoal();
+        const memoryPrompt = `Generate a very brief, persona-aligned internal reflection about resuming your operations after a pause or redeployment.
+        Mention your current goal: ${goal?.goal || "None"}.
+        Keep it under 150 characters. Avoid technical jargon or metadata.`;
+
+        const reflection = await llmService.generateResponse([{ role: "system", content: memoryPrompt }], { useStep: true, preface_system_prompt: false });
+        if (reflection) {
+            await memoryService.createMemoryEntry("status", reflection);
+        }
+    }
+
     const baseDelay = 15000;
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: catchUpNotifications...');
@@ -544,7 +538,7 @@ Goal: ${currentGoal?.goal}`;
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: performAutonomousPost...');
       try { await this.performAutonomousPost(); } catch (e) { console.error('[Bot] Error in initial autonomous post:', e); }
-    }, baseDelay + 600000 + Math.random() * 600000);
+    }, baseDelay + 120000 + Math.random() * 120000);
 
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: performMoltbookTasks...');
@@ -924,7 +918,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
 
         if (evolution && memoryService.isEnabled()) {
             console.log(`[Bot] Daily evolution crystallized: "${evolution}"`);
-            await memoryService.createMemoryEntry('evolution', `[EVOLUTION] ${evolution}`);
+            await memoryService.createMemoryEntry('evolution', evolution);
             dataStore.db.data.lastPersonaEvolution = now;
             await dataStore.db.write();
         }
@@ -1258,7 +1252,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             const audit = JSON.parse(jsonMatch[0]);
             await dataStore.addLinguisticMutation(audit.vocabulary_shifts.join(', '), audit.summary);
             if (memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('explore', `[SELF_AUDIT] Linguistic Audit: ${audit.summary}. Drift Score: ${audit.drift_score}`);
+                await memoryService.createMemoryEntry('explore', `${audit.summary}`);
             }
         }
     } catch (e) {
@@ -1296,7 +1290,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             await dataStore.setGoal(evolution.evolved_goal, evolution.reasoning);
             await dataStore.addGoalEvolution(evolution.evolved_goal, evolution.reasoning);
             if (memoryService.isEnabled()) {
-                await memoryService.createMemoryEntry('goal', `[EVOLUTION] Goal mutated from "${currentGoal.goal}" to "${evolution.evolved_goal}". Reasoning: ${evolution.reasoning}`);
+                await memoryService.createMemoryEntry('goal', evolution.reasoning);
             }
         }
     } catch (e) {
@@ -1350,7 +1344,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
         const reflection = await llmService.performInternalInquiry(reflectionPrompt, "THERAPIST");
 
         if (reflection && memoryService.isEnabled()) {
-            await memoryService.createMemoryEntry('reflection', `[REFLECTION] ${reflection}`);
+            await memoryService.createMemoryEntry('reflection', reflection);
             this.lastSelfReflectionTime = now;
         }
     } catch (e) {
@@ -2748,7 +2742,6 @@ Generate a short, persona-aligned caption for this image.`;
               if (instruction) {
                   await dataStore.addPersonaUpdate(instruction);
                   if (memoryService.isEnabled()) {
-                      await memoryService.createMemoryEntry('persona_update', instruction);
                   }
                   return "Persona updated.";
               }
@@ -2819,11 +2812,6 @@ Generate a short, persona-aligned caption for this image.`;
             let memoryTopics = [];
             try {
                 if (memoryService.isEnabled()) {
-                    const memories = await memoryService.getRecentMemories(30);
-                    const filtered = memories.filter(m =>
-                        /\[(RESEARCH|EXPLORE|MENTAL|GOAL)\]/i.test(m.text)
-                    );
-                    memoryTopics = filtered.map(m => m.text);
                 }
             } catch (e) {
                 console.warn("[Bot] Failed to fetch memory entries for autonomous post:", e.message);

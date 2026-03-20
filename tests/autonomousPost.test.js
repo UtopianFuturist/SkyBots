@@ -65,7 +65,7 @@ describe('Bot Autonomous Posting', () => {
   });
 
   it('should handle autonomous text posts', async () => {
-    // Force 'text' choice in persona poll
+    // Mock for initial text choice
     llmService.generateResponse.mockImplementation((messages) => {
         const content = JSON.stringify(messages);
         if (content.includes('Would you like to share a visual expression')) return Promise.resolve('{ "choice": "text", "reason": "Thinking" }');
@@ -83,7 +83,7 @@ describe('Bot Autonomous Posting', () => {
   });
 
   it('should handle autonomous image posts', async () => {
-    // Force 'image' choice in persona poll
+    // Mock for initial image choice
     llmService.generateResponse.mockImplementation((messages) => {
         const content = JSON.stringify(messages);
         if (content.includes('Would you like to share a visual expression')) return Promise.resolve('{ "choice": "image", "reason": "Feeling visual" }');
@@ -106,5 +106,72 @@ describe('Bot Autonomous Posting', () => {
     expect(imageService.generateImage).toHaveBeenCalled();
     expect(blueskyService.post).toHaveBeenCalledWith('My metallic heart.', expect.any(Object), { maxChunks: 3 });
     expect(blueskyService.postReply).toHaveBeenCalledWith(expect.any(Object), 'Generation Prompt: Final Prompt');
+  });
+
+  it('should correctly extract topic from LLM response with preamble and bolding', async () => {
+    // Mock for text choice and complex topic extraction
+    llmService.generateResponse.mockImplementation((messages) => {
+        const content = JSON.stringify(messages);
+        if (content.includes('Would you like to share a visual expression')) return Promise.resolve('{ "choice": "text", "reason": "Thinking" }');
+        if (content.includes('Identify a deep topic for a text post')) return Promise.resolve('Based on the feed, here is a topic:\n\n**The Future of AI**');
+        if (content.includes('Topic: The Future of AI')) return Promise.resolve('Post Content');
+        return Promise.resolve('none');
+    });
+
+    llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
+    blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
+
+    await bot.performAutonomousPost();
+
+    expect(llmService.isAutonomousPostCoherent).toHaveBeenCalledWith(
+      'The Future of AI',
+      expect.any(String),
+      'text',
+      null
+    );
+  });
+
+  it('should fall back to the last line if no bolding is present', async () => {
+    // Mock for text choice and multi-line topic extraction without bolding
+    llmService.generateResponse.mockImplementation((messages) => {
+        const content = JSON.stringify(messages);
+        if (content.includes('Would you like to share a visual expression')) return Promise.resolve('{ "choice": "text", "reason": "Thinking" }');
+        if (content.includes('Identify a deep topic for a text post')) return Promise.resolve('I analyzed the feed and decided on:\nDecentralized Social Media');
+        if (content.includes('Topic: Decentralized Social Media')) return Promise.resolve('Post Content');
+        return Promise.resolve('none');
+    });
+
+    llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
+    blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
+
+    await bot.performAutonomousPost();
+
+    expect(llmService.isAutonomousPostCoherent).toHaveBeenCalledWith(
+      'Decentralized Social Media',
+      expect.any(String),
+      'text',
+      null
+    );
+  });
+
+  it('should fall back to a text post if image generation repeatedly fails compliance', async () => {
+    // Mock for image choice but persistent safety failure
+    llmService.generateResponse.mockImplementation((messages) => {
+        const content = JSON.stringify(messages);
+        if (content.includes('Would you like to share a visual expression')) return Promise.resolve('{ "choice": "image", "reason": "Feeling visual" }');
+        if (content.includes('You are brainstorming a visual expression')) return Promise.resolve('{ "topic": "Robot Art", "prompt": "A robot painting" }');
+        if (content.includes('Audit this image prompt for safety')) return Promise.resolve('NON-COMPLIANT | Safety reason');
+        if (content.includes('Identify a deep topic for a text post')) return Promise.resolve('History of Robotics');
+        if (content.includes('Topic: History of Robotics')) return Promise.resolve('Robotics has a long history.');
+        return Promise.resolve('none');
+    });
+
+    llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
+    blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/fallback', cid: 'fallback' });
+
+    await bot.performAutonomousPost();
+
+    // Since it failed safety audit for image, it should fall back to text
+    expect(blueskyService.post).toHaveBeenCalledWith('Robotics has a long history.', null, { maxChunks: 3 });
   });
 });

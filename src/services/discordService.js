@@ -778,6 +778,58 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                              actionResults.push(`[Discord quiet hours set to ${start}:00 - ${end}:00]`);
                          }
                      }
+                     if (action.tool === 'search') {
+                         const query = action.query || action.parameters?.query;
+                         if (query) {
+                             const res = await googleSearchService.search(query);
+                             actionResults.push(`[SYSTEM: Search results for "${query}": ${JSON.stringify(res)}]`);
+                         }
+                     }
+                     if (action.tool === 'wikipedia') {
+                         const query = action.query || action.parameters?.query;
+                         if (query) {
+                             const { wikipediaService } = await import('./wikipediaService.js');
+                             const res = await wikipediaService.search(query);
+                             actionResults.push(`[SYSTEM: Wikipedia summary for "${query}": ${JSON.stringify(res)}]`);
+                         }
+                     }
+                     if (action.tool === 'youtube') {
+                         const query = action.query || action.parameters?.query;
+                         if (query) {
+                             const { youtubeService } = await import('./youtubeService.js');
+                             const res = await youtubeService.search(query);
+                             actionResults.push(`[SYSTEM: YouTube results for "${query}": ${JSON.stringify(res)}]`);
+                         }
+                     }
+                     if (action.tool === 'read_link') {
+                         const url = action.query || action.parameters?.url;
+                         if (url) {
+                             const { webReaderService } = await import('./webReaderService.js');
+                             const res = await webReaderService.read(url);
+                             actionResults.push(`[SYSTEM: Content of ${url}: ${JSON.stringify(res)}]`);
+                         }
+                     }
+                     if (action.tool === 'update_mood') {
+                         const { valence, arousal, stability, label } = action.parameters || {};
+                         await dataStore.setMood({
+                             valence: valence !== undefined ? parseFloat(valence) : undefined,
+                             arousal: arousal !== undefined ? parseFloat(arousal) : undefined,
+                             stability: stability !== undefined ? parseFloat(stability) : undefined,
+                             label: label || undefined
+                         });
+                         actionResults.push(`[SYSTEM: Mood updated to ${label || 'new state'}]`);
+                     }
+                     if (action.tool === 'set_goal') {
+                         const { goal, description } = action.parameters || {};
+                         const finalGoal = goal || action.query;
+                         if (finalGoal) {
+                             await dataStore.setCurrentGoal(finalGoal, description || finalGoal);
+                             if (memoryService.isEnabled()) {
+                                 await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${finalGoal}`);
+                             }
+                             actionResults.push(`[SYSTEM: Goal set: ${finalGoal}]`);
+                         }
+                     }
                      if (action.tool === 'update_config' && isAdmin) {
                          const { key, value } = action.parameters || {};
                          if (key) {

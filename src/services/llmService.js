@@ -389,6 +389,10 @@ Plan your next actions in response to: "${text}".
 - Exhausted Themes: ${exhaustedThemes.join(', ')}
 - PrePlan Analysis: ${JSON.stringify(prePlan)}
 
+PLATFORM ISOLATION MANDATE:
+- You are on ${platformName}. NEVER use bsky_post if you are on Discord.
+- Use only the tools relevant to ${platformName} for communication.
+
 RECENCY MANDATE:
 - If PrePlan detects a "move_on_signal" or "stale_hooks", you MUST NOT reference those topics in your thought or actions.
 - Focus on the latest user input and move the conversation forward.

@@ -148,9 +148,13 @@ export class Bot {
     console.log('[Bot] Comind agent registration submitted.');
 
     if (memoryService.isEnabled()) {
-        console.log(`[Bot] Recovered ${blurbs.length} persona blurbs from memory thread.`);
-        await dataStore.setPersonaBlurbs(blurbs);
-      }
+      const memories = await memoryService.getRecentMemories(50);
+      const blurbs = memories.filter(m => m.text.includes('[PERSONA]')).map(m => ({
+        uri: m.uri,
+        text: m.text.replace(/#\w+/g, '').replace(/\[PERSONA\]\s*\[\d+\/\d+\/\d+\]\s*/, '').trim()
+      }));
+      console.log(`[Bot] Recovered ${blurbs.length} persona blurbs from memory thread.`);
+      await dataStore.setPersonaBlurbs(blurbs);
 
       // Persistence Recovery: Scan memories for directives and persona updates to restore state across redeploys
       for (const mem of memories) {
@@ -171,7 +175,6 @@ export class Bot {
 
         if (mem.text.includes('[PERSONA]')) {
           console.log(`[Bot] Recovering persona update from memory: ${mem.text}`);
-          // Support both new and old format for persona
           const personaMatch = mem.text.match(/New self-instruction: (.*)/i) || mem.text.match(/\[PERSONA\] (.*)/i);
           if (personaMatch) {
             const instruction = personaMatch[1].replace(new RegExp(config.MEMORY_THREAD_HASHTAG, 'g'), '').trim();
@@ -203,38 +206,8 @@ export class Bot {
       }
 
       llmService.setMemoryProvider(memoryService);
-
-      // Periodically ensure all memory threads are secured (Nobody can reply, existing replies hidden)
       await memoryService.secureAllThreads();
     }
-
-    /*
-    // Moltbook Registration Check
-    console.log('[Bot] Checking Moltbook registration...');
-    const hasEnvKey = config.MOLTBOOK_API_KEY && config.MOLTBOOK_API_KEY !== 'undefined' && config.MOLTBOOK_API_KEY !== 'null';
-    let status = null;
-
-    if (!hasEnvKey) {
-      console.log('[Moltbook] MOLTBOOK_API_KEY environment variable is missing. FORCING new registration to obtain a fresh key.');
-      if (moltbookService.db.data.api_key) {
-        console.log(`[Moltbook] Abandoning existing local API key: ${moltbookService.db.data.api_key.substring(0, 8)}...`);
-      }
-      const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
-      const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
-      await moltbookService.register(name, description);
-    } else {
-      console.log('[Moltbook] API key found in environment variables. Checking status...');
-      status = await null;
-      console.log(`[Moltbook] Current status: ${status}`);
-
-      if (status === 'invalid_key') {
-        console.log('[Moltbook] API key is invalid. Re-registering...');
-        const name = config.MOLTBOOK_AGENT_NAME || config.BLUESKY_IDENTIFIER.split('.')[0];
-        const description = config.MOLTBOOK_DESCRIPTION || config.PROJECT_DESCRIPTION;
-        await moltbookService.register(name, description);
-      }
-    }
-    */
 
     try {
       this.readmeContent = await fs.readFile('README.md', 'utf-8');
@@ -1473,17 +1446,6 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
     }
 
     /*
-    // 1b. Moltfeed Summary (Every 6 hours)
-    const lastMoltfeed = dataStore.getLastMoltfeedSummaryTime();
-    const moltfeedDiff = (now.getTime() - lastMoltfeed) / (1000 * 60 * 60);
-    if (moltfeedDiff >= 6 && memoryService.isEnabled() && moltbookService.db.data.api_key && !false) {
-        console.log('[Bot] Triggering periodic [MOLTFEED] summary...');
-        const summary = await moltbookService.summarizeFeed(25);
-        if (summary) {
-            await memoryService.createMemoryEntry('moltfeed', summary);
-            await dataStore.updateLastMoltfeedSummaryTime(now.getTime());
-        }
-    }
     */
 
     // 1bb. Daily Mental Health Wrap-up (Every 24 hours)

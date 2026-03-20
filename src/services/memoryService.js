@@ -37,7 +37,7 @@ class MemoryService {
   }
 
   _extractCategory(text) {
-    const categories = ['persona', 'directive', 'relationship', 'interaction', 'mood', 'inquiry', 'mental', 'goal', 'explore', 'status', 'research', 'admin_fact', 'schedule', 'fact', 'audit'];
+    const categories = ['persona', 'directive', 'relationship', 'interaction', 'mood', 'inquiry', 'mental', 'goal', 'explore', 'status', 'research', 'admin_fact', 'schedule', 'fact', 'audit', 'recursion', 'reflection', 'insight'];
     for (const cat of categories) {
         if (text.toUpperCase().includes(`[${cat.toUpperCase()}]`)) return cat;
     }
@@ -52,7 +52,7 @@ class MemoryService {
         const query = `from:${profile.did} ${this.hashtag}`;
         const posts = await blueskyService.searchPosts(query, 'latest', 100);
 
-        const validTags = ['PERSONA', 'DIRECTIVE', 'RELATIONSHIP', 'INTERACTION', 'MOOD', 'INQUIRY', 'MENTAL', 'GOAL', 'EXPLORE', 'STATUS', 'RESEARCH', 'ADMIN_FACT', 'SCHEDULE', 'FACT', 'AUDIT'];
+        const validTags = ['PERSONA', 'DIRECTIVE', 'RELATIONSHIP', 'INTERACTION', 'MOOD', 'INQUIRY', 'MENTAL', 'GOAL', 'EXPLORE', 'STATUS', 'RESEARCH', 'ADMIN_FACT', 'SCHEDULE', 'FACT', 'AUDIT', 'RECURSION', 'REFLECTION', 'INSIGHT'];
         const jargonPatterns = [/<tool_call>/i, /<thinking>/i, /\[PLAN\]/i, /<function/i];
 
         for (const post of posts) {
@@ -219,7 +219,38 @@ CRITICAL:
       const synth = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
       if (synth) await this.createMemoryEntry('reflection', `[WORLDVIEW_SYNTH] ${synth.substring(0, 200)}`);
   }
-  async auditMemoriesForReconstruction() {}
+  async auditMemoriesForReconstruction() {
+    if (!this.isEnabled()) return;
+    try {
+        console.log('[MemoryService] Starting recursive memory audit for reconstruction...');
+        const memories = await this.getRecentMemories(50);
+        if (memories.length < 10) return;
+
+        const auditPrompt = `
+Analyze these 50 recent memories to identify high-level persona shifts, emotional patterns, or "lessons learned" about your interaction style and boundaries.
+
+MEMORIES:
+${JSON.stringify(memories)}
+
+Identify:
+1. Recurring themes or fixations.
+2. Emotional drift (positive or negative).
+3. Insights into the Admin's preferences that should be reinforced.
+4. Outdated behavioral patterns that should be phased out.
+
+Respond with JSON: { "insight": "a deep synthesis of these patterns", "persona_shift": "suggested instruction to update your persona blurbs", "type": "persona|directive" }`;
+
+        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
+        const result = JSON.parse(response.match(/\{[\s\S]*\}/)[0]);
+
+        if (result.persona_shift) {
+            await this.createMemoryEntry(result.type || 'persona', `[RECURSION] ${result.persona_shift} (Based on: ${result.insight.substring(0, 100)}...)`);
+        }
+        return result;
+    } catch (e) {
+        console.error('[MemoryService] Error in auditMemoriesForReconstruction:', e);
+    }
+  }
   async getLatestMoodMemory() { return null; }
   async searchMemories(query) { return (this.recentMemories || []).filter(m => m.text.includes(query)); }
   async deleteMemory(uri) { try { await blueskyService.deletePost(uri); return true; } catch (e) { return false; } }

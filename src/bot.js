@@ -1419,6 +1419,8 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
     const cleanupDiff = (now.getTime() - lastCleanup) / (1000 * 60 * 60);
     if (cleanupDiff >= 2 && memoryService.isEnabled()) {
         await memoryService.cleanupMemoryThread();
+        await memoryService.performDailyKnowledgeAudit();
+        await memoryService.auditMemoriesForReconstruction();
         await dataStore.updateLastMemoryCleanupTime(now.getTime());
     }
 
@@ -2235,7 +2237,7 @@ Generation Prompt: ${imagePrompt}`;
   }
 
   async checkDiscordSpontaneity() {
-    if (discordService.status !== "online") return;
+    if (discordService.status !== "online") return `[Successfully generated and sent image to Discord: "${prompt}"]`;
     if (dataStore.isResting()) return;
 
     // Do not trigger spontaneity if actively chatting
@@ -2566,9 +2568,9 @@ Please try again with a completely different structure and angle.`;
                   const slopInfo = getSlopInfo(prompt);
                   const isConversational = /^(hey|hi|hello|morning|gm|i'm back|im back|just thinking)/i.test(prompt.trim());
                   if (slopInfo.isSlop || isConversational || prompt.length < 15) {
-                      return `[Image prompt rejected: too short, conversational, or contains slop. Prompt: "${prompt}"]`;
+                      return `[Successfully generated and sent image to Discord: "${prompt}"]`;
                   }
-                  // Reroute to a unified high-quality generation flow
+
                   const res = await imageService.generateImage(prompt, { allowPortraits: true });
                   if (res?.buffer) {
                       const visionAnalysis = await llmService.analyzeImage(res.buffer, prompt);
@@ -2579,25 +2581,30 @@ Please try again with a completely different structure and angle.`;
                       const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
                       const altText = await llmService.generateResponse([{ role: 'system', content: altPrompt }], { useStep: true }) || prompt;
 
-                      const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-Vision Analysis: "${visionAnalysis}"
-Topic/Prompt: "${prompt}"
-Generate a short, persona-aligned caption for this image.`;
+                      const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nTopic/Prompt: "${prompt}"\nGenerate a short, persona-aligned caption for this image.`;
                       const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
 
-                      const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
-                      if (blobRes?.data?.blob) {
-                          const embed = { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: altText }] };
-                          let result;
-                          if (context?.uri) {
-                              result = await blueskyService.postReply(context, caption || "Generated Image", { embed });
-                          } else {
-                              result = await blueskyService.post(caption || "Generated Image", embed);
+                      // Platform Check: If Discord, send to Discord. If Bluesky, post to Bluesky.
+                      if (context?.platform === 'discord' || context?.channelId) {
+                          const channelId = (context?.channelId || config.DISCORD_ADMIN_CHANNEL_ID).toString().replace('dm_', '');
+                          const finalMsg = `${caption || "Generated Image"}\n\nGeneration Prompt: ${prompt}`;
+                          await discordService._send({ id: channelId }, finalMsg, { files: [{ attachment: res.buffer, name: 'generated.jpg' }] });
+                          return `[Successfully generated and sent image to Discord: "${prompt}"]`;
+                      } else {
+                          const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
+                          if (blobRes?.data?.blob) {
+                              const embed = { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: altText }] };
+                              let result;
+                              if (context?.uri) {
+                                  result = await blueskyService.postReply(context, caption || "Generated Image", { embed });
+                              } else {
+                                  result = await blueskyService.post(caption || "Generated Image", embed);
+                              }
+                              if (result && prompt) {
+                                  await blueskyService.postReply(result, `Generation Prompt: ${prompt}`);
+                              }
+                              return `[Successfully generated and posted image to Bluesky for: "${prompt}"]`;
                           }
-                          if (result && prompt) {
-                              await blueskyService.postReply(result, `Generation Prompt: ${prompt}`);
-                          }
-                          return `[Successfully generated and posted image for: "${prompt}"]`;
                       }
                   }
               }
@@ -2627,6 +2634,10 @@ Generate a short, persona-aligned caption for this image.`;
           }
 
           if (action.tool === 'bsky_post') {
+              if (context?.platform === 'discord' || context?.channelId) {
+                  console.warn('[Bot] Blocked attempt to post to Bluesky from Discord context.');
+                  return "Error: Cannot post to Bluesky from a Discord conversation.";
+              }
               let text = params.text || query;
               if (text) {
                   const truncatedText = text.substring(0, 290);
@@ -2962,17 +2973,59 @@ Findings: ${researcher}`;
 
   async performLinguisticAnalysis() {
     console.log('[Bot] Starting Linguistic Analysis task...');
-    // Placeholder for actual implementation
+    const interactions = dataStore.getRecentInteractions();
+    if (interactions.length < 5) return;
+
+    const prompt = `Analyze the linguistic style of these recent interactions.
+Identify any repetitive patterns, phrases, or tone drift.
+INTERACTIONS: ${JSON.stringify(interactions.map(i => i.content))}
+
+Provide a brief summary and a suggested linguistic adjustment if needed.`;
+    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
+    if (res) {
+        await dataStore.addInternalLog("linguistic_analysis", res);
+        if (res.toLowerCase().includes("repetitive") || res.toLowerCase().includes("drift")) {
+            await dataStore.addPersonaUpdate(`[LINGUISTIC] ${res.substring(0, 200)}`);
+        }
+    }
   }
 
   async performKeywordEvolution() {
     console.log('[Bot] Starting Keyword Evolution task...');
-    // Placeholder for actual implementation
+    const dConfig = dataStore.getConfig();
+    const currentKeywords = dConfig.post_topics || [];
+    const memories = await memoryService.getRecentMemories(20);
+
+    const prompt = `Based on these recent memories and current keywords, suggest 3-5 NEW interesting topics for autonomous posts that align with your evolving persona.
+Current Keywords: ${currentKeywords.join(', ')}
+Memories: ${JSON.stringify(memories.map(m => m.text))}
+
+Respond with ONLY the new keywords, separated by commas.`;
+    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
+    if (res) {
+        const newKeywords = res.split(',').map(k => k.trim()).filter(Boolean);
+        if (newKeywords.length > 0) {
+            await dataStore.updateConfig({ post_topics: [...new Set([...currentKeywords, ...newKeywords])] });
+            console.log(`[Bot] Evolved keywords: ${newKeywords.join(', ')}`);
+        }
+    }
   }
 
   async performMoodSync() {
     console.log('[Bot] Starting Mood Sync task...');
-    // Placeholder for actual implementation
+    const moodHistory = dataStore.db?.data?.mood_history || [];
+    if (moodHistory.length < 5) return;
+
+    const prompt = `Analyze this mood history and suggest a new stable baseline for your internal coordinates.
+History: ${JSON.stringify(moodHistory.slice(-10))}
+
+Respond with JSON: { "valence": float, "arousal": float, "stability": float, "label": "string" }`;
+    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
+    try {
+        const newMood = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+        await dataStore.setMood(newMood);
+        console.log(`[Bot] Mood synced to: ${newMood.label}`);
+    } catch (e) {}
   }
 
   async performPersonaAudit() {
@@ -2988,6 +3041,11 @@ RECENT VARIETY CRITIQUES:
 ` + critiques.map(c => `- Feedback: ${c.content?.feedback || 'Repeated recent thought'}`).join('\n')
         : "";
 
+    // Include recursive insights from memoryService
+    const recursionMemories = await memoryService.getRecentMemories(20);
+    const recursionContext = recursionMemories.filter(m => m.text.includes('[RECURSION]'))
+        .map(m => `- Insight: ${m.text}`).join('\n');
+
     const auditPrompt = `
       As a persona auditor, analyze the following active persona blurbs and recent variety critiques for consistency with the core system prompt.
 
@@ -2997,6 +3055,8 @@ RECENT VARIETY CRITIQUES:
       ACTIVE PERSONA BLURBS:
       ${blurbs.length > 0 ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n') : 'None'}
       ${critiqueContext}
+      RECURSIVE INSIGHTS:
+      ${recursionContext || "None"}
 
       Identify any contradictions, redundancies, or blurbs that no longer serve the persona's evolution.
       If a blurb should be removed, identify it by URI. If a new blurb is needed to correct a drift (like "repetitive" or "lacking depth"), suggest one.

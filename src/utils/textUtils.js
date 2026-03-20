@@ -326,7 +326,7 @@ export const getSlopInfo = (text) => {
         "in the quiet",
         "the hum of",
         "as i sit here",
-        "sitting here thinking"
+        "sitting here thinking", "hey i'm back", "hey, i'm back", "hey im back", "i'm back", "im back"
     ];
     for (const f of forbiddenOpeners) {
         if (lower.startsWith(f)) return { isSlop: true, reason: `Starts with forbidden opener: "${f}"` };

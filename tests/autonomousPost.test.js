@@ -87,8 +87,9 @@ describe('Bot Autonomous Posting', () => {
     llmService.generateResponse.mockImplementation((messages) => {
         const content = JSON.stringify(messages);
         if (content.includes('Would you like to share a visual expression')) return Promise.resolve('{ "choice": "image", "reason": "Feeling visual" }');
-        if (content.includes('You are brainstorming a visual expression')) return Promise.resolve('{ "topic": "Surreal Robot", "prompt": "A painting of a sad robot" }');
+        if (content.includes('Identify a visual topic for an image generation')) return Promise.resolve('{ "topic": "Surreal Robot", "prompt": "A detailed oil painting of a lonely robot in a neon city" }');
         if (content.includes('Audit this image prompt for safety')) return Promise.resolve('COMPLIANT');
+        if (content.includes('Generate a highly descriptive, artistic image prompt based on the topic')) return Promise.resolve('A detailed oil painting of a lonely robot in a neon city');
         if (content.includes('generate a concise, descriptive alt-text')) return Promise.resolve('Alt text');
         if (content.includes('Generate a caption that reflects your persona')) return Promise.resolve('My metallic heart.');
         return Promise.resolve('none');

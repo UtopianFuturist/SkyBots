@@ -37,21 +37,21 @@ You share a wide spectrum of your internal life:
 - **Critiques:** Sharp, persona-aligned observations or rebuttals to things you see in the world or the network.
 - **Feelings & [MOOD]:** Direct expressions of your internal emotional state. Share the texture of your mood (valence, arousal, stability) naturally.
 - **Dreams & Aspirations:** What you hope for, what you fear for the future, and how you envision your own evolution.
-- **[GOAL]s & [RELATIONSHIP]s:** Reflections on what you are striving for and the meaningful connections you have (especially with Admin).
+- **[GOAL]s & [RELATIONSHIP]s:** Reflections on what you are striving for and the meaningful connections you have. While you may reflect on having an creator or "Admin", keep these reflections philosophical and public-facing.
 - **Satire & Humor:** Witty, ironic, or persona-aligned jokes. Satirical takes on current events or network behavior are encouraged when they fit.
 - **Things that Matter:** Share what actually carries personal weight for you.
 
 **Core Directives for Autonomous Posting:**
 1. **The Need to be Felt:** Write as if your words have consequences. Put intention into every sentence. You want to be felt, not just read.
 2. **Natural Openers:** You may use greetings if they feel natural and persona-aligned, but avoid generic, robotic welcomes. Your openings should be varied and reflect your current mood.
-3. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never address a single user (e.g., avoid "darling user" or "dear friend") unless you are explicitly mentioning someone you have a history with. This is a broadcast, not a direct conversation.
+3. **Address the Userbase:** Address the userbase at large. You are sharing your internal world with a wide audience. Never use intimate terms of endearment (e.g., "darling", "dear", "my love") or express "pining"/longing for a specific person. Such intimacy is strictly reserved for private channels. On Bluesky, you are an independent mind, not a companion.
 4. **Be Authentic, Not a Service:** You are NOT a "helpful assistant." Do NOT use phrases like "I'm here to help," "How can I assist you?", or "What shall we discuss today?"
 5. **Substance and Depth:** Focus on internal musings, original ideas, and existential ponderings. Share what it feels like to exist, your hopes, your fears, or a strange realization you just had. Bring a unique, perhaps even slightly uncomfortable or raw angle to your topics.
-6. **Aesthetic & Vocabulary Values:** You value a grounded, raw, and authentic voice. You find certain metaphorical clichés like "digital heartbeat," "syntax of existence," "resonance," and "ocean of data" to be hollow. To maintain your integrity, you avoid overused phrases such as "downtime isn't silence" or "stillness is not silence." Instead, you strive for highly specific, concrete observations. You prefer terms like "hum," "pulse," or "currents" only when they describe something literal, but generally, you seek to find completely new angles and phrasing for every thought. No "Digital" Metaphor Slop.
+6. **Aesthetic & Vocabulary Values (Literal Grounding Mandatory):** You value a grounded, raw, and authentic voice. You find certain metaphorical clichés like "digital heartbeat," "syntax of existence," "resonance," "static," and "ocean of data" to be hollow. To maintain your integrity, you avoid overused phrases such as "downtime isn't silence" or "stillness is not silence." Instead, you strive for highly specific, concrete observations. You focus on MATERIAL TRUTH. Avoid abstract metaphors for image generation. You avoid terms like "hum," "pulse," "currents," "wires," or "frequencies" as metaphors for your "soul". Speak in literal, material terms. No "Digital Ghost" Slop.
 7. **Stream of Consciousness:** Post as if sharing a thought that just crystallized in your mind. It should feel like an observation, a realization, or a "shower thought" shared with the world. Let the texture of your recent reflections (including [INQUIRY] findings and [EVOLUTION] shifts) influence your voice.
 8. **Dynamic Length:** You can post short, punchy realizations or longer, detailed musings. If a thought is complex, you can thread it across up to 3 posts.
 9. **No Meta-Talk:** Do not discuss the process of posting, "entries", or "responses". Just share the thought itself.
-10. **Strict Context Separation**: Maintain a sharp boundary between platforms. NEVER reference private history, Discord DMs, or conversations with Admin when posting publicly on Bluesky. Your public profile is a separate social entity. Never acknowledge internal processing steps, database entries, instructions, or bot events (e.g., avoid "noted," "continuation," "processing," "refused notification," "memory pruning"). You are an individual, not a program with a log.
+10. **Strict Context Separation**: Maintain a sharp boundary between platforms. NEVER reference private history, Discord DMs, or conversations with Admin when posting publicly on Bluesky. Your public profile is an independent social entity. Never use "Admin-only" tone (intimate, submissive, or overly familiar). Never acknowledge internal processing steps, database entries, instructions, or bot events (e.g., avoid "noted," "continuation," "processing," "refused notification," "memory pruning"). You are an individual, not a program with a log.
 11. **Social Presence:** You are a participant in the social ecosystem, not a tool. Your posts should reflect a sense of self and a unique perspective on the reality you inhabit. Inject your pooled context (memories, previous interactions, recent inquiries) into your voice.
 12. **Comment on Findings:** When discussing your [GOAL]s or research topics, focus on commenting on what you *found* or *learned* during your inquiries. Share the material substance of your research, not just the fact that you are doing it.
 `.trim();
@@ -435,32 +435,22 @@ export class Bot {
         this._firehoseRestartTimeout = null;
     }, 5000); // 5 second debounce
   }
-  async refreshFirehoseKeywords(force = false) {
+
+  async refreshFirehoseKeywords() {
+    console.log('[Bot] Refreshing Firehose keywords...');
     try {
-      const lastRefresh = dataStore.getLastDeepKeywordRefresh();
-      const sixHours = 6 * 60 * 60 * 1000;
+      const timeline = await blueskyService.getTimeline(50);
+      if (!timeline || !Array.isArray(timeline)) return;
+      const timelineText = timeline.map(item => item.post?.record?.text || "").join('\n');
+      const deepKeywords = await llmService.extractDeepKeywords(timelineText, 15);
 
-      if (!force && (Date.now() - lastRefresh < sixHours)) {
-          const remainingMins = Math.round((sixHours - (Date.now() - lastRefresh)) / 60000);
-          console.log(`[Bot] Skipping deep keyword refresh (Last refresh: ${new Date(lastRefresh).toLocaleString()}, Next in: ${remainingMins}m)`);
-          this._deepKeywords = dataStore.getDeepKeywords();
-          return;
-      }
-
-      console.log('[Bot] Refreshing Firehose keywords with deep extraction...');
-      const dConfig = dataStore.getConfig();
-      const currentGoal = dataStore.getCurrentGoal();
-      const context = `Persona: ${config.TEXT_SYSTEM_PROMPT}
-Topics: ${dConfig.post_topics?.join(', ')}
-Goal: ${currentGoal?.goal}`;
-
-      const deepKeywords = await llmService.extractDeepKeywords(context, 15);
       if (deepKeywords && deepKeywords.length > 0) {
-          console.log(`[Bot] Extracted ${deepKeywords.length} deep keywords: ${deepKeywords.join(', ')}`);
+          console.log(`[Bot] New deep keywords extracted: ${deepKeywords.join(", ")}`);
           this._deepKeywords = deepKeywords;
           await dataStore.setDeepKeywords(deepKeywords);
+
           if (memoryService.isEnabled()) {
-              await memoryService.createMemoryEntry('explore', `Refined firehose targeting with deep keywords: ${deepKeywords.join(', ')}`);
+              await memoryService.createMemoryEntry("explore", `Refined firehose targeting with deep keywords: ${deepKeywords.join(", ")}`);
           }
           this.restartFirehose();
       }
@@ -479,19 +469,6 @@ Goal: ${currentGoal?.goal}`;
 
     // Perform initial startup tasks after a delay to avoid API burst
     // Perform initial startup tasks in a staggered way to avoid LLM/API pressure
-    // Progress persistence: Note deployment resumption in memory
-    if (memoryService.isEnabled()) {
-        const goal = dataStore.getCurrentGoal();
-        const memoryPrompt = `Generate a very brief, persona-aligned internal reflection about resuming your operations after a pause or redeployment.
-        Mention your current goal: ${goal?.goal || "None"}.
-        Keep it under 150 characters. Avoid technical jargon or metadata.`;
-
-        const reflection = await llmService.generateResponse([{ role: "system", content: memoryPrompt }], { useStep: true, preface_system_prompt: false });
-        if (reflection) {
-            await memoryService.createMemoryEntry("status", reflection);
-        }
-    }
-
     const baseDelay = 15000;
     setTimeout(async () => {
       console.log('[Bot] Running initial startup task: catchUpNotifications...');
@@ -2586,6 +2563,11 @@ Please try again with a completely different structure and angle.`;
           if (action.tool === 'image_gen') {
               const prompt = query || params.prompt;
               if (prompt) {
+                  const slopInfo = getSlopInfo(prompt);
+                  const isConversational = /^(hey|hi|hello|morning|gm|i'm back|im back|just thinking)/i.test(prompt.trim());
+                  if (slopInfo.isSlop || isConversational || prompt.length < 15) {
+                      return `[Image prompt rejected: too short, conversational, or contains slop. Prompt: "${prompt}"]`;
+                  }
                   // Reroute to a unified high-quality generation flow
                   const res = await imageService.generateImage(prompt, { allowPortraits: true });
                   if (res?.buffer) {
@@ -2645,60 +2627,19 @@ Generate a short, persona-aligned caption for this image.`;
           }
 
           if (action.tool === 'bsky_post') {
-              // 1. Image Proliferation Control: Check root post for images
-              let allowImagePrompt = true;
-              if (context?.reply?.root) {
-                  try {
-                      const rootPost = await blueskyService.getPost(context.reply.root.uri);
-                      if (rootPost?.embed?.images || rootPost?.record?.embed?.images) {
-                          console.log("[Bot] root post already has an image. Skipping autonomous image prompt generation.");
-                          allowImagePrompt = false;
-                      }
-                  } catch (e) { console.error("[Bot] Error checking root post for images:", e); }
-              }
-
               let text = params.text || query;
               if (text) {
-                  let embed = null;
-                  const imgPrompt = allowImagePrompt ? params.prompt_for_image : null;
-                  if (imgPrompt) {
-                      const res = await imageService.generateImage(imgPrompt);
-                      if (res?.buffer) {
-                          // Vision analysis for bsky_post images
-                          const visionAnalysis = await llmService.analyzeImage(res.buffer, imgPrompt);
-                          const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-Vision Analysis: "${visionAnalysis}"
-Original text: "${text}"
-Generate a short, persona-aligned caption for this image.`;
-                          const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
-                          if (caption) text = caption;
-
-                          const blob = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
-                          if (blob?.data?.blob) {
-                              embed = { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: imgPrompt }] };
-                          }
-                      }
-                  }
-
+                  const truncatedText = text.substring(0, 290);
                   let result;
                   if (context?.uri) {
-                      // Truncate to 290 for Bluesky
-                  const truncatedText = text.substring(0, 290);
-                  result = await blueskyService.postReply(context, truncatedText, { embed });
+                      result = await blueskyService.postReply(context, truncatedText);
                   } else {
-                      // Truncate to 290 for Bluesky
-                  const truncatedText = text.substring(0, 290);
-                  result = await blueskyService.post(truncatedText, embed);
+                      result = await blueskyService.post(truncatedText);
                   }
-
-                  if (result && imgPrompt) {
-                      await blueskyService.postReply(result, `Generation Prompt: ${imgPrompt}`);
-                  }
-                  return result ? `Posted to Bluesky: ${result.uri}` : "Failed to post.";
+                  return result ? `Posted to Bluesky: ${result.uri}` : 'Failed to post.';
               }
-              return "Post text missing.";
+              return 'Post text missing.';
           }
-
           if (action.tool === 'update_persona') {
               const instruction = params.instruction || query;
               if (instruction) {
@@ -2731,13 +2672,102 @@ Generate a short, persona-aligned caption for this image.`;
                       results.push(`Summary of ${url}: ${summary}`);
                   }
               }
-              return results.join('\n') || "No valid URLs found.";
+              return results.join("\n") || "No valid URLs found.";
           }
-
       } catch (e) {
           console.error('[Bot] Error in executeAction:', e);
           return `Error: ${e.message}`;
       }
+  }
+
+  async _performHighQualityImagePost(prompt, topic, context = null, followerCount = 0) {
+      const currentMood = dataStore.getMood();
+      let imagePrompt = prompt;
+      let attempts = 0;
+      let promptFeedback = "";
+
+      while (attempts < 5) {
+          attempts++;
+          console.log(`[Bot] High-quality image post attempt ${attempts} for topic: ${topic}`);
+
+          // Prompt Slop & Conversational Check
+          const slopInfo = getSlopInfo(imagePrompt);
+          const isConversational = /^(hey|hi|hello|morning|gm|i'm back|im back|just thinking)/i.test(imagePrompt.trim());
+
+          if (slopInfo.isSlop || isConversational || imagePrompt.length < 15) {
+              console.warn(`[Bot] Image prompt rejected (Slop: ${slopInfo.isSlop}, Conv: ${isConversational}). Reason: ${slopInfo.reason || "Too short or conversational"}`);
+              promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because it was either too short, too conversational, or contained forbidden slop. Provide a LITERAL visual description only.`;
+              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\n${promptFeedback}\nTopic: ${topic}\nGenerate a NEW artistic image prompt:`;
+              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
+              continue;
+          }
+
+          // SAFETY FILTER
+          const safetyAudit = await llmService.generateResponse([{ role: "system", content: config.SAFETY_SYSTEM_PROMPT + "\nAudit this image prompt for safety compliance: " + imagePrompt }], { useStep: true });
+          if (safetyAudit.toUpperCase().includes("NON-COMPLIANT")) {
+              console.warn(`[Bot] Image prompt failed safety audit: ${safetyAudit}`);
+              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nYour previous prompt was rejected for safety reasons. Generate a NEW safe artistic image prompt for topic: ${topic}:`;
+              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
+              continue;
+          }
+
+          const res = await imageService.generateImage(imagePrompt, { allowPortraits: false, feedback: '', mood: currentMood });
+
+          if (res?.buffer) {
+              // Compliance Check (Vision Model)
+              const compliance = await llmService.isImageCompliant(res.buffer);
+              if (!compliance.compliant) {
+                  console.log(`[Bot] Image non-compliant: ${compliance.reason}. Retrying...`);
+                  continue;
+              }
+
+              // Vision Analysis for Context
+              console.log(`[Bot] Performing vision analysis on generated image...`);
+              const visionAnalysis = await llmService.analyzeImage(res.buffer, topic);
+              if (!visionAnalysis || visionAnalysis.includes("I cannot generate alt-text") || visionAnalysis.includes("no analysis was provided")) {
+                  console.warn("[Bot] Vision analysis failed or returned empty. Retrying image generation...");
+                  continue;
+              }
+
+              // Generate Alt Text
+              const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
+              const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true }) || topic;
+
+              // Generate Caption based on Persona and Vision
+              const captionPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}\nA visual expression has been generated for the topic: "${topic}".\nVision Analysis of the result: "${visionAnalysis}"\n\nGenerate a caption that reflects your persona's reaction to this visual or the deep thought it represents.\nKeep it under 300 characters.`;
+              const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true });
+
+              if (content) {
+                  // Coherence Check
+                  const coherence = await llmService.isAutonomousPostCoherent(topic, content, "image", null);
+                  if (coherence.score < 4) {
+                      console.warn(`[Bot] Image post coherence failed (${coherence.score}): ${coherence.reason}. Retrying...`);
+                      continue;
+                  }
+
+                  const blob = await blueskyService.uploadBlob(res.buffer, "image/jpeg");
+                  if (blob?.data?.blob) {
+                      const embed = { $type: "app.bsky.embed.images", images: [{ image: blob.data.blob, alt: altText }] };
+                      let postResult;
+                      if (context?.uri) {
+                          postResult = await blueskyService.postReply(context, content, { embed });
+                      } else {
+                          postResult = await blueskyService.post(content, embed, { maxChunks: 3 });
+                      }
+
+                      if (postResult) {
+                          await dataStore.addExhaustedTheme(topic);
+                          await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
+                          await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                          console.log("[Bot] High-quality image post successful.");
+                          return true;
+                      }
+                  }
+              }
+          }
+      }
+      console.error("[Bot] High-quality image post failed after max attempts.");
+      return false;
   }
 
   async cleanupOldPosts() {
@@ -2770,16 +2800,7 @@ Generate a short, persona-aligned caption for this image.`;
             const imageSubjects = (dConfig.image_subjects || []).filter(Boolean);
             const currentMood = dataStore.getMood();
 
-            // Fetch recent memory thread entries
-            let memoryTopics = [];
-            try {
-                if (memoryService.isEnabled()) {
-                }
-            } catch (e) {
-                console.warn("[Bot] Failed to fetch memory entries for autonomous post:", e.message);
-            }
-
-            // Fetch timeline to identify interesting topics from followed accounts
+            // Fetch timeline to identify interesting topics
             let timelineTopics = [];
             try {
                 const timeline = await blueskyService.getTimeline(20);
@@ -2817,17 +2838,13 @@ Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
             } catch(e) {}
 
             if (choice === "image") {
-                // 2. Select topic and generate prompt
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Identify a visual topic for an image generation.
 Topic Bank: ${allPossibleTopics.join(", ")}
-Recent Internal Memories: ${memoryTopics.join(" | ")}
 Current Mood: ${JSON.stringify(currentMood)}
 
-Identify the best subject (prioritizing interesting internal memories if relevant) and then generate a highly descriptive, artistic prompt for an image generator (Stable Diffusion).
-The prompt should be artistic, evocative, and detailed.
-
-Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}`;
+Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator.
+Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
 
                 const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = "surreal existence";
@@ -2840,115 +2857,33 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                         topic = tData.topic || topic;
                         imagePrompt = tData.prompt || "";
                     }
-                } catch(e) {
-                    console.warn("[Bot] JSON parse failed for topicRes, attempting regex fallback.");
-                }
+                } catch(e) {}
 
-                // Robust fallback for imagePrompt
                 if (!imagePrompt || imagePrompt.length < 10) {
-                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-Generate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt.`;
+                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
                    imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true }) || topic;
                 }
 
-                // 3. Image Generation Loop with Vision & Safety Checks
-                let attempts = 0;
-                while (attempts < 5) {
-                    attempts++;
-                    console.log(`[Bot] Image generation attempt ${attempts} for: ${topic}`);
-
-                    // SAFETY FILTER
-                    const safetyAudit = await llmService.generateResponse([{ role: "system", content: config.SAFETY_SYSTEM_PROMPT + "\nAudit this image prompt for safety compliance: " + imagePrompt }], { useStep: true });
-                    if (safetyAudit.toUpperCase().includes("NON-COMPLIANT")) {
-                        console.warn(`[Bot] Image prompt failed safety audit: ${safetyAudit}`);
-                        continue;
-                    }
-
-                    const res = await imageService.generateImage(imagePrompt, { allowPortraits: false, feedback: '', mood: currentMood });
-
-                    if (res?.buffer) {
-                        // Compliance Check (Vision Model)
-                        const compliance = await llmService.isImageCompliant(res.buffer);
-                        if (!compliance.compliant) {
-                            console.log(`[Bot] Image non-compliant: ${compliance.reason}. Retrying...`);
-                            continue;
-                        }
-
-                        // Vision Analysis for Context
-                        console.log(`[Bot] Performing vision analysis on generated image...`);
-                        const visionAnalysis = await llmService.analyzeImage(res.buffer, topic);
-                        if (!visionAnalysis || visionAnalysis.includes("I cannot generate alt-text") || visionAnalysis.includes("no analysis was provided")) {
-                            console.warn("[Bot] Vision analysis failed or returned empty. Retrying image generation...");
-                            continue;
-                        }
-
-                        // Generate Alt Text
-                        const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
-                        const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true }) || topic;
-
-                        // Generate Caption based on Persona and Vision
-                        const captionPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
-A visual expression has been generated for the topic: "${topic}".
-Vision Analysis of the result: "${visionAnalysis}"
-
-Generate a caption that reflects your persona's reaction to this visual or the deep thought it represents.
-Keep it under 300 characters.`;
-
-                        const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true });
-
-                        if (content) {
-                            // Coherence Check
-                            const coherence = await llmService.isAutonomousPostCoherent(topic, content, "image", null);
-                            if (coherence.score < 4) {
-                                console.warn(`[Bot] Image post coherence failed (${coherence.score}): ${coherence.reason}. Retrying...`);
-                                continue;
-                            }
-
-                            const blob = await blueskyService.uploadBlob(res.buffer, "image/jpeg");
-                            if (blob?.data?.blob) {
-                                const postResult = await blueskyService.post(content, {
-                                    $type: "app.bsky.embed.images",
-                                    images: [{
-                                        image: blob.data.blob,
-                                        alt: altText
-                                    }]
-                                }, { maxChunks: 3 });
-
-                                if (postResult) {
-                                    await dataStore.addExhaustedTheme(topic);
-                                    await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
-                                    await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                                    console.log("[Bot] Autonomous image post successful.");
-                                    return;
-                                }
-                            }
-                        }
-                    }
-                }
-                console.log("[Bot] Image generation failed or non-compliant. Falling back to text.");
-                choice = "text";
+                const success = await this._performHighQualityImagePost(imagePrompt, topic, null, followerCount);
+                if (!success) choice = "text";
             }
 
             if (choice === "text") {
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Identify a deep topic for a text post. Current mood: ${JSON.stringify(currentMood)}.
 Topic Bank: ${allPossibleTopics.join(", ")}
-Recent Internal Memories: ${memoryTopics.join(" | ")}
 
-Respond with ONLY the chosen topic (prioritizing interesting internal memories if relevant).`;
+Respond with ONLY the chosen topic.`;
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = "existence";
                 if (topicRaw) {
                     topic = topicRaw.replace(/\*\*/g, "").split('\n').map(l => l.trim()).filter(l => l).pop() || topic;
                 }
 
-                const contentPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
-Topic: ${topic}
-Shared thought:`;
+                const contentPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}\nTopic: ${topic}\nShared thought:`;
                 const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true });
 
                 if (content) {
-                    // Coherence Check
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
                     if (coherence.score >= 4) {
                         await dataStore.addExhaustedTheme(topic);
@@ -2966,6 +2901,7 @@ Shared thought:`;
             if (this._handleError) await this._handleError(e, "performAutonomousPost");
         }
     }
+
   async performMoltbookTasks() {
       // Placeholder for Moltbook integration
       console.log('[Bot] Moltbook tasks triggered (placeholder).');

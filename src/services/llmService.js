@@ -100,7 +100,7 @@ Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_
 
     const hasUser = prepared.some(m => m.role === 'user');
     if (!hasUser) {
-      prepared.push({ role: 'user', content: '[INTERNAL_PULSE_RESUME]' });
+      prepared.push({ role: 'user', content: options.platform === 'bluesky' ? '[INTERNAL_PULSE_AUTONOMOUS]' : '[INTERNAL_PULSE_RESUME]' });
     }
 
     return prepared;
@@ -114,7 +114,7 @@ Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_
     const adminTz = this.ds ? this.ds.getAdminTimezone() : { timezone: 'UTC', offset: 0 };
     const now = new Date();
     const adminLocalTime = new Date(now.getTime() + (adminTz.offset * 60 * 1000));
-    const temporalContext = `
+    const temporalContext = options.platform === 'bluesky' ? '' : `
 **TEMPORAL AWARENESS (ADMIN):**
 - System Time: ${now.toLocaleString()}
 - Admin Local Time: ${adminLocalTime.toLocaleString()} (Timezone: ${adminTz.timezone})
@@ -1008,6 +1008,18 @@ Respond with JSON:
   _formatHistory(history, includeRole = true) {
       if (!history) return "";
       return history.map(h => `${includeRole ? (h.role || h.author) + ': ' : ''}${h.content || h.text}`).join('\n');
+  }
+
+  async verifyImageRelevance(analysis, topic) {
+    const prompt = `Compare this image analysis to the intended topic: "${topic}".
+Image Analysis: "${analysis}"
+Does the image actually represent the topic or is it irrelevant/hallucinated?
+Respond with JSON: { "relevant": boolean, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
+    try {
+        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"relevant": true}');
+        return data;
+    } catch (e) { return { relevant: true }; }
   }
 }
 

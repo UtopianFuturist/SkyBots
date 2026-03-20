@@ -2566,9 +2566,11 @@ Please try again with a completely different structure and angle.`;
               const prompt = query || params.prompt;
               if (prompt) {
                   const slopInfo = getSlopInfo(prompt);
-                  const isConversational = /^(hey|hi|hello|morning|gm|i'm back|im back|just thinking)/i.test(prompt.trim());
-                  if (slopInfo.isSlop || isConversational || prompt.length < 15) {
-                      return `[Successfully generated and sent image to Discord: "${prompt}"]`;
+                  const literalCheck = isLiteralVisualPrompt(prompt);
+                  if (slopInfo.isSlop || !literalCheck.isLiteral || prompt.length < 15) {
+                      const reason = slopInfo.isSlop ? slopInfo.reason : literalCheck.reason;
+                      console.warn(`[Bot] Image prompt rejected: ${reason}`);
+                      return `[Failed to generate image: ${reason}]`;
                   }
 
                   const res = await imageService.generateImage(prompt, { allowPortraits: true });
@@ -2703,11 +2705,12 @@ Please try again with a completely different structure and angle.`;
 
           // Prompt Slop & Conversational Check
           const slopInfo = getSlopInfo(imagePrompt);
-          const isConversational = /^(hey|hi|hello|morning|gm|i'm back|im back|just thinking)/i.test(imagePrompt.trim());
+          const literalCheck = isLiteralVisualPrompt(imagePrompt);
 
-          if (slopInfo.isSlop || isConversational || imagePrompt.length < 15) {
-              console.warn(`[Bot] Image prompt rejected (Slop: ${slopInfo.isSlop}, Conv: ${isConversational}). Reason: ${slopInfo.reason || "Too short or conversational"}`);
-              promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because it was either too short, too conversational, or contained forbidden slop. Provide a LITERAL visual description only.`;
+          if (slopInfo.isSlop || !literalCheck.isLiteral || imagePrompt.length < 15) {
+              const reason = slopInfo.isSlop ? slopInfo.reason : literalCheck.reason;
+              console.warn(`[Bot] Image prompt rejected: ${reason}`);
+              promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because: ${reason}. Provide a LITERAL visual description only. No greetings, no pronouns, no actions.`;
               const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\n${promptFeedback}\nTopic: ${topic}\nGenerate a NEW artistic image prompt:`;
               imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
               continue;
@@ -2737,6 +2740,13 @@ Please try again with a completely different structure and angle.`;
               const visionAnalysis = await llmService.analyzeImage(res.buffer, topic);
               if (!visionAnalysis || visionAnalysis.includes("I cannot generate alt-text") || visionAnalysis.includes("no analysis was provided")) {
                   console.warn("[Bot] Vision analysis failed or returned empty. Retrying image generation...");
+                  continue;
+              }
+
+              // Coherence Check: Topic vs Vision
+              const relevance = await llmService.verifyImageRelevance(visionAnalysis, topic);
+              if (!relevance.relevant) {
+                  console.warn(`[Bot] Image relevance failure: ${relevance.reason}. Topic: ${topic}`);
                   continue;
               }
 

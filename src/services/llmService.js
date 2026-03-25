@@ -71,7 +71,7 @@ Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_
     } catch (e) { return { detected: false }; }
   }
 
-    _prepareMessages(messages, systemPrompt) {
+    _prepareMessages(messages, systemPrompt, options = {}) {
     const prepared = [];
 
     // Ensure system prompt is first
@@ -180,7 +180,7 @@ Guidelines:
             attempts++;
             try {
               console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
-              const fullMessages = this._prepareMessages(messages, systemPrompt);
+              const fullMessages = this._prepareMessages(messages, systemPrompt, options = {});
 
               // Per-model timeouts to prevent hanging on unresponsive endpoints
               const modelTimeout = model.includes('step') ? 60000 : 90000; // 60s for Step, 120s for others
@@ -251,7 +251,7 @@ Guidelines:
     if (config.STEP_MODEL) {
       try {
         console.log(`[LLMService] LAST RESORT: Attempting final fallback with ${config.STEP_MODEL}...`);
-        const fullMessages = this._prepareMessages(messages, systemPrompt);
+        const fullMessages = this._prepareMessages(messages, systemPrompt, options = {});
         const response = await fetch(this.endpoint, {
           method: 'POST',
           headers: {

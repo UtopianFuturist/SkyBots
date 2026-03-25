@@ -7,7 +7,7 @@ class BlueskyService {
   constructor() {
     this.agent = new AtpAgent({
       service: 'https://bsky.social',
-      headers: [['User-Agent', 'SydneyBot/1.0 (Render; +https://dearest-llama.onrender.com)']]
+      headers: [['User-Agent', 'Bot/1.0 (Render; +https://dearest-llama.onrender.com)']]
     });
   }
 
@@ -150,7 +150,7 @@ class BlueskyService {
   }
 
   async postReply(parentPost, text, options = {}) {
-    const { maxChunks = 4 } = options;
+    const { maxChunks = 20 } = options;
     const MAX_RETRIES = 3;
     const RETRY_DELAY = 3000; // 3 seconds
 
@@ -601,7 +601,7 @@ class BlueskyService {
         explicitEmbed = embedOrOptions;
     }
 
-    const { maxChunks = 4 } = finalOptions;
+    const { maxChunks = 20 } = finalOptions;
     console.log('[BlueskyService] Creating new post (potentially threaded)...');
     try {
       let textChunks = splitText(text);

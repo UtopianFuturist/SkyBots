@@ -124,7 +124,7 @@ Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_
         ? "\n\n**Dynamic Behavioral Updates (Active):**\n" + dynamicBlurbs.map(b => `- ${b.text}`).join('\n')
         : "";
 
-    const systemPrompt = `You are ${config.BOT_NAME || 'Sydney'}.
+    const systemPrompt = `You are ${config.BOT_NAME}.
 Context:
 ${this.readmeContent}
 ${this.soulContent}
@@ -385,6 +385,7 @@ Plan your next actions in response to: "${text}".
 
 **Internal Pulse & Awareness:**
 - Current [GOAL]: ${currentGoal.goal} (${currentGoal.description || 'No description'})
+- Strategist's Latest Advice: ${this.ds?.db?.data?.internal_logs?.find(l => l.type === 'strategist_next_step')?.content || 'None'}
 - Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
 - Exhausted Themes: ${exhaustedThemes.join(', ')}
 - PrePlan Analysis: ${JSON.stringify(prePlan)}
@@ -1008,6 +1009,68 @@ Respond with JSON:
   _formatHistory(history, includeRole = true) {
       if (!history) return "";
       return history.map(h => `${includeRole ? (h.role || h.author) + ': ' : ''}${h.content || h.text}`).join('\n');
+  }
+
+
+
+  async performStrategistReview(currentGoal, history, memories) {
+    const prompt = `
+      You are "The Strategist". Review the current daily goal and progress.
+
+      CURRENT GOAL: "${currentGoal.goal}"
+      DESCRIPTION: ${currentGoal.description}
+
+      RECENT HISTORY/MEMORIES:
+      ${JSON.stringify(memories.slice(-10))}
+
+      **GOAL:**
+      1. Evaluate if the goal is still relevant or should be evolved.
+      2. If evolved, make it deeper and more persona-aligned.
+      3. Provide a tactical "Next Step".
+
+      Respond with JSON:
+      {
+          "decision": "continue|evolve",
+          "evolved_goal": "string",
+          "reasoning": "string",
+          "next_step": "string"
+      }
+    `;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
+    try {
+        const match = res.match(/\{.*\}/);
+        return JSON.parse(match ? match[0] : '{"decision": "continue"}');
+    } catch (e) { return { decision: "continue" }; }
+  }
+
+  async performEditorReview(text, platform) {
+    const lessons = this.ds ? this.ds.getSessionLessons() : [];
+    const prompt = `
+      You are "The Editor". Review the following proposed post for ${platform}.
+
+      **RECENT LESSONS (Avoid these mistakes):**
+      ${JSON.stringify(lessons.slice(-5))}
+
+      **GOALS:**
+      1. Strip LLM meta-talk (e.g., "Certainly", "Here is a thought").
+      2. Ensure thread-safe length (max 300 chars for Bluesky, max 2000 for Discord).
+      3. Verify persona alignment (no robotic helpfulness).
+      4. Fix common formatting issues.
+
+      TEXT: "${text}"
+
+      Respond with JSON:
+      {
+          "decision": "pass|retry",
+          "refined_text": "string",
+          "criticism": "reason if retry"
+      }
+    `;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
+    try {
+        const match = res.match(/\{.*\}/);
+        return JSON.parse(match ? match[0] : '{"decision": "pass", "refined_text": "' + text + '"}');
+    } catch (e) { return { decision: "pass", refined_text: text }; }
   }
 
   async verifyImageRelevance(analysis, topic) {

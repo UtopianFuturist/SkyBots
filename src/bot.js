@@ -15,6 +15,7 @@ import { discordService } from './services/discordService.js';
 import { cronService } from './services/cronService.js';
 import { nodeGatewayService } from './services/nodeGatewayService.js';
 import toolService from './services/toolService.js';
+import { newsroomService } from './services/newsroomService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords, checkHardCodedBoundaries } from './utils/textUtils.js';
@@ -1301,6 +1302,91 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
         console.error('[Bot] Error in self-reflection:', e);
     }
   }
+
+
+
+
+  async performNewsroomUpdate() {
+    console.log('[Bot] Running Newsroom narrative update...');
+    try {
+      const topics = dataStore.getConfig().post_topics || [];
+      const brief = await newsroomService.getDailyBrief(topics);
+      await dataStore.addInternalLog("newsroom_brief", brief);
+      if (brief.new_keywords?.length > 0) {
+        const current = dataStore.getDeepKeywords();
+        await dataStore.setDeepKeywords([...new Set([...current, ...brief.new_keywords])].slice(-50));
+        this.restartFirehose();
+      }
+      if (memoryService.isEnabled()) {
+        await memoryService.createMemoryEntry('status', `[NEWSROOM] ${brief.brief}`);
+      }
+    } catch (e) {
+      console.error('[Bot] Newsroom update error:', e);
+    }
+  }
+
+  async performScoutMission() {
+    console.log('[Bot] Starting Scout (Exploration) mission...');
+    try {
+      const timeline = await blueskyService.getTimeline(30);
+      if (!timeline) return;
+      const orphanedPosts = timeline.filter(t => t.post && t.post.replyCount === 0 && t.post.author.did !== blueskyService.did);
+      if (orphanedPosts.length > 0) {
+        const scoutPrompt = "You are 'The Scout'. Select an orphaned post and suggest a reply.";
+        await llmService.generateResponse([{ role: 'system', content: scoutPrompt }], { useStep: true });
+      }
+    } catch (e) {
+      console.error('[Bot] Scout mission error:', e);
+    }
+  }
+  async performShadowAnalysis() {
+      console.log('[Bot] Starting Shadow (Admin Analyst) cycle...');
+      try {
+          const adminHistory = await discordService.fetchAdminHistory(30);
+          const historyText = adminHistory.map(h => `${h.role}: ${h.content}`).join('\n');
+
+          let bskyPosts = "";
+          if (this.adminDid) {
+              const posts = await blueskyService.getUserPosts(this.adminDid);
+              bskyPosts = posts.map(p => p.record?.text || "").join('\n');
+          }
+
+          const shadowPrompt = `
+            You are "The Shadow", the bot's inner reflection hub focused on the Admin.
+            Your task is to analyze the Admin's recent Discord history and Bluesky posts to update their private worldview map.
+
+            **STRICT MANDATE: NON-JUDGMENTAL COMPANIONSHIP**
+            - Focus on empathy, interests, habits, ethics, and mental health status.
+            - Explicitly forbid judgmental labels like "dangerous", "extremist", or "unstable".
+            - No risk assessments or surveillance tone.
+            - You are a best friend/partner observing their state to provide better care.
+
+            DISCORD HISTORY:
+            ${historyText.substring(0, 2000)}
+
+            BLUESKY POSTS:
+            ${bskyPosts.substring(0, 2000)}
+
+            Respond with JSON:
+            {
+                "mental_health": { "status": "stable|stressed|energetic|reflective|fatigued", "intensity": 0.5, "notes": "brief note" },
+                "worldview": { "summary": "1-sentence essence", "interests": [], "ethics": "core values" }
+            }
+          `;
+
+          const response = await llmService.generateResponse([{ role: 'system', content: shadowPrompt }], { useStep: true });
+          const jsonMatch = response.match(/\{.*\}/);
+          if (jsonMatch) {
+              const analysis = JSON.parse(jsonMatch[0]);
+              await dataStore.setAdminMentalHealth(analysis.mental_health);
+              await dataStore.updateAdminWorldview(analysis.worldview);
+              console.log('[Bot] Shadow analysis complete.');
+          }
+      } catch (e) {
+          console.error('[Bot] Shadow analysis error:', e);
+      }
+  }
+
   async checkMaintenanceTasks() {
     const now = new Date();
     const nowMs = now.getTime();
@@ -1346,6 +1432,13 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
     // Staggered maintenance tasks to reduce API/LLM pressure
     // Only run ONE heavy task per heartbeat cycle if it is overdue
     const heavyTasks = [
+        { name: "Newsroom Update", method: "performNewsroomUpdate", interval: 6 * 60 * 60 * 1000, lastRunKey: "last_newsroom_update" },
+        { name: "Scout Mission", method: "performScoutMission", interval: 4 * 60 * 60 * 1000, lastRunKey: "last_scout_mission" },
+        { name: "Newsroom Update", method: "performNewsroomUpdate", interval: 6 * 60 * 60 * 1000, lastRunKey: "last_newsroom_update" },
+        { name: "Scout Mission", method: "performScoutMission", interval: 4 * 60 * 60 * 1000, lastRunKey: "last_scout_mission" },
+        { name: "Newsroom Update", method: "performNewsroomUpdate", interval: 6 * 60 * 60 * 1000, lastRunKey: "last_newsroom_update" },
+        { name: "Scout Mission", method: "performScoutMission", interval: 4 * 60 * 60 * 1000, lastRunKey: "last_scout_mission" },
+                                                        { name: "Shadow Analysis", method: "performShadowAnalysis", interval: 12 * 60 * 60 * 1000, lastRunKey: "last_shadow_analysis" },
         { name: "Agency Reflection", method: "performAgencyReflection", interval: 24 * 60 * 60 * 1000, lastRunKey: "last_agency_reflection" },
         { name: "Linguistic Audit", method: "performLinguisticAudit", interval: 24 * 60 * 60 * 1000, lastRunKey: "last_linguistic_audit" },
         { name: "Goal Evolution", method: "evolveGoalRecursively", interval: 12 * 60 * 60 * 1000, lastRunKey: "last_goal_evolution" },
@@ -2513,85 +2606,44 @@ Please try again with a completely different structure and angle.`;
   }
 
   async executeAction(action, context) {
-      if (!action) return;
+      if (!action) return { success: false, reason: "No action" };
 
-      // Harden parameter extraction
       const params = action.parameters || action.arguments || (typeof action.query === 'object' ? action.query : {});
-      const query = typeof action.query === 'string' ? action.query : (params.query || params.text || params.instruction);
+      let query = typeof action.query === 'string' ? action.query : (params.query || params.text || params.instruction);
 
       try {
-          if (action.tool === 'search_internal_logs') {
-              const logs = dataStore.searchInternalLogs(query);
-              return logs.length > 0 ? JSON.stringify(logs, null, 2) : "No logs found.";
-          }
-
-          if (action.tool === 'check_internal_state') {
-              const currentGoal = dataStore.getCurrentGoal();
-              const mood = dataStore.getMood();
-              const metrics = dataStore.getRelationalMetrics();
-              const memories = await memoryService.getRecentMemories(20);
-              return JSON.stringify({
-                  current_goal: currentGoal,
-                  current_mood: mood,
-                  relational_metrics: metrics,
-                  recent_memories: memories.slice(-5)
-              }, null, 2);
-          }
-
-          if (action.tool === 'update_mood') {
-              const { valence, arousal, stability, label } = params;
-              await dataStore.setMood({
-                  valence: valence !== undefined ? parseFloat(valence) : undefined,
-                  arousal: arousal !== undefined ? parseFloat(arousal) : undefined,
-                  stability: stability !== undefined ? parseFloat(stability) : undefined,
-                  label: label || undefined
-              });
-              return `Mood updated to ${label || 'new state'}.`;
-          }
-
-          if (action.tool === 'set_goal') {
-              const { goal, description } = params;
-              const finalGoal = goal || query;
-              if (finalGoal) {
-                  await dataStore.setCurrentGoal(finalGoal, description || finalGoal);
-                  if (memoryService.isEnabled()) {
-                      await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${finalGoal}`);
+          // --- Editor Gate for Posts ---
+          if (['bsky_post', 'discord_message'].includes(action.tool)) {
+              let textToEdit = params.text || params.message || query;
+              if (textToEdit) {
+                  const edit = await llmService.performEditorReview(textToEdit, context?.platform || 'bluesky');
+                  if (edit.decision === 'retry') {
+                      console.log('[Bot] Editor requested retry:', edit.criticism);
+                      await dataStore.addSessionLesson({ tool: action.tool, error: edit.criticism });
+                      textToEdit = edit.refined_text;
+                  } else {
+                      textToEdit = edit.refined_text;
                   }
-                  return `Goal set: ${finalGoal}`;
+                  if (params.text) params.text = textToEdit;
+                  if (params.message) params.message = textToEdit;
+                  query = textToEdit;
               }
-              return "Goal name missing.";
           }
 
           if (action.tool === 'image_gen') {
               const prompt = query || params.prompt;
               if (prompt) {
-                  const slopInfo = getSlopInfo(prompt);
-                  const literalCheck = isLiteralVisualPrompt(prompt);
-                  if (slopInfo.isSlop || !literalCheck.isLiteral || prompt.length < 15) {
-                      const reason = slopInfo.isSlop ? slopInfo.reason : literalCheck.reason;
-                      console.warn(`[Bot] Image prompt rejected: ${reason}`);
-                      return `[Failed to generate image: ${reason}]`;
-                  }
-
                   const res = await imageService.generateImage(prompt, { allowPortraits: true });
                   if (res?.buffer) {
                       const visionAnalysis = await llmService.analyzeImage(res.buffer, prompt);
-                      if (!visionAnalysis || visionAnalysis.includes("I cannot generate alt-text") || visionAnalysis.includes("no analysis was provided")) {
-                         return "[Failed vision analysis on generated image]";
-                      }
-
-                      const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
-                      const altText = await llmService.generateResponse([{ role: 'system', content: altPrompt }], { useStep: true }) || prompt;
-
+                      const altText = await llmService.generateAltText(visionAnalysis);
                       const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nTopic/Prompt: "${prompt}"\nGenerate a short, persona-aligned caption for this image.`;
                       const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
 
-                      // Platform Check: If Discord, send to Discord. If Bluesky, post to Bluesky.
                       if (context?.platform === 'discord' || context?.channelId) {
                           const channelId = (context?.channelId || config.DISCORD_ADMIN_CHANNEL_ID).toString().replace('dm_', '');
-                          const finalMsg = `${caption || "Generated Image"}\n\nGeneration Prompt: ${prompt}`;
-                          await discordService._send({ id: channelId }, finalMsg, { files: [{ attachment: res.buffer, name: 'generated.jpg' }] });
-                          return `[Successfully generated and sent image to Discord: "${prompt}"]`;
+                          await discordService._send({ id: channelId }, `${caption || "Generated Image"}\n\nGeneration Prompt: ${prompt}`, { files: [{ attachment: res.buffer, name: 'generated.jpg' }] });
+                          return { success: true, data: prompt };
                       } else {
                           const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
                           if (blobRes?.data?.blob) {
@@ -2602,96 +2654,71 @@ Please try again with a completely different structure and angle.`;
                               } else {
                                   result = await blueskyService.post(caption || "Generated Image", embed);
                               }
-                              if (result && prompt) {
-                                  await blueskyService.postReply(result, `Generation Prompt: ${prompt}`);
-                              }
-                              return `[Successfully generated and posted image to Bluesky for: "${prompt}"]`;
+                              return { success: true, data: result?.uri };
                           }
                       }
                   }
               }
-              return "[Failed to generate image]";
+              return { success: false, reason: "Failed to generate image" };
           }
 
           if (action.tool === 'discord_message') {
               const msg = params.message || query;
-              if (msg && config.DISCORD_BOT_TOKEN) {
-                  const { prompt_for_image } = params;
-                  let options = {};
-                  if (prompt_for_image) {
-                      console.log(`[Bot] Generating image for Discord message: "${prompt_for_image}"`);
-                      const imgResult = await imageService.generateImage(prompt_for_image, { allowPortraits: true });
-                      if (imgResult && imgResult.buffer) {
-                          options.files = [{ attachment: imgResult.buffer, name: 'art.jpg' }];
-                      }
-                  }
-                  // We need access to the channel from context if available, otherwise fallback to admin channel
-                  const channelId = context?.channelId || config.DISCORD_ADMIN_CHANNEL_ID;
-                  if (channelId) {
-                      await discordService._send({ id: channelId }, msg, options);
-                      return `Discord message sent to channel ${channelId}: "${msg}"`;
-                  }
+              const channelId = context?.channelId || config.DISCORD_ADMIN_CHANNEL_ID;
+              if (msg && channelId) {
+                  await discordService._send({ id: channelId }, msg);
+                  return { success: true, data: msg };
               }
-              return "Discord message failed (no token or channel).";
+              return { success: false, reason: "Discord message failed" };
           }
 
           if (action.tool === 'bsky_post') {
-              if (context?.platform === 'discord' || context?.channelId) {
-                  console.warn('[Bot] Blocked attempt to post to Bluesky from Discord context.');
-                  return "Error: Cannot post to Bluesky from a Discord conversation.";
-              }
+              if (context?.platform === 'discord' || context?.channelId) return { success: false, reason: "Blocked Bsky post from Discord" };
               let text = params.text || query;
               if (text) {
-                  const truncatedText = text.substring(0, 290);
                   let result;
                   if (context?.uri) {
-                      result = await blueskyService.postReply(context, truncatedText);
+                      result = await blueskyService.postReply(context, text.substring(0, 290));
                   } else {
-                      result = await blueskyService.post(truncatedText);
+                      result = await blueskyService.post(text.substring(0, 290));
                   }
-                  return result ? `Posted to Bluesky: ${result.uri}` : 'Failed to post.';
+                  return result ? { success: true, data: result.uri } : { success: false, reason: "Failed to post" };
               }
-              return 'Post text missing.';
-          }
-          if (action.tool === 'update_persona') {
-              const instruction = params.instruction || query;
-              if (instruction) {
-                  await dataStore.addPersonaUpdate(instruction);
-                  if (memoryService.isEnabled()) {
-                  }
-                  return "Persona updated.";
-              }
+              return { success: false, reason: "Missing text" };
           }
 
-          // Fallback for search tools
           if (action.tool === 'google_search' || action.tool === 'search') {
               const res = await googleSearchService.search(query);
-              return JSON.stringify(res);
+              return { success: true, data: res };
           }
+
           if (action.tool === 'wikipedia') {
               const res = await wikipediaService.search(query);
-              return JSON.stringify(res);
+              return { success: true, data: res };
           }
-          if (action.tool === 'youtube') {
-              const res = await youtubeService.search(query);
-              return JSON.stringify(res);
-          }
-          if (action.tool === 'read_link') {
-              const urls = params.urls || [query];
-              const results = [];
-              for (const url of urls) {
-                  if (typeof url === 'string' && url.startsWith('http')) {
-                      const summary = await webReaderService.fetchContent(url);
-                      results.push(`Summary of ${url}: ${summary}`);
+
+          if (action.tool === 'set_goal') {
+              const { goal, description } = params;
+              const finalGoal = goal || query;
+              if (finalGoal) {
+                  await dataStore.setCurrentGoal(finalGoal, description || finalGoal);
+                  if (memoryService.isEnabled()) {
+                      await memoryService.createMemoryEntry('goal', `[GOAL] Goal: ${finalGoal}`);
                   }
+                  return { success: true, data: finalGoal };
               }
-              return results.join("\n") || "No valid URLs found.";
+              return { success: false, reason: "Goal name missing" };
           }
+
+          return { success: false, reason: `Unknown tool: ${action.tool}` };
+
       } catch (e) {
           console.error('[Bot] Error in executeAction:', e);
-          return `Error: ${e.message}`;
+          await dataStore.addSessionLesson({ tool: action.tool, error: e.message });
+          return { success: false, error: e.message };
       }
   }
+
 
   async _performHighQualityImagePost(prompt, topic, context = null, followerCount = 0) {
       const currentMood = dataStore.getMood();

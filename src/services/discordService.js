@@ -923,7 +923,7 @@ ${actionResults.join('\n')}` });
                 const isStory = responseText.length > 1000 && (responseText.toLowerCase().includes("story") || responseText.toLowerCase().includes("chapter"));
                 const userRequestedLong = message.content.toLowerCase().includes("list") || message.content.toLowerCase().includes("long") || message.content.toLowerCase().includes("story") || message.content.toLowerCase().includes("all");
 
-                const maxChunks = (isList || isStory || userRequestedLong) ? 20 : 4;
+                const maxChunks = 20;
                 const messages = rawChunks.slice(0, maxChunks);
                 if (rawChunks.length > maxChunks) {
                    console.log(`[DiscordService] Truncating response from ${rawChunks.length} to ${maxChunks} chunks.`);
@@ -987,7 +987,7 @@ INSTRUCTIONS:
 - Explain what's happening and that you're attempting to self-correct.
 - Keep it under 400 characters.
 - Do NOT use metaphorical slop.
-- Do NOT introduce yourself or announce who you are (e.g., avoid 'This is Sydney' or 'Your bot here'). The admin knows who you are.
+- Do NOT introduce yourself or announce who you are (e.g., avoid "This is " + config.BOT_NAME + " or 'Your bot here'"). The admin knows who you are.
 `;
 
         try {

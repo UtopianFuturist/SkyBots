@@ -2724,7 +2724,7 @@ Please try again with a completely different structure and angle.`;
           console.log(`[Bot] Image post attempt ${attempts} for topic: ${topic}`);
 
           // Filter out internal system markers if they somehow leaked into the prompt
-          imagePrompt = imagePrompt.replace(/\[INTERNAL_PULSE_RESUME\]/g, "").replace(/\[INTERNAL_PULSE_AUTONOMOUS\]/g, "").trim();
+          imagePrompt = imagePrompt.replace(/\[INTERNAL_PULSE_RESUME\]/g, "").replace(/\[INTERNAL_PULSE_AUTONOMOUS\]/g, "").replace(/\[System note:.*?\]/g, "").trim();
           if (!imagePrompt) imagePrompt = topic;
 
           // Prompt Slop & Conversational Check

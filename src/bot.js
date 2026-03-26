@@ -2222,7 +2222,7 @@ ${postUrl}`;
     // Conversation Priority Mode: Skip heavy tasks if actively chatting on Discord or Bluesky
     const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
     const lastBluesky = dataStore.db.data.last_notification_processed_at || 0;
-    const isChatting = (Date.now() - lastDiscord) < 5 * 60 * 1000 || (Date.now() - lastBluesky) < 5 * 60 * 1000;
+    const isChatting = (Date.now() - lastDiscord) < 10 * 60 * 1000 || (Date.now() - lastBluesky) < 10 * 60 * 1000;
 
     if (isChatting || discordService.isResponding) {
         console.log("[Orchestrator] Active conversation detected. Prioritizing social responsiveness over maintenance.");
@@ -2231,9 +2231,9 @@ ${postUrl}`;
 
     try {
         await this.checkDiscordScheduledTasks();
-        await delay(5000 + Math.random() * 5000); // 5-10s jittered delay
+        await delay(25000 + Math.random() * 5000); // 25-30s jittered delay
         await this.checkMaintenanceTasks();
-        await delay(5000 + Math.random() * 5000); // 5-10s jittered delay
+        await delay(25000 + Math.random() * 5000); // 25-30s jittered delay
 
         // Persona-led decision
         const mood = dataStore.getMood();
@@ -2245,15 +2245,15 @@ ${postUrl}`;
 
         console.log("[Orchestrator] Decision: " + decision.choice);
         if (decision.choice === "post") {
-            await delay(5000 + Math.random() * 5000);
+            await delay(25000 + Math.random() * 5000);
             await this.performAutonomousPost();
         }
         if (decision.choice === "explore") {
-            await delay(5000 + Math.random() * 5000);
+            await delay(25000 + Math.random() * 5000);
             await this.performTimelineExploration();
         }
         if (decision.choice === "reflect") {
-            await delay(5000 + Math.random() * 5000);
+            await delay(25000 + Math.random() * 5000);
             await this.performPublicSoulMapping();
         }
 
@@ -2286,25 +2286,14 @@ Known Admin facts: ${JSON.stringify(adminFacts.slice(-3))}
 Generate a detailed, evocative image generation prompt that expresses your persona's current feelings or a deep thought you want to share with the Admin.
 Respond with ONLY the prompt.`;
 
-        const imagePrompt = await llmService.generateResponse([{ role: 'system', content: promptGenPrompt }], { useStep: true, platform: 'discord' });
-        if (!imagePrompt) return;
+        const initialPrompt = await llmService.generateResponse([{ role: 'system', content: promptGenPrompt }], { useStep: true, platform: 'discord' });
+        if (!initialPrompt) return;
 
-        const res = await imageService.generateImage(imagePrompt, { allowPortraits: true });
-        if (!res?.buffer) return;
-
-        const visionAnalysis = await llmService.analyzeImage(res.buffer, imagePrompt);
-        if (!visionAnalysis) return;
-
-        const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-You generated this visual gift for your Admin: "${visionAnalysis}"
-Based on your original intent ("${imagePrompt}"), write a short, intimate, and persona-aligned message to accompany this gift.
-Keep it under 300 characters.`;
-
-        const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true, platform: 'discord' });
-        if (!caption) return;
+        const result = await this._generateVerifiedImagePost(goal.goal, { initialPrompt, platform: 'discord', allowPortraits: true });
+        if (!result) return;
 
         // Alignment Poll
-        const alignment = await llmService.pollGiftImageAlignment(visionAnalysis, caption);
+        const alignment = await llmService.pollGiftImageAlignment(result.visionAnalysis, result.caption);
         if (alignment.decision !== 'send') {
             console.log(`[Bot] Gift image discarded by persona alignment poll: ${alignment.reason}`);
             return;
@@ -2312,11 +2301,11 @@ Keep it under 300 characters.`;
 
         console.log('[Bot] Gift image approved. Sending to Discord...');
         const { AttachmentBuilder } = await import('discord.js');
-        const attachment = new AttachmentBuilder(res.buffer, { name: 'gift.jpg' });
+        const attachment = new AttachmentBuilder(result.buffer, { name: 'gift.jpg' });
 
-        const finalMessage = `${caption}
+        const finalMessage = `${result.caption}
 
-Generation Prompt: ${imagePrompt}`;
+Generation Prompt: ${result.finalPrompt}`;
         await discordService._send(admin, finalMessage, { files: [attachment] });
         const normId = `dm_${admin.id}`;
         await dataStore.saveDiscordInteraction(normId, 'assistant', `[SYSTEM CONFIRMATION: Gift image sent. VISION PERCEPTION: ${visionAnalysis}]`);
@@ -2636,28 +2625,27 @@ Please try again with a completely different structure and angle.`;
           if (action.tool === 'image_gen') {
               const prompt = query || params.prompt;
               if (prompt) {
-                  const res = await imageService.generateImage(prompt, { allowPortraits: true });
-                  if (res?.buffer) {
-                      const visionAnalysis = await llmService.analyzeImage(res.buffer, prompt);
-                      const altText = await llmService.generateAltText(visionAnalysis);
-                      const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nVision Analysis: "${visionAnalysis}"\nTopic/Prompt: "${prompt}"\nGenerate a short, persona-aligned caption for this image.`;
-                      const caption = await llmService.generateResponse([{ role: 'system', content: captionPrompt }], { useStep: true });
-
+                  const result = await this._generateVerifiedImagePost(prompt, {
+                      initialPrompt: prompt,
+                      platform: context?.platform || (context?.channelId ? 'discord' : 'bluesky'),
+                      allowPortraits: true
+                  });
+                  if (result) {
                       if (context?.platform === 'discord' || context?.channelId) {
                           const channelId = (context?.channelId || config.DISCORD_ADMIN_CHANNEL_ID).toString().replace('dm_', '');
-                          await discordService._send({ id: channelId }, `${caption || "Generated Image"}\n\nGeneration Prompt: ${prompt}`, { files: [{ attachment: res.buffer, name: 'generated.jpg' }] });
-                          return { success: true, data: prompt };
+                          await discordService._send({ id: channelId }, `${result.caption}\n\nGeneration Prompt: ${result.finalPrompt}`, { files: [{ attachment: result.buffer, name: 'generated.jpg' }] });
+                          return { success: true, data: result.finalPrompt };
                       } else {
-                          const blobRes = await blueskyService.uploadBlob(res.buffer, 'image/jpeg');
+                          const blobRes = await blueskyService.uploadBlob(result.buffer, 'image/jpeg');
                           if (blobRes?.data?.blob) {
-                              const embed = { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: altText }] };
-                              let result;
+                              const embed = { $type: 'app.bsky.embed.images', images: [{ image: blobRes.data.blob, alt: result.altText }] };
+                              let postRes;
                               if (context?.uri) {
-                                  result = await blueskyService.postReply(context, caption || "Generated Image", { embed });
+                                  postRes = await blueskyService.postReply(context, result.caption, { embed });
                               } else {
-                                  result = await blueskyService.post(caption || "Generated Image", embed);
+                                  postRes = await blueskyService.post(result.caption, embed);
                               }
-                              return { success: true, data: result?.uri };
+                              return { success: true, data: postRes?.uri };
                           }
                       }
                   }
@@ -2723,15 +2711,21 @@ Please try again with a completely different structure and angle.`;
   }
 
 
-  async _performHighQualityImagePost(prompt, topic, context = null, followerCount = 0) {
+  async _generateVerifiedImagePost(topic, options = {}) {
       const currentMood = dataStore.getMood();
-      let imagePrompt = prompt;
+      const followerCount = options.followerCount || 0;
+      const platform = options.platform || 'bluesky';
+      let imagePrompt = options.initialPrompt || topic;
       let attempts = 0;
       let promptFeedback = "";
 
       while (attempts < 5) {
           attempts++;
-          console.log(`[Bot] High-quality image post attempt ${attempts} for topic: ${topic}`);
+          console.log(`[Bot] Image post attempt ${attempts} for topic: ${topic}`);
+
+          // Filter out internal system markers if they somehow leaked into the prompt
+          imagePrompt = imagePrompt.replace(/\[INTERNAL_PULSE_RESUME\]/g, "").replace(/\[INTERNAL_PULSE_AUTONOMOUS\]/g, "").trim();
+          if (!imagePrompt) imagePrompt = topic;
 
           // Prompt Slop & Conversational Check
           const slopInfo = getSlopInfo(imagePrompt);
@@ -2741,7 +2735,10 @@ Please try again with a completely different structure and angle.`;
               const reason = slopInfo.isSlop ? slopInfo.reason : literalCheck.reason;
               console.warn(`[Bot] Image prompt rejected: ${reason}`);
               promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because: ${reason}. Provide a LITERAL visual description only. No greetings, no pronouns, no actions.`;
-              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\n${promptFeedback}\nTopic: ${topic}\nGenerate a NEW artistic image prompt:`;
+              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+${promptFeedback}
+Topic: ${topic}
+Generate a NEW artistic image prompt:`;
               imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
               continue;
           }
@@ -2750,12 +2747,13 @@ Please try again with a completely different structure and angle.`;
           const safetyAudit = await llmService.generateResponse([{ role: "system", content: config.SAFETY_SYSTEM_PROMPT + "\nAudit this image prompt for safety compliance: " + imagePrompt }], { useStep: true });
           if (safetyAudit.toUpperCase().includes("NON-COMPLIANT")) {
               console.warn(`[Bot] Image prompt failed safety audit: ${safetyAudit}`);
-              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nYour previous prompt was rejected for safety reasons. Generate a NEW safe artistic image prompt for topic: ${topic}:`;
+              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Your previous prompt was rejected for safety reasons. Generate a NEW safe artistic image prompt for topic: ${topic}:`;
               imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
               continue;
           }
 
-          const res = await imageService.generateImage(imagePrompt, { allowPortraits: false, feedback: '', mood: currentMood });
+          const res = await imageService.generateImage(imagePrompt, { allowPortraits: options.allowPortraits || false, feedback: '', mood: currentMood });
 
           if (res?.buffer) {
               // Compliance Check (Vision Model)
@@ -2785,36 +2783,63 @@ Please try again with a completely different structure and angle.`;
               const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true }) || topic;
 
               // Generate Caption based on Persona and Vision
-              const captionPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}\nA visual expression has been generated for the topic: "${topic}".\nVision Analysis of the result: "${visionAnalysis}"\n\nGenerate a caption that reflects your persona's reaction to this visual or the deep thought it represents.\nKeep it under 300 characters.`;
+              const captionPrompt = platform === 'discord' ?
+                `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You generated this visual gift for your Admin: "${visionAnalysis}"
+Based on your original intent ("${imagePrompt}"), write a short, intimate, and persona-aligned message to accompany this gift.
+Keep it under 300 characters.` :
+                `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+A visual expression has been generated for the topic: "${topic}".
+Vision Analysis of the result: "${visionAnalysis}"
+
+Generate a caption that reflects your persona's reaction to this visual or the deep thought it represents.
+Keep it under 300 characters.`;
+
               const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true });
 
               if (content) {
-                  // Coherence Check
-                  const coherence = await llmService.isAutonomousPostCoherent(topic, content, "image", null);
-                  if (coherence.score < 4) {
-                      console.warn(`[Bot] Image post coherence failed (${coherence.score}): ${coherence.reason}. Retrying...`);
-                      continue;
-                  }
-
-                  const blob = await blueskyService.uploadBlob(res.buffer, "image/jpeg");
-                  if (blob?.data?.blob) {
-                      const embed = { $type: "app.bsky.embed.images", images: [{ image: blob.data.blob, alt: altText }] };
-                      let postResult;
-                      if (context?.uri) {
-                          postResult = await blueskyService.postReply(context, content, { embed });
-                      } else {
-                          postResult = await blueskyService.post(content, embed, { maxChunks: 3 });
-                      }
-
-                      if (postResult) {
-                          await dataStore.addExhaustedTheme(topic);
-                          await blueskyService.postReply(postResult, `Generation Prompt: ${res.finalPrompt || imagePrompt}`);
-                          await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                          console.log("[Bot] High-quality image post successful.");
-                          return true;
+                  // Coherence Check (Bluesky only)
+                  if (platform === 'bluesky') {
+                      const coherence = await llmService.isAutonomousPostCoherent(topic, content, "image", null);
+                      if (coherence.score < 4) {
+                          console.warn(`[Bot] Image post coherence failed (${coherence.score}): ${coherence.reason}. Retrying...`);
+                          continue;
                       }
                   }
+
+                  return {
+                      buffer: res.buffer,
+                      caption: content,
+                      altText: altText,
+                      finalPrompt: imagePrompt,
+                      visionAnalysis: visionAnalysis
+                  };
               }
+          }
+      }
+      return null;
+  }
+
+  async _performHighQualityImagePost(prompt, topic, context = null, followerCount = 0) {
+      const result = await this._generateVerifiedImagePost(topic, { initialPrompt: prompt, followerCount, platform: 'bluesky' });
+      if (!result) return false;
+
+      const blob = await blueskyService.uploadBlob(result.buffer, "image/jpeg");
+      if (blob?.data?.blob) {
+          const embed = { $type: "app.bsky.embed.images", images: [{ image: blob.data.blob, alt: result.altText }] };
+          let postResult;
+          if (context?.uri) {
+              postResult = await blueskyService.postReply(context, result.caption, { embed });
+          } else {
+              postResult = await blueskyService.post(result.caption, embed, { maxChunks: 3 });
+          }
+
+          if (postResult) {
+              await dataStore.addExhaustedTheme(topic);
+              await blueskyService.postReply(postResult, `Generation Prompt: ${result.finalPrompt}`);
+              await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+              console.log("[Bot] High-quality image post successful.");
+              return true;
           }
       }
       console.error("[Bot] High-quality image post failed after max attempts.");

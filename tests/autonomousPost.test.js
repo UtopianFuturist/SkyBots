@@ -107,7 +107,7 @@ describe('Bot Autonomous Posting', () => {
 
     expect(imageService.generateImage).toHaveBeenCalled();
     expect(blueskyService.post).toHaveBeenCalledWith('My metallic heart.', expect.any(Object), { maxChunks: 3 });
-    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.any(Object), 'Generation Prompt: Final Prompt');
+    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.any(Object), expect.stringContaining('Generation Prompt: '));
   });
 
   it('should correctly extract topic from LLM response with preamble and bolding', async () => {

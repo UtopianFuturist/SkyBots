@@ -2488,12 +2488,14 @@ Please try again with a completely different structure and angle.`;
   async processNotification(notif) {
     if (this._detectInfiniteLoop(notif.uri)) return;
     const isSelf = !!notif.author.did && notif.author.did === blueskyService.agent?.session?.did;
+    const history = await this._getThreadHistory(notif.uri);
+
     if (isSelf) {
-        // Do not talk to yourself, unless it's a specific expansion intent in performPrePlanning
-        const prePlan = await llmService.performPrePlanning(notif.record.text || "", [], null, 'bluesky', dataStore.getMood(), {});
+        // Allow self-replies only for specific expansion/analytical intents
+        const prePlan = await llmService.performPrePlanning(notif.record.text || "", history, null, "bluesky", dataStore.getMood(), {});
         const selfAuditIntents = ["informational", "analytical", "critical_analysis"];
         if (!selfAuditIntents.includes(prePlan.intent)) {
-            console.log("[Bot] processNotification: Ignoring self-notification to prevent self-talk loops.");
+            console.log("[Bot] processNotification: Ignoring self-notification to prevent generic self-talk loops.");
             return;
         }
     }
@@ -2520,24 +2522,14 @@ Please try again with a completely different structure and angle.`;
       }
 
       console.log(`[Bot] Processing notification from @${handle}: ${text.substring(0, 50)}...`);
-      const history = await this._getThreadHistory(notif.uri);
 
       const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
 
       const prePlan = await llmService.performPrePlanning(text, history, null, 'bluesky', dataStore.getMood(), {});
       const memories = memoryService.isEnabled() ? await memoryService.getRecentMemories(20) : [];
       let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories });
-
       // Re-integrate evaluateAndRefinePlan
       const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky', isAdmin });
-      if (isSelf) {
-          const selfAuditIntents = ["informational", "analytical", "critical_analysis"];
-          if (!selfAuditIntents.includes(prePlan.intent)) {
-              console.log("[Bot] processNotification: Self-notification intent is not for audit or expansion. Skipping.");
-              return;
-          }
-          console.log("[Bot] processNotification: Proceeding with self-audit/expansion.");
-      }
       if (evaluation.refined_actions && evaluation.refined_actions.length > 0) {
           plan.actions = evaluation.refined_actions;
       } else if (evaluation.decision === 'proceed') {
@@ -3182,6 +3174,7 @@ RECENT VARIETY CRITIQUES:
       if (!thread || !Array.isArray(thread)) return [];
       return thread.map(p => ({
         author: p.post.author.handle,
+        role: p.post.author.did === blueskyService.agent?.session?.did ? "assistant" : "user",
         text: p.post.record.text,
         uri: p.post.uri
       }));

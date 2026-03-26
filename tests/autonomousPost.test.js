@@ -34,6 +34,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     isImageCompliant: jest.fn(),
     analyzeImage: jest.fn(),
     generalizePrivateThought: jest.fn(),
+    verifyImageRelevance: jest.fn().mockResolvedValue({ relevant: true }),
   },
 }));
 
@@ -160,7 +161,7 @@ describe('Bot Autonomous Posting', () => {
     llmService.generateResponse.mockImplementation((messages) => {
         const content = JSON.stringify(messages);
         if (content.includes('Would you like to share a visual expression')) return Promise.resolve('{ "choice": "image", "reason": "Feeling visual" }');
-        if (content.includes('You are brainstorming a visual expression')) return Promise.resolve('{ "topic": "Robot Art", "prompt": "A robot painting" }');
+        if (content.includes('Identify a visual topic for an image generation')) return Promise.resolve('{ "topic": "Robot Art", "prompt": "A robot painting" }');
         if (content.includes('Audit this image prompt for safety')) return Promise.resolve('NON-COMPLIANT | Safety reason');
         if (content.includes('Identify a deep topic for a text post')) return Promise.resolve('History of Robotics');
         if (content.includes('Topic: History of Robotics')) return Promise.resolve('Robotics has a long history.');

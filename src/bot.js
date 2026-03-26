@@ -2495,6 +2495,7 @@ Please try again with a completely different structure and angle.`;
   }
 
   async processNotification(notif) {
+    if (this._detectInfiniteLoop(notif.uri)) return;
     const isSelf = !!notif.author.did && notif.author.did === blueskyService.agent?.session?.did;
     if (isSelf) {
         // Do not talk to yourself, unless it's a specific expansion intent in performPrePlanning
@@ -2518,6 +2519,7 @@ Please try again with a completely different structure and angle.`;
     }
 
     try {
+
       const handle = notif.author.handle;
       const text = notif.record.text || '';
 
@@ -2527,12 +2529,13 @@ Please try again with a completely different structure and angle.`;
       }
 
       console.log(`[Bot] Processing notification from @${handle}: ${text.substring(0, 50)}...`);
+      const history = await this._getThreadHistory(notif.uri);
 
       const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
 
-      const prePlan = await llmService.performPrePlanning(text, [], null, 'bluesky', dataStore.getMood(), {});
+      const prePlan = await llmService.performPrePlanning(text, history, null, 'bluesky', dataStore.getMood(), {});
       const memories = memoryService.isEnabled() ? await memoryService.getRecentMemories(20) : [];
-      let plan = await llmService.performAgenticPlanning(text, [], null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories });
+      let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories });
 
       // Re-integrate evaluateAndRefinePlan
       const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky', isAdmin });
@@ -3069,6 +3072,10 @@ Respond with JSON: { "valence": float, "arousal": float, "stability": float, "la
     console.log('[Bot] Starting Agentic Persona Audit...');
     const blurbs = dataStore.getPersonaBlurbs();
     const systemPrompt = config.TEXT_SYSTEM_PROMPT;
+    const lessons = dataStore.getSessionLessons();
+    const lessonContext = lessons.length > 0
+        ? "\n\nRECENT SESSION LESSONS (Failures to learn from):\n" + lessons.map(l => `- ${l.text}`).join('\n')
+        : "";
 
     // Include recent variety critiques to inform the audit
     const critiques = dataStore.searchInternalLogs('variety_critique', 20);
@@ -3092,6 +3099,7 @@ RECENT VARIETY CRITIQUES:
       ACTIVE PERSONA BLURBS:
       ${blurbs.length > 0 ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n') : 'None'}
       ${critiqueContext}
+      ${lessonContext}
       RECURSIVE INSIGHTS:
       ${recursionContext || "None"}
 
@@ -3139,5 +3147,33 @@ RECENT VARIETY CRITIQUES:
       }
     }
     return images;
+  }
+
+  async _getThreadHistory(uri) {
+    try {
+      const thread = await blueskyService.getDetailedThread(uri);
+      if (!thread) return [];
+      return thread.map(p => ({
+        author: p.post.author.handle,
+        text: p.post.record.text,
+        uri: p.post.uri
+      }));
+    } catch (e) {
+      console.error('[Bot] Error fetching thread history:', e);
+      return [];
+    }
+  }
+
+  _detectInfiniteLoop(uri) {
+    if (!this._notifHistory) this._notifHistory = [];
+    const now = Date.now();
+    this._notifHistory = this._notifHistory.filter(h => now - h.timestamp < 600000); // 10 min window
+    const count = this._notifHistory.filter(h => h.uri === uri).length;
+    if (count >= 3) {
+      console.warn(`[Bot] Infinite loop detected for URI: ${uri}. Breaking.`);
+      return true;
+    }
+    this._notifHistory.push({ uri, timestamp: now });
+    return false;
   }
 }

@@ -1105,10 +1105,10 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 await dataStore.updateRelationalMetrics(audit.metric_updates);
             }
             if (audit.new_life_arcs && Array.isArray(audit.new_life_arcs)) {
-                for (const arc of audit.new_life_arcs) { await dataStore.updateLifeArc(config.DISCORD_ADMIN_ID, arc.arc, arc.status); }
+                for (const arc of audit.new_life_arcs) { if (arc.arc && arc.arc !== "string") await dataStore.updateLifeArc(config.DISCORD_ADMIN_ID, arc.arc, arc.status); }
             }
             if (audit.new_inside_jokes && Array.isArray(audit.new_inside_jokes)) {
-                for (const joke of audit.new_inside_jokes) { await dataStore.addInsideJoke(config.DISCORD_ADMIN_ID, joke.joke, joke.context); }
+                for (const joke of audit.new_inside_jokes) { if (joke.joke && joke.joke !== "string") await dataStore.addInsideJoke(config.DISCORD_ADMIN_ID, joke.joke, joke.context); }
             }
 
             if (audit.predictive_empathy_mode) {
@@ -1116,10 +1116,12 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 await dataStore.setPredictiveEmpathyMode(audit.predictive_empathy_mode);
             }
 
-            if (audit.new_admin_facts && audit.new_admin_facts.length > 0) {
+            if (audit.new_admin_facts && Array.isArray(audit.new_admin_facts)) {
                 for (const fact of audit.new_admin_facts) {
-                    console.log(`[Bot] Relational Audit: Discovered Admin Fact: ${fact}`);
-                    await dataStore.addAdminFact(fact);
+                    if (typeof fact === 'string' && fact.length > 3 && !fact.toLowerCase().includes('string')) {
+                        console.log(`[Bot] Relational Audit: Discovered Admin Fact: ${fact}`);
+                        await dataStore.addAdminFact(fact);
+                    }
                 }
             }
 

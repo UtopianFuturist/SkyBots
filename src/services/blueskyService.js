@@ -305,13 +305,22 @@ class BlueskyService {
   }
 
   async resolveDid(did) {
-    try {
-      const { data } = await this.agent.getProfile({ actor: did });
-      return data.handle;
-    } catch (error) {
-      console.error(`[BlueskyService] Error resolving DID ${did}:`, error);
-      return did;
+    let attempts = 0;
+    while (attempts < 3) {
+      attempts++;
+      try {
+        const { data } = await this.agent.getProfile({ actor: did });
+        return data.handle;
+      } catch (error) {
+        console.warn(`[BlueskyService] Error resolving DID ${did} (Attempt ${attempts}):`, error.message || error);
+        if (attempts < 3) await new Promise(r => setTimeout(r, 2000 * attempts));
+        else {
+          console.error(`[BlueskyService] All attempts to resolve DID ${did} failed.`);
+          return did;
+        }
+      }
     }
+    return did;
   }
 
   async uploadBlob(imageBuffer, encoding = "image/jpeg") {

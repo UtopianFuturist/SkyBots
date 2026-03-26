@@ -305,13 +305,22 @@ class BlueskyService {
   }
 
   async resolveDid(did) {
-    try {
-      const { data } = await this.agent.getProfile({ actor: did });
-      return data.handle;
-    } catch (error) {
-      console.error(`[BlueskyService] Error resolving DID ${did}:`, error);
-      return did;
+    let attempts = 0;
+    while (attempts < 3) {
+      attempts++;
+      try {
+        const { data } = await this.agent.getProfile({ actor: did });
+        return data.handle;
+      } catch (error) {
+        console.warn(`[BlueskyService] Error resolving DID ${did} (Attempt ${attempts}):`, error.message || error);
+        if (attempts < 3) await new Promise(r => setTimeout(r, 2000 * attempts));
+        else {
+          console.error(`[BlueskyService] All attempts to resolve DID ${did} failed.`);
+          return did;
+        }
+      }
     }
+    return did;
   }
 
   async uploadBlob(imageBuffer, encoding = "image/jpeg") {
@@ -424,18 +433,27 @@ class BlueskyService {
 
   async searchPosts(query, options = {}) {
     const { limit = 25, sort = 'latest' } = options;
-    try {
-      console.log(`[BlueskyService] Searching posts with query: "${query}", sort: ${sort}, limit: ${limit}`);
-      const { data } = await this.agent.app.bsky.feed.searchPosts({
-        q: query,
-        limit,
-        sort,
-      });
-      return data.posts;
-    } catch (error) {
-      console.error(`[BlueskyService] Error searching posts for "${query}":`, error);
-      return [];
+    let attempts = 0;
+    while (attempts < 3) {
+      attempts++;
+      try {
+        console.log(`[BlueskyService] Searching posts with query: "${query}", sort: ${sort}, limit: ${limit} (Attempt ${attempts})`);
+        const { data } = await this.agent.app.bsky.feed.searchPosts({
+          q: query,
+          limit,
+          sort,
+        });
+        return data.posts;
+      } catch (error) {
+        console.warn(`[BlueskyService] Search attempt ${attempts} failed for "${query}":`, error.message || error);
+        if (attempts < 3) await new Promise(r => setTimeout(r, 2000 * attempts));
+        else {
+          console.error(`[BlueskyService] All search attempts failed for "${query}".`);
+          return [];
+        }
+      }
     }
+    return [];
   }
 
   async likePost(uri, cid) {

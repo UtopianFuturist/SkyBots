@@ -160,6 +160,7 @@ Guidelines:
 - Do not narrate the user's actions or assume their environment.
 - Anti-slop rules: avoid generic filler, be direct.
 - METADATA DISCRIMINATION: You may see internal tags like ### PRIMARY SYSTEM INSTRUCTION ###, ### CONVERSATION HISTORY ###, [INTERNAL_PULSE_RESUME], or [EAAR]. These are structural metadata for your process. Do NOT include these tags in your response and do NOT treat them as part of the user dialogue. Respond only as your persona to the actual user content.`;
+-- IDENTITY AWARENESS: Messages with role "assistant" were written by YOU. Messages with role "user" were written by the human user. Do not reply to your own messages as if they are from another user.
 
     // Step 3.5 Flash is now the primary model for everything except browser use (coder) tasks
     let models;
@@ -345,6 +346,7 @@ Guidelines:
     async performPrePlanning(text, history, vision, platform, mood, refusalCounts) {
     const prompt = `Analyze intent and context for: "${text}".
 Platform: ${platform}
+Platform History: ${JSON.stringify(history.slice(-10))}
 Current Mood: ${JSON.stringify(mood)}
 Refusal Counts: ${JSON.stringify(refusalCounts)}
 Vision Analysis: ${vision}
@@ -405,6 +407,8 @@ Plan your next actions in response to: "${text}".
 - Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
 - Exhausted Themes: ${exhaustedThemes.join(', ')}
 - PrePlan Analysis: ${JSON.stringify(prePlan)}
+- IDENTITY AWARENESS: In the "Platform History" and "Recent Conversation History", messages with the role "assistant" were written by YOU. Messages with the role "user" were written by the user. Do not reply to yourself as if you are a different person.
+- Recent Conversation History: ${JSON.stringify(history.slice(-10))}
 
 PLATFORM ISOLATION MANDATE:
 - You are on ${platformName}. NEVER use bsky_post if you are on Discord.

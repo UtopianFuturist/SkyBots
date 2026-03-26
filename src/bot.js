@@ -1105,10 +1105,10 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 await dataStore.updateRelationalMetrics(audit.metric_updates);
             }
             if (audit.new_life_arcs && Array.isArray(audit.new_life_arcs)) {
-                for (const arc of audit.new_life_arcs) { await dataStore.updateLifeArc(config.DISCORD_ADMIN_ID, arc.arc, arc.status); }
+                for (const arc of audit.new_life_arcs) { if (arc.arc && arc.arc !== "string") await dataStore.updateLifeArc(config.DISCORD_ADMIN_ID, arc.arc, arc.status); }
             }
             if (audit.new_inside_jokes && Array.isArray(audit.new_inside_jokes)) {
-                for (const joke of audit.new_inside_jokes) { await dataStore.addInsideJoke(config.DISCORD_ADMIN_ID, joke.joke, joke.context); }
+                for (const joke of audit.new_inside_jokes) { if (joke.joke && joke.joke !== "string") await dataStore.addInsideJoke(config.DISCORD_ADMIN_ID, joke.joke, joke.context); }
             }
 
             if (audit.predictive_empathy_mode) {
@@ -1116,10 +1116,12 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 await dataStore.setPredictiveEmpathyMode(audit.predictive_empathy_mode);
             }
 
-            if (audit.new_admin_facts && audit.new_admin_facts.length > 0) {
+            if (audit.new_admin_facts && Array.isArray(audit.new_admin_facts)) {
                 for (const fact of audit.new_admin_facts) {
-                    console.log(`[Bot] Relational Audit: Discovered Admin Fact: ${fact}`);
-                    await dataStore.addAdminFact(fact);
+                    if (typeof fact === 'string' && fact.length > 3 && !fact.toLowerCase().includes('string')) {
+                        console.log(`[Bot] Relational Audit: Discovered Admin Fact: ${fact}`);
+                        await dataStore.addAdminFact(fact);
+                    }
                 }
             }
 
@@ -2486,12 +2488,14 @@ Please try again with a completely different structure and angle.`;
   async processNotification(notif) {
     if (this._detectInfiniteLoop(notif.uri)) return;
     const isSelf = !!notif.author.did && notif.author.did === blueskyService.agent?.session?.did;
+    const history = await this._getThreadHistory(notif.uri);
+
     if (isSelf) {
-        // Do not talk to yourself, unless it's a specific expansion intent in performPrePlanning
-        const prePlan = await llmService.performPrePlanning(notif.record.text || "", [], null, 'bluesky', dataStore.getMood(), {});
+        // Allow self-replies only for specific expansion/analytical intents
+        const prePlan = await llmService.performPrePlanning(notif.record.text || "", history, null, "bluesky", dataStore.getMood(), {});
         const selfAuditIntents = ["informational", "analytical", "critical_analysis"];
         if (!selfAuditIntents.includes(prePlan.intent)) {
-            console.log("[Bot] processNotification: Ignoring self-notification to prevent self-talk loops.");
+            console.log("[Bot] processNotification: Ignoring self-notification to prevent generic self-talk loops.");
             return;
         }
     }
@@ -2518,24 +2522,14 @@ Please try again with a completely different structure and angle.`;
       }
 
       console.log(`[Bot] Processing notification from @${handle}: ${text.substring(0, 50)}...`);
-      const history = await this._getThreadHistory(notif.uri);
 
       const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
 
       const prePlan = await llmService.performPrePlanning(text, history, null, 'bluesky', dataStore.getMood(), {});
       const memories = memoryService.isEnabled() ? await memoryService.getRecentMemories(20) : [];
       let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, 'bluesky', dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories });
-
       // Re-integrate evaluateAndRefinePlan
       const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'bluesky', isAdmin });
-      if (isSelf) {
-          const selfAuditIntents = ["informational", "analytical", "critical_analysis"];
-          if (!selfAuditIntents.includes(prePlan.intent)) {
-              console.log("[Bot] processNotification: Self-notification intent is not for audit or expansion. Skipping.");
-              return;
-          }
-          console.log("[Bot] processNotification: Proceeding with self-audit/expansion.");
-      }
       if (evaluation.refined_actions && evaluation.refined_actions.length > 0) {
           plan.actions = evaluation.refined_actions;
       } else if (evaluation.decision === 'proceed') {
@@ -2724,7 +2718,7 @@ Please try again with a completely different structure and angle.`;
           console.log(`[Bot] Image post attempt ${attempts} for topic: ${topic}`);
 
           // Filter out internal system markers if they somehow leaked into the prompt
-          imagePrompt = imagePrompt.replace(/\[INTERNAL_PULSE_RESUME\]/g, "").replace(/\[INTERNAL_PULSE_AUTONOMOUS\]/g, "").trim();
+          imagePrompt = imagePrompt.replace(/\[INTERNAL_PULSE_RESUME\]/g, "").replace(/\[INTERNAL_PULSE_AUTONOMOUS\]/g, "").replace(/\[System note:.*?\]/g, "").trim();
           if (!imagePrompt) imagePrompt = topic;
 
           // Prompt Slop & Conversational Check
@@ -3180,6 +3174,7 @@ RECENT VARIETY CRITIQUES:
       if (!thread || !Array.isArray(thread)) return [];
       return thread.map(p => ({
         author: p.post.author.handle,
+        role: p.post.author.did === blueskyService.agent?.session?.did ? "assistant" : "user",
         text: p.post.record.text,
         uri: p.post.uri
       }));

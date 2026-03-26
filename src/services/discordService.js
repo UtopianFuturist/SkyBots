@@ -441,7 +441,7 @@ Generation Prompt: ${prompt}`;
                     .reverse()
                     .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
                     .map(m => ({
-                        role: m.author.id === this.client.user.id ? 'assistant' : 'user',
+                        role: m.author.id === this.client.user.id ? 'assistant' : 'user', author: m.author.username,
                         content: m.content,
                         timestamp: m.createdTimestamp,
                         attachments: m.attachments
@@ -1073,7 +1073,7 @@ INSTRUCTIONS:
             const messages = await dmChannel.messages.fetch({ limit });
 
             return messages.map(m => ({
-                role: m.author.id === this.client.user.id ? 'assistant' : 'user',
+                role: m.author.id === this.client.user.id ? 'assistant' : 'user', author: m.author.username,
                 content: m.content,
                 timestamp: m.createdTimestamp
             })).reverse();

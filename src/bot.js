@@ -3072,6 +3072,10 @@ Respond with JSON: { "valence": float, "arousal": float, "stability": float, "la
     console.log('[Bot] Starting Agentic Persona Audit...');
     const blurbs = dataStore.getPersonaBlurbs();
     const systemPrompt = config.TEXT_SYSTEM_PROMPT;
+    const lessons = dataStore.getSessionLessons();
+    const lessonContext = lessons.length > 0
+        ? "\n\nRECENT SESSION LESSONS (Failures to learn from):\n" + lessons.map(l => `- ${l.text}`).join('\n')
+        : "";
 
     // Include recent variety critiques to inform the audit
     const critiques = dataStore.searchInternalLogs('variety_critique', 20);
@@ -3095,6 +3099,7 @@ RECENT VARIETY CRITIQUES:
       ACTIVE PERSONA BLURBS:
       ${blurbs.length > 0 ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n') : 'None'}
       ${critiqueContext}
+      ${lessonContext}
       RECURSIVE INSIGHTS:
       ${recursionContext || "None"}
 

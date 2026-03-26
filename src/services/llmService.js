@@ -7,6 +7,21 @@ import path from 'path';
 export const persistentAgent = new https.Agent({ keepAlive: true });
 
 class LLMService {
+  static lastRequestTime = 0;
+
+  async _throttle() {
+    const now = Date.now();
+    const timeSinceLast = now - LLMService.lastRequestTime;
+    const minDelay = 5000; // 5 seconds mandatory delay
+
+    if (timeSinceLast < minDelay) {
+      const waitTime = minDelay - timeSinceLast;
+      console.log(`[LLMService] Throttling request for ${waitTime}ms to space out calls...`);
+      await new Promise(resolve => setTimeout(resolve, waitTime));
+    }
+    LLMService.lastRequestTime = Date.now();
+  }
+
   constructor() {
     this.ds = null;
     this.memoryProvider = null;
@@ -179,6 +194,7 @@ Guidelines:
         while (attempts < maxAttempts) {
             attempts++;
             try {
+              await this._throttle();
               console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
               const fullMessages = this._prepareMessages(messages, systemPrompt, options);
 

@@ -475,6 +475,26 @@ class DataStore {
     }
   }
 
+
+  // Relational State Tracking
+  getRelationshipWarmth() { return this.db?.data?.relationship_warmth ?? 0.5; }
+  async setRelationshipWarmth(v) { if (this.db?.data) { this.db.data.relationship_warmth = Math.max(0, Math.min(1, v)); await this.write(); } }
+
+  getAdminEnergy() { return this.db?.data?.admin_energy ?? 0.5; }
+  async setAdminEnergy(v) { if (this.db?.data) { this.db.data.admin_energy = Math.max(0, Math.min(1, v)); await this.write(); } }
+
+  getSessionLessons() { return this.db?.data?.session_lessons || []; }
+  async addSessionLesson(l) {
+    if (this.db?.data) {
+        if (!this.db.data.session_lessons) this.db.data.session_lessons = [];
+        this.db.data.session_lessons.push({ text: l, timestamp: Date.now() });
+        if (this.db.data.session_lessons.length > 20) {
+            this.db.data.session_lessons = this.db.data.session_lessons.slice(-20);
+        }
+        await this.write();
+    }
+  }
+  async clearSessionLessons() { if (this.db?.data) { this.db.data.session_lessons = []; await this.write(); } }
 }
 
 export const dataStore = new DataStore();

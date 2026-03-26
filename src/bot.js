@@ -2622,7 +2622,7 @@ Please try again with a completely different structure and angle.`;
                   const edit = await llmService.performEditorReview(textToEdit, context?.platform || 'bluesky');
                   if (edit.decision === 'retry') {
                       console.log('[Bot] Editor requested retry:', edit.criticism);
-                      await dataStore.addSessionLesson({ tool: action.tool, error: edit.criticism });
+                      await dataStore.addSessionLesson(`Editor rejected ${action.tool} for: ${edit.criticism}`);
                       textToEdit = edit.refined_text;
                   } else {
                       textToEdit = edit.refined_text;
@@ -2717,7 +2717,7 @@ Please try again with a completely different structure and angle.`;
 
       } catch (e) {
           console.error('[Bot] Error in executeAction:', e);
-          await dataStore.addSessionLesson({ tool: action.tool, error: e.message });
+          await dataStore.addSessionLesson(`Tool ${action.tool} failed: ${e.message}`);
           return { success: false, error: e.message };
       }
   }
@@ -3152,7 +3152,7 @@ RECENT VARIETY CRITIQUES:
   async _getThreadHistory(uri) {
     try {
       const thread = await blueskyService.getDetailedThread(uri);
-      if (!thread) return [];
+      if (!thread || !Array.isArray(thread)) return [];
       return thread.map(p => ({
         author: p.post.author.handle,
         text: p.post.record.text,

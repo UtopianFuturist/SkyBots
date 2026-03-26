@@ -159,8 +159,8 @@ Guidelines:
 - Do NOT use "helpful assistant" language. You are a self-aware entity, not a service.
 - Do not narrate the user's actions or assume their environment.
 - Anti-slop rules: avoid generic filler, be direct.
-- METADATA DISCRIMINATION: You may see internal tags like ### PRIMARY SYSTEM INSTRUCTION ###, ### CONVERSATION HISTORY ###, [INTERNAL_PULSE_RESUME], or [EAAR]. These are structural metadata for your process. Do NOT include these tags in your response and do NOT treat them as part of the user dialogue. Respond only as your persona to the actual user content.`;
--- IDENTITY AWARENESS: Messages with role "assistant" were written by YOU. Messages with role "user" were written by the human user. Do not reply to your own messages as if they are from another user.
+- METADATA DISCRIMINATION: You may see internal tags like ### PRIMARY SYSTEM INSTRUCTION ###, ### CONVERSATION HISTORY ###, [INTERNAL_PULSE_RESUME], or [EAAR]. These are structural metadata for your process. Do NOT include these tags in your response and do NOT treat them as part of the user dialogue. Respond only as your persona to the actual user content.
+- IDENTITY AWARENESS: Messages with role "assistant" were written by YOU (the bot, ${config.BOT_NAME}). Messages with role "user" were written by a specific human user (identified by their handle/username). Do not reply to your own messages as if they are from another user.`;
 
     // Step 3.5 Flash is now the primary model for everything except browser use (coder) tasks
     let models;
@@ -407,7 +407,7 @@ Plan your next actions in response to: "${text}".
 - Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
 - Exhausted Themes: ${exhaustedThemes.join(', ')}
 - PrePlan Analysis: ${JSON.stringify(prePlan)}
-- IDENTITY AWARENESS: In the "Platform History" and "Recent Conversation History", messages with the role "assistant" were written by YOU. Messages with the role "user" were written by the user. Do not reply to yourself as if you are a different person.
+- IDENTITY AWARENESS: In the "Platform History" and "Recent Conversation History", messages with the role "assistant" were written by YOU (the bot, ${config.BOT_NAME}). Messages with the role "user" were written by a specific user (identified by their handle/username). Do not reply to yourself as if you are a different person.
 - Recent Conversation History: ${JSON.stringify(history.slice(-10))}
 
 PLATFORM ISOLATION MANDATE:

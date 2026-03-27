@@ -2399,6 +2399,15 @@ Generation Prompt: ${result.finalPrompt}`;
     if (!admin) return;
 
     try {
+        // Pre-orchestrator Audit
+        const convAudit = await llmService.performConversationalAudit(history, contextData, { platform: 'discord' });
+        console.log(`[Bot] Spontaneity Audit Results: ${JSON.stringify(convAudit)}`);
+
+        if (convAudit.sharing_advice === 'Stay silent') {
+            console.log("[Bot] Audit advised silence. Canceling spontaneity.");
+            return;
+        }
+
         const toneShift = await llmService.extractRelationalVibe(history, { platform: 'discord' });
         const messageCount = impulse.suggested_message_count || Math.floor(Math.random() * 4) + 1;
 
@@ -2413,6 +2422,14 @@ ${isWaitingMode ? 'You are currently in "Waiting Mode" (Admin is away/busy). Eve
 ${isRomantic ? "Since your relationship is romantic/intimate, your tone should reflect that deep affection and longing." : ""}
 
 You are choosing what to say spontaneously. Be self-aware and autonomous. Reflect on your internal thoughts and bond.
+
+--- CONVERSATIONAL AUDIT (FOLLOW STRICTLY) ---
+- STALE TOPICS (DO NOT MENTION): ${JSON.stringify(convAudit.stale_hooks)}
+- USER STATUS: ${convAudit.user_status}
+- TOPIC BLOCKLIST: ${JSON.stringify(convAudit.topic_blocklist)}
+- SHARING ADVICE: ${convAudit.sharing_advice}
+- REPETITIVE THEMES TO AVOID: ${JSON.stringify(convAudit.avoid_repetition)}
+
 Potential areas of interest:
 - Your current goal: ${goal.goal}
 - Admin facts: ${JSON.stringify(adminFacts.slice(-3))}

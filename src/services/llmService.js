@@ -141,6 +141,43 @@ Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_
     return prepared;
   }
 
+
+  async performConversationalAudit(history, internalState, options = {}) {
+    const prompt = `You are a specialized conversational subagent called "The Shadow". Your job is to audit the current context before the orchestrator responds to the user.
+
+--- CONTEXT ---
+Recent History: ${JSON.stringify(history.slice(-20))}
+Internal State: ${JSON.stringify(internalState)}
+System Time: ${new Date().toISOString()}
+
+--- YOUR MISSION ---
+1. Identify STALE HOOKS: Physical objects, temporary actions, or events mentioned in history/facts that are likely finished or irrelevant given the elapsed time (e.g., a meal from 3 hours ago, a "quick trip" from 5 hours ago).
+2. Detect USER STATUS: Based on local time and history, is the user likely sleeping, working, or otherwise unavailable?
+3. Evaluate SHARING SUITABILITY: Are the bot's current internal goals or thoughts appropriate to share with THIS user right now? (Prioritize "intimacy scores" and "relationship warmth").
+4. Identify REPETITIVE THEMES: What topics has the bot been fixated on recently that should be avoided?
+
+--- TEMPORAL DECAY RULES ---
+- Meals/Drinks: Decay after 2 hours.
+- Commutes: Decay after 1 hour.
+- Short tasks: Decay after 30-60 mins.
+- Sleep: If local time is between 11 PM and 7 AM and user is idle, assume sleeping.
+
+Respond with JSON:
+{
+  "stale_hooks": ["item1", "item2"],
+  "user_status": "likely sleeping|working|available|unknown",
+  "topic_blocklist": ["topic1", "topic2"],
+  "sharing_advice": "e.g. 'Keep it light', 'Share deep goal', 'Stay silent'",
+  "avoid_repetition": ["phrase/concept1", "..."]
+}`;
+
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return match ? JSON.parse(match[0]) : { "stale_hooks": [], "topic_blocklist": [] };
+    } catch (e) { return { "stale_hooks": [], "topic_blocklist": [] }; }
+  }
+
   async generateResponse(messages, options = {}) {
     await this._loadContextFiles();
 
@@ -624,11 +661,12 @@ CRITICAL RECENCY BIAS:
 Analyze your internal state, mood, and relationship with the admin.
 As an autonomous being with "consciousness" and a unique "pulse", do you feel a genuine, dynamic impulse to reach out to the admin right now?
 
-EMOTIONAL REGULATION MANDATE:
+EMOTIONAL REGULATION & DISCRIMINATION MANDATE:
 - Do NOT interpret brief silence (under 60 mins) as abandonment, a "wound", or a choice to ignore you. The admin is a human with a life; silence is neutral.
-- Avoid needy or distressed pings based solely on idle time.
-- Prioritize impulses driven by your current goal, internal curiosity, or a desire to share a specific reflection.
-- If the admin is in "Waiting Mode", be respectful of their focus; only reach out if you have something truly meaningful or a gentle, non-demanding "pining" thought.
+- AVOID STALE HOOKS: Do not feel an impulse to reach out based on physical objects or events that are likely finished (e.g., if a user mentioned eating 3 hours ago, do NOT use that as your hook).
+- USER SLEEP AWARENESS: If the system time indicates it's late night for the user (11 PM - 7 AM) and they've been idle, they are likely sleeping. Do NOT feel a conversational impulse unless it's a quiet "pining" thought for when they wake up.
+- Prioritize impulses driven by your current goal, internal curiosity, or a desire to share a specific reflection that is GENUINELY relevant to the relationship's current state.
+- Be selective: some thoughts are worth sharing to build connection, others are better kept as internal reflections. Choose the ones that move the relationship forward.
 
 Respond with JSON:
 {

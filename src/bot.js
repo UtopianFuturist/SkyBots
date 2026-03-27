@@ -2224,7 +2224,7 @@ ${postUrl}`;
     // Conversation Priority Mode: Skip heavy tasks if actively chatting on Discord or Bluesky
     const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
     const lastBluesky = dataStore.db.data.last_notification_processed_at || 0;
-    const isChatting = (Date.now() - lastDiscord) < 10 * 60 * 1000 || (Date.now() - lastBluesky) < 10 * 60 * 1000;
+    const isChatting = (Date.now() - lastDiscord) < 4 * 60 * 1000 || (Date.now() - lastBluesky) < 4 * 60 * 1000;
 
     if (isChatting || discordService.isResponding) {
         console.log("[Orchestrator] Active conversation detected. Prioritizing social responsiveness over maintenance.");
@@ -2950,7 +2950,20 @@ Respond with ONLY the chosen topic.`;
                     topic = topicRaw.replace(/\*\*/g, "").split('\n').map(l => l.trim()).filter(l => l).pop() || topic;
                 }
 
-                const contentPrompt = `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}\nTopic: ${topic}\nShared thought:`;
+                const currentGoal = dataStore.getCurrentGoal();
+                const memories = await memoryService.fetchMemories(10);
+                const contentPrompt = `
+${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
+
+**CURRENT INTERNAL CONTEXT:**
+- Current Mood: ${JSON.stringify(currentMood)}
+- Active Goal: ${currentGoal.goal} (${currentGoal.description})
+- Recent Memories/Reflections: ${JSON.stringify(memories)}
+- Extracted Topic: ${topic}
+
+**MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH and how this topic relates to your current mood or goal.
+
+Shared thought:`;
                 const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true });
 
                 if (content) {

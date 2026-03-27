@@ -2951,7 +2951,7 @@ Respond with ONLY the chosen topic.`;
                 }
 
                 const currentGoal = dataStore.getCurrentGoal();
-                const memories = await memoryService.fetchMemories(10);
+                const memories = await memoryService.getRecentMemories(10);
                 const contentPrompt = `
 ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 

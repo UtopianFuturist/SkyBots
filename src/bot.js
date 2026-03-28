@@ -2242,11 +2242,15 @@ ${postUrl}`;
         const mood = dataStore.getMood();
         const lastPostTime = dataStore.getLastAutonomousPostTime();
         const timeSinceLastPost = lastPostTime ? Math.floor((Date.now() - new Date(lastPostTime).getTime()) / (1000 * 60)) : 999;
+        const lastInteraction = Math.max(lastDiscord, lastBluesky);
+        const timeSinceLastInteraction = lastInteraction ? Math.floor((Date.now() - lastInteraction) / (1000 * 60)) : 999;
 
         const orchestratorPrompt = `You are ${config.BOT_NAME}. It is ${new Date().toLocaleString()}.
 It has been ${timeSinceLastPost} minutes since your last autonomous post.
+It has been ${timeSinceLastInteraction} minutes since your last interaction (reply/response) with a user.
+
 Decide your next action: ["post", "rest", "reflect", "explore"].
-If it has been a long time (e.g., > 120 minutes), you should strongly consider "post" to maintain your presence.
+**PRIORITY**: If it has been more than 20 minutes since your last interaction, you should strongly consider "post" to maintain your presence and share a fresh thought.
 Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."}`;
         const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true });
 
@@ -2973,7 +2977,7 @@ Identify the best subject and then generate a highly descriptive, artistic promp
 Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
 
                 const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
-                let topic = "surreal existence";
+                let topic = allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] || "existence";
                 let imagePrompt = "";
 
                 try {
@@ -2984,13 +2988,12 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                         imagePrompt = tData.prompt || "";
                     }
                 } catch(e) {}
-
-                if (!imagePrompt || imagePrompt.length < 10) {
+                if (!imagePrompt || imagePrompt.length < 15 || !isLiteralVisualPrompt(imagePrompt).isLiteral) {
                    const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
-                   imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true }) || topic;
+                   imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true });
                 }
 
-                const success = await this._performHighQualityImagePost(imagePrompt, topic, null, followerCount);
+                const success = (imagePrompt && imagePrompt.length >= 15 && isLiteralVisualPrompt(imagePrompt).isLiteral) ? await this._performHighQualityImagePost(imagePrompt, topic, null, followerCount) : false;
                 if (!success) choice = "text";
             }
 

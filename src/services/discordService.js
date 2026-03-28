@@ -291,7 +291,19 @@ class DiscordService {
             if (channelId) {
                 // Determine if target is a User or Channel
                 const normId = target.constructor.name === 'User' ? `dm_${target.id}` : channelId;
-                await dataStore.saveDiscordInteraction(normId, 'assistant', sanitized);
+
+                // Capture attachments for history
+                let attachments = null;
+                if (sentMessage.attachments && sentMessage.attachments.size > 0) {
+                    attachments = Array.from(sentMessage.attachments.values()).map(a => ({
+                        url: a.url,
+                        proxyURL: a.proxyURL,
+                        contentType: a.contentType,
+                        name: a.name
+                    }));
+                }
+
+                await dataStore.saveDiscordInteraction(normId, 'assistant', sanitized, attachments);
             }
 
             return sentMessage;
@@ -455,11 +467,16 @@ Generation Prompt: ${prompt}`;
 
         // Vision: Analyze images in history (both user and self)
         for (const h of history.slice(-5)) { // Look at last 5 messages for images
-            if (h.attachments && h.attachments.size > 0) {
-                for (const [id, attachment] of h.attachments) {
-                    if (attachment.contentType?.startsWith('image/') || attachment.url.match(/\.(jpg|jpeg|png|webp)$/i)) {
+            // Handle both Discord collection (from live fetch) and stored array (from DataStore)
+            const attachments = h.attachments ? (h.attachments.size !== undefined ? Array.from(h.attachments.values()) : h.attachments) : [];
+
+            if (attachments.length > 0) {
+                for (const attachment of attachments) {
+                    const contentType = attachment.contentType || '';
+                    const url = attachment.url || '';
+                    if (contentType.startsWith('image/') || url.match(/\.(jpg|jpeg|png|webp)$/i)) {
                         try {
-                            const analysis = await llmService.analyzeImage(attachment.url);
+                            const analysis = await llmService.analyzeImage(url);
                             if (analysis) {
                                 const author = h.role === 'assistant' ? 'you' : 'the user';
                                 if (!imageAnalysisResult.includes(analysis)) {
@@ -474,7 +491,17 @@ Generation Prompt: ${prompt}`;
             }
         }
 
-        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
+        // Capture user attachments
+        let userAttachments = null;
+        if (message.attachments.size > 0) {
+            userAttachments = Array.from(message.attachments.values()).map(a => ({
+                url: a.url,
+                proxyURL: a.proxyURL,
+                contentType: a.contentType,
+                name: a.name
+            }));
+        }
+        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content, userAttachments);
 
         // isAdmin already declared at top of respond()
         console.log(`[DiscordService] User is admin: ${isAdmin}`);
@@ -1075,7 +1102,8 @@ INSTRUCTIONS:
             return messages.map(m => ({
                 role: m.author.id === this.client.user.id ? 'assistant' : 'user', author: m.author.username,
                 content: m.content,
-                timestamp: m.createdTimestamp
+                timestamp: m.createdTimestamp,
+                attachments: m.attachments && m.attachments.size > 0 ? Array.from(m.attachments.values()) : null
             })).reverse();
         } catch (error) {
             console.error('[DiscordService] Error fetching admin history:', error);

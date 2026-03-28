@@ -129,22 +129,55 @@ export const truncateText = (text, maxLength = 300) => {
   if (lastSpaceIndex > 0) truncatedText = truncatedText.slice(0, lastSpaceIndex);
   return truncatedText + '…';
 };
-export const splitText = (text, maxLength = 300, maxChunks = 10) => {
-  const segmenter = new Intl.Segmenter();
-  const graphemes = [...segmenter.segment(text)].map(s => s.segment);
-  if (graphemes.length <= maxLength) return [text];
+export const splitText = (text, maxLength = 280, maxChunks = 10) => {
+  if (!text) return [];
+  if (text.length <= maxLength) return [text];
+
   const chunks = [];
-  let remainingText = text;
+  let remainingText = text.trim();
+
   while (remainingText.length > 0 && chunks.length < maxChunks) {
     if (remainingText.length <= maxLength) {
       chunks.push(remainingText);
       break;
     }
+
+    // Try to find a logical sentence break (., !, ?, etc.) within the last 30% of the chunk
     let chunk = remainingText.slice(0, maxLength);
-    let lastSpaceIndex = chunk.lastIndexOf(' ');
-    if (lastSpaceIndex > 0) chunk = chunk.slice(0, lastSpaceIndex);
-    chunks.push(chunk + '…');
-    remainingText = '… ' + remainingText.slice(chunk.length).trim();
+    let splitIndex = -1;
+
+    // Look for sentence terminators in the second half of the chunk to avoid tiny chunks
+    const searchRange = chunk.slice(Math.floor(maxLength * 0.5));
+    const sentenceBreak = searchRange.search(/[.!?]\s/);
+
+    if (sentenceBreak !== -1) {
+      splitIndex = Math.floor(maxLength * 0.5) + sentenceBreak + 1;
+    } else {
+      // Fallback to last space
+      splitIndex = chunk.lastIndexOf(' ');
+    }
+
+    if (splitIndex <= 0 || splitIndex < maxLength * 0.5) {
+      // If no good break point found, just hard cut at maxLength
+      splitIndex = maxLength;
+    }
+
+    let currentChunk = remainingText.slice(0, splitIndex).trim();
+
+    // Account for ellipsis overhead if not the last chunk
+    if (remainingText.length > splitIndex) {
+        if (currentChunk.length + 2 <= maxLength) {
+            currentChunk += ' …';
+        } else {
+            currentChunk = currentChunk.slice(0, maxLength - 2) + ' …';
+        }
+    }
+
+    chunks.push(currentChunk);
+    remainingText = remainingText.slice(splitIndex).trim();
+    if (remainingText.length > 0) {
+        remainingText = '… ' + remainingText;
+    }
   }
   return chunks;
 };

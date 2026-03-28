@@ -179,11 +179,15 @@ class DataStore {
   getDiscordConversation(c) {
     return this.db?.data?.discord_conversations?.[c] || [];
   }
-  async saveDiscordInteraction(c, r, ct) {
+  async saveDiscordInteraction(c, r, ct, attachments = null) {
     if (this.db?.data) {
         if (!this.db.data.discord_conversations) this.db.data.discord_conversations = {};
         if (!this.db.data.discord_conversations[c]) this.db.data.discord_conversations[c] = [];
-        this.db.data.discord_conversations[c].push({ role: r, content: ct, timestamp: Date.now() });
+
+        const entry = { role: r, content: ct, timestamp: Date.now() };
+        if (attachments) entry.attachments = attachments;
+
+        this.db.data.discord_conversations[c].push(entry);
         await this.write();
     }
   }

@@ -165,7 +165,7 @@ export const splitText = (text, maxLength = 280, maxChunks = 10) => {
     let currentChunk = remainingText.slice(0, splitIndex).trim();
 
     // Account for ellipsis overhead if not the last chunk
-    if (remainingText.length > splitIndex) {
+    if (remainingText.length > splitIndex && maxChunks > 1) {
         if (currentChunk.length + 2 <= maxLength) {
             currentChunk += ' …';
         } else {

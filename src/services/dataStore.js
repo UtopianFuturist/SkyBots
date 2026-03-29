@@ -20,7 +20,7 @@ class DataStore {
       post_topics: config.POST_TOPICS ? config.POST_TOPICS.split(',').map(t => t.trim()) : [],
       image_subjects: config.IMAGE_SUBJECTS ? config.IMAGE_SUBJECTS.split(',').map(t => t.trim()) : [],
       config: {
-        bluesky_post_cooldown: parseInt(config.BLUESKY_POST_COOLDOWN) || 120,
+        bluesky_post_cooldown: 20,
         max_thread_chunks: 3,
         interaction_threshold: 0.7,
         post_topics: config.POST_TOPICS ? config.POST_TOPICS.split(',').map(t => t.trim()) : [],
@@ -226,7 +226,7 @@ class DataStore {
   async setEnergyLevel(l) { if (this.db?.data) { this.db.data.energy_level = l; await this.write(); } }
   isResting() { return this.db?.data?.resting_until && Date.now() < this.db.data.resting_until; }
   async setRestingUntil(t) { if (this.db?.data) { this.db.data.resting_until = t; await this.write(); } }
-  isLurkerMode() { return false; }
+  isLurkerMode() { return this.db.data.current_mood?.label === "exhausted" || (this.db.data.discord_social_battery < 0.2 && this.db.data.interaction_hunger < 0.2); }
   isPining() {
     return this.db?.data?.pining_mode || (this.db?.data?.discord_waiting_until > Date.now());
   }

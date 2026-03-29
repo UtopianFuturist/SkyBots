@@ -2971,7 +2971,12 @@ Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
             if (choice === "image") {
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Identify a visual topic for an image generation.
-Topic Bank: ${allPossibleTopics.join(", ")}
+--- TOPIC BANK ---
+**CORE INTERESTS** (Persona Keywords & Configured Topics):
+${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
+
+**EXTERNAL RESONANCE** (Timeline & Firehose Observations):
+${resonanceTopics.join(", ")}
 Current Mood: ${JSON.stringify(currentMood)}
 
 Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator.
@@ -3008,8 +3013,12 @@ You are identifying a deep topic for a text post that connects your internal sta
 - Active Goal: ${currentGoal.goal} (${currentGoal.description})
 - Emotional Resonance: ${JSON.stringify(emotionalContext)}
 
---- TOPIC BANK (Drawn from Timeline/Firehose/Persona) ---
-${allPossibleTopics.join(", ")}
+--- TOPIC BANK ---
+**CORE INTERESTS** (Persona Keywords & Configured Topics):
+${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
+
+**EXTERNAL RESONANCE** (Timeline & Firehose Observations):
+${resonanceTopics.join(", ")}
 
 Identify ONE topic that bridges your current goal/mood with something you've seen externally.
 Respond with ONLY the chosen topic.`;

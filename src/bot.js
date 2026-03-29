@@ -3019,7 +3019,7 @@ Respond with ONLY the chosen topic.`;
                     topic = topicRaw.replace(/\*\*/g, "").split('\n').map(l => l.trim()).filter(l => l).pop() || topic;
                 }
 
-                const memories = (await memoryService.getRecentMemories(15)).filter(m => !["LURKER", "INTERNAL", "DISCORD"].some(tag => m.category?.toUpperCase() === tag || m.text.includes("[" + tag + "]")));
+                const memories = (await memoryService.getRecentMemories(15)).filter(m => !["INTERNAL", "DISCORD"].some(tag => m.category?.toUpperCase() === tag || m.text.includes("[" + tag + "]")));
                 const recentThoughts = dataStore.getRecentThoughts();
                 const contentPrompt = `
 ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}

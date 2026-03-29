@@ -3028,7 +3028,12 @@ Respond with ONLY the chosen topic.`;
                     topic = topicRaw.replace(/\*\*/g, "").split('\n').map(l => l.trim()).filter(l => l).pop() || topic;
                 }
 
-                const memories = await memoryService.getRecentMemories(10);
+                // Format memories while specifically ensuring [EXPLORE] and [LURKER] are present
+                const rawMemories = await memoryService.getRecentMemories(20);
+                const memories = rawMemories
+                    .filter(m => m.text.includes("[EXPLORE]") || m.text.includes("[LURKER]") || !m.text.includes("[PRIVATE]"))
+                    .slice(0, 10)
+                    .map(m => m.text.replace(/#\w+/g, "").trim());
                 const recentThoughts = dataStore.getRecentThoughts();
                 const contentPrompt = `
 ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
@@ -3057,7 +3062,11 @@ Shared thought:`;
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
                     if (coherence.score >= 4) {
                         await dataStore.addExhaustedTheme(topic);
-                        await blueskyService.post(content, null, { maxChunks: 4 });
+                        let finalContent = content;
+                        if (finalContent.length <= 280) {
+                            finalContent = finalContent.replace(/\s*(\.\.\.|…)$/, "");
+                        }
+                        await blueskyService.post(finalContent, null, { maxChunks: 4 });
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                         if (llmService.generalizePrivateThought) {
                             await dataStore.addRecentThought("bluesky", await llmService.generalizePrivateThought(content));

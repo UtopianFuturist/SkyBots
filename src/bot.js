@@ -3006,10 +3006,12 @@ You are identifying a deep topic for a text post that connects your internal sta
 - Active Goal: ${currentGoal.goal} (${currentGoal.description})
 - Emotional Resonance: ${JSON.stringify(emotionalContext)}
 
---- TOPIC BANK (Drawn from Timeline/Firehose/Persona) ---
-${allPossibleTopics.join(", ")}
+--- TOPIC BANK ---
+CORE INTERESTS: ${[...new Set([...postTopics, ...promptKeywords])].join(", ")}
+EXTERNAL RESONANCE (From Feed/Firehose): ${resonanceTopics.join(", ")}
+IMAGE SUBJECTS: ${imageSubjects.join(", ")}
 
-Identify ONE topic that bridges your current goal/mood with something you've seen externally.
+Identify ONE topic that bridges your current goal/mood with either a core interest or something you've seen externally.
 Respond with ONLY the chosen topic.`;
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = "existence";

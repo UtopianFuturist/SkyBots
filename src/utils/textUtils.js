@@ -142,7 +142,7 @@ export const splitText = (text, maxLength = 280, maxChunks = 10) => {
       break;
     }
 
-    // Try to find a logical sentence break (., !, ?, etc.) within the last 30% of the chunk
+    // Try to find a logical sentence break (., !, ?, etc.)
     let chunk = remainingText.slice(0, maxLength);
     let splitIndex = -1;
 
@@ -163,24 +163,12 @@ export const splitText = (text, maxLength = 280, maxChunks = 10) => {
     }
 
     let currentChunk = remainingText.slice(0, splitIndex).trim();
-
-    // Account for ellipsis overhead if not the last chunk
-    if (remainingText.length > splitIndex) {
-        if (currentChunk.length + 2 <= maxLength) {
-            currentChunk += ' …';
-        } else {
-            currentChunk = currentChunk.slice(0, maxLength - 2) + ' …';
-        }
-    }
-
     chunks.push(currentChunk);
     remainingText = remainingText.slice(splitIndex).trim();
-    if (remainingText.length > 0) {
-        remainingText = '… ' + remainingText;
-    }
   }
   return chunks;
 };
+
 export const splitTextForDiscord = (text, options = {}) => {
   const { maxLength = 2000, logicalOnly = false } = options;
   if (!text) return [];

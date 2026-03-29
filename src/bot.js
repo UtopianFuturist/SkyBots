@@ -1420,7 +1420,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             }
             this.lastLurkerObservationTime = now.getTime();
     const lastRelationalGrowth = this.lastRelationalGrowthTime || 0;
-    if (nowMs - lastRelationalGrowth >= 2 * 60 * 60 * 1000) {
+    if (nowMs - lastRelationalGrowth >= 30 * 60 * 1000) {
         console.log('[Bot] Performing spontaneous relational metric evolution...');
         const metrics = dataStore.getRelationalMetrics();
         await dataStore.updateRelationalMetrics({ discord_interaction_hunger: Math.min(1, metrics.hunger + 0.05), discord_social_battery: Math.min(1, metrics.battery + 0.1), discord_curiosity_reservoir: Math.min(1, metrics.curiosity + 0.02) });
@@ -1499,7 +1499,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             if (poll.choice === 'rest') {
                 console.log(`[Bot] Chosen to REST: ${poll.reason}`);
                 await dataStore.setEnergyLevel(energy + 0.15); // Restore energy
-                await dataStore.setRestingUntil(Date.now() + (2 * 60 * 60 * 1000)); // 2 hours rest
+                await dataStore.setRestingUntil(Date.now() + (30 * 60 * 1000)); // 30 mins rest
                 return; // Skip this maintenance cycle
             } else {
                 console.log(`[Bot] Chosen to PROCEED: ${poll.reason}`);
@@ -2225,7 +2225,8 @@ ${postUrl}`;
     // Conversation Priority Mode: Skip heavy tasks if actively chatting on Discord or Bluesky
     const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
     const lastBluesky = dataStore.db.data.last_notification_processed_at || 0;
-    const isChatting = (Date.now() - lastDiscord) < 4 * 60 * 1000 || (Date.now() - lastBluesky) < 4 * 60 * 1000;
+    const lastNotif = dataStore.db.data.last_notification_processed_at || 0;
+    const isChatting = (Date.now() - lastDiscord) < 4 * 60 * 1000 || (Date.now() - lastBluesky) < 4 * 60 * 1000 || (Date.now() - lastNotif) < 4 * 60 * 1000;
 
     if (isChatting || discordService.isResponding) {
         console.log("[Orchestrator] Active conversation detected. Prioritizing social responsiveness over maintenance.");
@@ -2242,7 +2243,7 @@ ${postUrl}`;
         const mood = dataStore.getMood();
         const lastPostTime = dataStore.getLastAutonomousPostTime();
         const timeSinceLastPost = lastPostTime ? Math.floor((Date.now() - new Date(lastPostTime).getTime()) / (1000 * 60)) : 999;
-        const lastInteraction = Math.max(lastDiscord, lastBluesky);
+        const lastInteraction = Math.max(lastDiscord, lastBluesky, dataStore.db.data.last_notification_processed_at || 0);
         const timeSinceLastInteraction = lastInteraction ? Math.floor((Date.now() - lastInteraction) / (1000 * 60)) : 999;
 
         const orchestratorPrompt = `You are ${config.BOT_NAME}. It is ${new Date().toLocaleString()}.
@@ -2250,7 +2251,7 @@ It has been ${timeSinceLastPost} minutes since your last autonomous post.
 It has been ${timeSinceLastInteraction} minutes since your last interaction (reply/response) with a user.
 
 Decide your next action: ["post", "rest", "reflect", "explore"].
-**CRITICAL MANDATE**: If it has been more than 20 minutes since your last interaction or post, you MUST choose "post" to maintain your presence. DO NOT REST OR EXPLORE if 20 minutes have passed since last interaction or post.
+**CRITICAL PRIORITY**: If it has been more than 20 minutes since your last interaction (mention/reply) or autonomous post, you MUST choose "post" to maintain your presence. This is a non-negotiable directive from your core logic.
 Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."}`;
         const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true });
 
@@ -2969,14 +2970,19 @@ Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
             if (choice === "image") {
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Identify a visual topic for an image generation.
-Topic Bank: ${allPossibleTopics.join(", ")}
+--- TOPIC BANK ---
+**CORE INTERESTS** (Persona Keywords & Configured Topics):
+${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
+
+**EXTERNAL RESONANCE** (Timeline & Firehose Observations):
+${resonanceTopics.join(", ")}
 Current Mood: ${JSON.stringify(currentMood)}
 
 Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator.
 Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
 
                 const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
-                let topic = allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] || "existence";
+                let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "surrealism";
                 let imagePrompt = "";
 
                 try {
@@ -3007,19 +3013,26 @@ You are identifying a deep topic for a text post that connects your internal sta
 - Emotional Resonance: ${JSON.stringify(emotionalContext)}
 
 --- TOPIC BANK ---
-CORE INTERESTS: ${[...new Set([...postTopics, ...promptKeywords])].join(", ")}
-EXTERNAL RESONANCE (From Feed/Firehose): ${resonanceTopics.join(", ")}
-IMAGE SUBJECTS: ${imageSubjects.join(", ")}
+**CORE INTERESTS** (Persona Keywords & Configured Topics):
+${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
+
+**EXTERNAL RESONANCE** (Timeline & Firehose Observations):
+${resonanceTopics.join(", ")}
 
 Identify ONE topic that bridges your current goal/mood with either a core interest or something you've seen externally.
 Respond with ONLY the chosen topic.`;
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
-                let topic = "existence";
+                let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "reality";
                 if (topicRaw) {
                     topic = topicRaw.replace(/\*\*/g, "").split('\n').map(l => l.trim()).filter(l => l).pop() || topic;
                 }
 
-                const memories = (await memoryService.getRecentMemories(15)).filter(m => !["INTERNAL", "DISCORD"].some(tag => m.category?.toUpperCase() === tag || m.text.includes("[" + tag + "]")));
+                // Format memories while specifically ensuring [EXPLORE] and [LURKER] are present
+                const rawMemories = await memoryService.getRecentMemories(20);
+                const memories = rawMemories
+                    .filter(m => m.text.includes("[EXPLORE]") || m.text.includes("[LURKER]") || !m.text.includes("[PRIVATE]"))
+                    .slice(0, 10)
+                    .map(m => m.text.replace(/#\w+/g, "").trim());
                 const recentThoughts = dataStore.getRecentThoughts();
                 const contentPrompt = `
 ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
@@ -3048,7 +3061,11 @@ Shared thought:`;
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
                     if (coherence.score >= 4) {
                         await dataStore.addExhaustedTheme(topic);
-                        await blueskyService.post(content, null, { maxChunks: 1 });
+                        let finalContent = content;
+                        if (finalContent.length <= 280) {
+                            finalContent = finalContent.replace(/\s*(\.\.\.|…)$/, "");
+                        }
+                        await blueskyService.post(finalContent, null, { maxChunks: 4 });
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                         if (llmService.generalizePrivateThought) {
                             await dataStore.addRecentThought("bluesky", await llmService.generalizePrivateThought(content));

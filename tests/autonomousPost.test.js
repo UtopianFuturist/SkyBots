@@ -111,7 +111,7 @@ describe('Bot Autonomous Posting', () => {
     blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
 
     await bot.performAutonomousPost();
-    expect(blueskyService.post).toHaveBeenCalledWith('Deep thought about existence.', null, { maxChunks: 1 });
+    expect(blueskyService.post).toHaveBeenCalledWith('Deep thought about existence.', null, { maxChunks: 4 });
   });
 
   it('should handle autonomous image posts', async () => {
@@ -200,6 +200,6 @@ describe('Bot Autonomous Posting', () => {
 
     await bot.performAutonomousPost();
 
-    expect(blueskyService.post).toHaveBeenCalledWith('Robotics has a long history.', null, { maxChunks: 1 });
+    expect(blueskyService.post).toHaveBeenCalledWith('Robotics has a long history.', null, { maxChunks: 4 });
   });
 });

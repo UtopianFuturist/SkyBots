@@ -127,7 +127,7 @@ export const truncateText = (text, maxLength = 300) => {
   let truncatedText = truncatedGraphemes.join('');
   const lastSpaceIndex = truncatedText.lastIndexOf(' ');
   if (lastSpaceIndex > 0) truncatedText = truncatedText.slice(0, lastSpaceIndex);
-  return truncatedText + '…';
+  return truncatedText;
 };
 export const splitText = (text, maxLength = 280, maxChunks = 10) => {
   if (!text) return [];
@@ -175,9 +175,6 @@ export const splitText = (text, maxLength = 280, maxChunks = 10) => {
 
     chunks.push(currentChunk);
     remainingText = remainingText.slice(splitIndex).trim();
-    if (remainingText.length > 0) {
-        remainingText = '… ' + remainingText;
-    }
   }
   return chunks;
 };

@@ -19,6 +19,8 @@ import { newsroomService } from './services/newsroomService.js';
 import { handleCommand } from './utils/commandHandler.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords, checkHardCodedBoundaries, isLiteralVisualPrompt } from './utils/textUtils.js';
+import { orchestratorService } from './services/orchestratorService.js';
+import { evaluationService } from './services/evaluationService.js';
 import config from '../config.js';
 import fs from 'fs/promises';
 import { spawn } from 'child_process';
@@ -75,6 +77,7 @@ export class Bot {
   async init() {
     console.log('[Bot] [v3] Initializing services...');
     await dataStore.init();
+    orchestratorService.setBotInstance(this);
     console.log('[Bot] DataStore initialized.');
     if (!dataStore.db.data.discord_last_interaction) {
         dataStore.db.data.discord_last_interaction = Date.now();
@@ -101,6 +104,8 @@ export class Bot {
     console.log('[Bot] Bluesky authenticated.');
 
     await blueskyService.submitAutonomyDeclaration();
+    await toolService.init();
+    console.log("[Bot] ToolService initialized.");
     console.log('[Bot] Autonomy declaration submitted.');
 
     // Resolve Admin DID
@@ -114,8 +119,6 @@ export class Bot {
                 console.log(`[Bot] Admin DID resolved: ${adminProfile.did}`);
                 llmService.setIdentities(this.adminDid, blueskyService.did);
             } else {
-    await toolService.init();
-    console.log('[Bot] ToolService initialized.');
                 console.warn(`[Bot] Admin profile found but DID is missing for @${config.ADMIN_BLUESKY_HANDLE}.`);
             }
         } catch (e) {
@@ -462,8 +465,8 @@ export class Bot {
   }
   async run() {
     // Initialize 5-minute central heartbeat
-    const scheduleHeartbeat = () => { setTimeout(async () => { await this.heartbeat(); scheduleHeartbeat(); }, 300000 + (Math.random() * 60000)); }; scheduleHeartbeat();
-    this.heartbeat();
+    const scheduleHeartbeat = () => { setTimeout(async () => { await orchestratorService.heartbeat(); scheduleHeartbeat(); }, 300000 + (Math.random() * 60000)); }; scheduleHeartbeat();
+    orchestratorService.heartbeat();
 
     console.log('[Bot] Starting main loop...');
 

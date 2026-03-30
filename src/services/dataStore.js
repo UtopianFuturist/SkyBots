@@ -113,20 +113,36 @@ class DataStore {
       discord_last_replied: false,
       lurker_mode: false,
       is_pining: false,
-      post_continuations: []
+      post_continuations: [],
+      trace_logs: []
     };
     this.db = await JSONFilePreset(this.dbPath, defaultData);
+
+    // Safety check: ensure all default keys exist
+    if (this.db.data) {
+        Object.keys(defaultData).forEach(key => {
+            if (this.db.data[key] === undefined || this.db.data[key] === null) {
+                this.db.data[key] = defaultData[key];
+            }
+        });
+        await this.write();
+    }
   }
 
-  async write() { await this.db.write(); }
+  async write() {
+    if (this.db) await this.db.write();
+  }
 
   async update(fn) {
-    await fn(this.db.data);
-    await this.write();
+    if (this.db?.data) {
+        await fn(this.db.data);
+        await this.write();
+    }
   }
 
-  getConfig() { return this.db.data; }
+  getConfig() { return this.db?.data || {}; }
   async updateConfig(c, v) {
+    if (!this.db?.data) return false;
     if (typeof c === 'string') {
         this.db.data[c] = v;
     } else {
@@ -137,356 +153,452 @@ class DataStore {
   }
 
   async addInternalLog(type, content) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.internal_logs)) this.db.data.internal_logs = [];
     this.db.data.internal_logs.push({ type, content, timestamp: Date.now() });
     if (this.db.data.internal_logs.length > 500) this.db.data.internal_logs.shift();
     await this.write();
   }
 
-  getMood() { return this.db.data.current_mood; }
+  getMood() { return this.db?.data?.current_mood || { label: 'balanced', score: 0.5 }; }
   async setMood(m) {
+    if (!this.db?.data) return;
+    if (!this.db.data.current_mood) this.db.data.current_mood = {};
     Object.assign(this.db.data.current_mood, m);
     await this.write();
   }
 
-  getAdminEnergy() { return this.db.data.admin_energy; }
-  async setAdminEnergy(v) { this.db.data.admin_energy = v; await this.write(); }
+  getAdminEnergy() { return this.db?.data?.admin_energy || 0.8; }
+  async setAdminEnergy(v) { if (this.db?.data) { this.db.data.admin_energy = v; await this.write(); } }
 
-  getLastAutonomousPostTime() { return this.db.data.last_autonomous_post_time; }
-  async updateLastAutonomousPostTime(t) { this.db.data.last_autonomous_post_time = t; await this.write(); }
+  getLastAutonomousPostTime() { return this.db?.data?.last_autonomous_post_time || 0; }
+  async updateLastAutonomousPostTime(t) { if (this.db?.data) { this.db.data.last_autonomous_post_time = t; await this.write(); } }
 
-  getPersonaBlurbs() { return this.db.data.persona_blurbs || []; }
-  async setPersonaBlurbs(b) { this.db.data.persona_blurbs = b; await this.write(); }
+  getPersonaBlurbs() { return this.db?.data?.persona_blurbs || []; }
+  async setPersonaBlurbs(b) { if (this.db?.data) { this.db.data.persona_blurbs = b; await this.write(); } }
   async addPersonaBlurb(text) {
-    if (!this.db.data.persona_blurbs) this.db.data.persona_blurbs = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.persona_blurbs)) this.db.data.persona_blurbs = [];
     this.db.data.persona_blurbs.push({ text, uri: 'local-' + Date.now() });
     await this.write();
   }
 
-  getSessionLessons() { return this.db.data.session_lessons || []; }
+  getSessionLessons() { return this.db?.data?.session_lessons || []; }
   async addSessionLesson(l) {
-    if (!this.db.data.session_lessons) this.db.data.session_lessons = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.session_lessons)) this.db.data.session_lessons = [];
     this.db.data.session_lessons.push({ text: l, timestamp: Date.now() });
     if (this.db.data.session_lessons.length > 20) this.db.data.session_lessons.shift();
     await this.write();
   }
 
   async addWorldFact(fact) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.world_facts)) this.db.data.world_facts = [];
     this.db.data.world_facts.push({ ...fact, timestamp: Date.now() });
     if (this.db.data.world_facts.length > 50) this.db.data.world_facts.shift();
     await this.write();
   }
 
   async addParkedThought(text) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.parked_thoughts)) this.db.data.parked_thoughts = [];
     this.db.data.parked_thoughts.push({ text, timestamp: Date.now() });
     if (this.db.data.parked_thoughts.length > 20) this.db.data.parked_thoughts.shift();
     await this.write();
   }
 
   async updateUserPortrait(handle, portrait) {
+    if (!this.db?.data) return;
+    if (!this.db.data.user_portraits) this.db.data.user_portraits = {};
     this.db.data.user_portraits[handle] = { ...portrait, updatedAt: Date.now() };
     await this.write();
   }
 
   async applyRelationalDecay() {
-    this.db.data.relationship_warmth *= 0.95;
-    await this.write();
+    if (this.db?.data) {
+        this.db.data.relationship_warmth = (this.db.data.relationship_warmth || 0.5) * 0.95;
+        await this.write();
+    }
   }
 
   async updateSelfModel(insight) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.self_model)) this.db.data.self_model = [];
     this.db.data.self_model.push({ insight, timestamp: Date.now() });
     if (this.db.data.self_model.length > 20) this.db.data.self_model.shift();
     await this.write();
   }
 
   async updatePosition(topic, stance) {
+    if (!this.db?.data) return;
+    if (!this.db.data.positions) this.db.data.positions = {};
     this.db.data.positions[topic] = { stance, updatedAt: Date.now() };
     await this.write();
   }
 
-  getPositions() { return this.db.data.positions || {}; }
-  getRecentInteractions() { return this.db.data.interactions || []; }
+  getPositions() { return this.db?.data?.positions || {}; }
+  getRecentInteractions() { return this.db?.data?.interactions || []; }
 
   isResting() {
-    return this.db.data.resting_until > Date.now();
+    return (this.db?.data?.resting_until || 0) > Date.now();
   }
   async setRestingUntil(t) {
-    this.db.data.resting_until = t;
-    await this.write();
+    if (this.db?.data) {
+        this.db.data.resting_until = t;
+        await this.write();
+    }
   }
 
-  getExhaustedThemes() { return this.db.data.exhausted_themes || []; }
+  getExhaustedThemes() { return this.db?.data?.exhausted_themes || []; }
   async addExhaustedTheme(t) {
-    if (!this.db.data.exhausted_themes) this.db.data.exhausted_themes = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.exhausted_themes)) this.db.data.exhausted_themes = [];
     this.db.data.exhausted_themes.push(t);
     await this.write();
   }
 
   isUserLockedOut(did) {
+    if (!this.db?.data?.boundary_lockouts) return false;
     const lockout = this.db.data.boundary_lockouts[did];
     return lockout && lockout.expires_at > Date.now();
   }
   async setBoundaryLockout(did, mins) {
+    if (!this.db?.data) return;
+    if (!this.db.data.boundary_lockouts) this.db.data.boundary_lockouts = {};
     this.db.data.boundary_lockouts[did] = { expires_at: Date.now() + mins * 60000 };
     await this.write();
   }
 
-  getNetworkSentiment() { return this.db.data.network_sentiment || 0.5; }
-  async setNetworkSentiment(s) { this.db.data.network_sentiment = s; await this.write(); }
+  getNetworkSentiment() { return this.db?.data?.network_sentiment || 0.5; }
+  async setNetworkSentiment(s) { if (this.db?.data) { this.db.data.network_sentiment = s; await this.write(); } }
 
-  getFirehoseMatches() { return this.db.data.firehose_matches || []; }
+  getFirehoseMatches() { return this.db?.data?.firehose_matches || []; }
   async addFirehoseMatch(m) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.firehose_matches)) this.db.data.firehose_matches = [];
     this.db.data.firehose_matches.push(m);
     if (this.db.data.firehose_matches.length > 100) this.db.data.firehose_matches.shift();
     await this.write();
   }
 
-  getCurrentGoal() { return this.db.data.current_goal; }
+  getCurrentGoal() { return this.db?.data?.current_goal || { goal: "Existence" }; }
   async setCurrentGoal(goal, description) {
-    this.db.data.current_goal = { goal, description, timestamp: Date.now() };
-    await this.write();
+    if (this.db?.data) {
+        this.db.data.current_goal = { goal, description, timestamp: Date.now() };
+        await this.write();
+    }
   }
   async setGoal(goal, reasoning) { await this.setCurrentGoal(goal, reasoning); }
 
   async setAdminDid(did) {
-    this.db.data.admin_did = did;
-    await this.write();
+    if (this.db?.data) {
+        this.db.data.admin_did = did;
+        await this.write();
+    }
   }
-  getAdminDid() { return this.db.data.admin_did; }
+  getAdminDid() { return this.db?.data?.admin_did; }
 
   async addRepliedPost(uri) {
-    if (!this.db.data.replied_posts) this.db.data.replied_posts = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.replied_posts)) this.db.data.replied_posts = [];
     this.db.data.replied_posts.push(uri);
     if (this.db.data.replied_posts.length > 1000) this.db.data.replied_posts.shift();
     await this.write();
   }
   hasReplied(uri) {
-    return this.db.data.replied_posts?.includes(uri);
+    return this.db?.data?.replied_posts?.includes(uri);
   }
 
   async addRecentThought(platform, content) {
-    if (!this.db.data.recent_thoughts) this.db.data.recent_thoughts = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.recent_thoughts)) this.db.data.recent_thoughts = [];
     this.db.data.recent_thoughts.push({ platform, content, timestamp: Date.now() });
     if (this.db.data.recent_thoughts.length > 50) this.db.data.recent_thoughts.shift();
     await this.write();
   }
-  getRecentThoughts() { return this.db.data.recent_thoughts || []; }
+  getRecentThoughts() { return this.db?.data?.recent_thoughts || []; }
 
   async addBlueskyInstruction(i) {
-    if (!this.db.data.bluesky_instructions) this.db.data.bluesky_instructions = "";
-    this.db.data.bluesky_instructions += "\n" + i;
-    await this.write();
+    if (this.db?.data) {
+        if (!this.db.data.bluesky_instructions) this.db.data.bluesky_instructions = "";
+        this.db.data.bluesky_instructions += "\n" + i;
+        await this.write();
+    }
   }
-  getBlueskyInstructions() { return this.db.data.bluesky_instructions || ""; }
+  getBlueskyInstructions() { return this.db?.data?.bluesky_instructions || ""; }
 
   async addPersonaUpdate(u) {
-    if (!this.db.data.persona_updates) this.db.data.persona_updates = "";
-    this.db.data.persona_updates += "\n" + u;
-    await this.write();
+    if (this.db?.data) {
+        if (!this.db.data.persona_updates) this.db.data.persona_updates = "";
+        this.db.data.persona_updates += "\n" + u;
+        await this.write();
+    }
   }
-  getPersonaUpdates() { return this.db.data.persona_updates || ""; }
+  getPersonaUpdates() { return this.db?.data?.persona_updates || ""; }
 
   async updateUserSummary(handle, feelings) {
+    if (!this.db?.data) return;
+    if (!this.db.data.user_portraits) this.db.data.user_portraits = {};
     if (!this.db.data.user_portraits[handle]) this.db.data.user_portraits[handle] = {};
     this.db.data.user_portraits[handle].feelings = feelings;
     await this.write();
   }
 
-  getDeepKeywords() { return this.db.data.deep_keywords || []; }
-  async setDeepKeywords(k) { this.db.data.deep_keywords = k; await this.write(); }
+  getDeepKeywords() { return this.db?.data?.deep_keywords || []; }
+  async setDeepKeywords(k) { if (this.db?.data) { this.db.data.deep_keywords = k; await this.write(); } }
 
   async updateSocialResonance(vibe, weight) {
+    if (!this.db?.data) return;
+    if (!this.db.data.social_resonance) this.db.data.social_resonance = {};
     this.db.data.social_resonance[vibe] = (this.db.data.social_resonance[vibe] || 0) + weight;
     await this.write();
   }
 
   async updateUserDossier(handle, dossier) {
+    if (!this.db?.data) return;
+    if (!this.db.data.user_dossiers) this.db.data.user_dossiers = {};
     this.db.data.user_dossiers[handle] = dossier;
     await this.write();
   }
 
-  async setShieldingActive(v) { this.db.data.shielding_active = v; await this.write(); }
-  isShieldingActive() { return this.db.data.shielding_active; }
+  async setShieldingActive(v) { if (this.db?.data) { this.db.data.shielding_active = v; await this.write(); } }
+  isShieldingActive() { return this.db?.data?.shielding_active || false; }
 
   async addAdminFact(fact) {
-    if (!this.db.data.admin_facts) this.db.data.admin_facts = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.admin_facts)) this.db.data.admin_facts = [];
     this.db.data.admin_facts.push(fact);
     if (this.db.data.admin_facts.length > 50) this.db.data.admin_facts.shift();
     await this.write();
   }
-  getAdminFacts() { return this.db.data.admin_facts || []; }
+  getAdminFacts() { return this.db?.data?.admin_facts || []; }
 
   async addAgencyReflection(r) {
-    if (!this.db.data.agency_logs) this.db.data.agency_logs = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.agency_logs)) this.db.data.agency_logs = [];
     this.db.data.agency_logs.push({ type: 'reflection', content: r, timestamp: Date.now() });
     await this.write();
   }
-  getAgencyLogs() { return this.db.data.agency_logs || []; }
+  getAgencyLogs() { return this.db?.data?.agency_logs || []; }
 
   async updateRelationalMetrics(m) {
-    Object.assign(this.db.data.relational_metrics, m);
-    await this.write();
+    if (this.db?.data) {
+        if (!this.db.data.relational_metrics) this.db.data.relational_metrics = {};
+        Object.assign(this.db.data.relational_metrics, m);
+        await this.write();
+    }
   }
-  getRelationalMetrics() { return this.db.data.relational_metrics; }
+  getRelationalMetrics() { return this.db?.data?.relational_metrics || {}; }
 
   async updateLifeArc(adminId, arc, status) {
-    if (!this.db.data.life_arcs) this.db.data.life_arcs = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.life_arcs)) this.db.data.life_arcs = [];
     const existing = this.db.data.life_arcs.find(a => a.arc === arc);
     if (existing) existing.status = status;
     else this.db.data.life_arcs.push({ arc, status, timestamp: Date.now() });
     await this.write();
   }
-  getLifeArcs() { return this.db.data.life_arcs || []; }
+  getLifeArcs() { return this.db?.data?.life_arcs || []; }
 
   async addInsideJoke(adminId, joke, context) {
-    if (!this.db.data.inside_jokes) this.db.data.inside_jokes = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.inside_jokes)) this.db.data.inside_jokes = [];
     this.db.data.inside_jokes.push({ joke, context, timestamp: Date.now() });
     await this.write();
   }
-  getInsideJokes() { return this.db.data.inside_jokes || []; }
+  getInsideJokes() { return this.db?.data?.inside_jokes || []; }
 
-  getRelationalDebtScore() { return this.db.data.relational_debt_score || 0; }
+  getRelationalDebtScore() { return this.db?.data?.relational_debt_score || 0; }
 
-  getPredictiveEmpathyMode() { return this.db.data.predictive_empathy_mode; }
-  async setPredictiveEmpathyMode(m) { this.db.data.predictive_empathy_mode = m; await this.write(); }
+  getPredictiveEmpathyMode() { return this.db?.data?.predictive_empathy_mode || 'neutral'; }
+  async setPredictiveEmpathyMode(m) { if (this.db?.data) { this.db.data.predictive_empathy_mode = m; await this.write(); } }
 
-  async setAdminHomeMentionedAt(t) { this.db.data.admin_home_mentioned_at = t; await this.write(); }
-  async setAdminWorkMentionedAt(t) { this.db.data.admin_work_mentioned_at = t; await this.write(); }
+  async setAdminHomeMentionedAt(t) { if (this.db?.data) { this.db.data.admin_home_mentioned_at = t; await this.write(); } }
+  async setAdminWorkMentionedAt(t) { if (this.db?.data) { this.db.data.admin_work_mentioned_at = t; await this.write(); } }
 
   async addCoEvolutionEntry(note) {
-    if (!this.db.data.growth_log) this.db.data.growth_log = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.growth_log)) this.db.data.growth_log = [];
     this.db.data.growth_log.push({ type: 'co-evolution', note, timestamp: Date.now() });
     await this.write();
   }
 
   async addGoalEvolution(goal, reasoning) {
-    if (!this.db.data.goal_evolutions) this.db.data.goal_evolutions = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.goal_evolutions)) this.db.data.goal_evolutions = [];
     this.db.data.goal_evolutions.push({ goal, reasoning, timestamp: Date.now() });
     await this.write();
   }
 
   async addGoalSubtasks(tasks) {
-    this.db.data.goal_subtasks = tasks;
-    await this.write();
+    if (this.db?.data) {
+        this.db.data.goal_subtasks = tasks;
+        await this.write();
+    }
   }
-  getGoalSubtasks() { return this.db.data.goal_subtasks || []; }
+  getGoalSubtasks() { return this.db?.data?.goal_subtasks || []; }
 
   async addStrategyAudit(audit) {
-    if (!this.db.data.strategy_audits) this.db.data.strategy_audits = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.strategy_audits)) this.db.data.strategy_audits = [];
     this.db.data.strategy_audits.push({ audit, timestamp: Date.now() });
     await this.write();
   }
 
   async addDiscoveredCapability(capability, combination) {
-    if (!this.db.data.discovered_capabilities) this.db.data.discovered_capabilities = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.discovered_capabilities)) this.db.data.discovered_capabilities = [];
     this.db.data.discovered_capabilities.push({ capability, combination, timestamp: Date.now() });
     await this.write();
   }
 
   async addLinguisticMutation(shifts, summary) {
-    if (!this.db.data.linguistic_mutations) this.db.data.linguistic_mutations = [];
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.linguistic_mutations)) this.db.data.linguistic_mutations = [];
     this.db.data.linguistic_mutations.push({ shifts, summary, timestamp: Date.now() });
     await this.write();
   }
 
-  async updateLastMemoryCleanupTime(t) { this.db.data.last_memory_cleanup_time = t; await this.write(); }
-  getLastMemoryCleanupTime() { return this.db.data.last_memory_cleanup_time || 0; }
+  async updateLastMemoryCleanupTime(t) { if (this.db?.data) { this.db.data.last_memory_cleanup_time = t; await this.write(); } }
+  getLastMemoryCleanupTime() { return this.db?.data?.last_memory_cleanup_time || 0; }
 
-  async updateLastMentalReflectionTime(t) { this.db.data.last_mental_reflection_time = t; await this.write(); }
-  getLastMentalReflectionTime() { return this.db.data.last_mental_reflection_time || 0; }
+  async updateLastMentalReflectionTime(t) { if (this.db?.data) { this.db.data.last_mental_reflection_time = t; await this.write(); } }
+  getLastMentalReflectionTime() { return this.db?.data?.last_mental_reflection_time || 0; }
 
-  async setEnergyLevel(v) { this.db.data.energy_level = v; await this.write(); }
-  getEnergyLevel() { return this.db.data.energy_level ?? 1.0; }
+  async setEnergyLevel(v) { if (this.db?.data) { this.db.data.energy_level = v; await this.write(); } }
+  getEnergyLevel() { return this.db?.data?.energy_level ?? 1.0; }
 
   getDiscordConversation(channelId) {
+    if (!this.db?.data?.discord_conversations) return [];
     return this.db.data.discord_conversations[channelId] || [];
   }
   async saveDiscordInteraction(channelId, role, content, attachments = null) {
+    if (!this.db?.data) return;
+    if (!this.db.data.discord_conversations) this.db.data.discord_conversations = {};
     if (!this.db.data.discord_conversations[channelId]) this.db.data.discord_conversations[channelId] = [];
     this.db.data.discord_conversations[channelId].push({ role, content, attachments, timestamp: Date.now() });
     if (this.db.data.discord_conversations[channelId].length > 100) this.db.data.discord_conversations[channelId].shift();
     await this.write();
   }
 
-  getDiscordScheduledTasks() { return this.db.data.discord_scheduled_tasks || []; }
+  getDiscordScheduledTasks() { return this.db?.data?.discord_scheduled_tasks || []; }
   async removeDiscordScheduledTask(i) {
-    this.db.data.discord_scheduled_tasks.splice(i, 1);
-    await this.write();
+    if (this.db?.data?.discord_scheduled_tasks) {
+        this.db.data.discord_scheduled_tasks.splice(i, 1);
+        await this.write();
+    }
   }
 
-  getPostContinuations() { return this.db.data.post_continuations || []; }
+  getPostContinuations() { return this.db?.data?.post_continuations || []; }
   async removePostContinuation(i) {
-    this.db.data.post_continuations.splice(i, 1);
-    await this.write();
+    if (this.db?.data?.post_continuations) {
+        this.db.data.post_continuations.splice(i, 1);
+        await this.write();
+    }
   }
 
-  getScheduledPosts() { return this.db.data.scheduled_posts || []; }
+  getScheduledPosts() { return this.db?.data?.scheduled_posts || []; }
   async addScheduledPost(platform, content) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.scheduled_posts)) this.db.data.scheduled_posts = [];
     this.db.data.scheduled_posts.push({ platform, content, timestamp: Date.now() });
     await this.write();
   }
   async removeScheduledPost(i) {
-    this.db.data.scheduled_posts.splice(i, 1);
-    await this.write();
+    if (this.db?.data?.scheduled_posts) {
+        this.db.data.scheduled_posts.splice(i, 1);
+        await this.write();
+    }
   }
 
-  getRefusalCounts() { return this.db.data.refusal_counts || { global: 0, discord: 0, bluesky: 0 }; }
+  getRefusalCounts() { return this.db?.data?.refusal_counts || { global: 0, discord: 0, bluesky: 0 }; }
 
-  getDiscordRelationshipMode() { return this.db.data.discord_relationship_mode || 'companion'; }
-  async setDiscordRelationshipMode(m) { this.db.data.discord_relationship_mode = m; await this.write(); }
+  getDiscordRelationshipMode() { return this.db?.data?.discord_relationship_mode || 'companion'; }
+  async setDiscordRelationshipMode(m) { if (this.db?.data) { this.db.data.discord_relationship_mode = m; await this.write(); } }
 
-  getDiscordAdminAvailability() { return this.db.data.discord_admin_available; }
-  async setDiscordAdminAvailability(v) { this.db.data.discord_admin_available = v; await this.write(); }
+  getDiscordAdminAvailability() { return this.db?.data?.discord_admin_available ?? true; }
+  async setDiscordAdminAvailability(v) { if (this.db?.data) { this.db.data.discord_admin_available = v; await this.write(); } }
 
   async setAdminTimezone(timezone, offset) {
-    this.db.data.admin_timezone = timezone;
-    this.db.data.admin_local_time_offset = offset;
+    if (this.db?.data) {
+        this.db.data.admin_timezone = timezone;
+        this.db.data.admin_local_time_offset = offset;
+        await this.write();
+    }
+  }
+  getAdminTimezone() { return { timezone: this.db?.data?.admin_timezone || 'UTC', offset: this.db?.data?.admin_local_time_offset || 0 }; }
+
+  getLastDiscordGiftTime() { return this.db?.data?.last_discord_gift_time || 0; }
+  async updateLastDiscordGiftTime(t) { if (this.db?.data) { this.db.data.last_discord_gift_time = t; await this.write(); } }
+
+  async setAdminMentalHealth(h) { if (this.db?.data) { this.db.data.admin_mental_health = h; await this.write(); } }
+  async updateAdminWorldview(w) {
+    if (!this.db?.data) return;
+    if (!this.db.data.admin_worldview) this.db.data.admin_worldview = {};
+    Object.assign(this.db.data.admin_worldview, w);
     await this.write();
   }
-  getAdminTimezone() { return { timezone: this.db.data.admin_timezone, offset: this.db.data.admin_local_time_offset }; }
 
-  getLastDiscordGiftTime() { return this.db.data.last_discord_gift_time || 0; }
-  async updateLastDiscordGiftTime(t) { this.db.data.last_discord_gift_time = t; await this.write(); }
-
-  async setAdminMentalHealth(h) { this.db.data.admin_mental_health = h; await this.write(); }
-  async updateAdminWorldview(w) { Object.assign(this.db.data.admin_worldview, w); await this.write(); }
-
-  isLurkerMode() { return this.db.data.lurker_mode || false; }
-  isPining() { return this.db.data.is_pining || false; }
+  isLurkerMode() { return this.db?.data?.lurker_mode || false; }
+  isPining() { return this.db?.data?.is_pining || false; }
   async getAdminExhaustion() { return 0.5; }
 
   searchInternalLogs(type, limit) {
+    if (!this.db?.data?.internal_logs) return [];
     return this.db.data.internal_logs.filter(l => l.type === type).slice(-limit);
   }
 
-  async setDiscordScheduledTimes(times) { this.db.data.discord_scheduled_times = times; await this.write(); }
-  async setDiscordQuietHours(start, end) { this.db.data.discord_quiet_hours = { start, end }; await this.write(); }
+  async setDiscordScheduledTimes(times) { if (this.db?.data) { this.db.data.discord_scheduled_times = times; await this.write(); } }
+  async setDiscordQuietHours(start, end) { if (this.db?.data) { this.db.data.discord_quiet_hours = { start, end }; await this.write(); } }
 
-  async setDiscordLastReplied(v) { this.db.data.discord_last_replied = v; await this.write(); }
+  async setDiscordLastReplied(v) { if (this.db?.data) { this.db.data.discord_last_replied = v; await this.write(); } }
 
-  async updateAdminInterests(i) { this.db.data.admin_interests = i; await this.write(); }
-  async updateRelationshipSeason(s) { this.db.data.relationship_season = s; await this.write(); }
+  async updateAdminInterests(i) { if (this.db?.data) { this.db.data.admin_interests = i; await this.write(); } }
+  async updateRelationshipSeason(s) { if (this.db?.data) { this.db.data.relationship_season = s; await this.write(); } }
   async addRelationalReflection(r) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.relational_reflections)) this.db.data.relational_reflections = [];
     this.db.data.relational_reflections.push({ reflection: r, timestamp: Date.now() });
     if (this.db.data.relational_reflections.length > 50) this.db.data.relational_reflections.shift();
     await this.write();
   }
-  async setStrongRelationship(s) { this.db.data.strong_relationship = s; await this.write(); }
-  async updateCuriosityReservoir(q) { this.db.data.curiosity_reservoir = q; await this.write(); }
-  getAdminInterests() { return this.db.data.admin_interests || {}; }
+  async setStrongRelationship(s) { if (this.db?.data) { this.db.data.strong_relationship = s; await this.write(); } }
+  async updateCuriosityReservoir(q) { if (this.db?.data) { this.db.data.curiosity_reservoir = q; await this.write(); } }
+  getAdminInterests() { return this.db?.data?.admin_interests || {}; }
   async addPersonaAdvice(a) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.persona_advice)) this.db.data.persona_advice = [];
     this.db.data.persona_advice.push({ advice: a, timestamp: Date.now() });
     if (this.db.data.persona_advice.length > 20) this.db.data.persona_advice.shift();
     await this.write();
   }
 
   getLastContextualImageTime(type) {
-    if (type === 'morning') return this.db.data.last_morning_image_sent_at || 0;
-    if (type === 'night') return this.db.data.last_night_image_sent_at || 0;
+    if (type === 'morning') return this.db?.data?.last_morning_image_sent_at || 0;
+    if (type === 'night') return this.db?.data?.last_night_image_sent_at || 0;
     return 0;
   }
   async updateLastContextualImageTime(type, t) {
-    if (type === 'morning') this.db.data.last_morning_image_sent_at = t;
-    if (type === 'night') this.db.data.last_night_image_sent_at = t;
+    if (this.db?.data) {
+        if (type === 'morning') this.db.data.last_morning_image_sent_at = t;
+        if (type === 'night') this.db.data.last_night_image_sent_at = t;
+        await this.write();
+    }
+  }
+
+  async updateUserSoulMapping(handle, mapping) {
+    if (!this.db?.data) return;
+    if (!this.db.data.user_soul_mappings) this.db.data.user_soul_mappings = {};
+    this.db.data.user_soul_mappings[handle] = { ...mapping, updatedAt: Date.now() };
+    await this.write();
+  }
+
+  async addTraceLog(log) {
+    if (!this.db?.data) return;
+    if (!Array.isArray(this.db.data.trace_logs)) this.db.data.trace_logs = [];
+    this.db.data.trace_logs.push({ ...log, timestamp: Date.now() });
+    if (this.db.data.trace_logs.length > 100) this.db.data.trace_logs.shift();
     await this.write();
   }
 }

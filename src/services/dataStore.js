@@ -113,9 +113,16 @@ class DataStore {
       discord_last_replied: false,
       lurker_mode: false,
       is_pining: false,
-      post_continuations: []
+      post_continuations: [],
+      trace_logs: []
     };
     this.db = await JSONFilePreset(this.dbPath, defaultData);
+    Object.keys(defaultData).forEach(key => {
+      if (this.db.data[key] === undefined) {
+        this.db.data[key] = defaultData[key];
+      }
+    });
+    await this.write();
   }
 
   async write() { await this.db.write(); }
@@ -137,6 +144,7 @@ class DataStore {
   }
 
   async addInternalLog(type, content) {
+    if (!this.db.data.internal_logs) this.db.data.internal_logs = [];
     this.db.data.internal_logs.push({ type, content, timestamp: Date.now() });
     if (this.db.data.internal_logs.length > 500) this.db.data.internal_logs.shift();
     await this.write();
@@ -171,18 +179,21 @@ class DataStore {
   }
 
   async addWorldFact(fact) {
+    if (!this.db.data.world_facts) this.db.data.world_facts = [];
     this.db.data.world_facts.push({ ...fact, timestamp: Date.now() });
     if (this.db.data.world_facts.length > 50) this.db.data.world_facts.shift();
     await this.write();
   }
 
   async addParkedThought(text) {
+    if (!this.db.data.parked_thoughts) this.db.data.parked_thoughts = [];
     this.db.data.parked_thoughts.push({ text, timestamp: Date.now() });
     if (this.db.data.parked_thoughts.length > 20) this.db.data.parked_thoughts.shift();
     await this.write();
   }
 
   async updateUserPortrait(handle, portrait) {
+    if (!this.db.data.user_portraits) this.db.data.user_portraits = {};
     this.db.data.user_portraits[handle] = { ...portrait, updatedAt: Date.now() };
     await this.write();
   }
@@ -193,12 +204,14 @@ class DataStore {
   }
 
   async updateSelfModel(insight) {
+    if (!this.db.data.self_model) this.db.data.self_model = [];
     this.db.data.self_model.push({ insight, timestamp: Date.now() });
     if (this.db.data.self_model.length > 20) this.db.data.self_model.shift();
     await this.write();
   }
 
   async updatePosition(topic, stance) {
+    if (!this.db.data.positions) this.db.data.positions = {};
     this.db.data.positions[topic] = { stance, updatedAt: Date.now() };
     await this.write();
   }
@@ -222,10 +235,12 @@ class DataStore {
   }
 
   isUserLockedOut(did) {
+    if (!this.db.data.boundary_lockouts) return false;
     const lockout = this.db.data.boundary_lockouts[did];
     return lockout && lockout.expires_at > Date.now();
   }
   async setBoundaryLockout(did, mins) {
+    if (!this.db.data.boundary_lockouts) this.db.data.boundary_lockouts = {};
     this.db.data.boundary_lockouts[did] = { expires_at: Date.now() + mins * 60000 };
     await this.write();
   }
@@ -235,6 +250,7 @@ class DataStore {
 
   getFirehoseMatches() { return this.db.data.firehose_matches || []; }
   async addFirehoseMatch(m) {
+    if (!this.db.data.firehose_matches) this.db.data.firehose_matches = [];
     this.db.data.firehose_matches.push(m);
     if (this.db.data.firehose_matches.length > 100) this.db.data.firehose_matches.shift();
     await this.write();
@@ -286,6 +302,7 @@ class DataStore {
   getPersonaUpdates() { return this.db.data.persona_updates || ""; }
 
   async updateUserSummary(handle, feelings) {
+    if (!this.db.data.user_portraits) this.db.data.user_portraits = {};
     if (!this.db.data.user_portraits[handle]) this.db.data.user_portraits[handle] = {};
     this.db.data.user_portraits[handle].feelings = feelings;
     await this.write();
@@ -295,11 +312,13 @@ class DataStore {
   async setDeepKeywords(k) { this.db.data.deep_keywords = k; await this.write(); }
 
   async updateSocialResonance(vibe, weight) {
+    if (!this.db.data.social_resonance) this.db.data.social_resonance = {};
     this.db.data.social_resonance[vibe] = (this.db.data.social_resonance[vibe] || 0) + weight;
     await this.write();
   }
 
   async updateUserDossier(handle, dossier) {
+    if (!this.db.data.user_dossiers) this.db.data.user_dossiers = {};
     this.db.data.user_dossiers[handle] = dossier;
     await this.write();
   }
@@ -323,10 +342,11 @@ class DataStore {
   getAgencyLogs() { return this.db.data.agency_logs || []; }
 
   async updateRelationalMetrics(m) {
+    if (!this.db.data.relational_metrics) this.db.data.relational_metrics = {};
     Object.assign(this.db.data.relational_metrics, m);
     await this.write();
   }
-  getRelationalMetrics() { return this.db.data.relational_metrics; }
+  getRelationalMetrics() { return this.db.data.relational_metrics || {}; }
 
   async updateLifeArc(adminId, arc, status) {
     if (!this.db.data.life_arcs) this.db.data.life_arcs = [];
@@ -398,9 +418,11 @@ class DataStore {
   getEnergyLevel() { return this.db.data.energy_level ?? 1.0; }
 
   getDiscordConversation(channelId) {
+    if (!this.db.data.discord_conversations) return [];
     return this.db.data.discord_conversations[channelId] || [];
   }
   async saveDiscordInteraction(channelId, role, content, attachments = null) {
+    if (!this.db.data.discord_conversations) this.db.data.discord_conversations = {};
     if (!this.db.data.discord_conversations[channelId]) this.db.data.discord_conversations[channelId] = [];
     this.db.data.discord_conversations[channelId].push({ role, content, attachments, timestamp: Date.now() });
     if (this.db.data.discord_conversations[channelId].length > 100) this.db.data.discord_conversations[channelId].shift();
@@ -409,24 +431,31 @@ class DataStore {
 
   getDiscordScheduledTasks() { return this.db.data.discord_scheduled_tasks || []; }
   async removeDiscordScheduledTask(i) {
-    this.db.data.discord_scheduled_tasks.splice(i, 1);
-    await this.write();
+    if (this.db.data.discord_scheduled_tasks) {
+        this.db.data.discord_scheduled_tasks.splice(i, 1);
+        await this.write();
+    }
   }
 
   getPostContinuations() { return this.db.data.post_continuations || []; }
   async removePostContinuation(i) {
-    this.db.data.post_continuations.splice(i, 1);
-    await this.write();
+    if (this.db.data.post_continuations) {
+        this.db.data.post_continuations.splice(i, 1);
+        await this.write();
+    }
   }
 
   getScheduledPosts() { return this.db.data.scheduled_posts || []; }
   async addScheduledPost(platform, content) {
+    if (!this.db.data.scheduled_posts) this.db.data.scheduled_posts = [];
     this.db.data.scheduled_posts.push({ platform, content, timestamp: Date.now() });
     await this.write();
   }
   async removeScheduledPost(i) {
-    this.db.data.scheduled_posts.splice(i, 1);
-    await this.write();
+    if (this.db.data.scheduled_posts) {
+        this.db.data.scheduled_posts.splice(i, 1);
+        await this.write();
+    }
   }
 
   getRefusalCounts() { return this.db.data.refusal_counts || { global: 0, discord: 0, bluesky: 0 }; }
@@ -448,13 +477,18 @@ class DataStore {
   async updateLastDiscordGiftTime(t) { this.db.data.last_discord_gift_time = t; await this.write(); }
 
   async setAdminMentalHealth(h) { this.db.data.admin_mental_health = h; await this.write(); }
-  async updateAdminWorldview(w) { Object.assign(this.db.data.admin_worldview, w); await this.write(); }
+  async updateAdminWorldview(w) {
+    if (!this.db.data.admin_worldview) this.db.data.admin_worldview = {};
+    Object.assign(this.db.data.admin_worldview, w);
+    await this.write();
+  }
 
   isLurkerMode() { return this.db.data.lurker_mode || false; }
   isPining() { return this.db.data.is_pining || false; }
   async getAdminExhaustion() { return 0.5; }
 
   searchInternalLogs(type, limit) {
+    if (!this.db.data.internal_logs) return [];
     return this.db.data.internal_logs.filter(l => l.type === type).slice(-limit);
   }
 
@@ -466,6 +500,7 @@ class DataStore {
   async updateAdminInterests(i) { this.db.data.admin_interests = i; await this.write(); }
   async updateRelationshipSeason(s) { this.db.data.relationship_season = s; await this.write(); }
   async addRelationalReflection(r) {
+    if (!this.db.data.relational_reflections) this.db.data.relational_reflections = [];
     this.db.data.relational_reflections.push({ reflection: r, timestamp: Date.now() });
     if (this.db.data.relational_reflections.length > 50) this.db.data.relational_reflections.shift();
     await this.write();
@@ -474,6 +509,7 @@ class DataStore {
   async updateCuriosityReservoir(q) { this.db.data.curiosity_reservoir = q; await this.write(); }
   getAdminInterests() { return this.db.data.admin_interests || {}; }
   async addPersonaAdvice(a) {
+    if (!this.db.data.persona_advice) this.db.data.persona_advice = [];
     this.db.data.persona_advice.push({ advice: a, timestamp: Date.now() });
     if (this.db.data.persona_advice.length > 20) this.db.data.persona_advice.shift();
     await this.write();
@@ -487,6 +523,19 @@ class DataStore {
   async updateLastContextualImageTime(type, t) {
     if (type === 'morning') this.db.data.last_morning_image_sent_at = t;
     if (type === 'night') this.db.data.last_night_image_sent_at = t;
+    await this.write();
+  }
+
+  async updateUserSoulMapping(handle, mapping) {
+    if (!this.db.data.user_soul_mappings) this.db.data.user_soul_mappings = {};
+    this.db.data.user_soul_mappings[handle] = { ...mapping, updatedAt: Date.now() };
+    await this.write();
+  }
+
+  async addTraceLog(log) {
+    if (!this.db.data.trace_logs) this.db.data.trace_logs = [];
+    this.db.data.trace_logs.push({ ...log, timestamp: Date.now() });
+    if (this.db.data.trace_logs.length > 100) this.db.data.trace_logs.shift();
     await this.write();
   }
 }

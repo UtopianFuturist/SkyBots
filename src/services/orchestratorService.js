@@ -12,7 +12,7 @@ import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
 import config from '../../config.js';
 import * as prompts from '../prompts/index.js';
-import { sanitizeThinkingTags, isLiteralVisualPrompt, getSlopInfo, cleanKeywords, checkHardCodedBoundaries } from '../utils/textUtils.js';
+import { sanitizeThinkingTags, isLiteralVisualPrompt, getSlopInfo, cleanKeywords, checkHardCodedBoundaries, sanitizeCharacterCount, isSlop, checkSimilarity } from '../utils/textUtils.js';
 import fs from 'fs/promises';
 
 const delay = ms => new Promise(res => setTimeout(res, ms));
@@ -50,7 +50,6 @@ class OrchestratorService {
             await delay(1000);
             await this.checkDiscordSpontaneity();
 
-            const mood = dataStore.getMood();
             const lastPostTime = dataStore.getLastAutonomousPostTime();
             const timeSinceLastPost = lastPostTime ? Math.floor((Date.now() - new Date(lastPostTime).getTime()) / (1000 * 60)) : 999;
             const lastInteraction = Math.max(lastDiscord, lastBluesky, dataStore.db.data.last_notification_processed_at || 0);
@@ -66,7 +65,10 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
 
             const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true });
             let decision;
-            try { decision = JSON.parse(response.match(/\{[\s\S]*\}/)[0]); } catch(e) { decision = { choice: "rest" }; }
+            try {
+                const match = response.match(/\{[\s\S]*\}/);
+                decision = match ? JSON.parse(match[0]) : { choice: "rest" };
+            } catch(e) { decision = { choice: "rest" }; }
 
             if (decision.choice === "post") await this.performAutonomousPost();
             else if (decision.choice === "explore") await this.performTimelineExploration();
@@ -82,6 +84,7 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
         const currentTimeStr = now.getHours().toString().padStart(2, '0') + ':' + now.getMinutes().toString().padStart(2, '0');
         for (let i = 0; i < tasks.length; i++) {
             if (currentTimeStr === tasks[i].time) {
+                console.log(`[Orchestrator] Executing scheduled Discord task: ${tasks[i].message}`);
                 await discordService.sendSpontaneousMessage(tasks[i].message);
                 await dataStore.removeDiscordScheduledTask(i);
                 i--;
@@ -133,6 +136,7 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
         for (const task of heavyTasks) {
             const lastRun = dataStore.db.data[task.key] || 0;
             if (nowMs - lastRun >= task.interval) {
+                console.log(`[Orchestrator] Running heavy task: ${task.name}`);
                 await this[task.method]();
                 dataStore.db.data[task.key] = nowMs;
                 await dataStore.db.write();
@@ -141,10 +145,12 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
         }
 
         const energy = dataStore.getEnergyLevel();
-        const energyResponse = await llmService.generateResponse([{ role: 'system', content: `Poll energy. Current: ${energy}. JSON: {"choice": "rest"|"proceed"}` }], { useStep: true });
+        const energyResponse = await llmService.generateResponse([{ role: 'system', content: `Poll energy. Current: ${energy.toFixed(2)}. JSON: {"choice": "rest"|"proceed"}` }], { useStep: true });
         try {
-            const poll = JSON.parse(energyResponse.match(/\{.*\}/)[0]);
+            const match = energyResponse.match(/\{[\s\S]*\}/);
+            const poll = match ? JSON.parse(match[0]) : { choice: 'proceed' };
             if (poll.choice === 'rest') {
+                console.log("[Orchestrator] Resting to restore energy.");
                 await dataStore.setEnergyLevel(energy + 0.15);
                 await dataStore.setRestingUntil(Date.now() + 1800000);
             } else await dataStore.setEnergyLevel(energy - 0.05);
@@ -158,15 +164,24 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
     }
 
     async performAutonomousPost() {
+        console.log('[Orchestrator] Starting autonomous post flow...');
         try {
             const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
             const followerCount = profile?.followersCount || 0;
             const decisionRes = await llmService.generateResponse([{ role: "system", content: `Decide: "image" or "text" post for Bluesky. JSON: {"choice": "image"|"text"}` }], { useStep: true });
-            let choice = JSON.parse(decisionRes.match(/\{.*\}/)[0]).choice;
+            let choice = 'text';
+            try {
+                const match = decisionRes.match(/\{[\s\S]*\}/);
+                choice = match ? JSON.parse(match[0]).choice : 'text';
+            } catch(e) {}
+
             if (choice === 'image') {
                 const topicRes = await llmService.generateResponse([{ role: "system", content: `Suggest visual topic and prompt for Bluesky. JSON: {"topic": "...", "prompt": "..."}` }], { useStep: true });
-                const tData = JSON.parse(topicRes.match(/\{.*\}/)[0]);
-                await this._performHighQualityImagePost(tData.prompt, tData.topic, null, followerCount);
+                try {
+                    const match = topicRes.match(/\{[\s\S]*\}/);
+                    const tData = match ? JSON.parse(match[0]) : null;
+                    if (tData) await this._performHighQualityImagePost(tData.prompt, tData.topic, null, followerCount);
+                } catch(e) {}
             } else {
                 const content = await llmService.generateResponse([{ role: "system", content: prompts.system.AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount) }], { useStep: true });
                 if (content) {
@@ -174,7 +189,7 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
                     await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                 }
             }
-        } catch (e) {}
+        } catch (e) { console.error('[Orchestrator] performAutonomousPost error:', e); }
     }
 
     async _performHighQualityImagePost(prompt, topic, context, followerCount) {
@@ -205,6 +220,7 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
     }
 
     async performTimelineExploration() {
+        console.log('[Orchestrator] Exploring timeline...');
         try {
             const timeline = await blueskyService.getTimeline(20);
             if (!timeline || timeline.length === 0) return;
@@ -215,13 +231,14 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
     }
 
     async performPublicSoulMapping() {
+        console.log('[Orchestrator] Soul mapping...');
         try {
             const handles = [...new Set(dataStore.db.data.interactions.map(i => i.userHandle))].filter(Boolean).slice(0, 5);
             for (const handle of handles) {
                 const profile = await blueskyService.getProfile(handle);
                 const posts = await blueskyService.getUserPosts(handle);
                 const response = await llmService.generateResponse([{ role: 'system', content: `Map soul for @${handle}. Bio: ${profile.description}. Posts: ${posts.join(' | ')}. Respond JSON.` }], { useStep: true });
-                const match = response.match(/\{.*\}/);
+                const match = response.match(/\{[\s\S]*\}/);
                 if (match) await dataStore.updateUserSoulMapping(handle, JSON.parse(match[0]));
             }
         } catch(e) {}
@@ -282,7 +299,8 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
         if (Date.now() - lastInteraction < 1800000) return;
         const impulse = await llmService.generateResponse([{ role: 'system', content: "Discord spontaneity check. Respond JSON: {\"impulse_detected\": boolean, \"reason\": \"...\"}" }], { useStep: true });
         try {
-            const data = JSON.parse(impulse.match(/\{.*\}/)[0]);
+            const match = impulse.match(/\{[\s\S]*\}/);
+            const data = match ? JSON.parse(match[0]) : { impulse_detected: false };
             if (data.impulse_detected) {
                 const msg = await llmService.generateResponse([{ role: 'system', content: "Generate spontaneous Discord message for Admin. Short." }], { useStep: true });
                 await discordService.sendSpontaneousMessage(msg);
@@ -299,19 +317,28 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
     }
 
     async performScoutMission() {
-        const timeline = await blueskyService.getTimeline(30);
-        if (timeline) {
-            const orphaned = timeline.filter(t => t.post && t.post.replyCount === 0);
-            if (orphaned.length > 0) await llmService.generateResponse([{ role: 'system', content: "Select orphaned post and suggest reply." }], { useStep: true });
-        }
+        try {
+            const timeline = await blueskyService.getTimeline(30);
+            if (timeline) {
+                const orphaned = timeline.filter(t => t.post && t.post.replyCount === 0);
+                if (orphaned.length > 0) await llmService.generateResponse([{ role: 'system', content: "Select orphaned post and suggest reply." }], { useStep: true });
+            }
+        } catch(e) {}
     }
 
     async performShadowAnalysis() {
-        const adminHistory = await discordService.fetchAdminHistory(30);
-        const adminDid = dataStore.getAdminDid();
-        const posts = adminDid ? await blueskyService.getUserPosts(adminDid) : [];
-        const response = await llmService.generateResponse([{ role: 'system', content: `Analyze Admin state. Discord: ${adminHistory.map(h=>h.content).join(' | ')}. Bluesky: ${posts.join(' | ')}` }], { useStep: true });
-        // Logic to parse and save
+        try {
+            const adminHistory = await discordService.fetchAdminHistory(30);
+            const adminDid = dataStore.getAdminDid();
+            const posts = adminDid ? await blueskyService.getUserPosts(adminDid) : [];
+            const response = await llmService.generateResponse([{ role: 'system', content: `Analyze Admin state. Discord: ${adminHistory.map(h=>h.content).join(' | ')}. Bluesky: ${posts.join(' | ')}` }], { useStep: true });
+            const match = response.match(/\{[\s\S]*\}/);
+            if (match) {
+                const analysis = JSON.parse(match[0]);
+                if (analysis.mental_health) await dataStore.setAdminMentalHealth(analysis.mental_health);
+                if (analysis.worldview) await dataStore.updateAdminWorldview(analysis.worldview);
+            }
+        } catch (e) {}
     }
 
     async performAgencyReflection() {
@@ -326,8 +353,12 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
         const thoughts = dataStore.getRecentThoughts().slice(-30);
         const res = await llmService.generateResponse([{ role: 'system', content: `Analyze linguistic drift. Thoughts: ${JSON.stringify(thoughts)}` }], { useStep: true });
         try {
-            const audit = JSON.parse(res.match(/\{.*\}/)[0]);
-            await dataStore.addLinguisticMutation(audit.vocabulary_shifts.join(', '), audit.summary);
+            const match = res.match(/\{[\s\S]*\}/);
+            const audit = match ? JSON.parse(match[0]) : null;
+            if (audit) {
+                await dataStore.addLinguisticMutation(audit.vocabulary_shifts?.join(', '), audit.summary);
+                if (memoryService.isEnabled()) await memoryService.createMemoryEntry('explore', audit.summary);
+            }
         } catch(e) {}
     }
 
@@ -336,8 +367,13 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
         if (!currentGoal) return;
         const res = await llmService.generateResponse([{ role: 'system', content: `Evolve goal: ${currentGoal.goal}` }], { useStep: true });
         try {
-            const evolution = JSON.parse(res.match(/\{.*\}/)[0]);
-            await dataStore.setGoal(evolution.evolved_goal, evolution.reasoning);
+            const match = res.match(/\{[\s\S]*\}/);
+            const evolution = match ? JSON.parse(match[0]) : null;
+            if (evolution) {
+                await dataStore.setGoal(evolution.evolved_goal, evolution.reasoning);
+                await dataStore.addGoalEvolution(evolution.evolved_goal, evolution.reasoning);
+                if (memoryService.isEnabled()) await memoryService.createMemoryEntry('goal', evolution.reasoning);
+            }
         } catch(e) {}
     }
 
@@ -348,16 +384,15 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
     }
 
     async performRelationalAudit() {
-        const history = await discordService.fetchAdminHistory(30);
         const res = await llmService.generateResponse([{ role: 'system', content: "Relational audit. Respond JSON." }], { useStep: true });
         try {
-            const audit = JSON.parse(res.match(/\{.*\}/)[0]);
-            if (audit.metric_updates) await dataStore.updateRelationalMetrics(audit.metric_updates);
+            const match = res.match(/\{[\s\S]*\}/);
+            const audit = match ? JSON.parse(match[0]) : null;
+            if (audit && audit.metric_updates) await dataStore.updateRelationalMetrics(audit.metric_updates);
         } catch(e) {}
     }
 
     async performPersonaEvolution() {
-        const memories = await memoryService.getRecentMemories();
         const evolution = await llmService.generateResponse([{ role: 'system', content: "Daily persona shift." }], { useStep: true });
         if (evolution && memoryService.isEnabled()) await memoryService.createMemoryEntry('evolution', evolution);
     }
@@ -389,10 +424,10 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
     }
 
     async performPersonaAudit() {
-        const blurbs = dataStore.getPersonaBlurbs();
         const res = await llmService.generateResponse([{ role: 'system', content: "Audit persona blurbs. JSON." }], { useStep: true });
         try {
-            const audit = JSON.parse(res.match(/\{.*\}/)[0]);
+            const match = res.match(/\{[\s\S]*\}/);
+            const audit = match ? JSON.parse(match[0]) : null;
         } catch(e) {}
     }
 }

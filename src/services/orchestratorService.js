@@ -13,138 +13,74 @@ class OrchestratorService {
     setBotInstance(bot) { this.bot = bot; }
 
     async heartbeat() {
+        console.log("[Orchestrator] Heartbeat pulse.");
         if (dataStore.isResting()) return;
+
         const lastDiscord = dataStore.db.data.discord_last_interaction || 0;
         const lastBluesky = dataStore.db.data.last_notification_processed_at || 0;
         const isChatting = (Date.now() - Math.max(lastDiscord, lastBluesky)) < 4 * 60 * 1000;
 
-        if (isChatting || discordService.isResponding) return;
+        if (isChatting || discordService.isResponding) {
+            console.log("[Orchestrator] Active conversation detected. Skipping background tasks.");
+            return;
+        }
 
         try {
-            const lastPostTime = dataStore.getLastAutonomousPostTime();
-            const timeSinceLastPost = lastPostTime ? Math.floor((Date.now() - lastPostTime) / 60000) : 999;
-
-            const orchestratorPrompt = `Decide next action: ["post", "rest", "reflect", "explore"]. Time since last post: ${timeSinceLastPost}m. Respond with JSON: {"choice": "...", "reason": "..."}`;
-            const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true });
-            const decision = response?.includes('post') ? 'post' : (response?.includes('reflect') ? 'reflect' : 'rest');
-
-            if (decision === "post") await this.performAutonomousPost();
-            else if (decision === "reflect") await this.performPersonaAudit();
-
+            // Background maintenance tasks
             const rand = Math.random();
             if (rand < 0.05) await dataStore.applyRelationalDecay();
             if (rand > 0.95) await this.performVisualAudit();
             if (rand > 0.49 && rand < 0.51) await this.generateWeeklyReport();
 
+            // Centralized decision-making logic remains in bot.heartbeat() for now to ensure compatibility
+            // but OrchestratorService provides the hooks for advanced autonomous behavior.
+
         } catch (e) { console.error('[Orchestrator] Heartbeat error:', e); }
     }
 
-    async performAutonomousPost() {
-        try {
-            if (Date.now() - dataStore.getLastAutonomousPostTime() < config.BLUESKY_POST_COOLDOWN * 60000) return;
-
-            const memories = await memoryService.getRecentMemories(10);
-            const topicPrompt = prompts.interaction.AUTONOMOUS_TOPIC_PROMPT(config.POST_TOPICS, JSON.stringify(memories));
-            const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
-            const topic = (topicRaw || 'reality').split(',')[0].trim();
-
-            const profile = await blueskyService.getProfile(blueskyService.did);
-            const systemPrompt = prompts.system.AUTONOMOUS_POST_SYSTEM_PROMPT(profile?.followersCount || 0);
-
-            const positions = dataStore.getPositions();
-            const stance = positions[topic] ? `\nEstablished stance on ${topic}: ${positions[topic].stance}` : "";
-
-            const chainPrompt = `Topic: ${topic}${stance}\n[TENSION] -> [DRAFT] -> [CRITIQUE] -> [FINAL]`;
-            const content = await llmService.generateResponse([
-                { role: "system", content: systemPrompt },
-                { role: "user", content: chainPrompt }
-            ], { useStep: true, temperature: 0.9, task: 'autonomous' });
-
-            if (content) {
-                const recent = await blueskyService.getUserPosts(blueskyService.did);
-                const isDup = recent.some(p => {
-                    const text = p.text || '';
-                    const words = content.split(' ');
-                    const intersection = words.filter(w => text.includes(w));
-                    return intersection.length / words.length > 0.9;
-                });
-
-                if (!isDup) {
-                    await blueskyService.post(content);
-                    await dataStore.updateLastAutonomousPostTime(Date.now());
-                    await dataStore.addInternalLog("autonomous_post", content);
-                    await evaluationService.evaluatePost(content);
-
-                    const stancePrompt = `Based on: "${content}", establish your stance on ${topic}. Respond with JSON: {"stance": "..."}`;
-                    const stanceRes = await llmService.generateResponse([{ role: 'system', content: stancePrompt }], { useStep: true, task: 'fact' });
-                    const match = stanceRes?.match(/\{.*\}/);
-                    if (match) {
-                        const newStance = JSON.parse(match[0]);
-                        await dataStore.updatePosition(topic, newStance.stance);
-                    }
-                }
-            }
-        } catch (e) { console.error('[Orchestrator] Autonomous post error:', e); }
-    }
-
-    async performPersonaAudit() {
-        try {
-            const auditPrompt = prompts.analysis.PERSONA_AUDIT_PROMPT(config.TEXT_SYSTEM_PROMPT, JSON.stringify(dataStore.getPersonaBlurbs()), "", JSON.stringify(dataStore.getSessionLessons()), "");
-            const res = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
-            const match = res?.match(/\{.*\}/);
-            if (match) {
-                const audit = JSON.parse(match[0]);
-                for (const uri of audit.removals || []) {
-                    await dataStore.setPersonaBlurbs(dataStore.getPersonaBlurbs().filter(b => b.uri !== uri));
-                }
-                if (audit.suggestion) {
-                    await dataStore.addPersonaBlurb(audit.suggestion);
-                    await dataStore.updateSelfModel(`New blurb: ${audit.suggestion}`);
-                }
-            }
-        } catch (e) { console.error('[Orchestrator] Persona audit error:', e); }
-    }
-
     async performVisualAudit() {
+        console.log('[Orchestrator] Starting Visual Audit loop...');
         try {
             const posts = await blueskyService.getUserPosts(blueskyService.did);
-            const imgs = posts.filter(p => p.embed?.$type === 'app.bsky.embed.images').slice(0, 5);
-            if (imgs.length === 0) return;
-            const res = await llmService.generateResponse([{ role: 'system', content: `Audit visual style: ${JSON.stringify(imgs)}` }], { useStep: true });
-            const match = res?.match(/\{.*\}/);
+            const imagePosts = posts.filter(p => p.embed?.$type === 'app.bsky.embed.images').slice(0, 5);
+
+            if (imagePosts.length === 0) return;
+
+            const auditPrompt = `Review these 5 recent image posts from your feed:
+            ${JSON.stringify(imagePosts.map(p => ({ text: p.record.text, images: p.embed.images.map(i => i.alt) })))}
+
+            Compare them against your AESTHETIC.md. Identify stylistic drift or "personalized" details.
+            Respond with JSON: { "analysis": "...", "aesthetic_update": "markdown addition or null" }`;
+
+            const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
+            const match = response?.match(/\{.*\}/);
             if (match) {
                 const audit = JSON.parse(match[0]);
                 if (audit.aesthetic_update) {
-                    const curr = await fs.readFile('AESTHETIC.md', 'utf-8');
-                    await fs.writeFile('AESTHETIC.md', curr + '\n\n' + audit.aesthetic_update);
+                    console.log('[Orchestrator] Updating AESTHETIC.md with new insights.');
+                    const current = await fs.readFile('AESTHETIC.md', 'utf-8').catch(() => "# Aesthetic Manifesto\n");
+                    await fs.writeFile('AESTHETIC.md', current + '\n\n## Audit Update (' + new Date().toLocaleDateString() + ')\n' + audit.aesthetic_update);
                 }
             }
-        } catch (e) { console.error('[Orchestrator] Visual audit error:', e); }
+        } catch (e) { console.error('[Orchestrator] Visual Audit failed:', e); }
     }
 
     async generateWeeklyReport() {
+        console.log('[Orchestrator] Generating weekly self-report...');
         try {
-            const report = await llmService.generateResponse([{ role: 'system', content: 'Generate weekly [REPORT] summary of metrics and mood' }], { useStep: true, task: 'reflection' });
-            if (report) await memoryService.createMemoryEntry('report', report);
-        } catch (e) { console.error('[Orchestrator] Weekly report error:', e); }
-    }
+            const evals = dataStore.db.data.internal_logs.filter(l => l.type === 'post_evaluation').slice(-20);
+            const mood = dataStore.getMood();
+            const reportPrompt = `Generate a weekly self-report [REPORT] summary.
+            Recent evals: ${JSON.stringify(evals)}
+            Current mood: ${JSON.stringify(mood)}
+            Summarize growth and patterns. Max 250 chars.`;
 
-    async performPublicSoulMapping() {
-        try {
-            const interactions = dataStore.getRecentInteractions() || [];
-            const uniqueHandles = [...new Set(interactions.map(i => i.userHandle))].filter(Boolean).slice(0, 5);
-            for (const handle of uniqueHandles) {
-                const profile = await blueskyService.getProfile(handle);
-                const posts = await blueskyService.getUserPosts(handle);
-                const mappingPrompt = `Analyze @${handle}. Create a 1-paragraph portrait and resonance map. Bio: ${profile.description}. Posts: ${posts.map(p => p.text).slice(0, 5).join('\n')}`;
-                const res = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true });
-                const match = res?.match(/\{.*\}/);
-                if (match) {
-                    const mapping = JSON.parse(match[0]);
-                    await dataStore.updateUserPortrait(handle, mapping);
-                }
+            const report = await llmService.generateResponse([{ role: 'system', content: reportPrompt }], { useStep: true, task: 'reflection' });
+            if (report) {
+                await memoryService.createMemoryEntry('report', report);
+                console.log('[Orchestrator] Weekly report saved to memory thread.');
             }
-        } catch (e) { console.error('[Orchestrator] Soul-mapping error:', e); }
+        } catch (e) { console.error('[Orchestrator] Weekly report failed:', e); }
     }
 }
 

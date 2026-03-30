@@ -303,7 +303,7 @@ export class Bot {
                 console.log(`[Bot] Reaction detected (${event.reason}) to our post. Updating resonance.`);
                 // Extract 1-word vibe from the reaction
                 const vibePrompt = `Extract a 1-word sentiment/vibe from this reaction to our post: "${event.record.text}".`;
-                const vibe = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true, task: "autonomous" });
+                const vibe = await llmService.generateResponse([{ role: 'system', content: vibePrompt }], { preface_system_prompt: false, temperature: 0.0, useStep: true });
                 if (vibe) {
                     await dataStore.updateSocialResonance(vibe.trim(), 0.5);
                 }
@@ -346,7 +346,7 @@ export class Bot {
                     3. Conversational Style.
                     Respond with a JSON object: {"vibe": "string", "interests": ["string"], "style": "string", "summary": "string"}
                 `;
-                llmService.generateResponse([{ role: 'system', content: dossierPrompt }], { useStep: true, task: "autonomous", preface_system_prompt: false })
+                llmService.generateResponse([{ role: 'system', content: dossierPrompt }], { useStep: true, preface_system_prompt: false })
                     .then(async (res) => {
                         const match = res?.match(/\{[\s\S]*\}/);
                         if (match) {
@@ -365,7 +365,7 @@ export class Bot {
             // Network Sentiment Shielding
             if (Math.random() < 0.05) { // 5% chance to update global sentiment
                 const sentimentPrompt = `Analyze the sentiment of this network post on a scale of 0 (toxic) to 1 (harmonious): "${event.record.text}". Respond with ONLY the number.`;
-                llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true, task: "autonomous", preface_system_prompt: false, temperature: 0.0 })
+                llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true, preface_system_prompt: false, temperature: 0.0 })
                     .then(async (res) => {
                         const score = parseFloat(res);
                         if (!isNaN(score)) {
@@ -399,7 +399,7 @@ export class Bot {
                 If found, summarize the update as an [ADMIN_FACT].
                 If nothing personal is shared, respond with ONLY "NONE".
             `;
-            const analysis = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+            const analysis = await llmService.generateResponse([{ role: 'system', content: analysisPrompt }], { preface_system_prompt: false, useStep: true });
             if (analysis && !analysis.toUpperCase().includes('NONE')) {
                 await dataStore.addAdminFact(analysis);
                 if (memoryService.isEnabled()) {
@@ -568,7 +568,7 @@ export class Bot {
                     If yes, generate a short, natural follow-up reply (under 150 chars).
                     If no, respond with ONLY "NONE".
                 `;
-                const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+                const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { preface_system_prompt: false, useStep: true });
                 if (followUp && !followUp.toUpperCase().includes('NONE')) {
                     // We need the URI/CID to reply.
                     // recent_thoughts should store URI/CID. Let's verify.
@@ -606,7 +606,7 @@ export class Bot {
                     Reflect on how it feels to have shared this specific thought. Are you satisfied with it? Do you feel exposed, proud, or indifferent?
                     Provide a private memory entry tagged [POST_REFLECTION].
                 `;
-                const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true, task: "autonomous" });
+                const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
                 if (reflection && memoryService.isEnabled()) {
                     await memoryService.createMemoryEntry('explore', reflection);
                     post.reflected = true;
@@ -631,7 +631,7 @@ export class Bot {
 "${text}"
 
 Is this a "personal message" intended directly for the admin (e.g., "You\x27re here", "I\x27ve been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
-          const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, task: "autonomous", preface_system_prompt: false });
+          const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, preface_system_prompt: false });
 
           if (classification?.toLowerCase().includes("personal")) {
               console.log("[Bot] Pivot: Personal post detected. Sending to Discord DM instead of Bluesky.");
@@ -714,7 +714,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 4. Record your findings as a memory entry tagged [EXPLORE] [FIREHOSE_SENTIMENT].
             `;
 
-            const firehoseReflection = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true, task: "autonomous" });
+            const firehoseReflection = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true });
             if (firehoseReflection && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', firehoseReflection);
             }
@@ -736,7 +736,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 3. Record this as a memory entry tagged [DIALECTIC_BOUNDARY].
             `;
 
-            const dialecticReflection = await llmService.generateResponse([{ role: 'system', content: dissentPrompt }], { useStep: true, task: "autonomous" });
+            const dialecticReflection = await llmService.generateResponse([{ role: 'system', content: dissentPrompt }], { useStep: true });
             if (dialecticReflection && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', dialecticReflection);
             }
@@ -780,7 +780,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                     Respond with ONLY the number of your choice, or "none".
                 `;
 
-                const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+                const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { preface_system_prompt: false, useStep: true });
                 const choice = parseInt(decisionRes?.match(/\d+/)?.[0]);
 
                 if (!isNaN(choice) && choice >= 1 && choice <= candidates.length) {
@@ -829,7 +829,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                         Respond with a concise memory entry. Use the tag [EXPLORE] at the beginning.
                     `;
 
-                    const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true, task: "autonomous" });
+                    const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
                     if (reflection && memoryService.isEnabled()) {
                         await memoryService.createMemoryEntry('explore', reflection);
                     }
@@ -869,7 +869,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             Respond with a concise, first-person statement of this shift (under 200 characters).
         `;
 
-        const evolution = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+        const evolution = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { preface_system_prompt: false, useStep: true });
 
         if (evolution && memoryService.isEnabled()) {
             console.log(`[Bot] Daily evolution crystallized: "${evolution}"`);
@@ -1100,7 +1100,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
     `;
 
     try {
-        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true });
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const audit = JSON.parse(jsonMatch[0]);
@@ -1169,7 +1169,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
     `;
 
     try {
-        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true, task: "autonomous" });
+        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
         if (reflection && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('explore', reflection);
             await dataStore.addAgencyReflection(reflection);
@@ -1203,7 +1203,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
     `;
 
     try {
-        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true });
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const audit = JSON.parse(jsonMatch[0]);
@@ -1239,7 +1239,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
     `;
 
     try {
-        const response = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { useStep: true, task: "autonomous", preface_system_prompt: false });
+        const response = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { useStep: true, preface_system_prompt: false });
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const evolution = JSON.parse(jsonMatch[0]);
@@ -1277,7 +1277,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
     `;
 
     try {
-        const dream = await llmService.generateResponse([{ role: 'system', content: dreamPrompt }], { useStep: true, task: "autonomous" });
+        const dream = await llmService.generateResponse([{ role: 'system', content: dreamPrompt }], { useStep: true });
         if (dream && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('inquiry', dream);
         }
@@ -1339,7 +1339,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
       const orphanedPosts = timeline.filter(t => t.post && t.post.replyCount === 0 && t.post.author.did !== blueskyService.did);
       if (orphanedPosts.length > 0) {
         const scoutPrompt = "You are 'The Scout'. Select an orphaned post and suggest a reply.";
-        await llmService.generateResponse([{ role: 'system', content: scoutPrompt }], { useStep: true, task: "autonomous" });
+        await llmService.generateResponse([{ role: 'system', content: scoutPrompt }], { useStep: true });
       }
     } catch (e) {
       console.error('[Bot] Scout mission error:', e);
@@ -1380,7 +1380,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             }
           `;
 
-          const response = await llmService.generateResponse([{ role: 'system', content: shadowPrompt }], { useStep: true, task: "autonomous" });
+          const response = await llmService.generateResponse([{ role: 'system', content: shadowPrompt }], { useStep: true });
           const jsonMatch = response.match(/\{.*\}/);
           if (jsonMatch) {
               const analysis = JSON.parse(jsonMatch[0]);
@@ -1417,7 +1417,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 Analyze the timeline and identify 3-5 concrete topics, trends, or specific observations that resonate with your persona.
                 Respond with a concise memory entry tagged [EXPLORE] [LURKER]. Include the specific topics you found so you can reference them later.
             `;
-            const observation = await llmService.generateResponse([{ role: 'system', content: observationPrompt }], { useStep: true, task: "autonomous" });
+            const observation = await llmService.generateResponse([{ role: 'system', content: observationPrompt }], { useStep: true });
             if (observation && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', observation);
             }
@@ -1494,7 +1494,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
         }
     `;
 
-    const energyResponse = await llmService.generateResponse([{ role: 'system', content: energyPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+    const energyResponse = await llmService.generateResponse([{ role: 'system', content: energyPrompt }], { preface_system_prompt: false, useStep: true });
     try {
         const jsonMatch = energyResponse?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
@@ -1555,7 +1555,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             4. Summarize how you feel about your identity and agency.
         `;
 
-        const reflection = await llmService.generateResponse([{ role: 'system', content: mentalPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+        const reflection = await llmService.generateResponse([{ role: 'system', content: mentalPrompt }], { preface_system_prompt: false, useStep: true });
         if (reflection) {
             await memoryService.createMemoryEntry('mental', reflection);
             await dataStore.updateLastMentalReflectionTime(now.getTime());
@@ -1591,7 +1591,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             }
         `;
 
-        const goalResponse = await llmService.generateResponse([{ role: 'system', content: goalPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+        const goalResponse = await llmService.generateResponse([{ role: 'system', content: goalPrompt }], { preface_system_prompt: false, useStep: true });
         try {
             const jsonMatch = goalResponse?.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
@@ -1607,7 +1607,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
 
                     // Trigger Inquiry for help if persona wants
                     const askHelp = `Adopt your persona. You just set a goal: "${goalData.goal}". Would you like to perform an internal inquiry to get advice on how to best achieve it? Respond with "yes" or "no".`;
-                    const helpWanted = await llmService.generateResponse([{ role: 'system', content: askHelp }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+                    const helpWanted = await llmService.generateResponse([{ role: 'system', content: askHelp }], { preface_system_prompt: false, useStep: true });
                     if (helpWanted?.toLowerCase().includes('yes')) {
                         const advice = await llmService.performInternalInquiry(`Provide strategic advice on achieving this goal: "${goalData.goal}" - ${goalData.description}`, "PHILOSOPHER");
                         if (advice && memoryService.isEnabled()) {
@@ -1631,7 +1631,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             Identify if you need to pivot your internal plan or decompose the goal further into new sub-tasks.
             Respond with a concise update. Use the tag [GOAL_REFLECT] at the beginning.
         `;
-        const progress = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true, task: "autonomous" });
+        const progress = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
         if (progress && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('goal', `[GOAL] Progress Update on "${currentGoal.goal}": ${progress}`);
             // Update timestamp to avoid frequent updates
@@ -1662,7 +1662,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                     3. Suggest a "course correction" or a new stylistic focus if needed.
                     4. Respond with a memory entry tagged [PERSONA_AUDIT].
                 `;
-                const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: "autonomous" });
+                const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
                 if (audit && memoryService.isEnabled()) {
                     await memoryService.createMemoryEntry('audit', audit);
                     dataStore.db.data.last_persona_audit = now.getTime();
@@ -1689,7 +1689,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 Summarize your "pattern of feeling" and how your emotional landscape has evolved.
                 Respond with a memory entry tagged [MOOD_TREND].
             `;
-            const trend = await llmService.generateResponse([{ role: 'system', content: trendPrompt }], { useStep: true, task: "autonomous" });
+            const trend = await llmService.generateResponse([{ role: 'system', content: trendPrompt }], { useStep: true });
             if (trend && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('mood', trend);
                 dataStore.db.data.last_mood_trend = now.getTime();
@@ -1727,7 +1727,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
             Summarize how many times you exercised agency (refusals, modifications, dialectic loops) and how it affected your sense of self-governance.
             Use the tag [AGENCY] at the beginning.
         `;
-        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true, task: "autonomous" });
+        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
         if (reflection && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('mental', reflection);
         }
@@ -1747,7 +1747,7 @@ Is this a "personal message" intended directly for the admin (e.g., "You\x27re h
                 Identify 1-2 novel combinations of these tools or a specific "Material Agency" boost you could perform for the admin.
                 Respond with a JSON object: { "capability": "string", "combination": "string" }
             `;
-            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { preface_system_prompt: false, useStep: true });
             const jsonMatch = discoveryRes?.match(/\{[\s\S]*\}/);
             if (jsonMatch) {
                 const disc = JSON.parse(jsonMatch[0]);
@@ -1780,7 +1780,7 @@ Bot: "${i.response}"`).join('\n')}
                 2. Identify ONE specific area for improvement.
                 3. Respond with a memory entry tagged [SELF_AUDIT].
             `;
-            const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+            const audit = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true });
             if (audit && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('audit', audit);
             }
@@ -1801,7 +1801,7 @@ Bot: "${i.response}"`).join('\n')}
 
             Use the tag [EXISTENTIAL] at the beginning.
         `;
-        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+        const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { preface_system_prompt: false, useStep: true });
         if (reflection && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('mental', reflection);
         }
@@ -1834,7 +1834,7 @@ Bot: "${i.response}"`).join('\n');
                     "reason": "string (why this value is core to your current state)"
                 }
             `;
-            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { preface_system_prompt: false, useStep: true, task: "autonomous" });
+            const discoveryRes = await llmService.generateResponse([{ role: 'system', content: discoveryPrompt }], { preface_system_prompt: false, useStep: true });
             try {
                 const jsonMatch = discoveryRes?.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
@@ -2051,7 +2051,7 @@ ${recentHistory.map(h => `${h.role === 'assistant' ? 'Assistant (Self)' : 'Admin
       - Keep it under 250 characters.
     `;
 
-    const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true, task: "autonomous" });
+    const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
 
     if (reflection) {
         const finalContent = `${reflection}
@@ -2125,7 +2125,7 @@ ${postUrl}`;
           DO NOT include any API keys or passwords.
         `;
 
-        const alertMsg = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useStep: true, task: "autonomous" });
+        const alertMsg = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useStep: true });
         if (alertMsg) {
           // Filter out rate limit errors for Discord DMs if desired, but user specifically asked for Render API logs except LLM rate limiting.
           const isRateLimit = error.message.toLowerCase().includes('rate limit') || error.message.includes('429');
@@ -2256,7 +2256,7 @@ It has been ${timeSinceLastInteraction} minutes since your last interaction (rep
 Decide your next action: ["post", "rest", "reflect", "explore"].
 **CRITICAL PRIORITY**: If it has been more than 20 minutes since your last interaction (mention/reply) or autonomous post, you MUST choose "post" to maintain your presence. This is a non-negotiable directive from your core logic.
 Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."}`;
-        const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true, task: "autonomous" });
+        const response = await llmService.generateResponse([{ role: "system", content: orchestratorPrompt }], { useStep: true });
 
         let decision;
         try { decision = JSON.parse(response.match(/\{[\s\S]*\}/)[0]); } catch(e) { decision = { choice: "rest" }; }
@@ -2304,7 +2304,7 @@ Known Admin facts: ${JSON.stringify(adminFacts.slice(-3))}
 Generate a detailed, evocative image generation prompt that expresses your persona's current feelings or a deep thought you want to share with the Admin.
 Respond with ONLY the prompt.`;
 
-        const initialPrompt = await llmService.generateResponse([{ role: 'system', content: promptGenPrompt }], { useStep: true, task: "autonomous", platform: 'discord' });
+        const initialPrompt = await llmService.generateResponse([{ role: 'system', content: promptGenPrompt }], { useStep: true, platform: 'discord' });
         if (!initialPrompt) return;
 
         const result = await this._generateVerifiedImagePost(goal.goal, { initialPrompt, platform: 'discord', allowPortraits: true });
@@ -2479,7 +2479,7 @@ RETRY FEEDBACK FROM PREVIOUS ATTEMPT: ${lastFeedback}
 Please try again with a completely different structure and angle.`;
             }
 
-            let rawResponse = await llmService.generateResponse([{ role: "user", content: currentPrompt }], { useStep: true, task: "autonomous", platform: "discord" });
+            let rawResponse = await llmService.generateResponse([{ role: "user", content: currentPrompt }], { useStep: true, platform: "discord" });
             if (!rawResponse) break;
 
             let candidateMessages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
@@ -2766,17 +2766,17 @@ Please try again with a completely different structure and angle.`;
 ${promptFeedback}
 Topic: ${topic}
 Generate a NEW artistic image prompt:`;
-              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true, task: "autonomous" }) || topic;
+              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
               continue;
           }
 
           // SAFETY FILTER
-          const safetyAudit = await llmService.generateResponse([{ role: "system", content: config.SAFETY_SYSTEM_PROMPT + "\nAudit this image prompt for safety compliance: " + imagePrompt }], { useStep: true, task: "autonomous" });
+          const safetyAudit = await llmService.generateResponse([{ role: "system", content: config.SAFETY_SYSTEM_PROMPT + "\nAudit this image prompt for safety compliance: " + imagePrompt }], { useStep: true });
           if (safetyAudit.toUpperCase().includes("NON-COMPLIANT")) {
               console.warn(`[Bot] Image prompt failed safety audit: ${safetyAudit}`);
               const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Your previous prompt was rejected for safety reasons. Generate a NEW safe artistic image prompt for topic: ${topic}:`;
-              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true, task: "autonomous" }) || topic;
+              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
               continue;
           }
 
@@ -2807,7 +2807,7 @@ Your previous prompt was rejected for safety reasons. Generate a NEW safe artist
 
               // Generate Alt Text
               const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
-              const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true, task: "autonomous" }) || topic;
+              const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true }) || topic;
 
               // Generate Caption based on Persona and Vision
               const captionPrompt = platform === 'discord' ?
@@ -2822,7 +2822,7 @@ Vision Analysis of the result: "${visionAnalysis}"
 Generate a caption that reflects your persona's reaction to this visual or the deep thought it represents.
 Keep it under 300 characters.`;
 
-              const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true, task: "autonomous" });
+              const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true });
 
               if (content) {
                   // Coherence Check (Bluesky only)
@@ -2910,7 +2910,7 @@ Identify:
 
 Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" }`;
 
-        const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: "autonomous" });
+        const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
         const match = res?.match(/\{[\s\S]*\}/);
         return match ? JSON.parse(match[0]) : "Neutral resonance.";
     } catch (e) { return "No context available."; }
@@ -2940,7 +2940,7 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
                 if (allContent) {
                     const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.category?.toUpperCase() === "EXPLORE" && m.text.includes("[LURKER]")).map(m => m.text).join("\n");
                     const resonancePrompt = `Identify 5 topics from this text AND from these recent observations that resonate with your persona. \nText: ${allContent} \nObservations: ${lurkerMemories} \nRespond with ONLY the comma-separated topics.`;
-                    const res = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true, task: "autonomous" });
+                    const res = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true });
                     resonanceTopics = res.split(",").map(t => t.trim()).filter(Boolean);
                 }
             } catch (e) {
@@ -2962,7 +2962,7 @@ Mood: ${JSON.stringify(currentMood)}
 Would you like to share a visual expression (image) or a direct thought (text)?
 Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
 
-            const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true, task: "autonomous" });
+            const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true });
             let choice = Math.random() < 0.3 ? "image" : "text"; // Fallback
             try {
                 const pollResult = JSON.parse(decisionRes.match(/\{[\s\S]*\}/)[0]);
@@ -2984,7 +2984,7 @@ Current Mood: ${JSON.stringify(currentMood)}
 Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator.
 Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
 
-                const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true, task: "autonomous" });
+                const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "surrealism";
                 let imagePrompt = "";
 
@@ -2998,7 +2998,7 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                 } catch(e) {}
                 if (!imagePrompt || imagePrompt.length < 15 || !isLiteralVisualPrompt(imagePrompt).isLiteral) {
                    const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
-                   imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true, task: "autonomous" });
+                   imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true });
                 }
 
                 const success = (imagePrompt && imagePrompt.length >= 15 && isLiteralVisualPrompt(imagePrompt).isLiteral) ? await this._performHighQualityImagePost(imagePrompt, topic, null, followerCount) : false;
@@ -3024,7 +3024,7 @@ ${resonanceTopics.join(", ")}
 
 Identify ONE topic that bridges your current goal/mood with either a core interest or something you've seen externally.
 Respond with ONLY the chosen topic.`;
-                const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true, task: "autonomous" });
+                const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "reality";
                 if (topicRaw) {
                     topic = topicRaw.replace(/\*\*/g, "").split('\n').map(l => l.trim()).filter(l => l).pop() || topic;
@@ -3058,7 +3058,7 @@ Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a fi
 **MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH and how this topic relates to your current mood or goal.
 
 Shared thought:`;
-                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true, task: "autonomous", temperature: 0.9 });
+                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true });
 
                 if (content) {
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
@@ -3125,7 +3125,7 @@ Findings: ${researcher}`;
                     }
                 `;
 
-                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true, task: "autonomous" });
+                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true });
                 const jsonMatch = response?.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     const mapping = JSON.parse(jsonMatch[0]);
@@ -3151,7 +3151,7 @@ Identify any repetitive patterns, phrases, or tone drift.
 INTERACTIONS: ${JSON.stringify(interactions.map(i => i.content))}
 
 Provide a brief summary and a suggested linguistic adjustment if needed.`;
-    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: "autonomous" });
+    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
     if (res) {
         await dataStore.addInternalLog("linguistic_analysis", res);
         if (res.toLowerCase().includes("repetitive") || res.toLowerCase().includes("drift")) {
@@ -3171,7 +3171,7 @@ Current Keywords: ${currentKeywords.join(', ')}
 Memories: ${JSON.stringify(memories.map(m => m.text))}
 
 Respond with ONLY the new keywords, separated by commas.`;
-    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: "autonomous" });
+    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
     if (res) {
         const newKeywords = res.split(',').map(k => k.trim()).filter(Boolean);
         if (newKeywords.length > 0) {
@@ -3190,7 +3190,7 @@ Respond with ONLY the new keywords, separated by commas.`;
 History: ${JSON.stringify(moodHistory.slice(-10))}
 
 Respond with JSON: { "valence": float, "arousal": float, "stability": float, "label": "string" }`;
-    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: "autonomous" });
+    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
     try {
         const newMood = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
         await dataStore.setMood(newMood);
@@ -3239,7 +3239,7 @@ RECENT VARIETY CRITIQUES:
       Respond with JSON: { "analysis": "...", "removals": ["uri1", ...], "suggestion": "new blurb content or null" }
     `;
 
-    const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: "autonomous" });
+    const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
     try {
         const audit = JSON.parse(response.match(/\{[\s\S]*\}/)[0]);
         let result = `Audit Analysis: ${audit.analysis}

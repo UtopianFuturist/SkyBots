@@ -157,3 +157,14 @@ if (!Array.isArray(config.BOT_NICKNAMES)) {
   config.BOT_NICKNAMES = (process.env.BOT_NICKNAMES || '').split(',').filter(Boolean);
 }
 if (config.BOT_NICKNAMES.length === 0) config.BOT_NICKNAMES = [config.BOT_NAME || "Sydney"];
+
+// Lazy-load prompts to avoid circular dependency
+export const getPrompts = async () => {
+    const { TEXT_SYSTEM_PROMPT, IMAGE_PROMPT_SYSTEM_PROMPT, SAFETY_SYSTEM_PROMPT, ABOUT_BOT_SYSTEM_PROMPT } = await import('./src/prompts/system.js');
+    return {
+        TEXT_SYSTEM_PROMPT: process.env.TEXT_SYSTEM_PROMPT || TEXT_SYSTEM_PROMPT,
+        IMAGE_PROMPT_SYSTEM_PROMPT: process.env.IMAGE_PROMPT_SYSTEM_PROMPT || IMAGE_PROMPT_SYSTEM_PROMPT,
+        SAFETY_SYSTEM_PROMPT: process.env.SAFETY_SYSTEM_PROMPT || SAFETY_SYSTEM_PROMPT,
+        ABOUT_BOT_SYSTEM_PROMPT: process.env.ABOUT_BOT_SYSTEM_PROMPT || ABOUT_BOT_SYSTEM_PROMPT,
+    };
+};

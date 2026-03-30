@@ -44,9 +44,9 @@ class OrchestratorService {
         }
 
         try {
-            await this.checkDiscordScheduledTasks();
+            await this.bot.checkDiscordScheduledTasks();
             await delay(1000);
-            await this.checkMaintenanceTasks();
+            await this.bot.checkMaintenanceTasks();
             await delay(1000);
             await this.checkDiscordSpontaneity();
 
@@ -233,7 +233,7 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
     async performPublicSoulMapping() {
         console.log('[Orchestrator] Soul mapping...');
         try {
-            const handles = [...new Set(dataStore.db.data.interactions.map(i => i.userHandle))].filter(Boolean).slice(0, 5);
+            const handles = [...new Set(dataStore.getRecentInteractions().map(i => i.userHandle))].filter(Boolean).slice(0, 5);
             for (const handle of handles) {
                 const profile = await blueskyService.getProfile(handle);
                 const posts = await blueskyService.getUserPosts(handle);
@@ -264,7 +264,7 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
     }
 
     async checkForPostFollowUps() {
-        const posts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky' && !t.followedUp) || [];
+        const posts = dataStore.getRecentThoughts().filter(t => t.platform === 'bluesky' && !t.followedUp);
         const now = Date.now();
         for (const post of posts) {
             if (now - post.timestamp > 1800000 && Math.random() < 0.1) {
@@ -272,14 +272,14 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
                 if (followUp && post.uri) {
                     await blueskyService.postReply({ uri: post.uri, cid: post.cid, record: {} }, followUp);
                     post.followedUp = true;
-                    await dataStore.db.write();
+                    await dataStore.write();
                 }
             }
         }
     }
 
     async performPostPostReflection() {
-        const posts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky' && !t.reflected) || [];
+        const posts = dataStore.getRecentThoughts().filter(t => t.platform === 'bluesky' && !t.reflected);
         const now = Date.now();
         for (const post of posts) {
             if (now - post.timestamp > 600000) {
@@ -287,7 +287,7 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
                 if (reflection && memoryService.isEnabled()) {
                     await memoryService.createMemoryEntry('explore', reflection);
                     post.reflected = true;
-                    await dataStore.db.write();
+                    await dataStore.write();
                 }
             }
         }
@@ -305,7 +305,7 @@ Respond with JSON: {"choice": "post"|"rest"|"reflect"|"explore", "reason": "..."
                 const msg = await llmService.generateResponse([{ role: 'system', content: "Generate spontaneous Discord message for Admin. Short." }], { useStep: true });
                 await discordService.sendSpontaneousMessage(msg);
                 dataStore.db.data.discord_last_interaction = Date.now();
-                await dataStore.db.write();
+                await dataStore.write();
             }
         } catch(e) {}
     }

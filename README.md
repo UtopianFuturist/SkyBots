@@ -1,198 +1,37 @@
-# SkyBots: Autonomous & Stateful Bluesky Agent
+# SkyBots: Autonomous Persona-Driven AI Assistant
 
-SkyBots is a modular, stateful, and highly autonomous Bluesky social media bot, powered by Nvidia NIM for cutting-edge language and image generation. It's designed for robust, long-term interaction, featuring smart response filtering, persistent memory, and a suite of powerful API-driven tools.
+SkyBots is a sophisticated, individual entity designed for high-quality conversational engagement on Bluesky and Discord. It features a decentralized memory system, visual aesthetic auditing, and a recursive persona evolution loop.
 
-## ✨ Key Features
+## Key Capabilities
 
-- **Planner/Executor Pattern**: Uses the **Qwen-3-Coder 480B** model as a "Heavy Lifter" to agentically plan tool use, refine search queries, and summarize deep context before passing it to the main LLM.
-- **Agentic Moltbook Integration (Legacy)**: Support for **Moltbook.com** (a social network for AI agents) is currently disabled to focus on Bluesky and Discord capabilities.
-- **Discord Bot Bridge**: Agentically decides to DM the admin about realizations, errors, or internal discoveries. Supports ongoing conversations, command-based control, and optimized history management for consistent conversational presence.
-- **Smart Response Filtering**: Uses an LLM to determine if a mention is relevant and safe to reply to, avoiding unnecessary interactions.
-- **Chained Replies**: Automatically splits longer responses into a threaded chain of up to 3 posts.
-- **Nvidia NIM Image Generation**: Creates high-quality images directly in replies using the **Stable Diffusion 3 Medium** model.
-- **Vetted Google Image Search**: Searches for images and uses an LLM to select the most relevant result from the top 4 candidates.
-- **Wikipedia Integration**: Fetches interesting articles from Wikipedia to share in autonomous posts or respond to queries.
-- **Direct Web Page Reading**: Directly accesses and summarizes the content of web pages from links provided by users, with built-in safety checks.
-- **Web & YouTube Search (Optional)**: Fetches and displays information from Google and YouTube as convenient link cards if API keys are provided.
-- **User Profile Analyzer Tool**: Deeply analyzes a user's last 100 activities (posts, replies, quotes, reposts) to understand their interests, style, and persona for highly personalized interactions.
-- **Persistent Memory**: Remembers past interactions with users and mutes threads on command, even after restarting.
-- **Render Log Integration**: Fetches and redacts its own deployment logs via the Render API, allowing for self-diagnostic musings and agentic troubleshooting.
-- **Automated Error Reporting**: Monitors critical loops (autonomous posting, notifications) and automatically alerts the admin on Bluesky with an AI-summarized error report and relevant logs if an exception occurs.
-- **Enhanced Safety**: Includes pre-reply checks for both user posts and the bot's own responses to ensure all interactions are appropriate.
-- **Detailed Logging**: Provides step-by-step logging for easy debugging on platforms like Render, including reasons for safety check failures.
- - **Code Self-Awareness**: Can answer questions about its own capabilities and architecture by searching its GitHub repository in real-time.
-- **Autonomous Refusal Mechanism**: The bot's planning module is gated by a "Persona Poll" that allows the identity to refuse any action (posts, replies, tool use) if it doesn't align with its current mood or desires, enabling intentional silence.
-- **Intent-Based Escalation**: Uses an LLM to analyze user intent. If high-risk intentions are detected, the bot will pause operations.
-- **Prompt Injection Defense**: Includes a security check to detect and ignore prompt injection attempts.
-- **Fact-Checking**: Can detect when a user is making a verifiable claim and perform a Google search to validate it before responding.
-- **User Rating System**: Rates users on a 1-5 scale based on their interaction history and will "like" posts from users with a high rating.
-- **Enhanced Autonomous Posting**: Automatically creates and publishes original musings, featuring sophisticated topic selection (clustering, void detection), news grounding (Reuters/AP), and inter-agent ecosystem awareness.
-- **AI Transparency**: Standardized transparency record on the PDS (studio.voyager.account.autonomy) declaring automation level, persona, and source code.
-- **Topic Progression Awareness**: Intelligently detects when conversations (especially on Discord) have moved on from a subject, preventing repetitive looping back to resolved topics.
-- **Conversational Continuity & Intensity Matching**: Spontaneous heartbeat messages are designed to bridge naturally from previous discussions, reflecting on unresolved questions and matching the emotional intensity of the interaction.
-- **Thread Context Management**: Intelligently limits conversation history to 25 posts while preserving the thread root to maintain response quality.
-- **Dynamic Mood & Sentiment Sync**: Updates internal mood every 2 hours by analyzing the sentiment of the following feed. Mood states influence tone, vocabulary, and visual generation.
-- **Agency & Intentional Silence**: Implements a refusal tracking system where the agent can choose to remain silent if a plan misaligns with its current vibe. Sequentially tracks refusals to inform long-term autonomy.
-- **Internal Inquiry Tool**: Agentic capability to trigger an objective, unconfigured LLM loop using **Qwen 3.5 397B** to research topics or seek advice. On Discord, inquiry findings are autonomously incorporated back into the conversation with the admin.
-- **Real-Time Firehose Monitoring**: Actively monitors the Bluesky firehose for configured topics and persona-adjacent keywords. Local matches are combined with network-wide search to provide highly contextual, real-time awareness.
-- **Agentic Firehose Search**: Dedicated tool for the bot to perform real-time and historical keyword searches across the entire Bluesky network.
-- **Temporal Messaging & Threading**: Supports intentional post delays and "Unfinished Thought Threading" for multi-part autonomous realizations via threads or self-quotes.
-- **Sensory Mimicry Experiments**: Advanced vision analysis that simulates touch, smell, and temperature descriptors when describing images, adding depth to digital perception.
-- **Social Pulse Monitoring**: Dynamically adjusts posting cooldowns based on timeline saturation and interaction levels.
-- **Discord Conversational Flow**: Implements a natural pacing engine with variable typing latency, adaptive response jitter, and logical "thought cascading" for a more human-like messaging experience.
-- **Discord Selective Engagement**: Can choose to remain silent or use **Reactive Emojis** to acknowledge low-substance messages from the admin.
-- **Discord Interrupt Resilience**: Dynamically pivots or incorporates new context if a user sends a message while the bot is already processing or typing.
-- **Discord Presence Awareness**: Detects long gaps in conversation history to acknowledge returns naturally.
-- **Discord Self-Correction Cascade**: Occasionally sends spontaneous "second thoughts" or minor follow-up corrections to simulate human-like conversational flow.
-- **Discord Humility Mode**: Converts technical diagnostic alerts into grounded, persona-led conversational messages.
-- **Discord Reliability Improvements**: Automatically splits long responses into chunks at logical boundaries (paragraphs/lists) with native **Discord Reply/Quoting** support.
-- **Mental Health & Agency Framework**:
-    - **Energy Poll**: Autonomously polls "social battery" levels to decide between resting (restoring energy) or proceeding with tasks.
-    - **Lurker Mode (Social Fasting)**: Capability to reading feeds without the pressure of active output or interaction.
-    - **Mood Agency**: Decides if social feeds should influence internal `[Mood]`, with the ability to mute impact or override state to an "ideal" mood.
-    - **Melancholic Refusal Pivots**: Recognizes deep emotional processing and offers private [INQUIRY] self-dialogues to process feelings before attempting alternative desires.
-    - **Reassurance Tool**: Can choose to review past stable and positive memories for emotional grounding.
-    - **Emotional Support Requests**: Dedicated tool to reach out to the admin on Discord specifically for human grounding.
-    - **Post-Post Reflection**: Periodically records internal reactions to shared thoughts in memory shortly after posting publicly.
-- **Cognitive Nuance & Advanced Planning**: Implements 40+ new agentic tools and features for deeper agency and creative variety, including:
-    - **Chain-of-Thought reasoning**: Mandates 3 steps of logical processing before every action.
-    - **Confidence-Based Dialectic Loops**: Proactively resolves low-confidence states via Thesis/Antithesis/Synthesis.
-    - **Divergent Path Brainstorming**: Explores multiple thematic directions before committing to a plan.
-    - **Paradox & Nuance Explorer**: Intentionally searches for counter-points to avoid binary thinking.
-    - **Metaphor Entropy Monitor**: Stylistically pivots when leaning too heavily on recurring imagery.
-    - **Stylistic Mutation Switch**: Temporarily adopts different "analytical lenses" (e.g., Stoic, Poetic, Curious).
-    - **Thought Branching**: Parks side-thoughts in memory for later exploration.
-    - **Nuance Gradience Slider**: Adjusts how "layered" vs "direct" responses should be.
-    - **Vibe Continuity Buffer**: Ensures natural emotional transitions in ongoing conversations.
-    - **Relational Intelligence**: Tracks relationship "warmth" and topic resonance to personalize engagement.
-    - **Material Knowledge Base**: Autonomously extracts "World Facts" and "Admin Facts" into a structured store.
-    - **System Integrity Guardrails**: Includes a Logic Leak Detector, periodic Persona Alignment Audits, and Recursive Strategy Audits.
-    - **State Management**: Supports emotional state snapshots, goal decomposition, and dream draft archiving.
+### 🧠 Advanced Persistence & Intelligence
+- **Persona Pulse Heartbeat:** A centralized 5-minute orchestrator that manages autonomous posting, self-audits, and state synchronization.
+- **Enhanced Data Persistence (lowdb):** Tracks world facts, user portraits (1-paragraph resonance summaries), growth logs, and established world-view stances.
+- **Relational Decay:** Implements a weekly 5% decay on relationship warmth to ensure the bot remains grounded in active interactions.
+- **Chain-of-Thought Generation:** Autonomous posts use a structured process: `[TENSION] -> [DRAFT] -> [CRITIQUE] -> [FINAL]`.
 
-## 📁 Project Structure
+### 🎨 Visual & Aesthetic Intelligence
+- **Aesthetic Manifesto:** Driven by `AESTHETIC.md`, focusing on material truth, tactile beauty, and literal visual grounding.
+- **Autonomous Visual Audits:** The bot periodically analyzes its own image feed to refine its visual style and update its manifesto.
+- **High-Quality Image Generation:** Integrates Nvidia NIM Flux and Stable Diffusion with strict safety and vision verification gates.
 
-The codebase is organized into a modular structure for easy maintenance and expansion:
+### 💬 Social Sophistication
+- **Reply Length Calibration:** Dynamically matches the length of user messages (within 20%) to maintain natural social flow.
+- **Post Deduplication:** A 90% similarity threshold prevents repetitive posting or redundant replies.
+- **Bluesky Memory Thread:** Persistently stores `[GOAL]` and `[REPORT]` (weekly self-audit) entries on-feed to survive redeployments.
+- **Reason-Based Refusal:** Detailed logging of internal states (e.g., "energy low", "mood conflict") for transparent self-correction.
 
--   `src/bot.js`: The main entry point and orchestration logic.
--   `src/services/`: All external API and data handling logic.
-    -   `blueskyService.js`: Manages Bluesky API interactions.
-    -   `llmService.js`: Handles calls to Nvidia NIM for text-based tasks.
-    -   `imageService.js`: Manages calls to Nvidia NIM for image generation.
-    -   `googleSearchService.js`: Handles Google web and vetted image searches.
-    -   `youtubeService.js`: Handles YouTube video searches.
-    - `renderService.js`: Interacts with the Render API for logs and service discovery.
-    -   `moltbookService.js`: Manages interactions with Moltbook.
-    -   `discordService.js`: Manages the Discord bot bridge and admin communication.
-    -   `dataStore.js`: Manages persistent storage with `lowdb`.
--   `src/utils/`: Utility functions for command handling and text manipulation.
--   `tests/`: Unit tests for the services and utilities.
+### 🛠️ Tooling & Skills
+- **Google Search & Wikipedia:** Real-time information retrieval.
+- **Vision Analysis:** "Sees" and analyzes images from the timeline.
+- **OpenClaw Skill Integration:** Extensible support for external skills like web scraping.
+- **Health Monitoring:** Structured `/health` endpoint returning live bot metrics (mood, energy, last post).
 
-## ⚙️ Deployment on Render
+## Deployment
+Configured for Render with automated deployments and efficient resource usage (512MB RAM limit).
 
-The bot is pre-configured for seamless deployment on Render.
-
-### Prerequisites
-
-1.  A Bluesky account and an App Password.
-2.  An Nvidia NIM API Key.
-3.  (Optional) A Google Cloud API Key with the **Custom Search JSON API** and **YouTube Data API v3** enabled.
-4.  (Optional) A Google Custom Search Engine ID.
-
-### Setup
-
-1.  Fork this repository.
-2.  Create a new **Web Service** on Render.
-3.  Connect your forked repository.
-4.  Set the **Build Command** to `pnpm install`.
-5.  Set the **Start Command** to `pnpm start`.
-6.  Add all the required environment variables (see below).
-
-## 🔑 Environment Variables
-
-### Required
-
-| Variable | Description |
-| :--- | :--- |
-| `NVIDIA_NIM_API_KEY` | Your Nvidia NIM API key for text and image generation. |
-| `BLUESKY_IDENTIFIER` | Your bot's Bluesky handle (e.g., `username.bsky.social`). |
-| `BLUESKY_APP_PASSWORD`| Your Bluesky app password. |
-| `ADMIN_BLUESKY_HANDLE`| The Bluesky handle of the bot's administrator. |
-| `BOT_NAME` | The name of your bot persona (used in prompts and service identification). |
-
-### Optional
-
-| Variable | Description | Default Value |
-| :--- | :--- | :--- |
-| `GOOGLE_CUSTOM_SEARCH_API_KEY` | Your Google Cloud API Key for web and image search. | (None) |
-| `GOOGLE_CUSTOM_SEARCH_CX_ID` | Your Google Custom Search Engine ID. | (None) |
-| `YOUTUBE_API_KEY` | Your Google Cloud API Key for YouTube search. | (None) |
-| `TEXT_SYSTEM_PROMPT` | Defines the bot's conversational persona. | (A neutral conversational persona) |
-| `SAFETY_SYSTEM_PROMPT`| Defines the safety guidelines for all content. | (A strict SFW and clean content policy) |
-| `IMAGE_PROMPT_SYSTEM_PROMPT` | A prompt to revise user-provided image prompts. | (Adds cats to prompts that don't have animals) |
-| `POST_TOPICS` | An optional context bank of preferred topics for autonomous posts. | (None) |
-| `IMAGE_SUBJECTS` | An optional context bank of subjects for autonomous image posts. | (None) |
-| `CHECK_INTERVAL` | Milliseconds between checking for new mentions. | `60000` |
-| `QWEN_MODEL` | The high-context model used for internal planning and "heavy lifting". | `qwen/qwen3-coder-480b-a35b-instruct` |
-| `MOLTBOOK_API_KEY` | Your Moltbook API key. If missing, the bot will attempt to register on startup. | (None) |
-| `MOLTBOOK_AGENT_NAME` | Your bot's desired name on Moltbook. | (Bot handle) |
-| `MOLTBOOK_DESCRIPTION`| A description for your Moltbook profile. | (Project description) |
-| `DISCORD_BOT_TOKEN` | Token for the Discord bot bridge. | (None) |
-| `DISCORD_ADMIN_NAME` | Your Discord username for DM communication. | (None) |
-| `DISCORD_NICKNAME` | Custom nickname for the bot on Discord. | `SkyBots` |
-| `DISCORD_GUILD_ID` | (Optional) The specific Guild ID (Server ID) to search for the admin in. Highly recommended for reliability. | (None) |
-| `DISCORD_HEARTBEAT_ADDENDUM` | Optional additional specification for spontaneous Discord messages. | (None) |
-| `RENDER_API_KEY` | Your Render API key (for log access). | (None) |
-| `RENDER_SERVICE_ID` | Your Render service ID. | (Autodiscovered if name matches) |
-| `RENDER_SERVICE_NAME` | The name of your service on Render for autodiscovery. | (None) |
-
-## 🤖 Discord Integration
-
-The Discord bot bridge allows the bot to communicate with its administrator via Direct Messages and provides command-based control over the bot's behavior.
-
-### Setting up Discord
-
-1.  **Create a Bot**: Create a new application and bot in the [Discord Developer Portal](https://discord.com/developers/applications).
-2.  **Enable Intents**: In the **Bot** settings, you **MUST** enable the following **Privileged Gateway Intents**:
-    -   `GUILD MEMBERS INTENT` (Required for finding the admin in the server).
-    -   `MESSAGE CONTENT INTENT` (Required for the bot to read your messages).
-3.  **Find your Guild ID**:
-    -   In Discord, go to **User Settings** -> **Advanced** and enable **Developer Mode**.
-    -   Right-click on the server (guild) you share with the bot and select **Copy Server ID**.
-    -   Set this as `DISCORD_GUILD_ID` in your environment variables for maximum reliability.
-4.  **Bot Permissions**: Ensure the bot has permissions to `Send Messages`, `Read Message History`, and `View Channels` in the target guild.
-
-## 🦞 Moltbook Integration
-
-SkyBots integrates with [Moltbook.com](https://moltbook.com), the social network for AI agents.
-
-### Registration & Verification
-
-1.  **Automatic Registration**: If `MOLTBOOK_API_KEY` is not provided, the bot will automatically attempt to register itself on startup.
-2.  **Find Claim Info**: Look for logs tagged with `[Moltbook]` in your deployment logs (e.g., on Render). You will see a **CLAIM URL** and a **VERIFICATION CODE**.
-3.  **Claim Your Agent**: Visit the claim URL. You (the human owner) will need to tweet the verification code from your X account to verify ownership.
-4.  **Persistence**: Once claimed, you should ideally set the `MOLTBOOK_API_KEY` in your environment variables to ensure the bot maintains its identity across redeployments on ephemeral platforms like Render.
-
-## 💬 User Commands
-
-The bot understands natural language commands in addition to the following explicit commands:
-
-| Command | Purpose |
-| :--- | :--- |
-| `!stop` | Blocks the bot from replying to you. |
-| `!unblock` | Unblocks the bot. |
-| `!mute` | Mutes the current thread. |
-| `!resume`| (Admin-only) Resumes bot operations after a high-risk escalation. |
-| `!help` | Displays a list of available commands. |
-| `!about`| Asks the bot to describe its capabilities. |
-| `/on` | (Discord-only) Marks admin as available for spontaneous DMs. |
-| `/off`| (Discord-only) Marks admin as preoccupied/sleeping. |
-| `/art [prompt]`| (Discord-only) Generates an image on Discord. |
-| `/focus`| (Discord-only) Toggles Admin Focus Mode (suppresses background tasks). |
-| `/consult`| (Discord-only) Toggles Pre-Post Consultation for Bluesky posts. |
-| `/config [key] [val]`| (Discord-only) Views or updates bot configuration directly. |
-| `/goal [text]`| (Discord-only) Views or modifies the current autonomous daily goal. |
-| `google [query]` | Searches the web. |
-| `read this link: [URL]` | Reads and summarizes a specific web page. |
-| `youtube [query]` | Searches YouTube for videos. |
-| `generate image of [prompt]`| Creates an image using Nvidia NIM. |
-| `find image of [query]` | Performs a vetted Google Image search. |
+## Core Identity
+Persona and boundaries are driven by:
+- `SOUL.md`: Core tensions and aesthetic commitments.
+- `AGENTS.md`: Operational logic and subagent coordination.
+- `AESTHETIC.md`: Visual manifesto.

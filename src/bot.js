@@ -104,6 +104,8 @@ export class Bot {
     console.log('[Bot] Bluesky authenticated.');
 
     await blueskyService.submitAutonomyDeclaration();
+    await toolService.init();
+    console.log("[Bot] ToolService initialized.");
     console.log('[Bot] Autonomy declaration submitted.');
 
     // Resolve Admin DID
@@ -117,8 +119,6 @@ export class Bot {
                 console.log(`[Bot] Admin DID resolved: ${adminProfile.did}`);
                 llmService.setIdentities(this.adminDid, blueskyService.did);
             } else {
-    await toolService.init();
-    console.log('[Bot] ToolService initialized.');
                 console.warn(`[Bot] Admin profile found but DID is missing for @${config.ADMIN_BLUESKY_HANDLE}.`);
             }
         } catch (e) {

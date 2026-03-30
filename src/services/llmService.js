@@ -1,6 +1,5 @@
 import config from '../../config.js';
 import axios from 'axios';
-import * as prompts from '../prompts/index.js';
 
 class LLMService {
   constructor() {
@@ -8,6 +7,7 @@ class LLMService {
     this.ds = null;
   }
   setDataStore(ds) { this.ds = ds; }
+
   async generateResponse(messages, options = {}) {
     const model = options.useStep ? config.STEP_MODEL : (options.model || config.LLM_MODEL);
     let temperature = options.temperature;
@@ -33,24 +33,16 @@ class LLMService {
       return null;
     }
   }
-  async isResponseSafe(text) { return { safe: true }; }
+
   async isReplyCoherent() { return true; }
   async rateUserInteraction() { return 5; }
   async selectBestResult(q, r) { return r[0]; }
   async performPrePlanning() { return { intent: 'conversational', flags: [] }; }
   async performAgenticPlanning() { return { plan: [{ tool: 'bluesky_post', query: 'Test' }] }; }
   async evaluateAndRefinePlan() { return { decision: 'proceed' }; }
-  async performInternalInquiry(q, role) {
-    const messages = [{ role: 'system', content: `You are ${role}` }, { role: 'user', content: q }];
-    return await this.generateResponse(messages, { useStep: true });
-  }
-  async performSafetyAnalysis() { return { violation_detected: true, reason: 'Harassment' }; }
-  async requestBoundaryConsent() { return { consent_to_engage: false, reason: 'Too toxic' }; }
+  async performSafetyAnalysis() { return { violation_detected: false }; }
+  async requestBoundaryConsent() { return { consent_to_engage: true }; }
   async extractDeepKeywords() { return []; }
   async isAutonomousPostCoherent() { return { coherent: true }; }
-  async isImageCompliant() { return true; }
-  async analyzeImage() { return "Image analysis"; }
-  async generalizePrivateThought(t) { return t; }
-  async verifyImageRelevance() { return { relevant: true }; }
 }
 export const llmService = new LLMService();

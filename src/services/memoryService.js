@@ -16,9 +16,7 @@ class MemoryService {
   }
   async createMemoryEntry(type, context) {
     if (!this.isEnabled()) return;
-    try {
-        await blueskyService.post(`[${type.toUpperCase()}] ${context} ${this.hashtag}`);
-    } catch (e) {}
+    try { await blueskyService.post(`[${type.toUpperCase()}] ${context} ${this.hashtag}`); } catch (e) {}
   }
   formatMemoriesForPrompt() {
     if (this.recentMemories.length === 0) return "No recent memories available.";

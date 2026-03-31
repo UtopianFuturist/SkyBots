@@ -44,6 +44,8 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     analyzeImage: jest.fn(),
     generalizePrivateThought: jest.fn(),
     verifyImageRelevance: jest.fn().mockResolvedValue({ relevant: true }),
+    performImpulsePoll: jest.fn().mockResolvedValue({ impulse_detected: false }),
+    generateAltText: jest.fn().mockResolvedValue("alt text"),
   },
 }));
 

@@ -38,7 +38,7 @@ class LLMService {
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3.5-122b-a10b';
     this.visionModel = config.VISION_MODEL || 'meta/llama-4-scout-17b-16e-instruct';
     this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
-    this.apiKey = config.NVIDIA_NIM_API_KEY; // 5 minutes
+    this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
@@ -744,8 +744,17 @@ ${JSON.stringify(results)}
 Respond with JSON: { "best_index": number, "reason": "string" }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
-        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"best_index": 0}');
-        return results[data.best_index] || results[0];
+        const match = res?.match(/\{[\s\S]*\}/);
+        if (match) {
+            const data = JSON.parse(match[0]);
+            return results[data.best_index] || results[0];
+        }
+        const lastNumMatch = res?.match(/\d+/g);
+        if (lastNumMatch) {
+            const idx = parseInt(lastNumMatch[lastNumMatch.length - 1]) - 1;
+            return results[idx] || results[0];
+        }
+        return results[0];
     } catch (e) { return results[0]; }
   }
     async decomposeGoal(goal, options = {}) {
@@ -755,7 +764,8 @@ Respond with JSON: { "best_index": number, "reason": "string" }`;
 Respond with JSON: { "subtasks": ["task 1", "task 2", ...] }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
-        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"subtasks": []}');
+        const match = res?.match(/\{[\s\S]*\}/);
+        const data = JSON.parse(match ? match[0] : '{"subtasks": []}');
         return data.subtasks;
     } catch (e) { return []; }
   }
@@ -777,7 +787,8 @@ Respond with ONLY the 1-word label.`;
 Respond with JSON: { "decision": "schedule|none", "time": "HH:mm", "message": "string", "reason": "string" }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
-        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"decision": "none"}');
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"decision": "none"}');
     } catch (e) { return { decision: "none" }; }
   }
 
@@ -788,7 +799,8 @@ ${persona}
 Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
-        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"include_sensory": false}');
+        const match = res?.match(/\{[\s\S]*\}/);
+        const data = JSON.parse(match ? match[0] : '{"include_sensory": false}');
         return data.include_sensory;
     } catch (e) { return false; }
   }
@@ -862,20 +874,19 @@ Content: "${content}"
 Respond with JSON: { "score": number, "reason": "string" } (Score 1-10)`;
     const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
     try {
-        const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"score": 10, "reason": "Default coherent"}');
+        const match = res?.match(/\{[\s\S]*\}/);
+        const data = JSON.parse(match ? match[0] : '{"score": 10, "reason": "Default coherent"}');
         return data;
     } catch (e) {
         return { score: 10, reason: "Error parsing coherence check" };
     }
   }
     async isReplyCoherent(parent, child, history, embed, options = {}) {
-    const prompt = `Critique the coherence of this proposed reply:
-Parent: "${parent}"
-Reply: "${child}"
-
-Respond with "COHERENT" or "INCOHERENT | reason".`;
+    const prompt = `Critique the coherence of this proposed reply:\nParent: "${parent}"\nReply: "${child}"\n\nRespond with "COHERENT | score: 10" or "INCOHERENT | score: 0".`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
-    return !res?.toUpperCase().includes('INCOHERENT');
+    const numbers = res?.match(/\d+/g);
+    const score = numbers ? parseInt(numbers[numbers.length - 1]) : (res?.toUpperCase().includes('COHERENT') && !res?.toUpperCase().includes('INCOHERENT') ? 10 : 0);
+    return score >= 3;
   }
   async auditPersonaAlignment(actions, options = {}) {
     const prompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -929,7 +940,8 @@ ${JSON.stringify(history)}
 
 Respond with ONLY the number.`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
-    return parseInt(res?.match(/\d+/)?.[0]) || 5;
+    const match = res?.match(/\d+/g);
+    return match ? parseInt(match[match.length - 1]) : 5;
   }
 
   async getLatestMoodMemory() { return null; }
@@ -1014,7 +1026,8 @@ Respond with JSON:
 Respond with JSON: { "safe": boolean, "reason": "string" }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
-        return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"safe": true}');
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] || '{"safe": true}' : '{"safe": true}');
     } catch (e) { return { safe: true }; }
   }
 

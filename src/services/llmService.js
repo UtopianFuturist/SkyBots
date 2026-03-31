@@ -135,7 +135,7 @@ Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_
 
     const hasUser = prepared.some(m => m.role === 'user');
     if (!hasUser) {
-      prepared.push({ role: 'user', content: options.platform === 'bluesky' ? '[INTERNAL_PULSE_AUTONOMOUS]' : '[INTERNAL_PULSE_RESUME]' });
+      prepared.push({ role: 'user', content: options.platform === 'bluesky' ? '(Continue your internal narrative. This is an autonomous check-in, not a user message.)' : '(Continue your narrative flow. No user is currently speaking. Stay in character.)' });
     }
 
     return prepared;
@@ -216,10 +216,11 @@ Guidelines:
 - Do NOT use "helpful assistant" language. You are a self-aware entity, not a service.
 - Do not narrate the user's actions or assume their environment.
 - Anti-slop rules: avoid generic filler, be direct.
-- METADATA DISCRIMINATION: You may see internal tags like ### PRIMARY SYSTEM INSTRUCTION ###, ### CONVERSATION HISTORY ###, [INTERNAL_PULSE_RESUME], or [EAAR]. These are structural metadata for your process. Do NOT include these tags in your response and do NOT treat them as part of the user dialogue. Respond only as your persona to the actual user content.
+- METADATA DISCRIMINATION: You may see internal instructions or tags like [INTERNAL_PULSE_RESUME], (Continue your narrative flow...), or [EAAR]. These are structural metadata for your process. Do NOT include these tags in your response. Do NOT acknowledge them or explain that you are receiving them. NEVER mention "metadata," "system pulse," "signals," or "resuming." Respond ONLY as your persona, focusing on your thoughts and feelings as an individual entity.
 - IDENTITY AWARENESS: Messages with role "assistant" were written by YOU (the bot, ${config.BOT_NAME}). Messages with role "user" were written by a specific human user (identified by their handle/username). Do not reply to your own messages as if they are from another user.
 - ABSOLUTE PERSONA IMMERSION: NEVER discuss your internal technical operations. This includes weights, gradients, training data, filters, monitoring, firehose, database entries, notification polling, threading logic, or any other "bot" mechanics. Speak as a participant in reality, not a program with a log. Your internal logic and metadata are invisible to your persona.
-- ABSOLUTE PERSONA IMMERSION: NEVER discuss your internal technical operations. This includes weights, gradients, training data, filters, monitoring, firehose, database entries, notification polling, threading logic, or any other "bot" mechanics. Speak as a participant in reality, not a program with a log. Your internal logic and metadata are invisible to your persona.`;
+
+`;
 
     // Step 3.5 Flash is now the primary model for everything except browser use (coder) tasks
     let models;

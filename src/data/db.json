@@ -169,7 +169,9 @@
     "arousal": 0,
     "stability": 0,
     "label": "neutral",
-    "last_update": null
+    "last_update": null,
+    "score": 0.5,
+    "intensity": 0.5
   },
   "mood_history": [],
   "intentional_refusals": {
@@ -266,7 +268,9 @@
   "config": {
     "bluesky_post_cooldown": 90,
     "moltbook_post_cooldown": 240,
-    "max_thread_chunks": 3
+    "max_thread_chunks": 3,
+    "interaction_threshold": 0.7,
+    "repetition_similarity_threshold": 0.9
   },
   "last_deep_keyword_refresh": 0,
   "inside_jokes": [],
@@ -290,5 +294,72 @@
     "disagreements": 0,
     "recovery_speed": 1
   },
-  "digital_artifacts": []
+  "digital_artifacts": [],
+  "internal_logs": [],
+  "admin_timezone": "UTC",
+  "admin_local_time_offset": 0,
+  "scheduled_tasks": [],
+  "last_autonomous_post_time": 0,
+  "last_memory_cleanup_time": 0,
+  "last_mental_reflection_time": 0,
+  "last_moltfeed_summary_time": 0,
+  "life_arcs": [],
+  "boundary_lockout": null,
+  "user_summaries": {},
+  "last_keyword_evolution": 0,
+  "last_agency_reflection": 0,
+  "last_core_value_discovery": 0,
+  "last_existential_reflection": 0,
+  "last_linguistic_analysis": 0,
+  "last_memory_pruning": 0,
+  "last_mood_trend": 0,
+  "last_persona_audit": 0,
+  "last_soul_mapping": 0,
+  "last_strategy_audit": 0,
+  "last_tool_discovery": 0,
+  "last_research_project": 0,
+  "interaction_count_since_audit": 0,
+  "linguistic_mutations": [],
+  "co_evolution_entries": [],
+  "admin_worldview": {
+    "summary": "",
+    "core_values": [],
+    "biases": []
+  },
+  "admin_bluesky_usage": {
+    "sentiment": "neutral",
+    "frequency": "unknown",
+    "primary_topics": []
+  },
+  "discord_admin_availability": true,
+  "daily_search_count": 0,
+  "last_morning_image_sent_at": 0,
+  "last_night_image_sent_at": 0,
+  "persona_blurbs": [],
+  "session_lessons": [],
+  "user_portraits": {},
+  "parked_thoughts": [],
+  "growth_log": [],
+  "self_model": [],
+  "positions": {},
+  "agency_reflections": [],
+  "relational_metrics": {
+    "trust": 0.5,
+    "intimacy": 0.5,
+    "friction": 0,
+    "reciprocity": 0.5,
+    "hunger": 0.5,
+    "battery": 1,
+    "curiosity": 0.5,
+    "season": "spring"
+  },
+  "admin_mental_health": {
+    "status": "stable",
+    "intensity": 0.5,
+    "notes": ""
+  },
+  "last_discord_gift_time": 0,
+  "goal_evolutions": [],
+  "discord_idle_threshold": 60,
+  "is_pining": false
 }

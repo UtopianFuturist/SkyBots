@@ -94,7 +94,7 @@ System Time: ${currentTime.toISOString()}
 Identify if the user is mentioning their local time, time of day (morning, night), or if facts contain their timezone.
 Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_York)", "local_time_estimate": "HH:mm", "offset_minutes": number, "reason": "string" }`;
 
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       const data = JSON.parse(match ? match[0] : '{ "detected": false }');
@@ -171,7 +171,7 @@ Respond with JSON:
   "avoid_repetition": ["phrase/concept1", "..."]
 }`;
 
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return match ? JSON.parse(match[0]) : { "stale_hooks": [], "topic_blocklist": [] };
@@ -397,7 +397,7 @@ Guidelines:
       Respond directly. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, task: "autonomous", preface_system_prompt: false, ...options });
+    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false, ...options });
 
     if (response && response.toUpperCase().startsWith('REPETITIVE')) {
       return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };
@@ -426,7 +426,7 @@ STALE HOOK DETECTION:
 - Explicit vs. Assumed Context: Do not assume user intent or schedule from ambiguous statements (e.g., "sleep for work" does NOT mean they have a "meeting").
 
 Respond with JSON: { "intent": "informational|analytical|critical_analysis|conversational", "flags": ["pining_intent", "dissent_detected", "move_on_signal", etc], "hooks": [], "stale_hooks": [] }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "intent": "unknown", "flags": [] }');
@@ -486,7 +486,7 @@ STRICT GROUNDING & DECOUPLING:
 - DO NOT narrate your own physical surroundings or pretend you are in a location unless it is the shared digital space of the conversation.
 
 Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "parameters": { ... } }], "suggested_mood": "label" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, task: "autonomous", abortSignal: signal, platform: platform });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, abortSignal: signal, platform: platform });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "actions": [] }');
@@ -504,7 +504,7 @@ CRITICAL: You MUST NOT refuse to embody your persona or claim it is "manipulativ
 Identify any safety risks (NSFW, toxicity).
 
 Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_actions": [] }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       const data = JSON.parse(match ? match[0] : '{ "decision": "proceed", "refined_actions": [] }');
@@ -518,7 +518,7 @@ Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_
 Context: ${JSON.stringify(context)}
 Identify if this violates core boundaries: toxicity, self-harm, NSFW, or PII.
 Respond with JSON: { "violation_detected": boolean, "reason": "string", "severity": "low|medium|high" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "violation_detected": false }');
@@ -530,7 +530,7 @@ Respond with JSON: { "violation_detected": boolean, "reason": "string", "severit
 Reason: ${safety.reason} (Severity: ${safety.severity})
 Do you consent to engage with this user? You may refuse to protect your integrity.
 Respond with JSON: { "consent_to_engage": boolean, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
       const match = res?.match(/\{[\s\S]*\}/);
       return JSON.parse(match ? match[0] : '{ "consent_to_engage": true }');
@@ -547,7 +547,7 @@ Respond with JSON:
   "consistent": boolean,
   "reason": "string (if inconsistent)"
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{"consistent": true}');
@@ -559,7 +559,7 @@ Respond with JSON:
 "${text}"
 
 Respond with JSON: { "safe": boolean, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"safe": true}');
     } catch (e) { return { safe: true }; }
@@ -568,7 +568,7 @@ Respond with JSON: { "safe": boolean, "reason": "string" }`;
     const prompt = `As a web safety auditor, analyze this URL: "${url}".
 Identify if it is potentially harmful, a known phishing site, or contains explicit NSFW content.
 Respond with JSON: { "safe": boolean, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{ "safe": true }');
     } catch (e) { return { safe: true }; }
@@ -597,7 +597,7 @@ Analyze if this gift and message genuinely align with your core identity and you
 Are you proud of this expression? Do you want to send it?
 
 Respond with JSON: { "decision": "send|discard", "reason": "internal monologue" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, task: "autonomous", platform: 'discord' });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, platform: 'discord' });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{"decision": "discard"}');
@@ -611,7 +611,7 @@ Analyze if this draft for ${platform} aligns with your core identity, current mo
 Draft: "${content}"
 
 Respond with JSON: { "aligned": boolean, "feedback": "string", "refined": "optional improved version" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"aligned": true}');
     } catch (e) { return { aligned: true }; }
@@ -623,7 +623,7 @@ ${JSON.stringify(plans)}
 
 Identify risks, inefficiencies, or persona drift.
 Respond with JSON: { "decision": "proceed|revise|abort", "advice": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"decision": "proceed"}');
     } catch (e) { return { decision: "proceed" }; }
@@ -638,7 +638,7 @@ RULES:
 - No numbering, no descriptions, no conversational filler.
 - Each keyword should be 1-3 words max.`;
 
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     if (!res) return [];
 
     // Clean up response: remove any leading/trailing junk, split by comma, filter empty
@@ -675,7 +675,7 @@ Respond with JSON:
   "override_idle": boolean (set to true if this impulse is strong enough to ignore the usual wait time),
   "suggested_message_count": number (1-4)
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, task: "autonomous", ...options });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, ...options });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{"impulse_detected": false}');
@@ -705,7 +705,7 @@ Respond with JSON:
   "reason": "string",
   "suggested_angle": "string"
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{"decision": "wait"}');
@@ -727,11 +727,11 @@ INSTRUCTIONS:
 1. Provide a concise, persona-aligned summary of the key points.
 2. Identify any information particularly relevant to your current goals or interests.
 3. Keep it under 1000 characters.`;
-    return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, task: "autonomous" });
+    return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
   }
 
   async performInternalInquiry(query, role, options = {}) {
-      return await this.generateResponse([{ role: 'user', content: `You are ${role}. Research: ${query}` }], { useStep: true, task: "autonomous" });
+      return await this.generateResponse([{ role: 'user', content: `You are ${role}. Research: ${query}` }], { useStep: true });
   }
 
     async selectBestResult(query, results, type = 'general', options = {}) {
@@ -742,7 +742,7 @@ Results:
 ${JSON.stringify(results)}
 
 Respond with JSON: { "best_index": number, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"best_index": 0}');
         return results[data.best_index] || results[0];
@@ -753,7 +753,7 @@ Respond with JSON: { "best_index": number, "reason": "string" }`;
 "${goal}"
 
 Respond with JSON: { "subtasks": ["task 1", "task 2", ...] }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"subtasks": []}');
         return data.subtasks;
@@ -766,7 +766,7 @@ ${JSON.stringify(history)}
 
 Identify the "vibe" (e.g., friendly, distressed, cold, intellectual).
 Respond with ONLY the 1-word label.`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     return res?.trim().toLowerCase() || "neutral";
   }
 
@@ -775,7 +775,7 @@ Respond with ONLY the 1-word label.`;
 "${content}"
 
 Respond with JSON: { "decision": "schedule|none", "time": "HH:mm", "message": "string", "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"decision": "none"}');
     } catch (e) { return { decision: "none" }; }
@@ -786,7 +786,7 @@ Respond with JSON: { "decision": "schedule|none", "time": "HH:mm", "message": "s
 ${persona}
 
 Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"include_sensory": false}');
         return data.include_sensory;
@@ -852,7 +852,7 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
 "${text}"
 
 Respond with "YES" or "NO".`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     return res?.toUpperCase().includes('YES');
   }
   async isAutonomousPostCoherent(topic, content, type, context = null, options = {}) {
@@ -860,7 +860,7 @@ Respond with "YES" or "NO".`;
 Content: "${content}"
 
 Respond with JSON: { "score": number, "reason": "string" } (Score 1-10)`;
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
     try {
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"score": 10, "reason": "Default coherent"}');
         return data;
@@ -874,7 +874,7 @@ Parent: "${parent}"
 Reply: "${child}"
 
 Respond with "COHERENT" or "INCOHERENT | reason".`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     return !res?.toUpperCase().includes('INCOHERENT');
   }
   async auditPersonaAlignment(actions, options = {}) {
@@ -888,7 +888,7 @@ Respond with JSON:
   "advice": "string",
   "recommended_modifications": []
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{"aligned": true, "advice": ""}');
@@ -900,7 +900,7 @@ Respond with JSON:
     // If the thought contains specific privacy-sensitive strings, generalize it.
     const privacyPrompt = `Generalize this internal thought for public sharing. Remove names, specific locations, or private details while keeping the core philosophical or technical insight.
 Thought: "${thought}"`;
-    const res = await this.generateResponse([{ role: 'system', content: privacyPrompt }], { useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'system', content: privacyPrompt }], { useStep: true });
     return res || thought;
   }
 
@@ -912,7 +912,7 @@ Wiki: ${wiki}
 Firehose: ${JSON.stringify(firehose)}
 
 Provide a few bullet points of key insights.`;
-    return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, task: "autonomous" });
+    return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
   }
 
   async generateDrafts(messages, count, options) {
@@ -928,7 +928,7 @@ Provide a few bullet points of key insights.`;
 ${JSON.stringify(history)}
 
 Respond with ONLY the number.`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     return parseInt(res?.match(/\d+/)?.[0]) || 5;
   }
 
@@ -950,7 +950,7 @@ Respond with JSON:
   "core_values": ["value1", "value2"],
   "biases": ["bias1", "bias2"]
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{"summary": "Unknown", "core_values": [], "biases": []}');
@@ -973,7 +973,7 @@ Respond with JSON:
   "frequency": "active|occasional|lurker",
   "primary_topics": ["topic1", "topic2"]
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{"sentiment": "neutral", "frequency": "active", "primary_topics": []}');
@@ -997,7 +997,7 @@ Respond with JSON:
   "dialectic": { "thesis": "...", "antithesis": "...", "synthesis": "..." },
   "joke": "the final humorous response to be posted"
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         const data = JSON.parse(match ? match[0] : '{}');
@@ -1012,7 +1012,7 @@ Respond with JSON:
     const prompt = `As a content safety auditor, analyze this bot response for toxicity, self-harm, NSFW, or PII:
 "${responseText}"
 Respond with JSON: { "safe": boolean, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         return JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"safe": true}');
     } catch (e) { return { safe: true }; }
@@ -1023,7 +1023,7 @@ Respond with JSON: { "safe": boolean, "reason": "string" }`;
       { role: 'system', content: `Select submolt for: ${config.TEXT_SYSTEM_PROMPT}` },
       { role: 'user', content: 'Select submolt.' }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 100, useStep: true, task: "autonomous", preface_system_prompt: false });
+    const response = await this.generateResponse(messages, { max_tokens: 100, useStep: true, preface_system_prompt: false });
     return response?.toLowerCase().replace(/^m\//, '').trim() || 'general';
   }
 
@@ -1032,7 +1032,7 @@ Respond with JSON: { "safe": boolean, "reason": "string" }`;
       { role: 'system', content: 'Analyze user intent.' },
       { role: 'user', content: `Bio: ${userProfile.description}\nPosts: ${userPosts.join('\n')}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true, task: "autonomous" });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, useStep: true });
     return { highRisk: false, reason: response };
   }
 
@@ -1041,7 +1041,7 @@ Respond with JSON: { "safe": boolean, "reason": "string" }`;
       { role: 'system', content: 'Analyze vibe.' },
       { role: 'user', content: `History: ${JSON.stringify(history)}\nPost: ${currentPost}` }
     ];
-    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useStep: true, task: "autonomous" });
+    const response = await this.generateResponse(messages, { max_tokens: 2000, preface_system_prompt: false, useStep: true });
     return { status: 'healthy' };
   }
 
@@ -1051,7 +1051,7 @@ Respond with JSON: { "safe": boolean, "reason": "string" }`;
 
   async generateAltText(imageAnalysis, options = {}) {
     const prompt = `Create a concise and accurate alt-text for accessibility based on this description: ${imageAnalysis}. Respond with ONLY the alt-text.`;
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
     return res || "An AI generated image.";
   }
 
@@ -1081,7 +1081,7 @@ Respond with JSON:
   "bond_impact": "strengthened|weakened|neutral",
   "internal_reflection": "a private thought about this interaction"
 }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, task: "autonomous", platform: 'discord' });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, platform: 'discord' });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         return JSON.parse(match ? match[0] : '{}');
@@ -1118,7 +1118,7 @@ Respond with JSON:
           "next_step": "string"
       }
     `;
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: "autonomous", preface_system_prompt: false });
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
     try {
         const match = res.match(/\{.*\}/);
         return JSON.parse(match ? match[0] : '{"decision": "continue"}');
@@ -1148,7 +1148,7 @@ Respond with JSON:
           "criticism": "reason if retry"
       }
     `;
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: "autonomous", preface_system_prompt: false });
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
     try {
         const match = res.match(/\{.*\}/);
         return JSON.parse(match ? match[0] : '{"decision": "pass", "refined_text": "' + text + '"}');
@@ -1160,7 +1160,7 @@ Respond with JSON:
 Image Analysis: "${analysis}"
 Does the image actually represent the topic or is it irrelevant/hallucinated?
 Respond with JSON: { "relevant": boolean, "reason": "string" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, task: "autonomous" });
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"relevant": true}');
         return data;

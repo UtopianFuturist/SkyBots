@@ -30,6 +30,57 @@ class OrchestratorService {
     }
     setBotInstance(bot) { this.bot = bot; }
 
+    async checkDiscordScheduledTasks() {
+        if (dataStore.isResting()) return;
+        if (discordService.status !== "online") return;
+        const tasks = dataStore.getDiscordScheduledTasks();
+        if (tasks.length === 0) return;
+        const now = new Date();
+        const currentTimeStr = now.getHours().toString().padStart(2, "0") + ":" + now.getMinutes().toString().padStart(2, "0");
+        const today = now.toDateString();
+        for (let i = 0; i < tasks.length; i++) {
+            const task = tasks[i];
+            const taskDate = new Date(task.timestamp).toDateString();
+            if (taskDate !== today) {
+                await dataStore.removeDiscordScheduledTask(i);
+                i--;
+                continue;
+            }
+            if (currentTimeStr === task.time) {
+                console.log(`[Orchestrator] Executing scheduled Discord task: ${task.message}`);
+                try {
+                    if (task.channelId) {
+                        const channel = await discordService.client.channels.fetch(task.channelId.replace("dm_", "")).catch(() => null);
+                        if (channel) await discordService._send(channel, task.message);
+                        else await discordService.sendSpontaneousMessage(task.message);
+                    } else await discordService.sendSpontaneousMessage(task.message);
+                    await dataStore.removeDiscordScheduledTask(i);
+                    i--;
+                } catch (e) { console.error("[Orchestrator] Error executing scheduled Discord task:", e); }
+            }
+        }
+    }
+
+    async performMoltbookTasks() { console.log("[Orchestrator] Moltbook tasks triggered (placeholder)."); }
+
+    async cleanupOldPosts() {
+        try {
+            console.log("[Orchestrator] Running manual cleanup of old posts...");
+            const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
+            const feed = await blueskyService.agent.getAuthorFeed({ actor: profile.did, limit: 100 });
+            const now = Date.now();
+            const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+            for (const item of feed.data.feed) {
+                const post = item.post;
+                const createdAt = new Date(post.indexedAt).getTime();
+                if (now - createdAt > thirtyDays) {
+                    console.log(`[Orchestrator] Deleting old post: ${post.uri}`);
+                    await blueskyService.agent.deletePost(post.uri);
+                }
+            }
+        } catch (e) { console.error("[Orchestrator] Error in cleanupOldPosts:", e); }
+    }
+
     async heartbeat() {
         console.log("[Orchestrator] Heartbeat pulse.");
         if (dataStore.isResting()) return;
@@ -44,9 +95,9 @@ class OrchestratorService {
         }
 
         try {
-            await this.bot.checkDiscordScheduledTasks();
+            await this.checkDiscordScheduledTasks();
             await delay(1000);
-            await this.bot.checkMaintenanceTasks();
+            await this.checkMaintenanceTasks();
             await delay(1000);
 
             const mood = dataStore.getMood();

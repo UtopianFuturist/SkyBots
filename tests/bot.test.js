@@ -9,6 +9,7 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     updateSeen: jest.fn(),
     getProfile: jest.fn(),
     getUserPosts: jest.fn().mockResolvedValue([]),
+    post: jest.fn(),
     postReply: jest.fn(),
     getDetailedThread: jest.fn(),
     getPostDetails: jest.fn(),
@@ -45,6 +46,9 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     analyzeImage: jest.fn().mockResolvedValue('image analysis'),
     generateAltText: jest.fn().mockResolvedValue('alt text'),
     verifyImageRelevance: jest.fn().mockResolvedValue({ relevant: true }),
+    performImpulsePoll: jest.fn().mockResolvedValue({ impulse_detected: false }),
+    isAutonomousPostCoherent: jest.fn().mockResolvedValue({ score: 10 }),
+    isImageCompliant: jest.fn().mockResolvedValue({ compliant: true }),
     setDataStore: jest.fn(),
     setIdentities: jest.fn(),
     setMemoryProvider: jest.fn(),
@@ -77,6 +81,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getSessionLessons: jest.fn().mockReturnValue([]),
     setCurrentGoal: jest.fn(),
     getCurrentGoal: jest.fn().mockReturnValue({ goal: 'test' }),
+    updateLastAutonomousPostTime: jest.fn(),
+    addExhaustedTheme: jest.fn(),
     init: jest.fn(),
     getConfig: jest.fn().mockReturnValue({
       bluesky_post_cooldown: 45,
@@ -127,19 +133,10 @@ describe('Bot', () => {
   beforeEach(async () => {
     jest.clearAllMocks();
     bot = new Bot();
-    bot.restartFirehose = jest.fn();
-    await bot.init();
-
-    // Default mocks
-    llmService.performPrePlanning.mockResolvedValue({ intent: 'conversational', flags: [] });
-    llmService.performAgenticPlanning.mockResolvedValue({
-      actions: [{ tool: 'bsky_post', parameters: { text: 'Test response' } }]
-    });
-    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
-    llmService.performEditorReview.mockResolvedValue({ decision: 'pass', refined_text: 'Test response' });
-    blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/post/1' });
-    blueskyService.getDetailedThread.mockResolvedValue([]);
-    dataStore.hasReplied.mockReturnValue(false);
+    bot.startFirehose = jest.fn();
+    bot.startNotificationPoll = jest.fn();
+    // We don't call bot.init() directly to avoid starting background tasks in every test
+    // Instead we mock the parts we need or call it selectively.
   });
 
   it('should process a notification and post a reply', async () => {
@@ -149,6 +146,15 @@ describe('Bot', () => {
       record: { text: 'Hello bot' },
       reason: 'mention'
     };
+
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'conversational', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({
+      actions: [{ tool: 'bsky_post', parameters: { text: 'Test response' } }]
+    });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
+    blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/post/1' });
+    blueskyService.getDetailedThread.mockResolvedValue([]);
+    dataStore.hasReplied.mockReturnValue(false);
 
     await bot.processNotification(mockNotif);
 
@@ -164,7 +170,8 @@ describe('Bot', () => {
       reason: 'reply'
     };
 
-    // PrePlanning returns 'conversational' (not in selfAuditIntents)
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'conversational', flags: [] });
+
     await bot.processNotification(mockNotif);
 
     expect(blueskyService.postReply).not.toHaveBeenCalled();
@@ -179,6 +186,13 @@ describe('Bot', () => {
     };
 
     llmService.performPrePlanning.mockResolvedValue({ intent: 'analytical', flags: [] });
+    llmService.performAgenticPlanning.mockResolvedValue({
+      actions: [{ tool: 'bsky_post', parameters: { text: 'Test response' } }]
+    });
+    llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'proceed' });
+    blueskyService.postReply.mockResolvedValue({ uri: 'at://did:plc:bot/post/1' });
+    blueskyService.getDetailedThread.mockResolvedValue([]);
+    dataStore.hasReplied.mockReturnValue(false);
 
     await bot.processNotification(mockNotif);
 
@@ -222,6 +236,7 @@ describe('Bot', () => {
       reason: 'mention'
     };
 
+    llmService.performPrePlanning.mockResolvedValue({ intent: 'conversational', flags: [] });
     llmService.evaluateAndRefinePlan.mockResolvedValue({ decision: 'refuse' });
 
     await bot.processNotification(mockNotif);

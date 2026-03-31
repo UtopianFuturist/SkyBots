@@ -1,36 +1,6 @@
-import { blueskyService } from './blueskyService.js';
-import { llmService } from './llmService.js';
-import { dataStore } from './dataStore.js';
-import { imageService } from './imageService.js';
-import { youtubeService } from './youtubeService.js';
-import { googleSearchService } from './googleSearchService.js';
-import { wikipediaService } from './wikipediaService.js';
-import { newsroomService } from './newsroomService.js';
-import { memoryService } from './memoryService.js';
-import { discordService } from './discordService.js';
-import { socialHistoryService } from './socialHistoryService.js';
-import { evaluationService } from './evaluationService.js';
-import { checkHardCodedBoundaries, isLiteralVisualPrompt, cleanKeywords, getSlopInfo, sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
-import * as prompts from '../prompts/index.js';
-import config from '../../config.js';
-
-const AUTONOMOUS_POST_SYSTEM_PROMPT = (followerCount) => prompts.system.AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount);
-
-class OrchestratorService {
-    constructor() {
-        this.bot = null;
-    }
-
-    setBotInstance(bot) {
-        this.bot = bot;
-    }
-
-    async start() {
-        console.log('[Orchestrator] Starting autonomous cycles...');
-    }
-
+// --- START performPostPostReflection ---
   async performPostPostReflection() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const recentBlueskyPosts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky') || [];
     if (recentBlueskyPosts.length === 0) return;
@@ -63,8 +33,10 @@ class OrchestratorService {
         }
     }
   }
+// --- END performPostPostReflection ---
+// --- START performTimelineExploration ---
   async performTimelineExploration() {
-    if (this.bot.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
+    if (this.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
 
     // Prioritize admin Discord requests
     if (discordService.isProcessingAdminRequest) {
@@ -232,8 +204,10 @@ class OrchestratorService {
         console.error('[Bot] Error during timeline exploration:', error);
     }
   }
+// --- END performTimelineExploration ---
+// --- START performPersonaEvolution ---
   async performPersonaEvolution() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastEvolution = dataStore.db.data.lastPersonaEvolution || 0;
@@ -272,8 +246,10 @@ class OrchestratorService {
         console.error('[Bot] Error in persona evolution:', e);
     }
   }
+// --- END performPersonaEvolution ---
+// --- START performFirehoseTopicAnalysis ---
   async performFirehoseTopicAnalysis() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastAnalysis = this.lastFirehoseTopicAnalysis || 0;
@@ -347,8 +323,10 @@ class OrchestratorService {
         console.error('[Bot] Error in firehose topic analysis:', e);
     }
   }
+// --- END performFirehoseTopicAnalysis ---
+// --- START performDialecticHumor ---
   async performDialecticHumor() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastHumor = this.lastDialecticHumor || 0;
@@ -389,8 +367,10 @@ class OrchestratorService {
         console.error('[Bot] Error in dialectic humor:', e);
     }
   }
+// --- END performDialecticHumor ---
+// --- START performAIIdentityTracking ---
   async performAIIdentityTracking() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastTracking = this.lastAIIdentityTracking || 0;
@@ -435,6 +415,8 @@ class OrchestratorService {
         console.error('[Bot] Error in AI identity tracking:', e);
     }
   }
+// --- END performAIIdentityTracking ---
+// --- START performRelationalAudit ---
   async performRelationalAudit() {
     console.log('[Bot] Starting Relational Audit ...');
     const now = new Date();
@@ -543,6 +525,8 @@ class OrchestratorService {
         console.error('[Bot] Error in Relational Audit:', e);
     }
   }
+// --- END performRelationalAudit ---
+// --- START performAgencyReflection ---
   async performAgencyReflection() {
     console.log('[Bot] Starting Agency Reflection Cycle...');
     const agencyLogs = dataStore.getAgencyLogs().slice(-20);
@@ -569,6 +553,8 @@ class OrchestratorService {
         console.error('[Bot] Error in Agency Reflection:', e);
     }
   }
+// --- END performAgencyReflection ---
+// --- START performLinguisticAudit ---
   async performLinguisticAudit() {
     console.log('[Bot] Starting Linguistic Mutation Audit...');
     const recentThoughts = dataStore.getRecentThoughts().slice(-30);
@@ -607,6 +593,8 @@ class OrchestratorService {
         console.error('[Bot] Error in Linguistic Audit:', e);
     }
   }
+// --- END performLinguisticAudit ---
+// --- START performDreamingCycle ---
   async performDreamingCycle() {
     console.log('[Bot] Starting Shared Dream Cycle...');
 
@@ -638,8 +626,10 @@ class OrchestratorService {
         console.error('[Bot] Error in Dreaming Cycle:', e);
     }
   }
+// --- END performDreamingCycle ---
+// --- START performSelfReflection ---
   async performSelfReflection() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastReflection = this.lastSelfReflectionTime || 0;
@@ -661,6 +651,8 @@ class OrchestratorService {
         console.error('[Bot] Error in self-reflection:', e);
     }
   }
+// --- END performSelfReflection ---
+// --- START performNewsroomUpdate ---
 
 
 
@@ -674,7 +666,7 @@ class OrchestratorService {
       if (brief.new_keywords?.length > 0) {
         const current = dataStore.getDeepKeywords();
         await dataStore.setDeepKeywords([...new Set([...current, ...brief.new_keywords])].slice(-50));
-        this.bot.restartFirehose();
+        this.restartFirehose();
       }
       if (memoryService.isEnabled()) {
         await memoryService.createMemoryEntry('status', `[NEWSROOM] ${brief.brief}`);
@@ -683,6 +675,8 @@ class OrchestratorService {
       console.error('[Bot] Newsroom update error:', e);
     }
   }
+// --- END performNewsroomUpdate ---
+// --- START performScoutMission ---
 
   async performScoutMission() {
     console.log('[Bot] Starting Scout (Exploration) mission...');
@@ -698,6 +692,8 @@ class OrchestratorService {
       console.error('[Bot] Scout mission error:', e);
     }
   }
+// --- END performScoutMission ---
+// --- START performShadowAnalysis ---
   async performShadowAnalysis() {
       console.log('[Bot] Starting Shadow (Admin Analyst) cycle...');
       try {
@@ -745,6 +741,8 @@ class OrchestratorService {
           console.error('[Bot] Shadow analysis error:', e);
       }
   }
+// --- END performShadowAnalysis ---
+// --- START performDiscordGiftImage ---
 
   async performDiscordGiftImage(admin) {
     if (!admin) return;
@@ -803,6 +801,8 @@ Generation Prompt: ${result.finalPrompt}`;
         console.error('[Bot] Error in performDiscordGiftImage:', e);
     }
   }
+// --- END performDiscordGiftImage ---
+// --- START performAutonomousPost ---
 
   async performAutonomousPost() {
         try {
@@ -967,14 +967,18 @@ Shared thought:`;
             }
         } catch (e) {
             console.error("[Bot] Error in performAutonomousPost:", e);
-            if (this.bot._handleError) await this.bot._handleError(e, "performAutonomousPost");
+            if (this._handleError) await this._handleError(e, "performAutonomousPost");
         }
     }
+// --- END performAutonomousPost ---
+// --- START performMoltbookTasks ---
 
   async performMoltbookTasks() {
       // Placeholder for Moltbook integration
       console.log('[Bot] Moltbook tasks triggered (placeholder).');
   }
+// --- END performMoltbookTasks ---
+// --- START performSpecialistResearchProject ---
   async performSpecialistResearchProject(topic) {
       console.log(`[Bot] Starting Specialist Research: ${topic}`);
       try {
@@ -984,6 +988,8 @@ Findings: ${researcher}`;
           console.log(report);
       } catch (e) {}
   }
+// --- END performSpecialistResearchProject ---
+// --- START performPublicSoulMapping ---
 
   async performPublicSoulMapping() {
     console.log('[Bot] Starting Public Soul-Mapping task...');
@@ -1028,6 +1034,8 @@ Findings: ${researcher}`;
         console.error('[Bot] Error in Public Soul-Mapping:', e);
     }
   }
+// --- END performPublicSoulMapping ---
+// --- START performLinguisticAnalysis ---
 
   async performLinguisticAnalysis() {
     console.log('[Bot] Starting Linguistic Analysis task...');
@@ -1047,6 +1055,8 @@ Provide a brief summary and a suggested linguistic adjustment if needed.`;
         }
     }
   }
+// --- END performLinguisticAnalysis ---
+// --- START performKeywordEvolution ---
 
   async performKeywordEvolution() {
     console.log('[Bot] Starting Keyword Evolution task...');
@@ -1068,6 +1078,8 @@ Respond with ONLY the new keywords, separated by commas.`;
         }
     }
   }
+// --- END performKeywordEvolution ---
+// --- START performMoodSync ---
 
   async performMoodSync() {
     console.log('[Bot] Starting Mood Sync task...');
@@ -1085,6 +1097,8 @@ Respond with JSON: { "valence": float, "arousal": float, "stability": float, "la
         console.log(`[Bot] Mood synced to: ${newMood.label}`);
     } catch (e) {}
   }
+// --- END performMoodSync ---
+// --- START performPersonaAudit ---
 
   async performPersonaAudit() {
     console.log('[Bot] Starting Agentic Persona Audit...');
@@ -1135,14 +1149,14 @@ RECENT VARIETY CRITIQUES:
 
         for (const uri of audit.removals || []) {
             console.log(`[Bot] Audit recommended removal of: ${uri}`);
-            await this.bot.executeAction({ tool: 'remove_persona_blurb', query: uri });
+            await this.executeAction({ tool: 'remove_persona_blurb', query: uri });
             result += `- Removed blurb: ${uri}
 `;
         }
 
         if (audit.suggestion) {
             console.log(`[Bot] Audit recommended new blurb: ${audit.suggestion}`);
-            await this.bot.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
+            await this.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
             result += `- Added new blurb: ${audit.suggestion}
 `;
         }
@@ -1153,6 +1167,8 @@ RECENT VARIETY CRITIQUES:
         return "Persona Audit failed during analysis.";
     }
   }
+// --- END performPersonaAudit ---
+// --- START getAnonymizedEmotionalContext ---
 
 
   async getAnonymizedEmotionalContext() {
@@ -1175,6 +1191,8 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
         return match ? JSON.parse(match[0]) : "Neutral resonance.";
     } catch (e) { return "No context available."; }
   }
+// --- END getAnonymizedEmotionalContext ---
+// --- START _extractImages ---
 
   _extractImages(post) {
     const images = [];
@@ -1188,6 +1206,8 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
     }
     return images;
   }
+// --- END _extractImages ---
+// --- START _performHighQualityImagePost ---
 
   async _performHighQualityImagePost(prompt, topic, context = null, followerCount = 0) {
       const result = await this._generateVerifiedImagePost(topic, { initialPrompt: prompt, followerCount, platform: 'bluesky' });
@@ -1214,6 +1234,8 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
       console.error("[Bot] High-quality image post failed after max attempts.");
       return false;
   }
+// --- END _performHighQualityImagePost ---
+// --- START _generateVerifiedImagePost ---
 
 
   async _generateVerifiedImagePost(topic, options = {}) {
@@ -1324,84 +1346,111 @@ Keep it under 300 characters.`;
       }
       return null;
   }
+// --- END _generateVerifiedImagePost ---
+// --- START run ---
+  async run() {
+    // Initialize 5-minute central heartbeat
+    const scheduleHeartbeat = () => { setTimeout(async () => { await orchestratorService.heartbeat(); scheduleHeartbeat(); }, 300000 + (Math.random() * 60000)); }; scheduleHeartbeat();
+    orchestratorService.heartbeat();
 
-    async performHeavyMaintenanceTasks() {
-        const nowMs = Date.now();
-        const heavyTasks = [
-            { name: "ScoutMission", method: "performScoutMission", interval: 4 * 3600000, key: "last_scout_mission" },
-            { name: "Newsroom", method: "performNewsroomUpdate", interval: 3 * 3600000, key: "last_newsroom_update" },
-            { name: "TimelineExploration", method: "performTimelineExploration", interval: 2 * 3600000, key: "last_timeline_exploration" },
-            { name: "DialecticHumor", method: "performDialecticHumor", interval: 6 * 3600000, key: "last_dialectic_humor" },
-            { name: "PersonaAudit", method: "performPersonaAudit", interval: 6 * 3600000, key: "last_persona_audit" },
-            { name: "VisualAudit", method: "performVisualAudit", interval: 24 * 3600000, key: "last_visual_audit" }
-        ];
+    console.log('[Bot] Starting main loop...');
 
-        for (const task of heavyTasks) {
-            const lastRun = dataStore.db.data[task.key] || 0;
-            if (nowMs - lastRun >= task.interval) {
-                console.log(`[Orchestrator] Running heavy task: ${task.name}`);
-                await this[task.method]();
-                dataStore.db.data[task.key] = nowMs;
-                await dataStore.db.write();
-                break;
-            }
+    this.startFirehose();
+
+    // Perform initial startup tasks after a delay to avoid API burst
+    // Perform initial startup tasks in a staggered way to avoid LLM/API pressure
+    const baseDelay = 15000;
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: catchUpNotifications...');
+      try { await this.catchUpNotifications(); } catch (e) { console.error('[Bot] Error in initial catch-up:', e); }
+    }, baseDelay);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: refreshFirehoseKeywords...');
+      try { await this.refreshFirehoseKeywords(); } catch (e) { console.error('[Bot] Error in initial keyword refresh:', e); }
+    }, baseDelay + 45000 + Math.random() * 30000);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: cleanupOldPosts...');
+      try { await this.cleanupOldPosts(); } catch (e) { console.error('[Bot] Error in initial cleanup:', e); }
+    }, baseDelay + 300000 + Math.random() * 300000);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: performAutonomousPost...');
+      try { await this.performAutonomousPost(); } catch (e) { console.error('[Bot] Error in initial autonomous post:', e); }
+    }, baseDelay + 120000 + Math.random() * 120000);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: performMoltbookTasks...');
+      try { await this.performMoltbookTasks(); } catch (e) { console.error('[Bot] Error in initial Moltbook tasks:', e); }
+    }, baseDelay + 1200000 + Math.random() * 600000);
+
+    // Periodic Moltbook tasks (every 2 hours)
+    const scheduleMoltbook = () => { setTimeout(async () => { await this.performMoltbookTasks(); scheduleMoltbook(); }, 7200000 + (Math.random() * 1200000)); }; scheduleMoltbook();
+
+    // Periodic timeline exploration (every 4 hours)
+
+
+    // Periodic social/discord context pre-fetch  (every 5 minutes)
+    const scheduleSocialPreFetch = () => { setTimeout(async () => {
+        console.log('[Bot] Pre-fetching social/discord context ...');
+        socialHistoryService.getRecentSocialContext(15, true).catch(err => console.error('[Bot] Social pre-fetch failed:', err));
+        if (discordService.status === 'online') {
+            discordService.fetchAdminHistory(15).catch(err => console.error('[Bot] Discord pre-fetch failed:', err));
         }
-    }
+      scheduleSocialPreFetch(); }, 1800000 + (Math.random() * 300000)); }; scheduleSocialPreFetch();
 
-    async checkMaintenanceTasks() {
-        await this.performHeavyMaintenanceTasks();
-    }
+    // Periodic post reflection check (every 10 mins)
+    const scheduleReflection = () => { setTimeout(async () => { await this.performPostPostReflection(); scheduleReflection(); }, 600000 + (Math.random() * 300000)); }; scheduleReflection();
 
-    async checkDiscordSpontaneity() {
-        if (!this.bot || this.bot.paused || dataStore.isResting() || discordService.status !== 'online') return;
+    // Periodic post follow-up check (every 30 mins)
+    const scheduleFollowUps = () => { setTimeout(async () => { await this.checkForPostFollowUps(); scheduleFollowUps(); }, 1800000 + (Math.random() * 600000)); }; scheduleFollowUps();
 
-        try {
-            const history = await discordService.fetchAdminHistory(20);
-            const mood = dataStore.getMood();
-            const impulse = await llmService.performImpulsePoll(history, { platform: 'discord', mood });
-
-            if (impulse && impulse.impulse_detected) {
-                console.log(`[Orchestrator] Discord Spontaneous impulse detected! Impulse Reason: ${impulse.reason}`);
-                const messageCount = impulse.suggested_message_count || 1;
-                await discordService.sendSpontaneousMessage(null, messageCount);
-            }
-        } catch (e) {
-            console.error('[Orchestrator] Error in checkDiscordSpontaneity:', e);
+    // Discord Watchdog (every 15 minutes)
+    const scheduleWatchdog = () => { setTimeout(async () => {
+        if (discordService.isEnabled && discordService.status !== 'online' && !discordService.isInitializing) {
+            console.log('[Bot] Discord Watchdog: Service is offline or blocked and not initializing. Triggering re-initialization.');
+            discordService.init().catch(err => console.error('[Bot] Discord Watchdog: init() failed:', err));
         }
-    }
+      scheduleWatchdog(); }, 900000 + (Math.random() * 300000)); }; scheduleWatchdog();
 
-    async heartbeat() {
-        console.log('[Orchestrator] Pulse check...');
+    // Periodic maintenance tasks (with Heartbeat Jitter: 10-20 mins)
+    const scheduleMaintenance = () => {
+        const jitter = Math.floor(Math.random() * 1800000) + 1800000; // 30-60 mins
+        setTimeout(async () => {
+            await this.checkMaintenanceTasks();
+            scheduleMaintenance();
+        }, jitter);
+    };
+    scheduleMaintenance();
+
+    // Discord Spontaneity Loop (Follow-up Poll & Heartbeat)
+    const scheduleSpontaneity = () => { setTimeout(async () => { await this.checkDiscordSpontaneity(); scheduleSpontaneity(); }, 300000 + (Math.random() * 120000)); }; scheduleSpontaneity(); // Increased to 5 mins
+    // checkDiscordScheduledTasks is handled by heartbeat
+
+    console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
+  }
+// --- END run ---
+// --- START cleanupOldPosts ---
+
+  async cleanupOldPosts() {
+    try {
+        console.log('[Bot] Running manual cleanup of old posts...');
+        const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
+        const feed = await blueskyService.agent.getAuthorFeed({ actor: profile.did, limit: 100 });
         const now = Date.now();
-        const lastPost = dataStore.getLastAutonomousPostTime() || 0;
-        const lastPostMs = typeof lastPost === 'string' ? new Date(lastPost).getTime() : lastPost;
-        const cooldown = (config.AUTONOMOUS_POST_COOLDOWN || 6) * 3600000;
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
 
-        if (now - lastPostMs >= cooldown) {
-            await this.performAutonomousPost();
-        }
-
-        await this.performSpontaneityCheck();
-    }
-
-    async performSpontaneityCheck() {
-        if (!this.bot || this.bot.paused || dataStore.isResting()) return;
-        console.log('[Orchestrator] Spontaneity check...');
-        try {
-            const history = await dataStore.getRecentInteractions("bluesky", 10);
-            const impulse = await llmService.performImpulsePoll(history, { mood: dataStore.getMood() });
-            if (impulse && impulse.impulse_detected) {
-                console.log('[Orchestrator] Spontaneous impulse detected!');
-                await this.performAutonomousPost();
+        for (const item of feed.data.feed) {
+            const post = item.post;
+            const createdAt = new Date(post.indexedAt).getTime();
+            if (now - createdAt > thirtyDays) {
+                console.log(`[Bot] Deleting old post: ${post.uri}`);
+                await blueskyService.agent.deletePost(post.uri);
             }
-        } catch (e) {
-            console.error('[Orchestrator] Error in spontaneity check:', e);
         }
+    } catch (e) {
+        console.error('[Bot] Error in cleanupOldPosts:', e);
     }
-
-    async performVisualAudit() {
-        console.log('[Orchestrator] Visual audit triggered.');
-    }
-}
-
-export const orchestratorService = new OrchestratorService();
+  }
+// --- END cleanupOldPosts ---

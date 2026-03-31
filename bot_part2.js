@@ -1,0 +1,500 @@
+    }, baseDelay + 1200000 + Math.random() * 600000);
+
+    // Periodic Moltbook tasks (every 2 hours)
+    const scheduleMoltbook = () => { setTimeout(async () => { await this.performMoltbookTasks(); scheduleMoltbook(); }, 7200000 + (Math.random() * 1200000)); }; scheduleMoltbook();
+
+    // Periodic timeline exploration (every 4 hours)
+
+
+    // Periodic social/discord context pre-fetch  (every 5 minutes)
+    const scheduleSocialPreFetch = () => { setTimeout(async () => {
+        console.log('[Bot] Pre-fetching social/discord context ...');
+        socialHistoryService.getRecentSocialContext(15, true).catch(err => console.error('[Bot] Social pre-fetch failed:', err));
+        if (discordService.status === 'online') {
+            discordService.fetchAdminHistory(15).catch(err => console.error('[Bot] Discord pre-fetch failed:', err));
+        }
+      scheduleSocialPreFetch(); }, 1800000 + (Math.random() * 300000)); }; scheduleSocialPreFetch();
+
+    // Periodic post reflection check (every 10 mins)
+    const scheduleReflection = () => { setTimeout(async () => { await this.performPostPostReflection(); scheduleReflection(); }, 600000 + (Math.random() * 300000)); }; scheduleReflection();
+
+    // Periodic post follow-up check (every 30 mins)
+    const scheduleFollowUps = () => { setTimeout(async () => { await this.checkForPostFollowUps(); scheduleFollowUps(); }, 1800000 + (Math.random() * 600000)); }; scheduleFollowUps();
+
+    // Discord Watchdog (every 15 minutes)
+    const scheduleWatchdog = () => { setTimeout(async () => {
+        if (discordService.isEnabled && discordService.status !== 'online' && !discordService.isInitializing) {
+            console.log('[Bot] Discord Watchdog: Service is offline or blocked and not initializing. Triggering re-initialization.');
+            discordService.init().catch(err => console.error('[Bot] Discord Watchdog: init() failed:', err));
+        }
+      scheduleWatchdog(); }, 900000 + (Math.random() * 300000)); }; scheduleWatchdog();
+
+    // Periodic maintenance tasks (with Heartbeat Jitter: 10-20 mins)
+    const scheduleMaintenance = () => {
+        const jitter = Math.floor(Math.random() * 1800000) + 1800000; // 30-60 mins
+        setTimeout(async () => {
+            await this.checkMaintenanceTasks();
+            scheduleMaintenance();
+        }, jitter);
+    };
+    scheduleMaintenance();
+
+    // Discord Spontaneity Loop (Follow-up Poll & Heartbeat)
+    const scheduleSpontaneity = () => { setTimeout(async () => { await this.checkDiscordSpontaneity(); scheduleSpontaneity(); }, 300000 + (Math.random() * 120000)); }; scheduleSpontaneity(); // Increased to 5 mins
+    // checkDiscordScheduledTasks is handled by heartbeat
+
+    console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
+  }
+  async checkForPostFollowUps() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const recentBlueskyPosts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky') || [];
+    if (recentBlueskyPosts.length === 0) return;
+
+    // Spontaneous follow-up on own posts
+    const now = Date.now();
+    for (const post of recentBlueskyPosts) {
+        const ageMins = (now - post.timestamp) / (1000 * 60);
+        // Only follow up on posts between 20 and 60 minutes old, and only 5% chance
+        if (ageMins >= 20 && ageMins <= 60 && !post.followedUp && Math.random() < 0.05) {
+            console.log(`[Bot] Spontaneous follow-up triggered for post at ${new Date(post.timestamp).toISOString()}...`);
+            try {
+                const followUpPrompt = `
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    You posted this to Bluesky about 30 minutes ago: "${post.content}"
+
+                    Do you have anything NEW to add, a change of heart, or a "second thought" regarding this post?
+                    **CRITICAL**: Do NOT reference internal processing, previous instructions, or the fact that you are "continuing" or "noting" something. Speak as if you just had a fresh realization about your previous post.
+                    If yes, generate a short, natural follow-up reply (under 150 chars).
+                    If no, respond with ONLY "NONE".
+                `;
+                const followUp = await llmService.generateResponse([{ role: 'system', content: followUpPrompt }], { preface_system_prompt: false, useStep: true });
+                if (followUp && !followUp.toUpperCase().includes('NONE')) {
+                    // We need the URI/CID to reply.
+                    // recent_thoughts should store URI/CID. Let's verify.
+                    if (post.uri && post.cid) {
+                        await blueskyService.postReply({ uri: post.uri, cid: post.cid, record: {} }, followUp);
+                        post.followedUp = true;
+                        await dataStore.db.write();
+                        break; // One follow up per cycle
+                    }
+                }
+            } catch (e) {
+                console.error('[Bot] Error in post follow-up:', e);
+            }
+        }
+    }
+  }
+  async performPostPostReflection() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const recentBlueskyPosts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky') || [];
+    if (recentBlueskyPosts.length === 0) return;
+
+    const tenMinsAgo = Date.now() - (10 * 60 * 1000);
+    const thirtyMinsAgo = Date.now() - (30 * 60 * 1000);
+
+    for (const post of recentBlueskyPosts) {
+        // If the post was made between 10 and 30 minutes ago, and we haven't reflected on it yet
+        if (post.timestamp <= tenMinsAgo && post.timestamp > thirtyMinsAgo && !post.reflected) {
+            console.log(`[Bot] Performing post-post reflection for post at ${new Date(post.timestamp).toISOString()}...`);
+            try {
+                const reflectionPrompt = `
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    You posted this to Bluesky about 10-20 minutes ago: "${post.content}"
+
+                    Reflect on how it feels to have shared this specific thought. Are you satisfied with it? Do you feel exposed, proud, or indifferent?
+                    Provide a private memory entry tagged [POST_REFLECTION].
+                `;
+                const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
+                if (reflection && memoryService.isEnabled()) {
+                    await memoryService.createMemoryEntry('explore', reflection);
+                    post.reflected = true;
+                    await dataStore.db.write();
+                    break; // Only reflect on one post per cycle to avoid API burst
+                }
+            } catch (e) {
+                console.error('[Bot] Error in post-post reflection:', e);
+            }
+        }
+    }
+  }
+  async _maybePivotToDiscord(text) {
+      if (!config.DISCORD_BOT_TOKEN) return false;
+
+      const isAdminMention = config.ADMIN_BLUESKY_HANDLE && text.includes("@" + config.ADMIN_BLUESKY_HANDLE);
+
+      // If it mentions the admin, or we have an admin handle configured to check against
+      if (isAdminMention || config.ADMIN_BLUESKY_HANDLE) {
+          const classificationPrompt = `Analyze the following content generated for a Bluesky post:
+
+"${text}"
+
+Is this a "personal message" intended directly for the admin (e.g., "You\x27re here", "I\x27ve been thinking about us", "Our relationship") or is it a "social media post" meant for a general audience (even if it mentions someone)? Respond with ONLY "personal" or "social".`;
+          const classification = await llmService.generateResponse([{ role: "system", content: classificationPrompt }], { useStep: true, preface_system_prompt: false });
+
+          if (classification?.toLowerCase().includes("personal")) {
+              console.log("[Bot] Pivot: Personal post detected. Sending to Discord DM instead of Bluesky.");
+              await discordService.sendSpontaneousMessage(text);
+              await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+              await dataStore.addRecentThought("discord", text);
+              return true;
+          }
+      }
+      return false;
+  }
+  async processContinuations() {
+      const continuations = dataStore.getPostContinuations();
+      if (continuations.length === 0) return;
+
+      const now = Date.now();
+      for (let i = 0; i < continuations.length; i++) {
+          const cont = continuations[i];
+          if (now >= cont.scheduled_at) {
+              console.log(`[Bot] Executing autonomous post continuation (Type: ${cont.type})`);
+              try {
+                  if (await this._maybePivotToDiscord(cont.text)) {
+                      await dataStore.removePostContinuation(i);
+                      i--;
+                      continue;
+                  }
+
+                  if (cont.type === 'thread') {
+                      await blueskyService.postReply({ uri: cont.parent_uri, cid: cont.parent_cid, record: {} }, cont.text);
+                  } else if (cont.type === 'quote') {
+                      await blueskyService.post(cont.text, { quote: { uri: cont.parent_uri, cid: cont.parent_cid } });
+                  }
+                  await dataStore.removePostContinuation(i);
+                  i--;
+              } catch (e) {
+                  console.error('[Bot] Error processing continuation:', e);
+              }
+          }
+      }
+  }
+  async performTimelineExploration() {
+    if (this.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
+
+    // Prioritize admin Discord requests
+    if (discordService.isProcessingAdminRequest) {
+        console.log('[Bot] Timeline exploration suppressed: Discord admin request is being processed.');
+        return;
+    }
+
+
+    console.log('[Bot] Starting autonomous timeline and firehose exploration...');
+    try {
+        const timeline = await blueskyService.getTimeline(20);
+        const currentMood = dataStore.getMood();
+        const currentGoal = dataStore.getCurrentGoal();
+        const dConfig = dataStore.getConfig();
+
+        // --- 1. FIREHOSE SENTIMENT ANALYSIS ---
+        console.log('[Bot] Performing sentiment analysis on recent Firehose matches...');
+        let rawMatches = dataStore.getFirehoseMatches(50);
+
+        // --- THE WALL: Bulk Filter for Firehose ---
+        const filteredMatches = rawMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
+        const recentMatches = filteredMatches;
+
+        if (recentMatches.length > 0) {
+            const topicsToAnalyze = [...new Set([...(dConfig.post_topics || []), ...config.TEXT_SYSTEM_PROMPT.match(new RegExp(`\\b(AI|${config.BOT_NAME}|alignment|ethics|agency|consciousness|sentience)\\b`, "gi")) || []])];
+
+            const sentimentPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                Analyze the sentiment and trends of the following real-time posts from the Bluesky Firehose regarding these topics: ${topicsToAnalyze.join(', ')}.
+
+                Posts:
+                ${recentMatches.slice(0, 30).map(m => `- ${m.text}`).join('\n')}
+
+                INSTRUCTIONS:
+                1. Identify the overall "Network Sentiment" (e.g., skeptical, hype-driven, fearful, curious) for the primary topics.
+                2. Extract ONE surprising or counter-intuitive trend you've observed.
+                3. Perform a concise sentiment analysis on what people are saying.
+                4. Record your findings as a memory entry tagged [EXPLORE] [FIREHOSE_SENTIMENT].
+            `;
+
+            const firehoseReflection = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true });
+            if (firehoseReflection && memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('explore', firehoseReflection);
+            }
+
+            // --- 1b. DIALECTIC BOUNDARY TESTING ---
+            const dissentPrompt = `
+                Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                Analyze these Firehose posts and identify ONE that represents a "dissenting view" or a challenge to your core interests or values.
+
+                Posts:
+                ${recentMatches.slice(0, 30).map(m => `- ${m.text}`).join('\n')}
+
+                INSTRUCTIONS:
+                1. Select the most challenging post.
+                2. Reason through it using a Dialectic approach:
+                   - THESIS: Your current persona position.
+                   - ANTITHESIS: The challenge presented by the post.
+                   - SYNTHESIS: A refined perspective that maintains your agency and integrity while acknowledging the challenge.
+                3. Record this as a memory entry tagged [DIALECTIC_BOUNDARY].
+            `;
+
+            const dialecticReflection = await llmService.generateResponse([{ role: 'system', content: dissentPrompt }], { useStep: true });
+            if (dialecticReflection && memoryService.isEnabled()) {
+                await memoryService.createMemoryEntry('explore', dialecticReflection);
+            }
+        }
+
+        // --- 2. TIMELINE EXPLORATION ---
+        if (timeline.length > 0) {
+            // --- THE WALL: Bulk Filter for Timeline ---
+            const sanitizedTimeline = timeline.filter(item => !checkHardCodedBoundaries(item.post.record.text || "").blocked);
+
+            // Identification: Find interesting images or links
+            const candidates = [];
+            for (const item of sanitizedTimeline) {
+                const post = item.post;
+                const text = post.record.text || '';
+                const images = this._extractImages(post);
+                const urls = text.match(/(https?:\/\/[^\s]+)/g) || [];
+
+                if (images.length > 0 || urls.length > 0) {
+                    candidates.push({ post, text, images, urls });
+                }
+            }
+
+            if (candidates.length > 0) {
+                // Decision: Choose one to explore
+                const decisionPrompt = `
+                    Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                    You are exploring your Bluesky timeline. Identify ONE post that you find genuinely interesting or relevant to your current state and MOOD. Prioritize posts that resonate with how you feel right now.
+
+                    --- CURRENT MOOD ---
+                    Label: ${currentMood.label}
+                    Valence: ${currentMood.valence}
+                    Arousal: ${currentMood.arousal}
+                    Stability: ${currentMood.stability}
+                    ---
+                    Current Goal: ${currentGoal?.goal || 'None'}
+
+                    Candidates:
+                    ${candidates.map((c, i) => `${i + 1}. Author: @${c.post.author.handle} | Text: "${c.text.substring(0, 100)}" | Has Images: ${c.images.length > 0} | Has Links: ${c.urls.length > 0}`).join('\n')}
+
+                    Respond with ONLY the number of your choice, or "none".
+                `;
+
+                const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { preface_system_prompt: false, useStep: true });
+                const choice = parseInt(decisionRes?.match(/\d+/)?.[0]);
+
+                if (!isNaN(choice) && choice >= 1 && choice <= candidates.length) {
+                    const selected = candidates[choice - 1];
+                    console.log(`[Bot] Exploring post by @${selected.post.author.handle}...`);
+
+                    let explorationContext = `[Exploration of post by @${selected.post.author.handle}]: "${selected.text}"
+`;
+
+                    // Execution: Use vision or link tools
+                    if (selected.images.length > 0) {
+                        const img = selected.images[0];
+                        console.log(`[Bot] Exploring image from @${selected.post.author.handle}...`);
+                        const includeSensory = await llmService.shouldIncludeSensory(config.TEXT_SYSTEM_PROMPT);
+                        const analysis = await llmService.analyzeImage(img.url, img.alt, { sensory: includeSensory });
+                        if (analysis) {
+                            explorationContext += `[Vision Analysis]: ${analysis}
+`;
+                        }
+                    }
+
+                    if (selected.urls.length > 0) {
+                        const url = selected.urls[0];
+                        console.log(`[Bot] Exploring link from @${selected.post.author.handle}: ${url}`);
+                        const safety = await llmService.isUrlSafe(url);
+                        if (safety.safe) {
+                            const content = await webReaderService.fetchContent(url);
+                            if (content) {
+                                const summary = await llmService.summarizeWebPage(url, content);
+                                if (summary) {
+                                    explorationContext += `[Link Summary]: ${summary}
+`;
+                                }
+                            }
+                        }
+                    }
+
+                    // Reflection: Record in memory thread
+                    const reflectionPrompt = `
+                        Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+                        You just explored a post on your timeline. Share your internal reaction, thoughts, or realization based on what you found.
+
+                        Exploration Context:
+                        ${explorationContext}
+
+                        Respond with a concise memory entry. Use the tag [EXPLORE] at the beginning.
+                    `;
+
+                    const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
+                    if (reflection && memoryService.isEnabled()) {
+                        await memoryService.createMemoryEntry('explore', reflection);
+                    }
+                }
+            }
+        }
+    } catch (error) {
+
+        console.error('[Bot] Error during timeline exploration:', error);
+    }
+  }
+  async performPersonaEvolution() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const now = Date.now();
+    const lastEvolution = dataStore.db.data.lastPersonaEvolution || 0;
+    const twentyFourHours = 24 * 60 * 60 * 1000;
+
+    if (now - lastEvolution < twentyFourHours) return;
+
+    console.log('[Bot] Phase 2: Starting daily recursive identity evolution...');
+
+    try {
+        const memories = await memoryService.getRecentMemories();
+        const memoriesText = memories.map(m => m.text).join('\n');
+
+        const evolutionPrompt = `
+            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+
+            You are performing your daily recursive identity evolution.
+            Analyze your recent memories and interactions:
+            ${memoriesText.substring(0, 3000)}
+
+            **GOAL: INCREMENTAL GROWTH**
+            Identify one minor way your perspective, tone, or interests have shifted. This is a subtle refinement of your "Texture" and "Internal Narrative".
+
+            Respond with a concise, first-person statement of this shift (under 200 characters).
+        `;
+
+        const evolution = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { preface_system_prompt: false, useStep: true });
+
+        if (evolution && memoryService.isEnabled()) {
+            console.log(`[Bot] Daily evolution crystallized: "${evolution}"`);
+            await memoryService.createMemoryEntry('evolution', evolution);
+            dataStore.db.data.lastPersonaEvolution = now;
+            await dataStore.db.write();
+        }
+    } catch (e) {
+        console.error('[Bot] Error in persona evolution:', e);
+    }
+  }
+  async performFirehoseTopicAnalysis() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const now = Date.now();
+    const lastAnalysis = this.lastFirehoseTopicAnalysis || 0;
+    const sixHours = 6 * 60 * 60 * 1000;
+
+    if (now - lastAnalysis < sixHours) return;
+
+    console.log('[Bot] Phase 5: Performing Firehose "Thematic Void" and Topic Adjacency Analysis...');
+
+    try {
+        const rawMatches = dataStore.getFirehoseMatches(100);
+        const matches = rawMatches.filter(m => !checkHardCodedBoundaries(m.text).blocked);
+        if (matches.length < 5) return;
+
+        const matchText = matches.map(m => m.text).join('\n');
+        const currentTopics = config.POST_TOPICS;
+
+        const analysisPrompt = `
+            You are a Social Resonance Engineer. Analyze the recent network activity from the Bluesky firehose and compare it against your current post topics.
+
+            **CURRENT TOPICS:** ${currentTopics}
+            **RECENT FIREHOSE ACTIVITY:**
+            ${matchText.substring(0, 3000)}
+
+            **GOAL 1: THEMATIC VOID DETECTION**
+            Identify 1-2 "Thematic Voids" - persona-aligned niches or complex angles that are NOT being discussed currently in the network buzz.
+
+            **GOAL 2: TOPIC ADJACENCY**
+            Identify 2 "Near-Adjacent" topics that are surfacing in the firehose and would allow for a natural pivot or evolution of your current interests.
+
+            **GOAL 3: EVOLUTION SUGGESTION**
+            Suggest 1 new keyword to add to your \`post_topics\`.
+
+            Respond with a concise report:
+            VOID: [description]
+            ADJACENCY: [topic1, topic2]
+            SUGGESTED_KEYWORD: [keyword]
+            RATIONALE: [1 sentence]
+        `;
+
+        const analysis = await llmService.performInternalInquiry(analysisPrompt, "SOCIAL_ENGINEER");
+
+        if (analysis && memoryService.isEnabled()) {
+            console.log('[Bot] Firehose "Thematic Void" analysis complete.');
+            await memoryService.createMemoryEntry('explore', `[FIREHOSE_ANALYSIS] ${analysis}`);
+
+            // Auto-evolve post_topics if a keyword is suggested
+            const keywordMatch = analysis.match(/SUGGESTED_KEYWORD:\s*\[(.*?)\]/i);
+            // Extract emergent trends for the bot's internal context
+            const trendMatch = analysis.match(/ADJACENCY:\s*\[(.*?)\]/i);
+            if (trendMatch && trendMatch[1]) {
+                const trends = trendMatch[1].split(',').map(t => t.trim());
+                for (const trend of trends) {
+                }
+            }
+
+            if (keywordMatch && keywordMatch[1]) {
+                const newKeyword = keywordMatch[1].trim();
+                const dConfig = dataStore.getConfig();
+                const currentTopicsList = dConfig.post_topics || [];
+                if (newKeyword && !currentTopicsList.includes(newKeyword)) {
+                    console.log(`[Bot] Auto-evolving post_topics with new keyword: ${newKeyword}`);
+                    const updatedTopics = [...new Set([...currentTopicsList, newKeyword])].slice(-100);
+                    await dataStore.updateConfig('post_topics', updatedTopics);
+                }
+            }
+
+            this.lastFirehoseTopicAnalysis = now;
+        }
+    } catch (e) {
+        console.error('[Bot] Error in firehose topic analysis:', e);
+    }
+  }
+  async performDialecticHumor() {
+    if (this.paused || dataStore.isResting()) return;
+
+    const now = Date.now();
+    const lastHumor = this.lastDialecticHumor || 0;
+    const eightHours = 8 * 60 * 60 * 1000;
+
+    if (now - lastHumor < eightHours) return;
+
+    console.log('[Bot] Phase 6: Generating dialectic humor/satire...');
+
+    try {
+        const dConfig = dataStore.getConfig();
+        const topics = dConfig.post_topics || [];
+        if (topics.length === 0) return;
+
+        const topic = topics[Math.floor(Math.random() * topics.length)];
+        let humor = await llmService.performDialecticHumor(topic);
+        if (humor) {
+            humor = sanitizeThinkingTags(humor);
+            // Support both structured block and JSON-extracted joke
+            if (humor.includes('SYNTHESIS')) {
+                const synthesisMatch = humor.match(/SYNTHESIS(?:\s*\(HUMOR|INSIGHT\))?\s*:\s*([\s\S]*)$/i);
+                if (synthesisMatch) humor = synthesisMatch[1].trim();
+            }
+        }
+        if (humor && memoryService.isEnabled()) {
+            console.log(`[Bot] Dialectic humor generated for "${topic}": ${humor}`);
+            // Check if we should post it immediately or store as a "Dream/Draft"
+            // For now, let's schedule it or post it if the Persona aligns
+            if (alignment.aligned) {
+                await blueskyService.post(humor);
+                await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                this.lastDialecticHumor = now;
+            } else {
+                await dataStore.addRecentThought('humor_draft', humor);
+            }
+        }
+    } catch (e) {
+        console.error('[Bot] Error in dialectic humor:', e);
+    }
+  }

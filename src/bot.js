@@ -98,15 +98,77 @@ export class Bot {
 
       await orchestratorService.start();
 
-      console.log('[Bot] Running initial startup task: performAutonomousPost...');
-      try { await orchestratorService.performAutonomousPost(); } catch (e) { console.error('[Bot] Error in initial autonomous post:', e); }
-
-      this.startFirehose();
-      this.startNotificationPoll();
-
     } catch (error) {
       console.error('[Bot] Initialization error:', error);
     }
+  }
+
+  async run() {
+    console.log('[Bot] Starting main loop...');
+    this.startFirehose();
+
+    const scheduleHeartbeat = () => {
+        setTimeout(async () => {
+            await orchestratorService.heartbeat();
+            scheduleHeartbeat();
+        }, 300000 + (Math.random() * 60000));
+    };
+    scheduleHeartbeat();
+    orchestratorService.heartbeat();
+
+    const baseDelay = 15000;
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: catchUpNotifications...');
+      try { await this.catchUpNotifications(); } catch (e) { console.error('[Bot] Error in initial catch-up:', e); }
+    }, baseDelay);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: cleanupOldPosts...');
+      try { await this.cleanupOldPosts(); } catch (e) { console.error('[Bot] Error in initial cleanup:', e); }
+    }, baseDelay + 300000);
+
+    setTimeout(async () => {
+      console.log('[Bot] Running initial startup task: performAutonomousPost...');
+      try { await this.performAutonomousPost(); } catch (e) { console.error('[Bot] Error in initial autonomous post:', e); }
+    }, baseDelay + 60000);
+
+    const scheduleReflection = () => { setTimeout(async () => { await orchestratorService.performPostPostReflection(); scheduleReflection(); }, 600000 + (Math.random() * 300000)); }; scheduleReflection();
+    const scheduleSpontaneity = () => { setTimeout(async () => { await orchestratorService.checkDiscordSpontaneity(); scheduleSpontaneity(); }, 300000 + (Math.random() * 120000)); }; scheduleSpontaneity();
+
+    const scheduleMaintenance = () => {
+        setTimeout(async () => {
+            await orchestratorService.checkMaintenanceTasks();
+            scheduleMaintenance();
+        }, 1800000 + (Math.random() * 1800000));
+    };
+    scheduleMaintenance();
+
+    this.startNotificationPoll();
+    console.log('[Bot] Startup complete. Listening for real-time events via Firehose.');
+  }
+
+  // --- Proxy Methods ---
+  async performAutonomousPost() { return await orchestratorService.performAutonomousPost(); }
+  async performTimelineExploration() { return await orchestratorService.performTimelineExploration(); }
+  async performMoltbookTasks() { return await orchestratorService.performMoltbookTasks(); }
+
+  async cleanupOldPosts() {
+    try {
+        console.log('[Bot] Running cleanup of old posts...');
+        const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
+        const feed = await blueskyService.agent.getAuthorFeed({ actor: profile.did, limit: 50 });
+        const now = Date.now();
+        const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+
+        for (const item of feed.data.feed) {
+            const post = item.post;
+            const createdAt = new Date(post.indexedAt).getTime();
+            if (now - createdAt > thirtyDays) {
+                console.log(`[Bot] Deleting old post: ${post.uri}`);
+                await blueskyService.agent.deletePost(post.uri);
+            }
+        }
+    } catch (e) { console.error('[Bot] Error in cleanupOldPosts:', e); }
   }
 
   startNotificationPoll() {
@@ -121,12 +183,9 @@ export class Bot {
   }
 
   startFirehose() {
-    if (this.firehoseProcess) {
-      console.log('[Bot] Firehose already running.');
-      return;
-    }
+    if (this.firehoseProcess) return;
     console.log('[Bot] Starting firehose process...');
-    this.firehoseProcess = spawn('python3', ['src/firehose.py']);
+    this.firehoseProcess = spawn('python3', ['firehose_monitor.py']);
     this.firehoseProcess.stdout.on('data', (data) => {
       const line = data.toString().trim();
       if (line) {
@@ -135,9 +194,6 @@ export class Bot {
               this.handleFirehoseEvent(event);
           } catch (e) {}
       }
-    });
-    this.firehoseProcess.stderr.on('data', (data) => {
-      console.error(`[Firehose Error] ${data}`);
     });
     this.firehoseProcess.on('close', (code) => {
       console.log(`[Bot] Firehose process exited with code ${code}. Restarting in 10s...`);
@@ -152,16 +208,11 @@ export class Bot {
         const keywords = dataStore.getFirehoseKeywords() || [];
         for (const kw of keywords) {
             if (text.toLowerCase().includes(kw.toLowerCase())) {
-                console.log(`[Firehose] Match found for keyword "${kw}": ${text.substring(0, 50)}...`);
-                await dataStore.addFirehoseMatch(kw, event);
+                await dataStore.addFirehoseMatch({ ...event, matched_keyword: kw });
                 break;
             }
         }
     }
-  }
-
-  async performAutonomousPost() {
-    return await orchestratorService.performAutonomousPost();
   }
 
   async executeAction(action, context = {}) {
@@ -203,6 +254,32 @@ export class Bot {
           await dataStore.addSessionLesson(`Tool ${action.tool} failed: ${e.message}`);
           return { success: false, error: e.message };
       }
+  }
+
+  async _handleError(error, contextInfo) {
+    console.error(`[Bot] CRITICAL ERROR in ${contextInfo}:`, error);
+
+    if (renderService.isEnabled()) {
+      try {
+        const logs = await renderService.getLogs(50);
+        const alertPrompt = `
+          You are an AI bot's diagnostic module. A critical error occurred in the bot's operation.
+          Context: ${contextInfo}
+          Error: ${error.message}
+          Recent Logs:
+          ${logs}
+          Generate a concise alert message for the admin (@${config.ADMIN_BLUESKY_HANDLE}). Summarize what happened and the likely cause. Keep it under 300 characters.
+        `;
+        const alertMsg = await llmService.generateResponse([{ role: 'system', content: alertPrompt }], { useStep: true });
+        if (alertMsg) {
+          const isRateLimit = error.message.toLowerCase().includes('rate limit') || error.message.includes('429');
+          if (discordService.status === 'online' && !isRateLimit) {
+            await discordService.sendSpontaneousMessage(`${alertMsg}`);
+          }
+          await blueskyService.post(`@${config.ADMIN_BLUESKY_HANDLE} ${alertMsg}`);
+        }
+      } catch (logError) { console.error('[Bot] Failed to generate/post error alert:', logError); }
+    }
   }
 
   async catchUpNotifications() {

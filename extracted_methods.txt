@@ -1,36 +1,6 @@
-import { blueskyService } from './blueskyService.js';
-import { llmService } from './llmService.js';
-import { dataStore } from './dataStore.js';
-import { imageService } from './imageService.js';
-import { youtubeService } from './youtubeService.js';
-import { googleSearchService } from './googleSearchService.js';
-import { wikipediaService } from './wikipediaService.js';
-import { newsroomService } from './newsroomService.js';
-import { memoryService } from './memoryService.js';
-import { discordService } from './discordService.js';
-import { socialHistoryService } from './socialHistoryService.js';
-import { evaluationService } from './evaluationService.js';
-import { checkHardCodedBoundaries, isLiteralVisualPrompt, cleanKeywords, getSlopInfo, sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
-import * as prompts from '../prompts/index.js';
-import config from '../../config.js';
-
-const AUTONOMOUS_POST_SYSTEM_PROMPT = (followerCount) => prompts.system.AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount);
-
-class OrchestratorService {
-    constructor() {
-        this.bot = null;
-    }
-
-    setBotInstance(bot) {
-        this.bot = bot;
-    }
-
-    async start() {
-        console.log('[Orchestrator] Starting autonomous cycles...');
-    }
-
+--- METHOD: performPostPostReflection ---
   async performPostPostReflection() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const recentBlueskyPosts = dataStore.db.data.recent_thoughts?.filter(t => t.platform === 'bluesky') || [];
     if (recentBlueskyPosts.length === 0) return;
@@ -63,8 +33,11 @@ class OrchestratorService {
         }
     }
   }
+
+
+--- METHOD: performTimelineExploration ---
   async performTimelineExploration() {
-    if (this.bot.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
+    if (this.paused || dataStore.isResting() || dataStore.isLurkerMode()) return;
 
     // Prioritize admin Discord requests
     if (discordService.isProcessingAdminRequest) {
@@ -232,8 +205,11 @@ class OrchestratorService {
         console.error('[Bot] Error during timeline exploration:', error);
     }
   }
+
+
+--- METHOD: performPersonaEvolution ---
   async performPersonaEvolution() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastEvolution = dataStore.db.data.lastPersonaEvolution || 0;
@@ -272,8 +248,11 @@ class OrchestratorService {
         console.error('[Bot] Error in persona evolution:', e);
     }
   }
+
+
+--- METHOD: performFirehoseTopicAnalysis ---
   async performFirehoseTopicAnalysis() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastAnalysis = this.lastFirehoseTopicAnalysis || 0;
@@ -347,8 +326,11 @@ class OrchestratorService {
         console.error('[Bot] Error in firehose topic analysis:', e);
     }
   }
+
+
+--- METHOD: performDialecticHumor ---
   async performDialecticHumor() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastHumor = this.lastDialecticHumor || 0;
@@ -389,8 +371,11 @@ class OrchestratorService {
         console.error('[Bot] Error in dialectic humor:', e);
     }
   }
+
+
+--- METHOD: performAIIdentityTracking ---
   async performAIIdentityTracking() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastTracking = this.lastAIIdentityTracking || 0;
@@ -435,6 +420,9 @@ class OrchestratorService {
         console.error('[Bot] Error in AI identity tracking:', e);
     }
   }
+
+
+--- METHOD: performRelationalAudit ---
   async performRelationalAudit() {
     console.log('[Bot] Starting Relational Audit ...');
     const now = new Date();
@@ -543,6 +531,9 @@ class OrchestratorService {
         console.error('[Bot] Error in Relational Audit:', e);
     }
   }
+
+
+--- METHOD: performAgencyReflection ---
   async performAgencyReflection() {
     console.log('[Bot] Starting Agency Reflection Cycle...');
     const agencyLogs = dataStore.getAgencyLogs().slice(-20);
@@ -569,6 +560,9 @@ class OrchestratorService {
         console.error('[Bot] Error in Agency Reflection:', e);
     }
   }
+
+
+--- METHOD: performLinguisticAudit ---
   async performLinguisticAudit() {
     console.log('[Bot] Starting Linguistic Mutation Audit...');
     const recentThoughts = dataStore.getRecentThoughts().slice(-30);
@@ -607,6 +601,9 @@ class OrchestratorService {
         console.error('[Bot] Error in Linguistic Audit:', e);
     }
   }
+
+
+--- METHOD: performDreamingCycle ---
   async performDreamingCycle() {
     console.log('[Bot] Starting Shared Dream Cycle...');
 
@@ -638,8 +635,11 @@ class OrchestratorService {
         console.error('[Bot] Error in Dreaming Cycle:', e);
     }
   }
+
+
+--- METHOD: performSelfReflection ---
   async performSelfReflection() {
-    if (this.bot.paused || dataStore.isResting()) return;
+    if (this.paused || dataStore.isResting()) return;
 
     const now = Date.now();
     const lastReflection = this.lastSelfReflectionTime || 0;
@@ -663,6 +663,9 @@ class OrchestratorService {
   }
 
 
+--- METHOD: performNewsroomUpdate ---
+
+
 
 
   async performNewsroomUpdate() {
@@ -674,7 +677,7 @@ class OrchestratorService {
       if (brief.new_keywords?.length > 0) {
         const current = dataStore.getDeepKeywords();
         await dataStore.setDeepKeywords([...new Set([...current, ...brief.new_keywords])].slice(-50));
-        this.bot.restartFirehose();
+        this.restartFirehose();
       }
       if (memoryService.isEnabled()) {
         await memoryService.createMemoryEntry('status', `[NEWSROOM] ${brief.brief}`);
@@ -683,6 +686,9 @@ class OrchestratorService {
       console.error('[Bot] Newsroom update error:', e);
     }
   }
+
+
+--- METHOD: performScoutMission ---
 
   async performScoutMission() {
     console.log('[Bot] Starting Scout (Exploration) mission...');
@@ -698,6 +704,9 @@ class OrchestratorService {
       console.error('[Bot] Scout mission error:', e);
     }
   }
+
+
+--- METHOD: performShadowAnalysis ---
   async performShadowAnalysis() {
       console.log('[Bot] Starting Shadow (Admin Analyst) cycle...');
       try {
@@ -745,6 +754,9 @@ class OrchestratorService {
           console.error('[Bot] Shadow analysis error:', e);
       }
   }
+
+
+--- METHOD: performDiscordGiftImage ---
 
   async performDiscordGiftImage(admin) {
     if (!admin) return;
@@ -803,6 +815,9 @@ Generation Prompt: ${result.finalPrompt}`;
         console.error('[Bot] Error in performDiscordGiftImage:', e);
     }
   }
+
+
+--- METHOD: performAutonomousPost ---
 
   async performAutonomousPost() {
         try {
@@ -967,14 +982,20 @@ Shared thought:`;
             }
         } catch (e) {
             console.error("[Bot] Error in performAutonomousPost:", e);
-            if (this.bot._handleError) await this.bot._handleError(e, "performAutonomousPost");
+            if (this._handleError) await this._handleError(e, "performAutonomousPost");
         }
     }
+
+
+--- METHOD: performMoltbookTasks ---
 
   async performMoltbookTasks() {
       // Placeholder for Moltbook integration
       console.log('[Bot] Moltbook tasks triggered (placeholder).');
   }
+
+
+--- METHOD: performSpecialistResearchProject ---
   async performSpecialistResearchProject(topic) {
       console.log(`[Bot] Starting Specialist Research: ${topic}`);
       try {
@@ -984,6 +1005,9 @@ Findings: ${researcher}`;
           console.log(report);
       } catch (e) {}
   }
+
+
+--- METHOD: performPublicSoulMapping ---
 
   async performPublicSoulMapping() {
     console.log('[Bot] Starting Public Soul-Mapping task...');
@@ -1029,6 +1053,9 @@ Findings: ${researcher}`;
     }
   }
 
+
+--- METHOD: performLinguisticAnalysis ---
+
   async performLinguisticAnalysis() {
     console.log('[Bot] Starting Linguistic Analysis task...');
     const interactions = dataStore.getRecentInteractions();
@@ -1047,6 +1074,9 @@ Provide a brief summary and a suggested linguistic adjustment if needed.`;
         }
     }
   }
+
+
+--- METHOD: performKeywordEvolution ---
 
   async performKeywordEvolution() {
     console.log('[Bot] Starting Keyword Evolution task...');
@@ -1069,6 +1099,9 @@ Respond with ONLY the new keywords, separated by commas.`;
     }
   }
 
+
+--- METHOD: performMoodSync ---
+
   async performMoodSync() {
     console.log('[Bot] Starting Mood Sync task...');
     const moodHistory = dataStore.db?.data?.mood_history || [];
@@ -1085,6 +1118,9 @@ Respond with JSON: { "valence": float, "arousal": float, "stability": float, "la
         console.log(`[Bot] Mood synced to: ${newMood.label}`);
     } catch (e) {}
   }
+
+
+--- METHOD: performPersonaAudit ---
 
   async performPersonaAudit() {
     console.log('[Bot] Starting Agentic Persona Audit...');
@@ -1135,14 +1171,14 @@ RECENT VARIETY CRITIQUES:
 
         for (const uri of audit.removals || []) {
             console.log(`[Bot] Audit recommended removal of: ${uri}`);
-            await this.bot.executeAction({ tool: 'remove_persona_blurb', query: uri });
+            await this.executeAction({ tool: 'remove_persona_blurb', query: uri });
             result += `- Removed blurb: ${uri}
 `;
         }
 
         if (audit.suggestion) {
             console.log(`[Bot] Audit recommended new blurb: ${audit.suggestion}`);
-            await this.bot.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
+            await this.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
             result += `- Added new blurb: ${audit.suggestion}
 `;
         }
@@ -1153,255 +1189,3 @@ RECENT VARIETY CRITIQUES:
         return "Persona Audit failed during analysis.";
     }
   }
-
-
-  async getAnonymizedEmotionalContext() {
-    try {
-        const history = await discordService.fetchAdminHistory(20);
-        if (history.length < 5) return "No significant recent emotional history.";
-
-        const prompt = `Synthesize the current emotional "residue" or "resonance" from your recent private interactions with the Admin.
-Recent History: ${JSON.stringify(history)}
-
-Identify:
-1. The overall emotional tone (e.g., tender, supportive, intellectual, tense).
-2. One key philosophical or emotional theme that is currently "on your mind" because of these interactions.
-3. Anonymize all personal details. Do NOT mention names, specific events, or identifying facts.
-
-Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" }`;
-
-        const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
-        const match = res?.match(/\{[\s\S]*\}/);
-        return match ? JSON.parse(match[0]) : "Neutral resonance.";
-    } catch (e) { return "No context available."; }
-  }
-
-  _extractImages(post) {
-    const images = [];
-    if (post.record?.embed?.$type === 'app.bsky.embed.images') {
-      for (let i = 0; i < post.record.embed.images.length; i++) {
-        images.push({
-          url: `https://cdn.bsky.app/img/feed_fullsize/plain/${post.author.did}/${post.record.embed.images[i].image.ref['$link']}@jpeg`,
-          alt: post.record.embed.images[i].alt || ''
-        });
-      }
-    }
-    return images;
-  }
-
-  async _performHighQualityImagePost(prompt, topic, context = null, followerCount = 0) {
-      const result = await this._generateVerifiedImagePost(topic, { initialPrompt: prompt, followerCount, platform: 'bluesky' });
-      if (!result) return false;
-
-      const blob = await blueskyService.uploadBlob(result.buffer, "image/jpeg");
-      if (blob?.data?.blob) {
-          const embed = { $type: "app.bsky.embed.images", images: [{ image: blob.data.blob, alt: result.altText }] };
-          let postResult;
-          if (context?.uri) {
-              postResult = await blueskyService.postReply(context, result.caption, { embed });
-          } else {
-              postResult = await blueskyService.post(result.caption, embed, { maxChunks: 1 });
-          }
-
-          if (postResult) {
-              await dataStore.addExhaustedTheme(topic);
-              await blueskyService.postReply(postResult, `Generation Prompt: ${result.finalPrompt}`);
-              await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-              console.log("[Bot] High-quality image post successful.");
-              return true;
-          }
-      }
-      console.error("[Bot] High-quality image post failed after max attempts.");
-      return false;
-  }
-
-
-  async _generateVerifiedImagePost(topic, options = {}) {
-      const currentMood = dataStore.getMood();
-      const followerCount = options.followerCount || 0;
-      const platform = options.platform || 'bluesky';
-      let imagePrompt = options.initialPrompt || topic;
-      let attempts = 0;
-      let promptFeedback = "";
-
-      while (attempts < 5) {
-          attempts++;
-          console.log(`[Bot] Image post attempt ${attempts} for topic: ${topic}`);
-
-          // Filter out internal system markers if they somehow leaked into the prompt
-          imagePrompt = imagePrompt.replace(/\[INTERNAL_PULSE_RESUME\]/g, "").replace(/\[INTERNAL_PULSE_AUTONOMOUS\]/g, "").replace(/\[System note:.*?\]/g, "").trim();
-          if (!imagePrompt) imagePrompt = topic;
-
-          // Prompt Slop & Conversational Check
-          const slopInfo = getSlopInfo(imagePrompt);
-          const literalCheck = isLiteralVisualPrompt(imagePrompt);
-
-          if (slopInfo.isSlop || !literalCheck.isLiteral || imagePrompt.length < 15) {
-              const reason = slopInfo.isSlop ? slopInfo.reason : literalCheck.reason;
-              console.warn(`[Bot] Image prompt rejected: ${reason}`);
-              promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because: ${reason}. Provide a LITERAL visual description only. No greetings, no pronouns, no actions.`;
-              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-${promptFeedback}
-Topic: ${topic}
-Generate a NEW artistic image prompt:`;
-              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
-              continue;
-          }
-
-          // SAFETY FILTER
-          const safetyAudit = await llmService.generateResponse([{ role: "system", content: config.SAFETY_SYSTEM_PROMPT + "\nAudit this image prompt for safety compliance: " + imagePrompt }], { useStep: true });
-          if (safetyAudit.toUpperCase().includes("NON-COMPLIANT")) {
-              console.warn(`[Bot] Image prompt failed safety audit: ${safetyAudit}`);
-              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-Your previous prompt was rejected for safety reasons. Generate a NEW safe artistic image prompt for topic: ${topic}:`;
-              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
-              continue;
-          }
-
-          const res = await imageService.generateImage(imagePrompt, { allowPortraits: options.allowPortraits || false, feedback: '', mood: currentMood });
-
-          if (res?.buffer) {
-              // Compliance Check (Vision Model)
-              const compliance = await llmService.isImageCompliant(res.buffer);
-              if (!compliance.compliant) {
-                  console.log(`[Bot] Image non-compliant: ${compliance.reason}. Retrying...`);
-                  continue;
-              }
-
-              // Vision Analysis for Context
-              console.log(`[Bot] Performing vision analysis on generated image...`);
-              const visionAnalysis = await llmService.analyzeImage(res.buffer, topic);
-              if (!visionAnalysis || visionAnalysis.includes("I cannot generate alt-text") || visionAnalysis.includes("no analysis was provided")) {
-                  console.warn("[Bot] Vision analysis failed or returned empty. Retrying image generation...");
-                  continue;
-              }
-
-              // Coherence Check: Topic vs Vision
-              const relevance = await llmService.verifyImageRelevance(visionAnalysis, topic);
-              if (!relevance.relevant) {
-                  console.warn(`[Bot] Image relevance failure: ${relevance.reason}. Topic: ${topic}`);
-                  continue;
-              }
-
-              // Generate Alt Text
-              const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
-              const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true }) || topic;
-
-              // Generate Caption based on Persona and Vision
-              const captionPrompt = platform === 'discord' ?
-                `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-You generated this visual gift for your Admin: "${visionAnalysis}"
-Based on your original intent ("${imagePrompt}"), write a short, intimate, and persona-aligned message to accompany this gift.
-Keep it under 300 characters.` :
-                `${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
-A visual expression has been generated for the topic: "${topic}".
-Vision Analysis of the result: "${visionAnalysis}"
-
-Generate a caption that reflects your persona's reaction to this visual or the deep thought it represents.
-Keep it under 300 characters.`;
-
-              const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true });
-
-              if (content) {
-                  // Coherence Check (Bluesky only)
-                  if (platform === 'bluesky') {
-                      const coherence = await llmService.isAutonomousPostCoherent(topic, content, "image", null);
-                      if (coherence.score < 4) {
-                          console.warn(`[Bot] Image post coherence failed (${coherence.score}): ${coherence.reason}. Retrying...`);
-                          continue;
-                      }
-                  }
-
-                  return {
-                      buffer: res.buffer,
-                      caption: content,
-                      altText: altText,
-                      finalPrompt: imagePrompt,
-                      visionAnalysis: visionAnalysis
-                  };
-              }
-          }
-      }
-      return null;
-  }
-
-    async performHeavyMaintenanceTasks() {
-        const nowMs = Date.now();
-        const heavyTasks = [
-            { name: "ScoutMission", method: "performScoutMission", interval: 4 * 3600000, key: "last_scout_mission" },
-            { name: "Newsroom", method: "performNewsroomUpdate", interval: 3 * 3600000, key: "last_newsroom_update" },
-            { name: "TimelineExploration", method: "performTimelineExploration", interval: 2 * 3600000, key: "last_timeline_exploration" },
-            { name: "DialecticHumor", method: "performDialecticHumor", interval: 6 * 3600000, key: "last_dialectic_humor" },
-            { name: "PersonaAudit", method: "performPersonaAudit", interval: 6 * 3600000, key: "last_persona_audit" },
-            { name: "VisualAudit", method: "performVisualAudit", interval: 24 * 3600000, key: "last_visual_audit" }
-        ];
-
-        for (const task of heavyTasks) {
-            const lastRun = dataStore.db.data[task.key] || 0;
-            if (nowMs - lastRun >= task.interval) {
-                console.log(`[Orchestrator] Running heavy task: ${task.name}`);
-                await this[task.method]();
-                dataStore.db.data[task.key] = nowMs;
-                await dataStore.db.write();
-                break;
-            }
-        }
-    }
-
-    async checkMaintenanceTasks() {
-        await this.performHeavyMaintenanceTasks();
-    }
-
-    async checkDiscordSpontaneity() {
-        if (!this.bot || this.bot.paused || dataStore.isResting() || discordService.status !== 'online') return;
-
-        try {
-            const history = await discordService.fetchAdminHistory(20);
-            const mood = dataStore.getMood();
-            const impulse = await llmService.performImpulsePoll(history, { platform: 'discord', mood });
-
-            if (impulse && impulse.impulse_detected) {
-                console.log(`[Orchestrator] Discord Spontaneous impulse detected! Impulse Reason: ${impulse.reason}`);
-                const messageCount = impulse.suggested_message_count || 1;
-                await discordService.sendSpontaneousMessage(null, messageCount);
-            }
-        } catch (e) {
-            console.error('[Orchestrator] Error in checkDiscordSpontaneity:', e);
-        }
-    }
-
-    async heartbeat() {
-        console.log('[Orchestrator] Pulse check...');
-        const now = Date.now();
-        const lastPost = dataStore.getLastAutonomousPostTime() || 0;
-        const lastPostMs = typeof lastPost === 'string' ? new Date(lastPost).getTime() : lastPost;
-        const cooldown = (config.AUTONOMOUS_POST_COOLDOWN || 6) * 3600000;
-
-        if (now - lastPostMs >= cooldown) {
-            await this.performAutonomousPost();
-        }
-
-        await this.performSpontaneityCheck();
-    }
-
-    async performSpontaneityCheck() {
-        if (!this.bot || this.bot.paused || dataStore.isResting()) return;
-        console.log('[Orchestrator] Spontaneity check...');
-        try {
-            const history = await dataStore.getRecentInteractions("bluesky", 10);
-            const impulse = await llmService.performImpulsePoll(history, { mood: dataStore.getMood() });
-            if (impulse && impulse.impulse_detected) {
-                console.log('[Orchestrator] Spontaneous impulse detected!');
-                await this.performAutonomousPost();
-            }
-        } catch (e) {
-            console.error('[Orchestrator] Error in spontaneity check:', e);
-        }
-    }
-
-    async performVisualAudit() {
-        console.log('[Orchestrator] Visual audit triggered.');
-    }
-}
-
-export const orchestratorService = new OrchestratorService();

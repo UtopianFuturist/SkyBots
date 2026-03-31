@@ -182,36 +182,75 @@ export class Bot {
     }, 60000);
   }
 
-  startFirehose() {
+  async startFirehose() {
     if (this.firehoseProcess) return;
+
+    let firehosePath = path.resolve(process.cwd(), 'firehose_monitor.py');
+    if (!(await fs.stat(firehosePath).catch(() => null))) {
+        const rootPath = path.resolve(process.cwd(), '..', 'firehose_monitor.py');
+        if (await fs.stat(rootPath).catch(() => null)) {
+            firehosePath = rootPath;
+        }
+    }
+
+    const dConfig = dataStore.getConfig();
+    const keywordsList = [...new Set([...(dConfig.post_topics || []), ...(dataStore.getDeepKeywords() || [])])].filter(Boolean);
+    const keywordsArg = keywordsList.length > 0 ? '--keywords "' + keywordsList.join(',') + '"' : '';
+    const negativesArg = config.NEGATIVE_KEYWORDS ? '--negatives "' + config.NEGATIVE_KEYWORDS + '"' : '';
+    const actorsArg = config.TRACKED_ACTORS ? '--actors "' + config.TRACKED_ACTORS + '"' : '';
+
     console.log('[Bot] Starting firehose process...');
-    this.firehoseProcess = spawn('python3', ['firehose_monitor.py']);
-    this.firehoseProcess.stdout.on('data', (data) => {
-      const line = data.toString().trim();
-      if (line) {
+    const command = 'python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ' + firehosePath + ' ' + keywordsArg + ' ' + negativesArg + ' ' + actorsArg;
+
+    this.firehoseProcess = spawn(command, { shell: true });
+
+    this.firehoseProcess.stdout.on('data', async (data) => {
+      const lines = data.toString().split('\n');
+      for (const line of lines) {
+          if (!line.trim()) continue;
           try {
               const event = JSON.parse(line);
-              this.handleFirehoseEvent(event);
+              await this.handleFirehoseEvent(event);
           } catch (e) {}
       }
     });
+
+    this.firehoseProcess.stderr.on('data', (data) => {
+        const msg = data.toString().trim();
+        if (msg) console.log('[Firehose Log] ' + msg);
+    });
+
     this.firehoseProcess.on('close', (code) => {
-      console.log(`[Bot] Firehose process exited with code ${code}. Restarting in 10s...`);
+      console.log('[Bot] Firehose process exited with code ' + code + '. Restarting in 10s...');
       this.firehoseProcess = null;
-      setTimeout(() => this.startFirehose(), 10000);
+      if (this._firehoseRestartTimeout) clearTimeout(this._firehoseRestartTimeout);
+      this._firehoseRestartTimeout = setTimeout(() => this.startFirehose(), 10000);
     });
   }
 
+  async restartFirehose() {
+    console.log('[Bot] Restarting firehose to pick up new targets...');
+    if (this.firehoseProcess) {
+        this.firehoseProcess.kill();
+        this.firehoseProcess = null;
+    }
+    if (this._firehoseRestartTimeout) clearTimeout(this._firehoseRestartTimeout);
+    await this.startFirehose();
+  }
+
   async handleFirehoseEvent(event) {
-    if (event.type === 'post') {
-        const text = event.text || "";
-        const keywords = dataStore.getFirehoseKeywords() || [];
-        for (const kw of keywords) {
-            if (text.toLowerCase().includes(kw.toLowerCase())) {
-                await dataStore.addFirehoseMatch({ ...event, matched_keyword: kw });
-                break;
-            }
+    if (event.type === 'firehose_topic_match') {
+        const text = event.record?.text || "";
+        const kws = event.matched_keywords || [];
+        for (const kw of kws) {
+            await dataStore.addFirehoseMatch({ ...event, text, matched_keyword: kw });
+            this.firehoseMatchCounts[kw] = (this.firehoseMatchCounts[kw] || 0) + 1;
         }
+    } else if (event.type === 'firehose_mention') {
+        console.log('[Bot] Firehose detected mention/reply: ' + event.uri);
+    } else if (event.type === 'firehose_actor_match') {
+        console.log('[Bot] Firehose detected activity from tracked actor: ' + event.author.did);
+        await dataStore.addFirehoseMatch({ ...event, text: event.record?.text || "[No Text]" });
     }
   }
 

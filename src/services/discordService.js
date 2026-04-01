@@ -12,6 +12,7 @@ import { youtubeService } from './youtubeService.js';
 import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
+import { introspectionService } from './introspectionService.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity } from '../utils/textUtils.js';
 
 class DiscordService {
@@ -959,7 +960,8 @@ ${actionResults.join('\n')}` });
                     await this._send(message.channel, msg);
                     if (messages.length > 1) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000));
                 }
-                const eaar = await llmService.performEmotionalAfterActionReport(history, responseText);
+                const eaar = await introspectionService.performAAR("discord_response", responseText, { success: true, platform: "discord" }, { historySummary: history.slice(-3).map(h => h.content) });
+                await llmService.performEmotionalAfterActionReport(history, responseText);
                 if (eaar && eaar.internal_reflection) {
                     await dataStore.addInternalLog("discord_eaar", eaar);
                     if (memoryService.isEnabled()) {
@@ -987,6 +989,7 @@ ${actionResults.join('\n')}` });
                 if (result) {
                     await dataStore.setDiscordLastReplied(false);
                     console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);
+                    await introspectionService.performAAR("discord_spontaneous", content, { success: !!result, platform: "discord" });
                 }
             }
         } catch (error) {

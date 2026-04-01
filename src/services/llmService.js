@@ -310,7 +310,7 @@ Guidelines:
                   if (options.traceId && this.ds) {
                       await this.ds.addTraceLog({ traceId: options.traceId, model, prompt: messages[messages.length-1]?.content || "NONE", response: content });
                   }
-                  if (this.ds) await this.ds.addInternalLog("llm_response", content); return content;
+                  if (this.ds) { const logType = options.task ? `llm_response:${options.task}` : "llm_response"; await this.ds.addInternalLog(logType, content, { model, task: options.task }); } return content;
               }
             } catch (error) {
               const errorMessage = error.message || 'Unknown error';

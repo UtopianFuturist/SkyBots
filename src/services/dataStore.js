@@ -307,7 +307,7 @@ class DataStore {
 
     // Also log to console for Render
     const consoleMsg = typeof logEntry.content === 'string' ? logEntry.content : JSON.stringify(logEntry.content);
-    console.log(`[RENDER_LOG] [${type.toUpperCase()}] ${consoleMsg.substring(0, 500)}`);
+    const prefix = type.toUpperCase(); console.log(`\n[RENDER_LOG] [${prefix}] ${"-".repeat(Math.max(0, 40 - prefix.length))}\n${consoleMsg.substring(0, 1000)}\n[RENDER_LOG] ${"-".repeat(40)}`);
 
     this.db.data.internal_logs.push(logEntry);
     if (this.db.data.internal_logs.length > 500) {
@@ -485,7 +485,8 @@ class DataStore {
   async addPersonaBlurb(blurb) {
     if (this.db?.data) {
       if (!this.db.data.persona_blurbs) this.db.data.persona_blurbs = [];
-      this.db.data.persona_blurbs.push(blurb);
+      const entry = typeof blurb === "string" ? { text: blurb, uri: `ds_${Date.now()}`, timestamp: Date.now() } : { ...blurb, uri: blurb.uri || `ds_${Date.now()}` };
+      this.db.data.persona_blurbs.push(entry);
       await this.write();
     }
   }

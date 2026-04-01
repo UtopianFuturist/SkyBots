@@ -541,6 +541,7 @@ class DataStore {
       await this.write();
     }
   }
+
 }
 
 export const dataStore = new DataStore();

@@ -45,7 +45,9 @@ Respond with JSON:
 
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: aarPrompt }], { useStep: true, task: 'aar_introspection' });
-            const aar = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+            const match = res?.match(/\{[\s\S]*\}/);
+            if (!match) throw new Error("No JSON found in AAR response");
+            const aar = JSON.parse(match[0]);
 
             await dataStore.addInternalLog("introspection_aar", aar, { actionType, timestamp: Date.now() });
 
@@ -86,7 +88,9 @@ Respond with JSON:
 
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: synthPrompt }], { useStep: true, task: 'core_self_synthesis' });
-            const coreSelf = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+            const match = res?.match(/\{[\s\S]*\}/);
+            if (!match) throw new Error("No JSON found in Core Self response");
+            const coreSelf = JSON.parse(match[0]);
             await dataStore.addInternalLog("core_self_state", coreSelf);
             return coreSelf;
         } catch (e) {

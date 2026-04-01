@@ -1,10 +1,14 @@
 import fs from 'fs';
 
 let orch = fs.readFileSync('src/services/orchestratorService.js', 'utf8');
-orch = orch.replace("import { evaluationService } from './evaluationService.js';",
-    "import { evaluationService } from './evaluationService.js';\nimport { introspectionService } from './introspectionService.js';");
 
-// Task tags
+// 1. Add import (check first)
+if (!orch.includes("import { introspectionService }")) {
+    orch = orch.replace("import { evaluationService } from './evaluationService.js';",
+        "import { evaluationService } from './evaluationService.js';\nimport { introspectionService } from './introspectionService.js';");
+}
+
+// 2. Task tags in generateResponse
 const mapping = [
     { target: "llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true })", task: "post_reflection" },
     { target: "llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true })", task: "firehose_sentiment" },
@@ -33,7 +37,7 @@ mapping.forEach(u => {
     orch = orch.replace(u.target, replacement);
 });
 
-// Evolution Block
+// 3. Evolution Block
 const evolutionRegex = /  async performPersonaEvolution\(\) \{[\s\S]*?\}\s+async performFirehoseTopicAnalysis\(\) \{/;
 const newEvolution = `  async performPersonaEvolution() {
     if (this.bot.paused || dataStore.isResting()) return;
@@ -77,7 +81,8 @@ const newEvolution = `  async performPersonaEvolution() {
         if (evolution && memoryService.isEnabled()) {
             let evoData;
             try {
-                evoData = JSON.parse(evolution.match(/\\{[\\s\\S]*\\}/)[0]);
+                const match = evolution.match(/\\{[\\s\\S]*\\}/);
+                evoData = match ? JSON.parse(match[0]) : { shift_statement: evolution, persona_blurb_addendum: null };
             } catch(e) {
                 evoData = { shift_statement: evolution, persona_blurb_addendum: null };
             }
@@ -104,7 +109,7 @@ const newEvolution = `  async performPersonaEvolution() {
   async performFirehoseTopicAnalysis() {`;
 orch = orch.replace(evolutionRegex, newEvolution);
 
-// AARs
+// 4. AARs and increments
 orch = orch.replace("if (reflection && memoryService.isEnabled()) {",
     "if (reflection && memoryService.isEnabled()) {\n                    await introspectionService.performAAR(\"post_reflection_followup\", post.content, { reflection }, { timestamp: post.timestamp });");
 orch = orch.replace("await blueskyService.post(humor);",
@@ -112,7 +117,7 @@ orch = orch.replace("await blueskyService.post(humor);",
 orch = orch.replace("await blueskyService.post(finalContent, null, { maxChunks: 4 });",
     "await blueskyService.post(finalContent, null, { maxChunks: 4 });\n                        await introspectionService.performAAR(\"autonomous_text_post\", finalContent, { success: true, platform: \"bluesky\" }, { topic });\n                        await dataStore.incrementTextPostsSinceLastImage();");
 orch = orch.replace("await dataStore.updateLastAutonomousPostTime(new Date().toISOString());",
-    "await dataStore.updateLastAutonomousPostTime(new Date().toISOString());\n              await introspectionService.performAAR(\"autonomous_image_post\", result.caption, { success: !!postResult, platform: \"bluesky\", topic }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });\n              await dataStore.updateLastBlueskyImagePostTime(new Date().toISOString());");
+    "await dataStore.updateLastAutonomousPostTime(new Date().toISOString());\n              await introspectionService.performAAR(\"autonomous_image_post\", result.caption, { success: true, platform: \"bluesky\", topic }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });\n              await dataStore.updateLastBlueskyImagePostTime(new Date().toISOString());");
 
 orch = orch.replace(/await memoryService\.createMemoryEntry\('status', \`\[NEWSROOM\] \${brief\.brief}\`\);/g,
     "await memoryService.createMemoryEntry('status', \`[NEWSROOM] \${brief.brief}\`);\n      await introspectionService.performAAR(\"newsroom_update\", brief.brief, { success: true }, { keywords: brief.new_keywords });");
@@ -131,22 +136,22 @@ orch = orch.replace("await memoryService.createMemoryEntry('reflection', reflect
 orch = orch.replace("await dataStore.updateLastDiscordGiftTime(new Date().toISOString());",
     "await dataStore.updateLastDiscordGiftTime(new Date().toISOString());\n        await introspectionService.performAAR(\"discord_gift_image\", result.caption, { success: true }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });");
 
-// Frequency injection
+// 5. Frequency injection in Decision Prompt
 orch = orch.replace('const networkSentiment = dataStore.getNetworkSentiment();',
     'const networkSentiment = dataStore.getNetworkSentiment();\n            const lastImageTime = dataStore.getLastBlueskyImagePostTime();\n            const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();\n            const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;');
 orch = orch.replace('Mood: ${JSON.stringify(currentMood)}',
     'Mood: ${JSON.stringify(currentMood)}\\n\\n--- IMAGE FREQUENCY AUDIT ---\\n- Hours since last image post: ${hoursSinceImage.toFixed(1)}\\n- Text posts since last image post: ${textPostsSinceImage}\\n\\nYour admin prefers a healthy balance of visual and text expression. Consider if it is time to express yourself visually again.');
 
-// Audit replacement
+// 6. Audit replacement
 const auditStartMarker = '  async performPersonaAudit() {';
 const auditEndMarker = '  async getAnonymizedEmotionalContext() {';
 const auditStart = orch.indexOf(auditStartMarker);
 const auditEnd = orch.indexOf(auditEndMarker);
 if (auditStart > 0 && auditEnd > 0) {
-    const newAudit = `  async performPersonaAudit() {
+    const newAudit = \`  async performPersonaAudit() {
     console.log('[Bot] Starting Agentic Persona Audit...');
     const blurbs = dataStore.getPersonaBlurbs();
-    const memoryPersonaMemories = await memoryService.fetchRecentMemories("#molt_memory", 50);
+    const memoryPersonaMemories = await memoryService.fetchRecentMemories("# SydneyDiary", 50);
     const personaMemories = memoryPersonaMemories.filter(m => m.text.includes("[PERSONA]"));
     const systemPrompt = config.TEXT_SYSTEM_PROMPT;
     const lessons = dataStore.getSessionLessons();
@@ -163,30 +168,32 @@ if (auditStart > 0 && auditEnd > 0) {
     const recursionContext = recursionMemories.filter(m => m.text.includes('[RECURSION]'))
         .map(m => "- Insight: " + m.text).join('\\n');
 
-    const auditPrompt = \`
+    const auditPrompt = \\\`
       As a persona auditor, analyze the following active persona blurbs and recent variety critiques.
 
       CORE SYSTEM PROMPT:
-      "\${systemPrompt}"
+      "\\\${systemPrompt}"
 
       ACTIVE PERSONA BLURBS (DataStore):
-      \${blurbs.length > 0 ? blurbs.map(b => "- [DS:" + b.uri + "] " + b.text).join('\\n') : 'None'}
+      \\\${blurbs.length > 0 ? blurbs.map(b => "- [DS:" + b.uri + "] " + b.text).join('\\\\n') : 'None'}
       ACTIVE [PERSONA] MEMORIES (Bluesky Thread):
-      \${personaMemories.length > 0 ? personaMemories.map(m => "- [MEM:" + m.uri + "] " + m.text).join('\\n') : 'None'}
-      \${critiqueContext}
-      \${lessonContext}
+      \\\${personaMemories.length > 0 ? personaMemories.map(m => "- [MEM:" + m.uri + "] " + m.text).join('\\\\n') : 'None'}
+      \\\${critiqueContext}
+      \\\${lessonContext}
       RECURSIVE INSIGHTS:
-      \${recursionContext || "None"}
+      \\\${recursionContext || "None"}
 
       Identify any contradictions, redundancies, or blurbs that no longer serve the persona's evolution.
       If a blurb or memory should be removed, identify it by its full URI (prefixed with DS: or MEM:).
 
       Respond with JSON: { "analysis": "...", "removals": ["uri1", ...], "suggestion": "new blurb content or null" }
-    \`;
+    \\\`;
 
     const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'persona_audit' });
     try {
-        const audit = JSON.parse(response.match(/\\{[\\s\\S]*\\}/)[0]);
+        const match = response?.match(/\\\\{[\\\\s\\\\S]*\\\\}/);
+        if (!match) return "No JSON in audit";
+        const audit = JSON.parse(match[0]);
         let result = "Audit Analysis: " + audit.analysis + "\\n";
 
         for (const uri of audit.removals || []) {
@@ -206,24 +213,24 @@ if (auditStart > 0 && auditEnd > 0) {
         console.error('[Bot] Persona Audit failed:', e);
         return "Persona Audit failed during analysis.";
     }
-  }`;
-    orch = orch.substring(0, auditStart) + newAudit + "\n\n" + orch.substring(auditEnd);
+  }\`;
+    orch = orch.substring(0, auditStart) + newAudit + "\\n\\n" + orch.substring(auditEnd);
 }
 
-// Frequency Audit Method
-const freqAudit = `
+// 7. Frequency Audit Method
+const freqAudit = \`
   async performImageFrequencyAudit() {
     console.log('[Orchestrator] Starting Image Frequency Audit...');
     const lastImageTime = dataStore.getLastBlueskyImagePostTime();
     const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();
     const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;
 
-    const auditPrompt = \`
+    const auditPrompt = \\\`
 You are "The Strategist". Your job is to audit the bot's posting frequency and variety.
 
 --- CURRENT STATS ---
-- Hours since last image post: \${hoursSinceImage.toFixed(1)}
-- Text posts since last image post: \${textPostsSinceImage}
+- Hours since last image post: \\\${hoursSinceImage.toFixed(1)}
+- Text posts since last image post: \\\${textPostsSinceImage}
 
 --- YOUR MISSION ---
 The Admin wants to see more images from the bot, while maintaining a healthy balance.
@@ -236,29 +243,31 @@ Respond with JSON:
   "directive": "string (a directive to be added as a persona blurb if necessary, or null)",
   "priority": "normal|high"
 }
-\`;
+\\\`;
 
     try {
         const res = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'image_frequency_audit' });
-        const audit = JSON.parse(res.match(/\\{[\\s\\S]*\\}/)[0]);
+        const match = res?.match(/\\\\{[\\\\s\\\\S]*\\\\}/);
+        if (!match) return;
+        const audit = JSON.parse(match[0]);
 
         await dataStore.addInternalLog("image_frequency_audit", audit);
 
         if (audit.directive && audit.priority === 'high') {
-            await this.bot.executeAction({ tool: 'add_persona_blurb', query: \`[STRATEGY] \${audit.directive}\` });
+            await this.bot.executeAction({ tool: 'add_persona_blurb', query: \\\`[STRATEGY] \\\${audit.directive}\\\` });
         }
     } catch (e) {
         console.error('[Orchestrator] Error in Image Frequency Audit:', e);
     }
-  }`;
+  }\`;
 
-const orchLines = orch.split('\n');
+const orchLines = orch.split('\\n');
 const orchLastBrace = orchLines.findLastIndex(l => l.trim() === '}');
 orchLines.splice(orchLastBrace, 0, freqAudit);
-orch = orchLines.join('\n');
+orch = orchLines.join('\\n');
 
 orch = orch.replace('{ name: "VisualAudit", method: "performVisualAudit", interval: 24 * 3600000, key: "last_visual_audit" }',
-    '{ name: "ImageFrequencyAudit", method: "performImageFrequencyAudit", interval: 12 * 3600000, key: "last_image_frequency_audit" },\n            { name: "VisualAudit", method: "performVisualAudit", interval: 24 * 3600000, key: "last_visual_audit" }');
+    '{ name: "ImageFrequencyAudit", method: "performImageFrequencyAudit", interval: 12 * 3600000, key: "last_image_frequency_audit" },\\n            { name: "VisualAudit", method: "performVisualAudit", interval: 24 * 3600000, key: "last_visual_audit" }');
 
 fs.writeFileSync('src/services/orchestratorService.js', orch);
-console.log("OrchestratorService.js updated");
+console.log("OrchestratorService.js final update complete.");

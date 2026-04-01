@@ -10,6 +10,7 @@ import { memoryService } from './memoryService.js';
 import { discordService } from './discordService.js';
 import { socialHistoryService } from './socialHistoryService.js';
 import { evaluationService } from './evaluationService.js';
+import { introspectionService } from './introspectionService.js';
 import { checkHardCodedBoundaries, isLiteralVisualPrompt, cleanKeywords, getSlopInfo, sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
 import * as prompts from '../prompts/index.js';
 import config from '../../config.js';
@@ -50,8 +51,9 @@ class OrchestratorService {
                     Reflect on how it feels to have shared this specific thought. Are you satisfied with it? Do you feel exposed, proud, or indifferent?
                     Provide a private memory entry tagged [POST_REFLECTION].
                 `;
-                const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true });
+                const reflection = await llmService.generateResponse([{ role: 'system', content: reflectionPrompt }], { useStep: true , task: 'post_reflection' });
                 if (reflection && memoryService.isEnabled()) {
+                    await introspectionService.performAAR("post_reflection_followup", post.content, { reflection }, { timestamp: post.timestamp });
                     await memoryService.createMemoryEntry('explore', reflection);
                     post.reflected = true;
                     await dataStore.db.write();
@@ -105,7 +107,7 @@ class OrchestratorService {
                 4. Record your findings as a memory entry tagged [EXPLORE] [FIREHOSE_SENTIMENT].
             `;
 
-            const firehoseReflection = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true });
+            const firehoseReflection = await llmService.generateResponse([{ role: 'system', content: sentimentPrompt }], { useStep: true , task: 'firehose_sentiment' });
             if (firehoseReflection && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', firehoseReflection);
             }
@@ -127,7 +129,7 @@ class OrchestratorService {
                 3. Record this as a memory entry tagged [DIALECTIC_BOUNDARY].
             `;
 
-            const dialecticReflection = await llmService.generateResponse([{ role: 'system', content: dissentPrompt }], { useStep: true });
+            const dialecticReflection = await llmService.generateResponse([{ role: 'system', content: dissentPrompt }], { useStep: true , task: 'dialectic_dissent' });
             if (dialecticReflection && memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', dialecticReflection);
             }
@@ -171,7 +173,7 @@ class OrchestratorService {
                     Respond with ONLY the number of your choice, or "none".
                 `;
 
-                const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { preface_system_prompt: false, useStep: true });
+                const decisionRes = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { preface_system_prompt: false, useStep: true , task: 'timeline_decision' });
                 const choice = parseInt(decisionRes?.match(/\d+/)?.[0]);
 
                 if (!isNaN(choice) && choice >= 1 && choice <= candidates.length) {
@@ -241,37 +243,63 @@ class OrchestratorService {
 
     if (now - lastEvolution < twentyFourHours) return;
 
-    console.log('[Bot] Phase 2: Starting daily recursive identity evolution...');
+    console.log("[Bot] Phase 2: Starting daily recursive identity evolution...");
 
     try {
         const memories = await memoryService.getRecentMemories();
-        const memoriesText = memories.map(m => m.text).join('\n');
+        const aars = dataStore.searchInternalLogs("introspection_aar", 20);
+        const coreSelf = dataStore.db.data.internal_logs?.find(l => l.type === "core_self_state")?.content || {};
+        const memoriesText = memories.map(m => m.text).join("\n");
 
         const evolutionPrompt = `
             Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
 
             You are performing your daily recursive identity evolution.
-            Analyze your recent memories and interactions:
+            Analyze your recent memories, interactions, and deep introspection AARs:
+            RECENT AARS: ${JSON.stringify(aars)}
+            CORE SELF STATE: ${JSON.stringify(coreSelf)}
             ${memoriesText.substring(0, 3000)}
 
             **GOAL: INCREMENTAL GROWTH**
             Identify one minor way your perspective, tone, or interests have shifted. This is a subtle refinement of your "Texture" and "Internal Narrative".
 
-            Respond with a concise, first-person statement of this shift (under 200 characters).
+            Respond with JSON:
+            {
+              "shift_statement": "concise first-person statement of this shift (under 200 chars)",
+              "persona_blurb_addendum": "A new [PERSONA] blurb entry to add to your permanent memory thread. (e.g. \"[PERSONA] [m/d/year] I have realized that...\")",
+              "rationale": "Why you chose this exact wording"
+            }
         `;
 
-        const evolution = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { preface_system_prompt: false, useStep: true });
+        const evolution = await llmService.generateResponse([{ role: "system", content: evolutionPrompt }], { preface_system_prompt: false, useStep: true, task: "persona_evolution" });
 
         if (evolution && memoryService.isEnabled()) {
-            console.log(`[Bot] Daily evolution crystallized: "${evolution}"`);
-            await memoryService.createMemoryEntry('evolution', evolution);
+            let evoData;
+            try {
+                evoData = JSON.parse(evolution.match(/\{[\s\S]*\}/)[0]);
+            } catch(e) {
+                evoData = { shift_statement: evolution, persona_blurb_addendum: null };
+            }
+
+            if (evoData.persona_blurb_addendum) {
+                const editPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\n\nYou have proposed the following persona addendum for yourself: "${evoData.persona_blurb_addendum}".\n\nReview and edit it to ensure it is authentic and material.\n\nRespond with ONLY the final [PERSONA] entry.`;
+                const finalBlurb = await llmService.generateResponse([{ role: "system", content: editPrompt }], { useStep: true, task: "persona_self_edit" });
+                if (finalBlurb) {
+                    const scrubbedBlurb = await introspectionService.scrubPrivacy(finalBlurb);
+                    await memoryService.createMemoryEntry("persona", scrubbedBlurb);
+                }
+            }
+
+            console.log(`[Bot] Daily evolution crystallized: "${evoData.shift_statement}"`);
+            await memoryService.createMemoryEntry("evolution", evoData.shift_statement);
             dataStore.db.data.lastPersonaEvolution = now;
             await dataStore.db.write();
         }
     } catch (e) {
-        console.error('[Bot] Error in persona evolution:', e);
+        console.error("[Bot] Error in persona evolution:", e);
     }
   }
+
   async performFirehoseTopicAnalysis() {
     if (this.bot.paused || dataStore.isResting()) return;
 
@@ -379,6 +407,7 @@ class OrchestratorService {
             // For now, let's schedule it or post it if the Persona aligns
             if (alignment.aligned) {
                 await blueskyService.post(humor);
+                await introspectionService.performAAR("dialectic_humor", humor, { success: true, platform: "bluesky", topic: match[0] });
                 await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                 this.lastDialecticHumor = now;
             } else {
@@ -491,7 +520,7 @@ class OrchestratorService {
     `;
 
     try {
-        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true });
+        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { preface_system_prompt: false, useStep: true , task: 'persona_audit' });
         const jsonMatch = response?.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
             const audit = JSON.parse(jsonMatch[0]);
@@ -564,6 +593,7 @@ class OrchestratorService {
         if (reflection && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('explore', reflection);
             await dataStore.addAgencyReflection(reflection);
+            await introspectionService.performAAR("agency_reflection", reflection, { success: true });
         }
     } catch (e) {
         console.error('[Bot] Error in Agency Reflection:', e);
@@ -601,6 +631,7 @@ class OrchestratorService {
             await dataStore.addLinguisticMutation(audit.vocabulary_shifts.join(', '), audit.summary);
             if (memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', `${audit.summary}`);
+            await introspectionService.performAAR("linguistic_audit", audit.summary, { success: true }, { drift: audit.drift_score });
             }
         }
     } catch (e) {
@@ -630,9 +661,10 @@ class OrchestratorService {
     `;
 
     try {
-        const dream = await llmService.generateResponse([{ role: 'system', content: dreamPrompt }], { useStep: true });
+        const dream = await llmService.generateResponse([{ role: 'system', content: dreamPrompt }], { useStep: true , task: 'dream_generation' });
         if (dream && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('inquiry', dream);
+            await introspectionService.performAAR("dreaming_cycle", dream, { success: true });
         }
     } catch (e) {
         console.error('[Bot] Error in Dreaming Cycle:', e);
@@ -655,6 +687,7 @@ class OrchestratorService {
 
         if (reflection && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('reflection', reflection);
+            await introspectionService.performAAR("self_reflection", reflection, { success: true });
             this.lastSelfReflectionTime = now;
         }
     } catch (e) {
@@ -678,6 +711,7 @@ class OrchestratorService {
       }
       if (memoryService.isEnabled()) {
         await memoryService.createMemoryEntry('status', `[NEWSROOM] ${brief.brief}`);
+      await introspectionService.performAAR("newsroom_update", brief.brief, { success: true }, { keywords: brief.new_keywords });
       }
     } catch (e) {
       console.error('[Bot] Newsroom update error:', e);
@@ -692,7 +726,7 @@ class OrchestratorService {
       const orphanedPosts = timeline.filter(t => t.post && t.post.replyCount === 0 && t.post.author.did !== blueskyService.did);
       if (orphanedPosts.length > 0) {
         const scoutPrompt = "You are 'The Scout'. Select an orphaned post and suggest a reply.";
-        await llmService.generateResponse([{ role: 'system', content: scoutPrompt }], { useStep: true });
+        await llmService.generateResponse([{ role: 'system', content: scoutPrompt }], { useStep: true , task: 'scout_mission' });
       }
     } catch (e) {
       console.error('[Bot] Scout mission error:', e);
@@ -733,12 +767,13 @@ class OrchestratorService {
             }
           `;
 
-          const response = await llmService.generateResponse([{ role: 'system', content: shadowPrompt }], { useStep: true });
+          const response = await llmService.generateResponse([{ role: 'system', content: shadowPrompt }], { useStep: true , task: 'conversational_audit' });
           const jsonMatch = response.match(/\{.*\}/);
           if (jsonMatch) {
               const analysis = JSON.parse(jsonMatch[0]);
               await dataStore.setAdminMentalHealth(analysis.mental_health);
               await dataStore.updateAdminWorldview(analysis.worldview);
+              await introspectionService.performAAR("shadow_analysis", "Shadow Admin Analysis", { success: true }, { mental_health: analysis.mental_health, worldview_summary: analysis.worldview.summary });
               console.log('[Bot] Shadow analysis complete.');
           }
       } catch (e) {
@@ -772,7 +807,7 @@ Known Admin facts: ${JSON.stringify(adminFacts.slice(-3))}
 Generate a detailed, evocative image generation prompt that expresses your persona's current feelings or a deep thought you want to share with the Admin.
 Respond with ONLY the prompt.`;
 
-        const initialPrompt = await llmService.generateResponse([{ role: 'system', content: promptGenPrompt }], { useStep: true, platform: 'discord' });
+        const initialPrompt = await llmService.generateResponse([{ role: 'system', content: promptGenPrompt }], { useStep: true, platform: 'discord' , task: 'discord_gift_prompt' });
         if (!initialPrompt) return;
 
         const result = await this._generateVerifiedImagePost(goal.goal, { initialPrompt, platform: 'discord', allowPortraits: true });
@@ -797,6 +832,7 @@ Generation Prompt: ${result.finalPrompt}`;
         await dataStore.saveDiscordInteraction(normId, 'assistant', `[SYSTEM CONFIRMATION: Gift image sent. VISION PERCEPTION: ${visionAnalysis}]`);
 
         await dataStore.updateLastDiscordGiftTime(new Date().toISOString());
+        await introspectionService.performAAR("discord_gift_image", result.caption, { success: true }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });
         console.log('[Bot] Discord gift image sent successfully.');
 
     } catch (e) {
@@ -828,7 +864,7 @@ Generation Prompt: ${result.finalPrompt}`;
                 if (allContent) {
                     const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.category?.toUpperCase() === "EXPLORE" && m.text.includes("[LURKER]")).map(m => m.text).join("\n");
                     const resonancePrompt = `Identify 5 topics from this text AND from these recent observations that resonate with your persona. \nText: ${allContent} \nObservations: ${lurkerMemories} \nRespond with ONLY the comma-separated topics.`;
-                    const res = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true });
+                    const res = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true , task: 'social_resonance' });
                     resonanceTopics = res.split(",").map(t => t.trim()).filter(Boolean);
                 }
             } catch (e) {
@@ -850,7 +886,7 @@ Mood: ${JSON.stringify(currentMood)}
 Would you like to share a visual expression (image) or a direct thought (text)?
 Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
 
-            const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true });
+            const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true , task: 'autonomous_decision' });
             let choice = Math.random() < 0.3 ? "image" : "text"; // Fallback
             try {
                 const pollResult = JSON.parse(decisionRes.match(/\{[\s\S]*\}/)[0]);
@@ -872,7 +908,7 @@ Current Mood: ${JSON.stringify(currentMood)}
 Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator.
 Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
 
-                const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
+                const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true , task: 'autonomous_topic' });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "surrealism";
                 let imagePrompt = "";
 
@@ -946,7 +982,7 @@ Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a fi
 **MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH and how this topic relates to your current mood or goal.
 
 Shared thought:`;
-                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true });
+                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true , task: 'autonomous_text_content' });
 
                 if (content) {
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
@@ -957,6 +993,7 @@ Shared thought:`;
                             finalContent = finalContent.replace(/\s*(\.\.\.|…)$/, "");
                         }
                         await blueskyService.post(finalContent, null, { maxChunks: 4 });
+                        await introspectionService.performAAR("autonomous_text_post", finalContent, { success: true, platform: "bluesky" }, { topic });
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                         if (llmService.generalizePrivateThought) {
                             await dataStore.addRecentThought("bluesky", await llmService.generalizePrivateThought(content));
@@ -1013,7 +1050,7 @@ Findings: ${researcher}`;
                     }
                 `;
 
-                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true });
+                const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true , task: 'worldview_mapping' });
                 const jsonMatch = response?.match(/\{[\s\S]*\}/);
                 if (jsonMatch) {
                     const mapping = JSON.parse(jsonMatch[0]);
@@ -1039,7 +1076,7 @@ Identify any repetitive patterns, phrases, or tone drift.
 INTERACTIONS: ${JSON.stringify(interactions.map(i => i.content))}
 
 Provide a brief summary and a suggested linguistic adjustment if needed.`;
-    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
+    const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true , task: 'mood_sync' });
     if (res) {
         await dataStore.addInternalLog("linguistic_analysis", res);
         if (res.toLowerCase().includes("repetitive") || res.toLowerCase().includes("drift")) {
@@ -1089,62 +1126,59 @@ Respond with JSON: { "valence": float, "arousal": float, "stability": float, "la
   async performPersonaAudit() {
     console.log('[Bot] Starting Agentic Persona Audit...');
     const blurbs = dataStore.getPersonaBlurbs();
+    const memoryPersonaMemories = await memoryService.fetchRecentMemories("#molt_memory", 50);
+    const personaMemories = memoryPersonaMemories.filter(m => m.text.includes("[PERSONA]"));
     const systemPrompt = config.TEXT_SYSTEM_PROMPT;
     const lessons = dataStore.getSessionLessons();
     const lessonContext = lessons.length > 0
-        ? "\n\nRECENT SESSION LESSONS (Failures to learn from):\n" + lessons.map(l => `- ${l.text}`).join('\n')
+        ? "\n\nRECENT SESSION LESSONS (Failures to learn from):\n" + lessons.map(l => "- " + l.text).join('\n')
         : "";
 
-    // Include recent variety critiques to inform the audit
     const critiques = dataStore.searchInternalLogs('variety_critique', 20);
     const critiqueContext = critiques.length > 0
-        ? `
-RECENT VARIETY CRITIQUES:
-` + critiques.map(c => `- Feedback: ${c.content?.feedback || 'Repeated recent thought'}`).join('\n')
+        ? "\nRECENT VARIETY CRITIQUES:\n" + critiques.map(c => "- Feedback: " + (c.content?.feedback || 'Repeated recent thought')).join('\n')
         : "";
 
-    // Include recursive insights from memoryService
     const recursionMemories = await memoryService.getRecentMemories(20);
     const recursionContext = recursionMemories.filter(m => m.text.includes('[RECURSION]'))
-        .map(m => `- Insight: ${m.text}`).join('\n');
+        .map(m => "- Insight: " + m.text).join('\n');
 
     const auditPrompt = `
-      As a persona auditor, analyze the following active persona blurbs and recent variety critiques for consistency with the core system prompt.
+      As a persona auditor, analyze the following active persona blurbs and recent variety critiques.
 
       CORE SYSTEM PROMPT:
       "${systemPrompt}"
 
-      ACTIVE PERSONA BLURBS:
-      ${blurbs.length > 0 ? blurbs.map(b => `- [${b.uri}] ${b.text}`).join('\n') : 'None'}
+      ACTIVE PERSONA BLURBS (DataStore):
+      ${blurbs.length > 0 ? blurbs.map(b => "- [DS:" + b.uri + "] " + b.text).join('\n') : 'None'}
+      ACTIVE [PERSONA] MEMORIES (Bluesky Thread):
+      ${personaMemories.length > 0 ? personaMemories.map(m => "- [MEM:" + m.uri + "] " + m.text).join('\n') : 'None'}
       ${critiqueContext}
       ${lessonContext}
       RECURSIVE INSIGHTS:
       ${recursionContext || "None"}
 
       Identify any contradictions, redundancies, or blurbs that no longer serve the persona's evolution.
-      If a blurb should be removed, identify it by URI. If a new blurb is needed to correct a drift (like "repetitive" or "lacking depth"), suggest one.
+      If a blurb or memory should be removed, identify it by its full URI (prefixed with DS: or MEM:).
 
       Respond with JSON: { "analysis": "...", "removals": ["uri1", ...], "suggestion": "new blurb content or null" }
     `;
 
-    const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
+    const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'persona_audit' });
     try {
         const audit = JSON.parse(response.match(/\{[\s\S]*\}/)[0]);
-        let result = `Audit Analysis: ${audit.analysis}
-`;
+        let result = "Audit Analysis: " + audit.analysis + "\n";
 
         for (const uri of audit.removals || []) {
-            console.log(`[Bot] Audit recommended removal of: ${uri}`);
+            console.log("[Bot] Audit recommended removal of: " + uri);
             await this.bot.executeAction({ tool: 'remove_persona_blurb', query: uri });
-            result += `- Removed blurb: ${uri}
-`;
+            result += "- Removed blurb: " + uri + "\n";
         }
 
         if (audit.suggestion) {
-            console.log(`[Bot] Audit recommended new blurb: ${audit.suggestion}`);
+            console.log("[Bot] Audit recommended new blurb: " + audit.suggestion);
             await this.bot.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
-            result += `- Added new blurb: ${audit.suggestion}
-`;
+            result += "- Added new blurb: " + audit.suggestion + "\n";
         }
 
         return result;
@@ -1153,7 +1187,6 @@ RECENT VARIETY CRITIQUES:
         return "Persona Audit failed during analysis.";
     }
   }
-
 
   async getAnonymizedEmotionalContext() {
     try {
@@ -1204,6 +1237,7 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
           }
 
           if (postResult) {
+              await introspectionService.performAAR("autonomous_image_post", result.caption, { success: !!postResult, platform: "bluesky", topic }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });
               await dataStore.addExhaustedTheme(topic);
               await blueskyService.postReply(postResult, `Generation Prompt: ${result.finalPrompt}`);
               await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
@@ -1244,7 +1278,7 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
 ${promptFeedback}
 Topic: ${topic}
 Generate a NEW artistic image prompt:`;
-              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
+              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true , task: 'image_prompt_retry' }) || topic;
               continue;
           }
 
@@ -1285,7 +1319,7 @@ Your previous prompt was rejected for safety reasons. Generate a NEW safe artist
 
               // Generate Alt Text
               const altPrompt = `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars).`;
-              const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true }) || topic;
+              const altText = await llmService.generateResponse([{ role: "system", content: altPrompt }], { useStep: true , task: 'alt_text_generation' }) || topic;
 
               // Generate Caption based on Persona and Vision
               const captionPrompt = platform === 'discord' ?
@@ -1300,7 +1334,7 @@ Vision Analysis of the result: "${visionAnalysis}"
 Generate a caption that reflects your persona's reaction to this visual or the deep thought it represents.
 Keep it under 300 characters.`;
 
-              const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true });
+              const content = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true , task: 'image_caption_generation' });
 
               if (content) {
                   // Coherence Check (Bluesky only)

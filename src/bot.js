@@ -17,6 +17,7 @@ import { nodeGatewayService } from './services/nodeGatewayService.js';
 import toolService from './services/toolService.js';
 import { newsroomService } from './services/newsroomService.js';
 import { handleCommand } from './utils/commandHandler.js';
+import { introspectionService } from './services/introspectionService.js';
 import { postYouTubeReply } from './utils/replyUtils.js';
 import { sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount, isGreeting, checkSimilarity, isSlop, getSlopInfo, reconstructTextWithFullUrls, hasPrefixOverlap, checkExactRepetition, KEYWORD_BLACKLIST, cleanKeywords, checkHardCodedBoundaries, isLiteralVisualPrompt } from './utils/textUtils.js';
 import { orchestratorService } from './services/orchestratorService.js';
@@ -271,11 +272,11 @@ export class Bot {
           }
           if (action.tool === "google_search" || action.tool === "search") {
               const res = await googleSearchService.search(query);
-              return { success: true, data: res };
+              const result = { success: true, data: res }; await introspectionService.performAAR("tool_use", action.tool, result, { query, params }); return result;
           }
           if (action.tool === "wikipedia") {
               const res = await wikipediaService.search(query);
-              return { success: true, data: res };
+              const result = { success: true, data: res }; await introspectionService.performAAR("tool_use", action.tool, result, { query, params }); return result;
           }
           if (action.tool === "set_goal") {
               const { goal, description } = params;
@@ -283,9 +284,34 @@ export class Bot {
               if (finalGoal) {
                   await dataStore.setCurrentGoal(finalGoal, description || finalGoal);
                   if (memoryService.isEnabled()) await memoryService.createMemoryEntry("goal", `[GOAL] Goal: ${finalGoal}`);
-                  return { success: true, data: finalGoal };
+                  const result = { success: true, data: finalGoal }; await introspectionService.performAAR("tool_use", action.tool, result, { query, params }); return result;
               }
               return { success: false, reason: "Goal name missing" };
+          }
+          if (action.tool === "add_persona_blurb") {
+              const blurb = query || params.blurb;
+              if (blurb) {
+                  await dataStore.addPersonaBlurb({ text: blurb, timestamp: Date.now() });
+                  if (memoryService.isEnabled()) await memoryService.createMemoryEntry("persona", blurb);
+                  return { success: true, data: blurb };
+              }
+              return { success: false, reason: "Blurb text missing" };
+          }
+          if (action.tool === "remove_persona_blurb") {
+              const uri = query || params.uri;
+              if (uri) {
+                  if (uri.startsWith("DS:")) {
+                      const cleanUri = uri.replace("DS:", "");
+                      const blurbs = dataStore.getPersonaBlurbs();
+                      const filtered = blurbs.filter(b => b.uri !== cleanUri);
+                      await dataStore.setPersonaBlurbs(filtered);
+                  } else if (uri.startsWith("MEM:")) {
+                      const cleanUri = uri.replace("MEM:", "");
+                      await memoryService.deleteMemory(cleanUri);
+                  }
+                  return { success: true, data: uri };
+              }
+              return { success: false, reason: "URI missing" };
           }
           return { success: false, reason: `Unknown tool: ${action.tool}` };
       } catch (e) {

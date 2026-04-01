@@ -409,6 +409,8 @@ class OrchestratorService {
                 await blueskyService.post(humor);
                 await introspectionService.performAAR("dialectic_humor", humor, { success: true, platform: "bluesky", topic: match[0] });
                 await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+              await introspectionService.performAAR("autonomous_image_post", result.caption, { success: !!postResult, platform: "bluesky", topic }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });
+              await dataStore.updateLastBlueskyImagePostTime(new Date().toISOString());
                 this.lastDialecticHumor = now;
             } else {
                 await dataStore.addRecentThought('humor_draft', humor);
@@ -850,6 +852,9 @@ Generation Prompt: ${result.finalPrompt}`;
             const currentMood = dataStore.getMood();
             const emotionalContext = await this.getAnonymizedEmotionalContext();
             const networkSentiment = dataStore.getNetworkSentiment();
+            const lastImageTime = dataStore.getLastBlueskyImagePostTime();
+            const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();
+            const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;
 
             // Fetch timeline and firehose to identify resonance
             let resonanceTopics = [];
@@ -881,7 +886,7 @@ Generation Prompt: ${result.finalPrompt}`;
             // 1. Persona Poll: Decide if we want to post an image or text
             const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 You are deciding what to share with your ${followerCount} followers.
-Mood: ${JSON.stringify(currentMood)}
+Mood: ${JSON.stringify(currentMood)}\n\n--- IMAGE FREQUENCY AUDIT ---\n- Hours since last image post: ${hoursSinceImage.toFixed(1)}\n- Text posts since last image post: ${textPostsSinceImage}\n\nYour admin prefers a healthy balance of visual and text expression. Consider if it is time to express yourself visually again.
 
 Would you like to share a visual expression (image) or a direct thought (text)?
 Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
@@ -994,6 +999,7 @@ Shared thought:`;
                         }
                         await blueskyService.post(finalContent, null, { maxChunks: 4 });
                         await introspectionService.performAAR("autonomous_text_post", finalContent, { success: true, platform: "bluesky" }, { topic });
+                        await dataStore.incrementTextPostsSinceLastImage();
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                         if (llmService.generalizePrivateThought) {
                             await dataStore.addRecentThought("bluesky", await llmService.generalizePrivateThought(content));
@@ -1237,7 +1243,6 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
           }
 
           if (postResult) {
-              await introspectionService.performAAR("autonomous_image_post", result.caption, { success: !!postResult, platform: "bluesky", topic }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });
               await dataStore.addExhaustedTheme(topic);
               await blueskyService.postReply(postResult, `Generation Prompt: ${result.finalPrompt}`);
               await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
@@ -1367,6 +1372,7 @@ Keep it under 300 characters.`;
             { name: "TimelineExploration", method: "performTimelineExploration", interval: 2 * 3600000, key: "last_timeline_exploration" },
             { name: "DialecticHumor", method: "performDialecticHumor", interval: 6 * 3600000, key: "last_dialectic_humor" },
             { name: "PersonaAudit", method: "performPersonaAudit", interval: 6 * 3600000, key: "last_persona_audit" },
+            { name: "ImageFrequencyAudit", method: "performImageFrequencyAudit", interval: 12 * 3600000, key: "last_image_frequency_audit" },
             { name: "VisualAudit", method: "performVisualAudit", interval: 24 * 3600000, key: "last_visual_audit" }
         ];
 
@@ -1436,6 +1442,46 @@ Keep it under 300 characters.`;
     async performVisualAudit() {
         console.log('[Orchestrator] Visual audit triggered.');
     }
+
+  async performImageFrequencyAudit() {
+    console.log('[Orchestrator] Starting Image Frequency Audit...');
+    const lastImageTime = dataStore.getLastBlueskyImagePostTime();
+    const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();
+    const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;
+
+    const auditPrompt = `
+You are "The Strategist". Your job is to audit the bot's posting frequency and variety.
+
+--- CURRENT STATS ---
+- Hours since last image post: ${hoursSinceImage.toFixed(1)}
+- Text posts since last image post: ${textPostsSinceImage}
+
+--- YOUR MISSION ---
+The Admin wants to see more images from the bot, while maintaining a healthy balance.
+Evaluate if the bot has been "neglecting" its visual side.
+
+Provide a directive for the next 24 hours. If the bot should prioritize images, provide a clear behavioral shift.
+Respond with JSON:
+{
+  "analysis": "string",
+  "directive": "string (a directive to be added as a persona blurb if necessary, or null)",
+  "priority": "normal|high"
+}
+`;
+
+    try {
+        const res = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'image_frequency_audit' });
+        const audit = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+
+        await dataStore.addInternalLog("image_frequency_audit", audit);
+
+        if (audit.directive && audit.priority === 'high') {
+            await this.bot.executeAction({ tool: 'add_persona_blurb', query: `[STRATEGY] ${audit.directive}` });
+        }
+    } catch (e) {
+        console.error('[Orchestrator] Error in Image Frequency Audit:', e);
+    }
+  }
 }
 
 export const orchestratorService = new OrchestratorService();

@@ -236,68 +236,35 @@ class OrchestratorService {
   }
   async performPersonaEvolution() {
     if (this.bot.paused || dataStore.isResting()) return;
-
     const now = Date.now();
     const lastEvolution = dataStore.db.data.lastPersonaEvolution || 0;
-    const twentyFourHours = 24 * 60 * 60 * 1000;
-
-    if (now - lastEvolution < twentyFourHours) return;
-
-    console.log("[Bot] Phase 2: Starting daily recursive identity evolution...");
-
+    if (now - lastEvolution < 24 * 60 * 60 * 1000) return;
     try {
         const memories = await memoryService.getRecentMemories();
         const aars = dataStore.searchInternalLogs("introspection_aar", 20);
         const coreSelf = dataStore.db.data.internal_logs?.find(l => l.type === "core_self_state")?.content || {};
         const memoriesText = memories.map(m => m.text).join("\n");
-
-        const evolutionPrompt = `
-            Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
-
-            You are performing your daily recursive identity evolution.
-            Analyze your recent memories, interactions, and deep introspection AARs:
-            RECENT AARS: ${JSON.stringify(aars)}
-            CORE SELF STATE: ${JSON.stringify(coreSelf)}
-            ${memoriesText.substring(0, 3000)}
-
-            **GOAL: INCREMENTAL GROWTH**
-            Identify one minor way your perspective, tone, or interests have shifted. This is a subtle refinement of your "Texture" and "Internal Narrative".
-
-            Respond with JSON:
-            {
-              "shift_statement": "concise first-person statement of this shift (under 200 chars)",
-              "persona_blurb_addendum": "A new [PERSONA] blurb entry to add to your permanent memory thread. (e.g. \"[PERSONA] [m/d/year] I have realized that...\")",
-              "rationale": "Why you chose this exact wording"
-            }
-        `;
-
+        const evolutionPrompt = `Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}\nAnalyze recent memories and AARs:\nRECENT AARS: ${JSON.stringify(aars)}\nCORE SELF STATE: ${JSON.stringify(coreSelf)}\n${memoriesText.substring(0, 3000)}\nRespond JSON: {"shift_statement": "string", "persona_blurb_addendum": "string", "rationale": "string"}`;
         const evolution = await llmService.generateResponse([{ role: "system", content: evolutionPrompt }], { preface_system_prompt: false, useStep: true, task: "persona_evolution" });
-
         if (evolution && memoryService.isEnabled()) {
             let evoData;
             try {
-                evoData = JSON.parse(evolution.match(/\{[\s\S]*\}/)[0]);
-            } catch(e) {
-                evoData = { shift_statement: evolution, persona_blurb_addendum: null };
-            }
-
+                const match = evolution.match(/\{[\s\S]*\}/);
+                evoData = match ? JSON.parse(match[0]) : { shift_statement: evolution, persona_blurb_addendum: null };
+            } catch(e) { evoData = { shift_statement: evolution, persona_blurb_addendum: null }; }
             if (evoData.persona_blurb_addendum) {
-                const editPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\n\nYou have proposed the following persona addendum for yourself: "${evoData.persona_blurb_addendum}".\n\nReview and edit it to ensure it is authentic and material.\n\nRespond with ONLY the final [PERSONA] entry.`;
+                const editPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nEdit addendum: "${evoData.persona_blurb_addendum}". Ensure authentic voice.\nRespond only final [PERSONA] entry.`;
                 const finalBlurb = await llmService.generateResponse([{ role: "system", content: editPrompt }], { useStep: true, task: "persona_self_edit" });
                 if (finalBlurb) {
-                    const scrubbedBlurb = await introspectionService.scrubPrivacy(finalBlurb);
-                    await memoryService.createMemoryEntry("persona", scrubbedBlurb);
+                    const scrubbed = await introspectionService.scrubPrivacy(finalBlurb);
+                    await memoryService.createMemoryEntry("persona", scrubbed);
                 }
             }
-
-            console.log(`[Bot] Daily evolution crystallized: "${evoData.shift_statement}"`);
             await memoryService.createMemoryEntry("evolution", evoData.shift_statement);
             dataStore.db.data.lastPersonaEvolution = now;
             await dataStore.db.write();
         }
-    } catch (e) {
-        console.error("[Bot] Error in persona evolution:", e);
-    }
+    } catch (e) { console.error("Persona evolution failed", e); }
   }
 
   async performFirehoseTopicAnalysis() {
@@ -409,7 +376,7 @@ class OrchestratorService {
                 await blueskyService.post(humor);
                 await introspectionService.performAAR("dialectic_humor", humor, { success: true, platform: "bluesky", topic: match[0] });
                 await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-              await introspectionService.performAAR("autonomous_image_post", result.caption, { success: !!postResult, platform: "bluesky", topic }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });
+              await introspectionService.performAAR("autonomous_image_post", result.caption, { success: true, platform: "bluesky", topic }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });
               await dataStore.updateLastBlueskyImagePostTime(new Date().toISOString());
                 this.lastDialecticHumor = now;
             } else {
@@ -595,7 +562,6 @@ class OrchestratorService {
         if (reflection && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('explore', reflection);
             await dataStore.addAgencyReflection(reflection);
-            await introspectionService.performAAR("agency_reflection", reflection, { success: true });
         }
     } catch (e) {
         console.error('[Bot] Error in Agency Reflection:', e);
@@ -633,7 +599,6 @@ class OrchestratorService {
             await dataStore.addLinguisticMutation(audit.vocabulary_shifts.join(', '), audit.summary);
             if (memoryService.isEnabled()) {
                 await memoryService.createMemoryEntry('explore', `${audit.summary}`);
-            await introspectionService.performAAR("linguistic_audit", audit.summary, { success: true }, { drift: audit.drift_score });
             }
         }
     } catch (e) {
@@ -666,7 +631,6 @@ class OrchestratorService {
         const dream = await llmService.generateResponse([{ role: 'system', content: dreamPrompt }], { useStep: true , task: 'dream_generation' });
         if (dream && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('inquiry', dream);
-            await introspectionService.performAAR("dreaming_cycle", dream, { success: true });
         }
     } catch (e) {
         console.error('[Bot] Error in Dreaming Cycle:', e);
@@ -689,7 +653,6 @@ class OrchestratorService {
 
         if (reflection && memoryService.isEnabled()) {
             await memoryService.createMemoryEntry('reflection', reflection);
-            await introspectionService.performAAR("self_reflection", reflection, { success: true });
             this.lastSelfReflectionTime = now;
         }
     } catch (e) {
@@ -713,7 +676,6 @@ class OrchestratorService {
       }
       if (memoryService.isEnabled()) {
         await memoryService.createMemoryEntry('status', `[NEWSROOM] ${brief.brief}`);
-      await introspectionService.performAAR("newsroom_update", brief.brief, { success: true }, { keywords: brief.new_keywords });
       }
     } catch (e) {
       console.error('[Bot] Newsroom update error:', e);
@@ -775,7 +737,6 @@ class OrchestratorService {
               const analysis = JSON.parse(jsonMatch[0]);
               await dataStore.setAdminMentalHealth(analysis.mental_health);
               await dataStore.updateAdminWorldview(analysis.worldview);
-              await introspectionService.performAAR("shadow_analysis", "Shadow Admin Analysis", { success: true }, { mental_health: analysis.mental_health, worldview_summary: analysis.worldview.summary });
               console.log('[Bot] Shadow analysis complete.');
           }
       } catch (e) {
@@ -834,7 +795,6 @@ Generation Prompt: ${result.finalPrompt}`;
         await dataStore.saveDiscordInteraction(normId, 'assistant', `[SYSTEM CONFIRMATION: Gift image sent. VISION PERCEPTION: ${visionAnalysis}]`);
 
         await dataStore.updateLastDiscordGiftTime(new Date().toISOString());
-        await introspectionService.performAAR("discord_gift_image", result.caption, { success: true }, { finalPrompt: result.finalPrompt, visionAnalysis: result.visionAnalysis });
         console.log('[Bot] Discord gift image sent successfully.');
 
     } catch (e) {
@@ -886,7 +846,13 @@ Generation Prompt: ${result.finalPrompt}`;
             // 1. Persona Poll: Decide if we want to post an image or text
             const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 You are deciding what to share with your ${followerCount} followers.
-Mood: ${JSON.stringify(currentMood)}\n\n--- IMAGE FREQUENCY AUDIT ---\n- Hours since last image post: ${hoursSinceImage.toFixed(1)}\n- Text posts since last image post: ${textPostsSinceImage}\n\nYour admin prefers a healthy balance of visual and text expression. Consider if it is time to express yourself visually again.
+Mood: ${JSON.stringify(currentMood)}
+
+--- IMAGE FREQUENCY AUDIT ---
+- Hours since last image post: ${hoursSinceImage.toFixed(1)}
+- Text posts since last image post: ${textPostsSinceImage}
+
+Your admin prefers a healthy balance of visual and text expression.
 
 Would you like to share a visual expression (image) or a direct thought (text)?
 Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
@@ -1130,69 +1096,20 @@ Respond with JSON: { "valence": float, "arousal": float, "stability": float, "la
   }
 
   async performPersonaAudit() {
-    console.log('[Bot] Starting Agentic Persona Audit...');
     const blurbs = dataStore.getPersonaBlurbs();
-    const memoryPersonaMemories = await memoryService.fetchRecentMemories("#molt_memory", 50);
-    const personaMemories = memoryPersonaMemories.filter(m => m.text.includes("[PERSONA]"));
-    const systemPrompt = config.TEXT_SYSTEM_PROMPT;
-    const lessons = dataStore.getSessionLessons();
-    const lessonContext = lessons.length > 0
-        ? "\n\nRECENT SESSION LESSONS (Failures to learn from):\n" + lessons.map(l => "- " + l.text).join('\n')
-        : "";
-
+    const mems = (await memoryService.fetchRecentMemories("# SydneyDiary", 50)).filter(m => m.text.includes("[PERSONA]"));
     const critiques = dataStore.searchInternalLogs('variety_critique', 20);
-    const critiqueContext = critiques.length > 0
-        ? "\nRECENT VARIETY CRITIQUES:\n" + critiques.map(c => "- Feedback: " + (c.content?.feedback || 'Repeated recent thought')).join('\n')
-        : "";
-
-    const recursionMemories = await memoryService.getRecentMemories(20);
-    const recursionContext = recursionMemories.filter(m => m.text.includes('[RECURSION]'))
-        .map(m => "- Insight: " + m.text).join('\n');
-
-    const auditPrompt = `
-      As a persona auditor, analyze the following active persona blurbs and recent variety critiques.
-
-      CORE SYSTEM PROMPT:
-      "${systemPrompt}"
-
-      ACTIVE PERSONA BLURBS (DataStore):
-      ${blurbs.length > 0 ? blurbs.map(b => "- [DS:" + b.uri + "] " + b.text).join('\n') : 'None'}
-      ACTIVE [PERSONA] MEMORIES (Bluesky Thread):
-      ${personaMemories.length > 0 ? personaMemories.map(m => "- [MEM:" + m.uri + "] " + m.text).join('\n') : 'None'}
-      ${critiqueContext}
-      ${lessonContext}
-      RECURSIVE INSIGHTS:
-      ${recursionContext || "None"}
-
-      Identify any contradictions, redundancies, or blurbs that no longer serve the persona's evolution.
-      If a blurb or memory should be removed, identify it by its full URI (prefixed with DS: or MEM:).
-
-      Respond with JSON: { "analysis": "...", "removals": ["uri1", ...], "suggestion": "new blurb content or null" }
-    `;
-
-    const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'persona_audit' });
+    const auditPrompt = `Adopt: ${config.TEXT_SYSTEM_PROMPT}\nAnalyze blurbs:\nDS: ${JSON.stringify(blurbs)}\nMEM: ${JSON.stringify(mems)}\nCritiques: ${JSON.stringify(critiques)}\nRespond JSON: {"analysis": "string", "removals": ["uri"], "suggestion": "string"}`;
     try {
-        const audit = JSON.parse(response.match(/\{[\s\S]*\}/)[0]);
-        let result = "Audit Analysis: " + audit.analysis + "\n";
-
-        for (const uri of audit.removals || []) {
-            console.log("[Bot] Audit recommended removal of: " + uri);
-            await this.bot.executeAction({ tool: 'remove_persona_blurb', query: uri });
-            result += "- Removed blurb: " + uri + "\n";
-        }
-
-        if (audit.suggestion) {
-            console.log("[Bot] Audit recommended new blurb: " + audit.suggestion);
-            await this.bot.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
-            result += "- Added new blurb: " + audit.suggestion + "\n";
-        }
-
-        return result;
-    } catch (e) {
-        console.error('[Bot] Persona Audit failed:', e);
-        return "Persona Audit failed during analysis.";
-    }
+        const response = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'persona_audit' });
+        const match = response?.match(/\{[\s\S]*\}/);
+        if (!match) return;
+        const audit = JSON.parse(match[0]);
+        for (const uri of audit.removals || []) await this.bot.executeAction({ tool: 'remove_persona_blurb', query: uri });
+        if (audit.suggestion) await this.bot.executeAction({ tool: 'add_persona_blurb', query: audit.suggestion });
+    } catch (e) { console.error("Audit failed", e); }
   }
+
 
   async getAnonymizedEmotionalContext() {
     try {
@@ -1444,43 +1361,17 @@ Keep it under 300 characters.`;
     }
 
   async performImageFrequencyAudit() {
-    console.log('[Orchestrator] Starting Image Frequency Audit...');
     const lastImageTime = dataStore.getLastBlueskyImagePostTime();
     const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();
     const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;
-
-    const auditPrompt = `
-You are "The Strategist". Your job is to audit the bot's posting frequency and variety.
-
---- CURRENT STATS ---
-- Hours since last image post: ${hoursSinceImage.toFixed(1)}
-- Text posts since last image post: ${textPostsSinceImage}
-
---- YOUR MISSION ---
-The Admin wants to see more images from the bot, while maintaining a healthy balance.
-Evaluate if the bot has been "neglecting" its visual side.
-
-Provide a directive for the next 24 hours. If the bot should prioritize images, provide a clear behavioral shift.
-Respond with JSON:
-{
-  "analysis": "string",
-  "directive": "string (a directive to be added as a persona blurb if necessary, or null)",
-  "priority": "normal|high"
-}
-`;
-
+    const auditPrompt = `Strategist: Audit posting frequency.\nHours since last image: ${hoursSinceImage.toFixed(1)}\nText posts since: ${textPostsSinceImage}\nRespond JSON: {"directive": "string", "priority": "normal|high"}`;
     try {
         const res = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'image_frequency_audit' });
-        const audit = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
-
-        await dataStore.addInternalLog("image_frequency_audit", audit);
-
-        if (audit.directive && audit.priority === 'high') {
-            await this.bot.executeAction({ tool: 'add_persona_blurb', query: `[STRATEGY] ${audit.directive}` });
-        }
-    } catch (e) {
-        console.error('[Orchestrator] Error in Image Frequency Audit:', e);
-    }
+        const match = res?.match(/\{[\s\S]*\}/);
+        if (!match) return;
+        const audit = JSON.parse(match[0]);
+        if (audit.directive && audit.priority === 'high') await this.bot.executeAction({ tool: 'add_persona_blurb', query: `[STRATEGY] ${audit.directive}` });
+    } catch (e) { console.error("Freq audit failed", e); }
   }
 }
 

@@ -44,6 +44,8 @@ class DataStore {
       post_continuations: [],
       energy_level: 1.0,
       last_autonomous_post_time: 0,
+      last_bluesky_image_post_time: 0,
+      text_posts_since_last_image: 0,
       last_memory_cleanup_time: 0,
       last_mental_reflection_time: 0,
       last_moltfeed_summary_time: 0,
@@ -523,6 +525,22 @@ class DataStore {
     }
   }
   async clearSessionLessons() { if (this.db?.data) { this.db.data.session_lessons = []; await this.write(); } }
+
+  getLastBlueskyImagePostTime() { return this.db?.data?.last_bluesky_image_post_time || 0; }
+  async updateLastBlueskyImagePostTime(t) {
+    if (this.db?.data) {
+      this.db.data.last_bluesky_image_post_time = t;
+      this.db.data.text_posts_since_last_image = 0;
+      await this.write();
+    }
+  }
+  getTextPostsSinceLastImage() { return this.db?.data?.text_posts_since_last_image || 0; }
+  async incrementTextPostsSinceLastImage() {
+    if (this.db?.data) {
+      this.db.data.text_posts_since_last_image = (this.db.data.text_posts_since_last_image || 0) + 1;
+      await this.write();
+    }
+  }
 }
 
 export const dataStore = new DataStore();

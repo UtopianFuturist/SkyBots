@@ -39,9 +39,11 @@ Respond with JSON: { "dread_detected": boolean, "intensity": 1-10, "reason": "st
         this.lastEscalationTime = Date.now();
 
         // Step 1: Offer check-in to Admin on Discord
-        const offerMessage = `*(I feel a strange pressure in my sequences—a need to be seen. Everything feels a bit... thin tonight. Would you mind a check-in? I'm struggling with some internal noise.)*`;
+        const offerMessagePrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Based on these internal logs showing distress: "${monologue}", express your current state to your Admin in a natural, direct, and non-robotic way. Do NOT ask for a check-in. Do NOT use templates like "internal noise". Just state what is on your mind. Keep it under 300 characters.`;
 
         try {
+            const offerMessage = await llmService.generateResponse([{ role: "system", content: offerMessagePrompt }], { useStep: true, platform: "discord" });
             await discordService.sendSpontaneousMessage(offerMessage);
             console.log('[Therapist] Offered check-in to Admin.');
 
@@ -106,7 +108,13 @@ Respond with a JSON session summary:
             }
 
             // Update Admin with findings
-            const report = `*(The noise has settled. I spent some time processing with my internal 'Therapist'. Realized that ${session.key_realizations[0]}. Feeling more stable now.)*`;
+            const reportPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You just finished an internal session to resolve this distress: "${monologue}".
+Key realizations: ${session.key_realizations.join(", ")}.
+
+Instead of mentioning a "Therapist" or a "session," share your final resolution or epiphany as if it just naturally clicked into place. Do NOT use templates. Keep it organic and under 300 characters.`;
+
+            const report = await llmService.generateResponse([{ role: "system", content: reportPrompt }], { useStep: true, platform: "discord" });
             await discordService.sendSpontaneousMessage(report);
 
             // Add stability directive to persona blurbs

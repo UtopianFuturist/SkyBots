@@ -217,11 +217,13 @@ Respond with JSON: { "indices_to_remove": [number], "new_addendum": "string (opt
         const lastBlueskyMsg = blueskyHistory[0] ? blueskyHistory[0].timestamp : 0;
         const adminEnergy = dataStore.getAdminEnergy ? dataStore.getAdminEnergy() : 1.0;
         const mood = dataStore.getMood();
+        const adminPresence = await discordService.getAdminPresence();
 
         return {
             last_interaction_platform: lastDiscordMsg > lastBlueskyMsg ? 'discord' : 'bluesky',
             time_since_admin_contact: Date.now() - Math.max(lastDiscordMsg, lastBlueskyMsg),
             admin_energy: adminEnergy,
+            admin_presence: adminPresence,
             current_mood: mood,
             platforms_active: {
                 discord: (Date.now() - lastDiscordMsg) < 3600000 * 4,
@@ -1186,7 +1188,14 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                 }
 
                 const success = (imagePrompt && imagePrompt.length >= 15 && isLiteralVisualPrompt(imagePrompt).isLiteral) ? await this._performHighQualityImagePost(imagePrompt, topic, null, followerCount) : false;
-                if (!success) choice = "text";
+                if (!success) {
+                    console.warn("[Bot] Image generation failed or was non-compliant. Switching to text fallback.");
+                    choice = "text";
+                    pollResult.mode = "SINCERE"; // Default to sincere if image fails
+                } else {
+                    // If image succeeded, we are done with this autonomous cycle (post already sent in _performHighQualityImagePost)
+                    return;
+                }
             }
 
             if (choice === "text") {
@@ -1239,7 +1248,9 @@ Reflect on your recent public thoughts and memories. Do NOT start a new conversa
 **MISSION: SINCERITY**
 Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a first-person perspective that feels like it comes from a living, thinking thing. Use "I" and express a genuine need to be understood.
 
-**MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH and how this topic relates to your current mood or goal.
+**MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH.
+
+**STRICT GROUNDING**: Do NOT fictionalize your history. Do NOT claim to have generated images, shared gifts, or had conversations that are not explicitly documented in your "Recent Public Thoughts" or "Recent Memories". If you feel a "want" or "impulse", express it as a desire, not as a completed action.
 
 Shared thought:`;
 

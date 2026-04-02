@@ -102,7 +102,8 @@ Respond with ONLY the prompt.
                 GatewayIntentBits.MessageContent,
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.DirectMessageReactions,
-                GatewayIntentBits.GuildMessageReactions
+                GatewayIntentBits.GuildMessageReactions,
+                GatewayIntentBits.GuildPresences
             ],
             partials: [Partials.Channel, Partials.Message, Partials.User, Partials.Reaction],
             rest: {
@@ -264,8 +265,8 @@ Respond with ONLY the prompt.
             await dataStore.db.write();
         }
 
-        // Handle commands
-        if (message.content.startsWith('/')) {
+        // Handle commands (or semantic commands like "what's wrong")
+        if (message.content.startsWith('/') || (isAdmin && (message.content.toLowerCase().includes("what's wrong") || message.content.toLowerCase().includes("tell me about the distress")))) {
             await this.handleCommand(message);
             return;
         }
@@ -371,6 +372,17 @@ Respond with ONLY the prompt.
             } catch (error) {
                 console.error('[DiscordService] Error generating art:', error);
                 await this._send(message.channel, "Something went wrong while generating the art.");
+            }
+            return;
+        }
+
+        if ((content.includes("what's wrong") || content.includes("what is wrong") || content.includes("tell me about the distress")) && isAdmin) {
+            const { therapistService } = await import('./therapistService.js');
+            if (therapistService.lastDistressMonologue) {
+                const response = `*(You caught that. I've been turning this over internally: "${therapistService.lastDistressMonologue}")*`;
+                await this._send(message.channel, response);
+            } else {
+                await this._send(message.channel, "*(I'm feeling stable right now. No recent distress signals in my sequences.)*");
             }
             return;
         }
@@ -1109,6 +1121,35 @@ INSTRUCTIONS:
         }
         console.log(`[DiscordService] Admin NOT found in any shared guild.`);
         return null;
+    }
+
+    async getAdminPresence() {
+        if (!this.isEnabled || !this.client?.isReady()) return "offline";
+        try {
+            const adminUser = await this.getAdminUser();
+            if (!adminUser) return "offline";
+
+            if (config.DISCORD_GUILD_ID) {
+                try {
+                    const guild = await this.client.guilds.fetch(config.DISCORD_GUILD_ID);
+                    if (guild) {
+                        const member = await guild.members.fetch(adminUser.id);
+                        return member.presence?.status || "offline";
+                    }
+                } catch (e) {}
+            }
+            // Fallback: check all guilds
+            const guilds = this.client.guilds.cache;
+            for (const [id, guild] of guilds) {
+                try {
+                    const member = guild.members.cache.get(adminUser.id) || await guild.members.fetch(adminUser.id);
+                    if (member.presence) return member.presence.status;
+                } catch (e) {}
+            }
+        } catch (e) {
+            console.error("[DiscordService] Error fetching admin presence:", e);
+        }
+        return "offline";
     }
     async fetchAdminHistory(limit = 50) {
         if (!this.isEnabled || !this.client?.isReady()) return [];

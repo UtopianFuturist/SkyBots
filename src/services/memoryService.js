@@ -6,6 +6,31 @@ import config from '../../config.js';
 import { dataStore } from './dataStore.js';
 
 class MemoryService {
+
+  // Proposal 9: Dynamic Context Windowing
+  getDynamicWindowSize(taskType) {
+    const windows = {
+      'aar': 30,
+      'synthesis': 50,
+      'reply': 10,
+      'post': 20,
+      'therapy': 40
+    };
+    return windows[taskType] || 15;
+  }
+
+  // Proposal 10: Relevance-based Pruning (simplified version: move high relevance to a persistent list)
+  async tagHighRelevanceMemories(memories) {
+    // This would ideally use an LLM, but for now we'll look for specific tags
+    const highRelevanceTags = ['[CORE]', '[RELATIONAL]', '[PERSONA]', '[THERAPY]'];
+    return memories.map(m => {
+        if (highRelevanceTags.some(tag => m.text.includes(tag))) {
+            return { ...m, relevance: 1.0, persistent: true };
+        }
+        return { ...m, relevance: 0.5, persistent: false };
+    });
+  }
+
   constructor() {
     this.hashtag = config.MEMORY_THREAD_HASHTAG;
     this.recentMemories = [];
@@ -52,7 +77,7 @@ class MemoryService {
         const query = `from:${profile.did} ${this.hashtag}`;
         const posts = await blueskyService.searchPosts(query, 'latest', 100);
 
-        const validTags = ['PERSONA', 'DIRECTIVE', 'RELATIONSHIP', 'INTERACTION', 'MOOD', 'INQUIRY', 'MENTAL', 'GOAL', 'EXPLORE', 'STATUS', 'RESEARCH', 'ADMIN_FACT', 'SCHEDULE', 'FACT', 'AUDIT', 'RECURSION', 'REFLECTION', 'INSIGHT'];
+        const validTags = ['PERSONA', 'DIRECTIVE', 'RELATIONSHIP', 'INTERACTION', 'MOOD', 'INQUIRY', 'MENTAL', 'GOAL', 'EXPLORE', 'STATUS', 'RESEARCH', 'ADMIN_FACT', 'SCHEDULE', 'FACT', 'AUDIT', 'RECURSION', 'REFLECTION', 'INSIGHT', 'THERAPY'];
         const jargonPatterns = [/<tool_call>/i, /<thinking>/i, /\[PLAN\]/i, /<function/i];
 
         for (const post of posts) {
@@ -201,6 +226,24 @@ CRITICAL:
       }
     } catch (error) {}
     return null;
+  }
+
+
+  async getContextualMemories(query, taskType = 'reply') {
+    const limit = this.getDynamicWindowSize(taskType);
+    let memories = await this.getRecentMemories(limit);
+
+    if (query) {
+        const matches = memories.filter(m => {
+            const words = query.toLowerCase().split(' ');
+            return words.some(word => word.length > 4 && m.text.toLowerCase().includes(word));
+        });
+        if (matches.length > 0) {
+            console.log(`[MemoryService] Contextual flashback triggered for: ${query.substring(0, 30)}...`);
+            return matches;
+        }
+    }
+    return memories;
   }
 
   async getRecentMemories(limit = 15) { return await this.fetchRecentMemories(this.hashtag, limit); }

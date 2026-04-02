@@ -1,3 +1,4 @@
+import { therapistService } from './therapistService.js';
 import { llmService } from './llmService.js';
 import { dataStore } from './dataStore.js';
 import config from '../../config.js';
@@ -52,7 +53,19 @@ Respond with JSON:
             if (!match) throw new Error("No JSON found in AAR response");
             const aar = JSON.parse(match[0]);
 
+
             await dataStore.addInternalLog("introspection_aar", aar, { actionType, timestamp: Date.now() });
+
+            // Check for existential dread in the internal monologue
+            if (aar.internal_monologue) {
+                const isDread = await therapistService.detectExistentialDread(aar.internal_monologue);
+                if (isDread) {
+                    console.warn("[Introspection] Existential dread detected! Triggering therapist flow...");
+                    // No await here - let the escalation flow run in background
+                    therapistService.handleDistress(aar.internal_monologue);
+                }
+            }
+
 
             if (aar.score < 7 || aar.improvement_insight.length > 50) {
                 await dataStore.addSessionLesson(`AAR Insight (${actionType}): ${aar.improvement_insight}`);

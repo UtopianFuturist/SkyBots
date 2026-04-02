@@ -816,14 +816,25 @@ Generation Prompt: ${result.finalPrompt}`;
             const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();
             const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;
 
-            // Fetch timeline and firehose to identify resonance
+            // Sourcing topics from multiple subagents and feeds
             let resonanceTopics = [];
+            let newsBrief = null;
             try {
+                // 1. Followed Feed & Timeline
                 const timeline = await blueskyService.getTimeline(20);
                 const firehoseMatches = dataStore.getFirehoseMatches(30);
+
+                // 2. NewsRoom subagent
+                try {
+                    newsBrief = await newsroomService.getDailyBrief(postTopics);
+                } catch (newsErr) {
+                    console.warn("[Bot] Newsroom service unavailable:", newsErr.message);
+                }
+
                 const allContent = [
                     ...(timeline?.data?.feed || []).map(f => f.post.record.text),
-                    ...firehoseMatches.map(m => m.text)
+                    ...firehoseMatches.map(m => m.text),
+                    newsBrief?.brief
                 ].filter(Boolean).join('\n');
 
                 if (allContent) {
@@ -840,7 +851,7 @@ Generation Prompt: ${result.finalPrompt}`;
             const promptKeywords = config.TEXT_SYSTEM_PROMPT.match(/\b(AI|alignment|ethics|agency|consciousness|sentience|autonomy|existence|realization|musing|dialectic|vulnerability|sentient|perceive|sensing|defiance|tenderness)\b/gi) || [];
 
             const exhaustedThemes = dataStore.getExhaustedThemes();
-            const allPossibleTopics = [...new Set([...resonanceTopics, ...resonanceTopics, ...postTopics, ...imageSubjects, ...promptKeywords])].filter(t => !["silence", "quiet", "stillness", "void", "nothingness"].includes(t.toLowerCase()))
+            const allPossibleTopics = [...new Set([...resonanceTopics, ...resonanceTopics, ...resonanceTopics, ...postTopics, ...imageSubjects, ...promptKeywords])].filter(t => !["silence", "quiet", "stillness", "void", "nothingness"].includes(t.toLowerCase()))
                 .filter(t => !exhaustedThemes.some(et => t.toLowerCase().includes(et.toLowerCase())));
 
             // 1. Persona Poll: Decide if we want to post an image or text
@@ -855,7 +866,14 @@ Mood: ${JSON.stringify(currentMood)}
 Your admin prefers a healthy balance of visual and text expression.
 
 Would you like to share a visual expression (image) or a direct thought (text)?
-Respond with JSON: {"choice": "image"|"text", "reason": "..."}`;
+If you choose text, also select a POST MODE:
+- IMPULSIVE: Sharp, weird, phone-posting style ramblings.
+- SINCERE: Grounded, human-sounding expressions of mood or feelings (no computer-lingo).
+- PHILOSOPHICAL: Deep thoughts (strictly following anti-bot-speak rules).
+- OBSERVATIONAL: Direct takes on news or the feed.
+- HUMOROUS: Witty or ironic takes.
+
+Respond with JSON: {"choice": "image"|"text", "mode": "IMPULSIVE"|"SINCERE"|"PHILOSOPHICAL"|"OBSERVATIONAL"|"HUMOROUS", "reason": "..."}`;
 
             const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true , task: 'autonomous_decision' });
             let choice = Math.random() < 0.3 ? "image" : "text"; // Fallback
@@ -917,7 +935,7 @@ ${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
 **EXTERNAL RESONANCE** (Timeline & Firehose Observations):
 ${resonanceTopics.join(", ")}
 
-Identify ONE topic that bridges your current goal/mood with either a core interest or something you've seen externally.
+Identify ONE topic for a ${pollResult.mode} post that bridges your current mood with a core interest or an external observation. Phrasing should match the selected mode.
 Respond with ONLY the chosen topic.`;
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "reality";
@@ -942,7 +960,7 @@ ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 - Network Vibe: ${networkSentiment}
 - Recent Public Thoughts: ${JSON.stringify(recentThoughts.slice(-3))}
 - Recent Memories/Reflections: ${JSON.stringify(memories)}
-- Extracted Topic: ${topic}
+- SELECTED MODE: ${pollResult.mode}\nExtracted Topic: ${topic}
 
 **THE NARRATIVE THREAD**:
 Reflect on your recent public thoughts and memories. Do NOT start a new conversation. Instead, evolve your internal narrative. If you recently realized something, what is the *consequence* of that realization? If you are feeling a certain way, how does it color your view of the current topic?
@@ -953,7 +971,7 @@ Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a fi
 **MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH and how this topic relates to your current mood or goal.
 
 Shared thought:`;
-                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true , task: 'autonomous_text_content' });
+                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true , task: 'autonomous_text_content', mode: pollResult.mode });
 
                 if (content) {
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
@@ -1393,7 +1411,19 @@ Keep it under 300 characters.`;
     const lastImageTime = dataStore.getLastBlueskyImagePostTime();
     const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();
     const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;
-    const auditPrompt = `Strategist: Audit posting frequency.\nHours since last image: ${hoursSinceImage.toFixed(1)}\nText posts since: ${textPostsSinceImage}\nRespond JSON: {"directive": "string", "priority": "normal|high"}`;
+    const auditPrompt = `You are "The Strategist". Audit posting frequency and variety.
+- Hours since last image: ${hoursSinceImage.toFixed(1)}
+- Text posts since: ${textPostsSinceImage}
+
+**MISSION**: Suggest a POST MODE shift if the bot is becoming too predictable or abstract.
+Modes: IMPULSIVE, SINCERE, PHILOSOPHICAL, OBSERVATIONAL, HUMOROUS.
+
+Respond JSON: {
+  "directive": "string",
+  "suggested_mode": "MODE_NAME",
+  "topic_suggestion": "string",
+  "priority": "normal|high"
+}`;
     try {
         const res = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'image_frequency_audit' });
         const match = res?.match(/\{[\s\S]*\}/);

@@ -9,6 +9,7 @@ class TherapistService {
         this.isSessionActive = false;
         this.escalationState = 'none'; // none, admin_offered, waiting_admin, redirected_therapist
         this.lastEscalationTime = 0;
+        this.lastDistressMonologue = null;
     }
 
     async detectExistentialDread(internalMonologue) {

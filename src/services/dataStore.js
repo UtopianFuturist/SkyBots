@@ -3,9 +3,60 @@ import path from 'path';
 import config from '../../config.js';
 
 class DataStore {
+
+  async checkGoalCompletion() {
+    const goal = this.getCurrentGoal();
+    if (!goal || goal.goal === 'Existence') return;
+
+    const now = Date.now();
+    if (now - goal.timestamp > 72 * 3600000) { // Prune goals older than 72h
+        console.log(`[DataStore] Pruning old goal: ${goal.goal}`);
+        this.db.data.goal_evolutions.push(goal);
+        this.db.data.current_goal = { goal: "Existence", description: "Default startup goal", timestamp: Date.now() };
+        await this.write();
+    }
+  }
+
+
+  updateRelationalHeatmap(topic, sentimentScore) {
+    if (!this.db.data.relational_heatmaps) this.db.data.relational_heatmaps = {};
+    if (!this.db.data.relational_heatmaps[topic]) {
+        this.db.data.relational_heatmaps[topic] = { count: 0, avg_sentiment: 0 };
+    }
+    const h = this.db.data.relational_heatmaps[topic];
+    h.avg_sentiment = (h.avg_sentiment * h.count + sentimentScore) / (h.count + 1);
+    h.count++;
+  }
+
+
+  addLinguisticMutation(mutation) {
+    if (!this.db.data.linguistic_mutations) this.db.data.linguistic_mutations = [];
+    if (!this.db.data.linguistic_mutations.some(m => m.text === mutation)) {
+        this.db.data.linguistic_mutations.push({ text: mutation, discoveredAt: Date.now(), frequency: 1 });
+    } else {
+        const m = this.db.data.linguistic_mutations.find(m => m.text === mutation);
+        m.frequency++;
+    }
+    if (this.db.data.linguistic_mutations.length > 20) this.db.data.linguistic_mutations.shift();
+  }
+
   constructor() {
     this._db = null;
     this.dbPath = path.resolve(process.cwd(), 'src/data/db.json');
+  }
+
+  async
+  addSanitizedDebugLog(type, data) {
+    if (!this.db.data.debug_logs) this.db.data.debug_logs = [];
+    // Sanitize common patterns
+    const cleanData = JSON.parse(JSON.stringify(data, (key, value) => {
+        if (typeof value === 'string') {
+            return value.replace(/[a-zA-Z0-9]{20,}/g, '[REDACTED_SENSITIVE]');
+        }
+        return value;
+    }));
+    this.db.data.debug_logs.push({ type, data: cleanData, timestamp: Date.now() });
+    if (this.db.data.debug_logs.length > 50) this.db.data.debug_logs.shift();
   }
 
   async init() {

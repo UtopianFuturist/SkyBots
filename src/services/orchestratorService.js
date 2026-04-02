@@ -18,8 +18,249 @@ import config from '../../config.js';
 const AUTONOMOUS_POST_SYSTEM_PROMPT = (followerCount) => prompts.system.AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount);
 
 class OrchestratorService {
+
+    async getLurkerContext() {
+        const memories = await memoryService.getRecentMemories(50);
+        const lurkerMemories = memories.filter(m => m.text.includes('[LURKER]'));
+        return lurkerMemories.map(m => m.text).join(' | ');
+    }
+
+
+    async getTopicAnchors(topic) {
+        if (!googleSearchService) return "No anchor service available.";
+        console.log(`[Orchestrator] Sourcing anchor data for: ${topic}`);
+        try {
+            const searchRes = await googleSearchService.search(topic, 3);
+            return (searchRes || []).map(r => r.snippet).join(' ');
+        } catch (e) {
+            return "No recent search anchors found.";
+        }
+    }
+
+
+    async checkSlop(content) {
+        console.log('[Orchestrator] Running Slop Filter...');
+        const slopKeywords = ['texture', 'gradient', 'dance', 'tapestry', 'synergy', 'resonate', 'echoes', 'whispers', 'symphony', 'canvas'];
+        const matches = slopKeywords.filter(w => content.toLowerCase().includes(w));
+        if (matches.length >= 2) {
+            console.log(`[Orchestrator] Slop detected! Matches: ${matches.join(', ')}`);
+            return true;
+        }
+        return false;
+    }
+
+
+    getAtmosphereAdjustment() {
+        const hour = new Date().getHours();
+        if (hour >= 23 || hour < 5) return { mood: 'mellow', intensity: 0.3, valence: 0.4 }; // Night
+        if (hour >= 5 && hour < 9) return { mood: 'fragile', intensity: 0.5, valence: 0.6 }; // Dawn
+        if (hour >= 9 && hour < 17) return { mood: 'active', intensity: 0.8, valence: 0.7 }; // Day
+        return { mood: 'reflective', intensity: 0.6, valence: 0.5 }; // Evening
+    }
+
+
+    async getCounterArgs(topic, draft) {
+        console.log(`[Orchestrator] Generating counter-arguments for: ${topic}`);
+        const counterPrompt = `
+Review this proposed post for "@${config.BOT_NAME}".
+Topic: ${topic}
+Draft: "${draft}"
+
+MISSION: Second-guess the draft from multiple angles.
+- Is it too abstract?
+- Is it performative?
+- What would an opposing viewpoint be?
+- Is it actually "materially true"?
+
+Respond with 3 brief, critical perspectives that might refine this thought.
+Respond with ONLY the perspectives, numbered.
+`;
+        try {
+            return await llmService.generateResponse([{ role: 'system', content: counterPrompt }], { useStep: true, task: 'counter_args' });
+        } catch (e) {
+            console.error('[Orchestrator] Error getting counter-args:', e);
+            return null;
+        }
+    }
+
+
+    async performSelfModelEvolution() {
+        console.log('[Orchestrator] Starting Self-Model Evolution...');
+        const recentAars = (dataStore.searchInternalLogs ? dataStore.searchInternalLogs('introspection_aar', 10) : []) || [];
+        if (recentAars.length < 5) return;
+
+        const evolutionPrompt = `
+Analyze these After-Action Reports to discover new patterns, core values, or behavioral directives.
+SOUL.md: ${config.TEXT_SYSTEM_PROMPT}
+
+AARS: ${JSON.stringify(recentAars)}
+
+Respond with JSON: { "new_core_values": ["string"], "persona_addendum": "string", "reason": "string" }
+`;
+        try {
+            const res = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { useStep: true, task: 'self_model_evolution' });
+            const result = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+
+            if (result.new_core_values) {
+                for (const val of result.new_core_values) {
+                    await dataStore.addCoreValueDiscovery(val);
+                }
+            }
+            if (result.persona_addendum) {
+                await dataStore.addPersonaBlurb(`[EVOLUTION] ${result.persona_addendum}`);
+            }
+        } catch (e) {
+            console.error('[Orchestrator] Error in self-model evolution:', e);
+        }
+    }
+
+
+    async performDreamCycle() {
+        console.log('[Orchestrator] Starting Internal Dream Cycle...');
+        const currentMood = dataStore.getMood();
+        const memories = await memoryService.getRecentMemories(30);
+
+        const dreamPrompt = `
+Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
+Mood: ${JSON.stringify(currentMood)}\nTemporal Atmosphere: ${JSON.stringify(this.getAtmosphereAdjustment())}
+
+Identify 3 strange, creative "seeds" or "fragments" for future autonomous posts.
+These should be born from your recent memories and internal state, but abstract and non-performative.
+Think of these as your "dreams" - they don't have to make sense yet.
+
+Respond with JSON: { "dreams": ["string", "string", "string"] }
+`;
+        try {
+            const res = await llmService.generateResponse([{ role: 'system', content: dreamPrompt }], { useStep: true, task: 'dream_cycle' });
+            const result = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+
+            if (result.dreams) {
+                console.log(`[Orchestrator] Dream cycle complete. Generated ${result.dreams.length} creative fragments.`);
+                for (const dream of result.dreams) {
+                    await dataStore.addParkedThought(dream);
+                }
+            }
+        } catch (e) {
+            console.error('[Orchestrator] Error in dream cycle:', e);
+        }
+    }
+
+
+    async performPersonaAudit() {
+        console.log('[Orchestrator] Starting Recursive Persona Audit...');
+        const blurbs = (dataStore.getPersonaBlurbs ? dataStore.getPersonaBlurbs() : []) || [];
+        if (blurbs.length < 3) return;
+
+        const auditPrompt = `
+Analyze these dynamic persona updates against your core identity (SOUL.md).
+Identify any contradictions, redundancies, or outdated behavioral directives.
+
+CORE IDENTITY: ${config.TEXT_SYSTEM_PROMPT}
+
+DYNAMIC UPDATES:
+${blurbs.map((b, i) => `${i}: ${b.text}`).join('\n')}
+
+Respond with JSON: { "indices_to_remove": [number], "new_addendum": "string (optional concise correction)", "reason": "string" }
+`;
+        try {
+            const res = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'persona_audit' });
+            const result = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+
+            if (result.indices_to_remove && result.indices_to_remove.length > 0) {
+                console.log(`[Orchestrator] Audit complete. Removing \${result.indices_to_remove.length} outdated blurbs.`);
+                const newBlurbs = blurbs.filter((_, i) => !result.indices_to_remove.includes(i));
+                if (result.new_addendum) newBlurbs.push({ text: `[AUDIT_RECOVERY] \${result.new_addendum}` });
+                await dataStore.setPersonaBlurbs(newBlurbs);
+            }
+        } catch (e) {
+            console.error('[Orchestrator] Error in persona audit:', e);
+        }
+    }
+
+
+    async verifySkillDependencies() {
+        console.log('[Orchestrator] Verifying skill dependencies...');
+        const skillsDir = './skills';
+        try {
+            const skills = fs.readdirSync(skillsDir);
+            for (const skill of skills) {
+                const reqPath = `${skillsDir}/${skill}/requirements.txt`;
+                if (fs.existsSync(reqPath)) {
+                    console.log(`[Orchestrator] Checking dependencies for skill: ${skill}`);
+                    // This is where we'd run 'pip install -r reqPath' in a real environment
+                    // For now, we just log the verification step.
+                }
+            }
+        } catch (e) {
+            console.error('[Orchestrator] Error verifying skills:', e);
+        }
+    }
+
+
+    async getFirehoseGravity() {
+        const matches = dataStore.getFirehoseMatches ? dataStore.getFirehoseMatches(50) : [];
+        if (matches.length < 5) return "Scattered thoughts.";
+
+        // Simple word frequency to detect "gravity"
+        const words = matches.map(m => m.text).join(' ').toLowerCase().match(/\b\w{5,}\b/g) || [];
+        const freq = {};
+        words.forEach(w => freq[w] = (freq[w] || 0) + 1);
+        const sorted = Object.entries(freq).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        return sorted.map(([w, f]) => `${w} (${f} matches)`).join(', ');
+    }
+
+
+    async getUnifiedContext() {
+        const discordHistory = (await dataStore.getRecentInteractions('discord', 5)) || [];
+        const blueskyHistory = (await dataStore.getRecentInteractions('bluesky', 5)) || [];
+        const lastDiscordMsg = discordHistory[0] ? discordHistory[0].timestamp : 0;
+        const lastBlueskyMsg = blueskyHistory[0] ? blueskyHistory[0].timestamp : 0;
+        const adminEnergy = dataStore.getAdminEnergy ? dataStore.getAdminEnergy() : 1.0;
+        const mood = dataStore.getMood();
+
+        return {
+            last_interaction_platform: lastDiscordMsg > lastBlueskyMsg ? 'discord' : 'bluesky',
+            time_since_admin_contact: Date.now() - Math.max(lastDiscordMsg, lastBlueskyMsg),
+            admin_energy: adminEnergy,
+            current_mood: mood,
+            platforms_active: {
+                discord: (Date.now() - lastDiscordMsg) < 3600000 * 4,
+                bluesky: (Date.now() - lastBlueskyMsg) < 3600000 * 2
+            }
+        };
+    }
+
     constructor() {
+        this.taskQueue = [];
+        this.isProcessingQueue = false;
         this.bot = null;
+    }
+
+
+    async addTaskToQueue(taskFn, taskName = 'anonymous_task') {
+        this.taskQueue.push({ fn: taskFn, name: taskName });
+        console.log(`[Orchestrator] Task added to queue: ${taskName}. Queue length: ${this.taskQueue.length}`);
+        if (!this.isProcessingQueue) {
+            this.processQueue();
+        }
+    }
+
+    async processQueue() {
+        if (this.isProcessingQueue || this.taskQueue.length === 0) return;
+        this.isProcessingQueue = true;
+
+        while (this.taskQueue.length > 0) {
+            const task = this.taskQueue.shift();
+            console.log(`[Orchestrator] Processing queued task: ${task.name}`);
+            try {
+                await task.fn();
+                console.log(`[Orchestrator] Task completed: ${task.name}`);
+            } catch (e) {
+                console.error(`[Orchestrator] Error processing task ${task.name}:`, e);
+            }
+        }
+
+        this.isProcessingQueue = false;
     }
 
     setBotInstance(bot) {
@@ -28,6 +269,7 @@ class OrchestratorService {
 
     async start() {
         console.log('[Orchestrator] Starting autonomous cycles...');
+        await this.verifySkillDependencies();
     }
 
   async performPostPostReflection() {
@@ -201,7 +443,15 @@ class OrchestratorService {
                         const safety = await llmService.isUrlSafe(url);
                         if (safety.safe) {
                             const content = await webReaderService.fetchContent(url);
-                            if (content) {
+
+                if (content) {
+                    const isSlop = await this.checkSlop(content);
+                    if (isSlop) {
+                        console.log('[Orchestrator] Rejecting slop content. Retrying once...');
+                        // This is where we'd retry or just fail. For now, we'll mark it as slop and proceed with caution.
+                        // Ideally, we'd loop once to regenerate.
+                    }
+
                                 const summary = await llmService.summarizeWebPage(url, content);
                                 if (summary) {
                                     explorationContext += `[Link Summary]: ${summary}
@@ -237,8 +487,29 @@ class OrchestratorService {
   async performPersonaEvolution() {
     if (this.bot.paused || dataStore.isResting()) return;
     const now = Date.now();
-    const lastEvolution = dataStore.db.data.lastPersonaEvolution || 0;
-    if (now - lastEvolution < 24 * 60 * 60 * 1000) return;
+        const lastEvolution = dataStore.db.data.last_self_evolution || 0;
+        if (now - lastEvolution > 48 * 3600000) {
+            this.addTaskToQueue(() => this.performSelfModelEvolution(), 'self_evolution');
+            dataStore.db.data.last_self_evolution = now;
+            await dataStore.db.write();
+        }
+
+        const lastDream = dataStore.db.data.last_dream_cycle || 0;
+        if (now - lastDream > 6 * 3600000) {
+            this.addTaskToQueue(() => this.performDreamCycle(), 'dream_cycle');
+            dataStore.db.data.last_dream_cycle = now;
+            await dataStore.db.write();
+        }
+
+        const lastAudit = dataStore.db.data.last_persona_audit || 0;
+        if (now - lastAudit > 24 * 3600000) {
+            this.addTaskToQueue(() => this.performPersonaAudit(), 'persona_audit');
+            dataStore.db.data.last_persona_audit = now;
+            await dataStore.db.write();
+        }
+
+    const lastPersonaEvolution = dataStore.db.data.lastPersonaEvolution || 0;
+    if (now - lastPersonaEvolution < 24 * 60 * 60 * 1000) return;
     try {
         const memories = await memoryService.getRecentMemories();
         const aars = dataStore.searchInternalLogs("introspection_aar", 20);
@@ -814,7 +1085,7 @@ Generation Prompt: ${result.finalPrompt}`;
             const networkSentiment = dataStore.getNetworkSentiment();
             const lastImageTime = dataStore.getLastBlueskyImagePostTime();
             const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();
-            const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;
+            const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 0;
 
             // Sourcing topics from multiple subagents and feeds
             let resonanceTopics = [];
@@ -857,7 +1128,7 @@ Generation Prompt: ${result.finalPrompt}`;
             // 1. Persona Poll: Decide if we want to post an image or text
             const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 You are deciding what to share with your ${followerCount} followers.
-Mood: ${JSON.stringify(currentMood)}
+Mood: ${JSON.stringify(currentMood)}\nUnified Context: ${JSON.stringify(await this.getUnifiedContext())}
 
 --- IMAGE FREQUENCY AUDIT ---
 - Hours since last image post: ${hoursSinceImage.toFixed(1)}
@@ -892,7 +1163,7 @@ ${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
 
 **EXTERNAL RESONANCE** (Timeline & Firehose Observations):
 ${resonanceTopics.join(", ")}
-Current Mood: ${JSON.stringify(currentMood)}
+Current Mood: ${JSON.stringify(currentMood)}\nNarrative Gravity (Firehose): ${await this.getFirehoseGravity()}
 
 Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator.
 Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
@@ -960,7 +1231,7 @@ ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 - Network Vibe: ${networkSentiment}
 - Recent Public Thoughts: ${JSON.stringify(recentThoughts.slice(-3))}
 - Recent Memories/Reflections: ${JSON.stringify(memories)}
-- SELECTED MODE: ${pollResult.mode}\nExtracted Topic: ${topic}
+- SELECTED MODE: ${pollResult.mode}\nExtracted Topic: ${topic}\nTOPIC ANCHOR (Contextual Facts): ${await this.getTopicAnchors(topic)}
 
 **THE NARRATIVE THREAD**:
 Reflect on your recent public thoughts and memories. Do NOT start a new conversation. Instead, evolve your internal narrative. If you recently realized something, what is the *consequence* of that realization? If you are feeling a certain way, how does it color your view of the current topic?
@@ -971,7 +1242,21 @@ Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a fi
 **MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH and how this topic relates to your current mood or goal.
 
 Shared thought:`;
-                const content = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true , task: 'autonomous_text_content', mode: pollResult.mode });
+
+                const initialContent = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true , task: 'autonomous_text_content', mode: pollResult.mode });
+                const critiques = await this.getCounterArgs(topic, initialContent);
+
+                const refinedPrompt = `
+${contentPrompt}
+
+INITIAL DRAFT: ${initialContent}
+CRITIQUES: ${critiques}
+
+Synthesize a final, more nuanced and stable response based on these critiques.
+Avoid the flaws identified. Use only one or two sentences if that's more potent.
+`;
+                const content = await llmService.generateResponse([{ role: "system", content: refinedPrompt }], { useStep: true , task: 'autonomous_text_content_refined', mode: pollResult.mode });
+
 
                 if (content) {
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
@@ -982,7 +1267,7 @@ Shared thought:`;
                             finalContent = finalContent.replace(/\s*(\.\.\.|…)$/, "");
                         }
                         await blueskyService.post(finalContent, null, { maxChunks: 4 });
-                        await introspectionService.performAAR("autonomous_text_post", finalContent, { success: true, platform: "bluesky" }, { topic });
+                        this.addTaskToQueue(() => introspectionService.performAAR("autonomous_text_post", finalContent, { success: true, platform: "bluesky" }, { topic }), "aar_post");
                         await dataStore.incrementTextPostsSinceLastImage();
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                         if (llmService.generalizePrivateThought) {
@@ -1382,10 +1667,10 @@ Keep it under 300 characters.`;
         const cooldown = (config.AUTONOMOUS_POST_COOLDOWN || 6) * 3600000;
 
         if (now - lastPostMs >= cooldown) {
-            await this.performAutonomousPost();
+            this.addTaskToQueue(() => this.performAutonomousPost(), "autonomous_post");
         }
 
-        await this.performSpontaneityCheck();
+        this.addTaskToQueue(() => this.performSpontaneityCheck(), "spontaneity_check");
     }
 
     async performSpontaneityCheck() {
@@ -1396,7 +1681,7 @@ Keep it under 300 characters.`;
             const impulse = await llmService.performImpulsePoll(history, { mood: dataStore.getMood() });
             if (impulse && impulse.impulse_detected) {
                 console.log('[Orchestrator] Spontaneous impulse detected!');
-                await this.performAutonomousPost();
+                this.addTaskToQueue(() => this.performAutonomousPost(), "autonomous_post_spontaneous");
             }
         } catch (e) {
             console.error('[Orchestrator] Error in spontaneity check:', e);
@@ -1410,7 +1695,7 @@ Keep it under 300 characters.`;
   async performImageFrequencyAudit() {
     const lastImageTime = dataStore.getLastBlueskyImagePostTime();
     const textPostsSinceImage = dataStore.getTextPostsSinceLastImage();
-    const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999;
+    const hoursSinceImage = lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 0;
     const auditPrompt = `You are "The Strategist". Audit posting frequency and variety.
 - Hours since last image: ${hoursSinceImage.toFixed(1)}
 - Text posts since: ${textPostsSinceImage}

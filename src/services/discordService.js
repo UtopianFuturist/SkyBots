@@ -16,6 +16,23 @@ import { introspectionService } from './introspectionService.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity } from '../utils/textUtils.js';
 
 class DiscordService {
+
+    async proposeImageResponse(context, topic) {
+        console.log(`[Discord] Proposing image for topic: ${topic}`);
+        const promptPrompt = `
+Generate a highly descriptive, artistic image prompt based on this context: "${context}" and topic: "${topic}".
+Respond with ONLY the prompt.
+`;
+        try {
+            const imagePrompt = await llmService.generateResponse([{ role: 'system', content: promptPrompt }], { useStep: true, task: 'multimodal_prompt' });
+            this.pendingImageProposal = { prompt: imagePrompt, topic: topic, expires: Date.now() + 600000 };
+
+            await this.sendSpontaneousMessage(`*(I have a visual thought I'd like to share. Should I generate an image based on this? It would look like: "${imagePrompt}")*`);
+        } catch (e) {
+            console.error('[Discord] Error proposing image:', e);
+        }
+    }
+
     constructor() {
         console.log('[DiscordService] Constructor starting...');
         this.botInstance = null;

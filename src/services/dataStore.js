@@ -542,6 +542,96 @@ class DataStore {
     }
   }
 
+  // Daily Stats
+  async _checkDailyReset() {
+    if (!this.db?.data) return;
+    const tz = this.db.data.admin_timezone || 'UTC';
+    const now = new Date();
+    const localDateStr = now.toLocaleDateString('en-US', { timeZone: tz });
+
+    if (!this.db.data.daily_stats) {
+      this.db.data.daily_stats = { text_posts: 0, image_posts: 0, last_reset: localDateStr };
+      await this.write();
+      return;
+    }
+
+    if (this.db.data.daily_stats.last_reset !== localDateStr) {
+      console.log(`[DataStore] Resetting daily stats for new day (${localDateStr})`);
+      this.db.data.daily_stats.text_posts = 0;
+      this.db.data.daily_stats.image_posts = 0;
+      this.db.data.daily_stats.last_reset = localDateStr;
+      await this.write();
+    }
+  }
+
+  async incrementDailyTextPosts() {
+    await this._checkDailyReset();
+    if (this.db?.data?.daily_stats) {
+      this.db.data.daily_stats.text_posts++;
+      await this.write();
+    }
+  }
+
+  async incrementDailyImagePosts() {
+    await this._checkDailyReset();
+    if (this.db?.data?.daily_stats) {
+      this.db.data.daily_stats.image_posts++;
+      await this.write();
+    }
+  }
+
+  getDailyStats() {
+    return this.db?.data?.daily_stats || { text_posts: 0, image_posts: 0 };
+  }
+
+  getDailyLimits() {
+    return {
+      text: this.db?.data?.bluesky_daily_text_limit || 20,
+      image: this.db?.data?.bluesky_daily_image_limit || 15
+    };
+  }
+
+  // Memory Offloading & Pruning
+  async summarizeAndOffloadLogs(type, tag) {
+    if (!this.db?.data) return;
+    const logs = this.searchInternalLogs(type, 50);
+    if (logs.length < 10) return;
+
+    const logText = logs.map(l => typeof l.content === 'string' ? l.content : JSON.stringify(l.content)).join('\n');
+    const summarizePrompt = `Summarize these ${type} logs into a single, highly condensed paragraph (max 250 chars) for long-term memory. Focus on growth, patterns, and key insights. \nLogs: ${logText.substring(0, 4000)}`;
+
+    try {
+      const { llmService } = await import('./llmService.js');
+      const { memoryService } = await import('./memoryService.js');
+      const summary = await llmService.generateResponse([{ role: 'system', content: summarizePrompt }], { useStep: true, task: 'log_summarization' });
+
+      if (summary && memoryService.isEnabled()) {
+        await memoryService.createMemoryEntry(tag.toLowerCase(), `[${tag}] ${summary}`);
+        console.log(`[DataStore] Offloaded ${type} summary to memory service.`);
+        this.db.data.internal_logs = this.db.data.internal_logs.filter(l => !logs.includes(l));
+        await this.write();
+      }
+    } catch (e) {
+      console.error(`[DataStore] Failed to offload ${type} logs:`, e);
+    }
+  }
+
+  async pruneOldData() {
+    if (!this.db?.data) return;
+    await this.summarizeAndOffloadLogs('growth_log', 'GROWTH');
+    await this.summarizeAndOffloadLogs('agency_logs', 'AGENCY');
+    await this.summarizeAndOffloadLogs('introspection_aar', 'AUDIT');
+
+    const collections = ['interactions', 'recent_thoughts', 'exhausted_themes', 'internal_logs', 'agency_reflections', 'persona_advice', 'strategy_audits'];
+    for (const coll of collections) {
+      if (this.db.data[coll] && this.db.data[coll].length > 200) {
+        console.log(`[DataStore] Pruning collection: ${coll}`);
+        this.db.data[coll] = this.db.data[coll].slice(-100);
+      }
+    }
+    await this.write();
+  }
+
 }
 
 export const dataStore = new DataStore();

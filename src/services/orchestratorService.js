@@ -1307,6 +1307,16 @@ Keep it under 300 characters.`;
 
     async checkMaintenanceTasks() {
         await this.performHeavyMaintenanceTasks();
+
+        // Every 4 hours, prune and summarize logs to free up space
+        const now = Date.now();
+        const lastPruning = dataStore.db.data.last_pruning || 0;
+        if (now - lastPruning >= 4 * 3600000) {
+            console.log("[Orchestrator] Starting log pruning and summarization...");
+            await dataStore.pruneOldData();
+            dataStore.db.data.last_pruning = now;
+            await dataStore.db.write();
+        }
     }
 
     async checkDiscordSpontaneity() {

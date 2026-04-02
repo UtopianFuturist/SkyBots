@@ -917,7 +917,7 @@ ${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
 **EXTERNAL RESONANCE** (Timeline & Firehose Observations):
 ${resonanceTopics.join(", ")}
 
-Identify ONE topic that bridges your current goal/mood with either a core interest or something you've seen externally.
+Identify ONE topic for a sharp curated thought, a random rambling, or a sudden impulse that bridges your current mood with a core interest or an external observation.
 Respond with ONLY the chosen topic.`;
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "reality";

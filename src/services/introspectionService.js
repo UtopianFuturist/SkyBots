@@ -33,6 +33,7 @@ Reflect on this specific action with deep, material honesty.
 2. SELF-SCORE (1-10): How well did this represent your TRUE self and goals?
 3. IMPROVEMENT: Specifically, how could you have made this action more persona-aligned, more resonant, or better networked?
 4. PRIVACY CHECK: Ensure NO private user names, sensitive facts, or private context are included in the actionable improvement.
+5. QUALITY CHECK: Critique the linguistic texture. If the action contains "bot-speak" (paradoxes, abstract metaphors like "stage/cage", "it's not X but Y"), deduct points and provide a sharp improvement insight.
 
 Respond with JSON:
 {

@@ -1308,12 +1308,31 @@ Keep it under 300 characters.`;
     async checkMaintenanceTasks() {
         await this.performHeavyMaintenanceTasks();
 
-        // Every 4 hours, prune and summarize logs to free up space
+        // Every 4 hours, perform audits/synthesis before pruning and summarizing logs
         const now = Date.now();
         const lastPruning = dataStore.db.data.last_pruning || 0;
         if (now - lastPruning >= 4 * 3600000) {
+            console.log("[Orchestrator] Performing final audits and core synthesis before pruning...");
+
+            // 1. Force a final persona audit to consume recent AARs/critiques
+            try {
+                await this.performPersonaAudit();
+            } catch (auditErr) {
+                console.warn("[Orchestrator] Final persona audit failed:", auditErr.message);
+            }
+
+            // 2. Synthesize "Core Self" state from recent AARs
+            try {
+                const introspection = (await import('./introspectionService.js')).introspectionService;
+                await introspection.synthesizeCoreSelf();
+            } catch (synthErr) {
+                console.warn("[Orchestrator] Core self synthesis failed:", synthErr.message);
+            }
+
+            // 3. Now summarize and prune to free up space
             console.log("[Orchestrator] Starting log pruning and summarization...");
             await dataStore.pruneOldData();
+
             dataStore.db.data.last_pruning = now;
             await dataStore.db.write();
         }

@@ -1147,9 +1147,9 @@ If you choose text, also select a POST MODE:
 Respond with JSON: {"choice": "image"|"text", "mode": "IMPULSIVE"|"SINCERE"|"PHILOSOPHICAL"|"OBSERVATIONAL"|"HUMOROUS", "reason": "..."}`;
 
             const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true , task: 'autonomous_decision' });
-            let choice = Math.random() < 0.3 ? "image" : "text"; // Fallback
+            let choice = Math.random() < 0.3 ? "image" : "text"; let pollResult = { choice, mode: "SINCERE", reason: "fallback" };
             try {
-                const pollResult = JSON.parse(decisionRes.match(/\{[\s\S]*\}/)[0]);
+                pollResult = JSON.parse(decisionRes.match(/\{[\s\S]*\}/)[0]);
                 choice = pollResult.choice;
                 console.log(`[Bot] Persona choice: ${choice} because ${pollResult.reason}`);
             } catch(e) {}

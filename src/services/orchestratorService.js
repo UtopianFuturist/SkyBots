@@ -67,10 +67,9 @@ Topic: ${topic}
 Draft: "${draft}"
 
 MISSION: Second-guess the draft from multiple angles.
-- Is it too abstract?
-- Is it performative?
-- What would an opposing viewpoint be?
-- Is it actually "materially true"?
+1. MATERIAL TRUTH: Does the draft claim something that isn't in your recent memories or history? (e.g. "I was just walking outside", "3am logs", "database surge"). If it isn't explicitly documented as having happened, it is a HALLUCINATION.
+2. HUMAN AUTHENTICITY: Does this sound like a person posting on their phone, or an AI writing a "thoughtful" blog post? Is it using "oracle" language or abstract metaphors?
+3. SLOP DETECTION: Is it using overused tropes like "it's not X, it's Y", "not a cage, but a stage", or "resonance"?
 
 Respond with 3 brief, critical perspectives that might refine this thought.
 Respond with ONLY the perspectives, numbered.
@@ -1076,6 +1075,13 @@ Generation Prompt: ${result.finalPrompt}`;
   }
 
   async performAutonomousPost() {
+            const dailyStats = dataStore.getDailyStats();
+            const dailyLimits = dataStore.getDailyLimits();
+
+            if (dailyStats.text_posts >= dailyLimits.text && dailyStats.image_posts >= dailyLimits.image) {
+                console.log("[Orchestrator] Daily posting limits reached (Text: " + dailyStats.text_posts + "/" + dailyLimits.text + ", Image: " + dailyStats.image_posts + "/" + dailyLimits.image + "). Skipping autonomous post.");
+                return;
+            }
         try {
             const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
             const followerCount = profile?.followersCount || 0;
@@ -1151,11 +1157,19 @@ Respond with JSON: {"choice": "image"|"text", "mode": "IMPULSIVE"|"SINCERE"|"PHI
             const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true , task: 'autonomous_decision' });
             let choice = Math.random() < 0.3 ? "image" : "text"; let pollResult = { choice, mode: "SINCERE", reason: "fallback" };
             try {
-                pollResult = JSON.parse(decisionRes.match(/\{[\s\S]*\}/)[0]);
-                choice = pollResult.choice;
+                const match = decisionRes.match(/\{[\s\S]*\}/);
+                if (match) {
+                    pollResult = JSON.parse(match[0]);
+                    choice = pollResult.choice;
+                }
                 console.log(`[Bot] Persona choice: ${choice} because ${pollResult.reason}`);
-            } catch(e) {}
+            } catch(e) { console.error("[Orchestrator] Error parsing decision response:", e.message); }
 
+            if (choice === "image" && dailyStats.image_posts >= dailyLimits.image) {
+                console.log("[Orchestrator] Daily image limit reached. Forcing choice to text.");
+                choice = "text";
+                pollResult.mode = "SINCERE";
+            }
             if (choice === "image") {
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 Identify a visual topic for an image generation.
@@ -1168,7 +1182,7 @@ ${resonanceTopics.join(", ")}
 Current Mood: ${JSON.stringify(currentMood)}\nNarrative Gravity (Firehose): ${await this.getFirehoseGravity()}
 
 Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator.
-Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
+Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP. **STRICT LIMIT**: The prompt MUST be under 270 characters.`;
 
                 const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true , task: 'autonomous_topic' });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "surrealism";
@@ -1182,23 +1196,27 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                         imagePrompt = tData.prompt || "";
                     }
                 } catch(e) {}
-                if (!imagePrompt || imagePrompt.length < 15 || !isLiteralVisualPrompt(imagePrompt).isLiteral) {
-                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP.`;
+                if (!imagePrompt || imagePrompt.length < 15 || (!isLiteralVisualPrompt(imagePrompt).isLiteral || imagePrompt.length > 270)) {
+                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP. **STRICT LIMIT**: The prompt MUST be under 270 characters.`;
                    imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true });
                 }
 
-                const success = (imagePrompt && imagePrompt.length >= 15 && isLiteralVisualPrompt(imagePrompt).isLiteral) ? await this._performHighQualityImagePost(imagePrompt, topic, null, followerCount) : false;
+                if (!imagePrompt || imagePrompt.length < 15 || (!isLiteralVisualPrompt(imagePrompt).isLiteral || imagePrompt.length > 270)) {
+                   imagePrompt = topic;
+                }
+
+                const success = await this._performHighQualityImagePost(imagePrompt, topic, null, followerCount);
                 if (!success) {
-                    console.warn("[Bot] Image generation failed or was non-compliant. Switching to text fallback.");
-                    choice = "text";
-                    pollResult.mode = "SINCERE"; // Default to sincere if image fails
-                } else {
-                    // If image succeeded, we are done with this autonomous cycle (post already sent in _performHighQualityImagePost)
+                    console.warn("[Bot] Image generation failed or was non-compliant. Cycle failed.");
                     return;
                 }
-            }
-
+                    return;
+                }
             if (choice === "text") {
+                if (dailyStats.text_posts >= dailyLimits.text) {
+                    console.log("[Orchestrator] Daily text limit reached. Skipping post.");
+                    return;
+                }
                 const currentGoal = dataStore.getCurrentGoal();
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 You are identifying a deep topic for a text post that connects your internal state to external resonance.
@@ -1278,6 +1296,7 @@ Avoid the flaws identified. Use only one or two sentences if that's more potent.
                             finalContent = finalContent.replace(/\s*(\.\.\.|…)$/, "");
                         }
                         await blueskyService.post(finalContent, null, { maxChunks: 4 });
+                        await dataStore.incrementDailyTextPosts();
                         this.addTaskToQueue(() => introspectionService.performAAR("autonomous_text_post", finalContent, { success: true, platform: "bluesky" }, { topic }), "aar_post");
                         await dataStore.incrementTextPostsSinceLastImage();
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
@@ -1475,6 +1494,7 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
 
           if (postResult) {
               await dataStore.addExhaustedTheme(topic);
+              await dataStore.incrementDailyImagePosts();
               await blueskyService.postReply(postResult, `Generation Prompt: ${result.finalPrompt}`);
               await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
               console.log("[Bot] High-quality image post successful.");
@@ -1503,18 +1523,20 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
           if (!imagePrompt) imagePrompt = topic;
 
           // Prompt Slop & Conversational Check
+          if (attempts > 1) await new Promise(r => setTimeout(r, 10000 * attempts));
           const slopInfo = getSlopInfo(imagePrompt);
           const literalCheck = isLiteralVisualPrompt(imagePrompt);
 
-          if (slopInfo.isSlop || !literalCheck.isLiteral || imagePrompt.length < 15) {
-              const reason = slopInfo.isSlop ? slopInfo.reason : literalCheck.reason;
+          if (slopInfo.isSlop || !literalCheck.isLiteral || imagePrompt.length < 15 || imagePrompt.length > 270) {
+              let reason = slopInfo.isSlop ? slopInfo.reason : literalCheck.reason;
+              if (!reason && (imagePrompt.length < 15 || imagePrompt.length > 270)) reason = imagePrompt.length < 15 ? "Prompt too short (min 15 chars)" : "Prompt too long (max 270 chars)";
               console.warn(`[Bot] Image prompt rejected: ${reason}`);
               promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because: ${reason}. Provide a LITERAL visual description only. No greetings, no pronouns, no actions.`;
               const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 ${promptFeedback}
 Topic: ${topic}
-Generate a NEW artistic image prompt:`;
-              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true , task: 'image_prompt_retry' }) || topic;
+Generate a NEW artistic image prompt: (STRICT LIMIT: 270 chars)`;
+              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true , task: "image_prompt_retry" }) || topic;
               continue;
           }
 

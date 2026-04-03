@@ -49,8 +49,11 @@ Respond with JSON:
 
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: aarPrompt }], { useStep: true, task: 'aar_introspection' });
-            const match = res?.match(/\{[\s\S]*\}/);
-            if (!match) throw new Error("No JSON found in AAR response");
+            const match = res ? res.match(/\{[\s\S]*\}/) : null;
+            if (!match) {
+                console.warn("[Introspection] No JSON found in AAR response, skipping log.");
+                return;
+            }
             const aar = JSON.parse(match[0]);
 
 

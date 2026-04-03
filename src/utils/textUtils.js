@@ -266,6 +266,10 @@ export const isStylizedImagePrompt = (text) => {
   if (text.includes("?") && lower.split("?")[0].split(" ").length < 10) return { isStylized: false, reason: "Contains a direct question" };
   const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/;
   if (emojiRegex.test(text)) return { isStylized: false, reason: "Contains emojis" };
+  // Enforce artistic style keywords
+  const styleKeywords = ['art', 'style', 'cinematic', 'lighting', 'noir', 'brutalist', 'surreal', 'glitch', 'horror', 'analog', 'painting', 'sketch', 'digital', 'ethereal', 'neon', 'grain', '35mm', 'shot', 'composition', 'texture', 'minimalist', 'abstract'];
+  const hasStyle = styleKeywords.some(s => lower.includes(s));
+  if (!hasStyle && lower.split(' ').length < 15) return { isStylized: false, reason: 'Lacks artistic style keywords or sufficient descriptive depth' };
   return { isStylized: true };
 };
 

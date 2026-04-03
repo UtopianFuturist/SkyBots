@@ -791,7 +791,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images detected in this specific me
                      }
 
                      // Add missing tools for admin
-                     if (action.tool === 'image_gen') {
+                     if (action.tool === 'image_gen' && isAdmin) {
                          const prompt = action.query || action.parameters?.prompt;
                          if (prompt) {
                              const imgResult = await imageService.generateImage(prompt, { allowPortraits: true });

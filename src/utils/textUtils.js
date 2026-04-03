@@ -252,6 +252,23 @@ export const getSlopInfo = (text) => {
   for (const f of forbiddenOpeners) if (lower.startsWith(f)) return { isSlop: true, reason: `Starts with forbidden opener: "${f}"` };
   return { isSlop: false, reason: null };
 };
+export const isStylizedImagePrompt = (text) => {
+  if (!text) return { isStylized: false, reason: "Empty prompt" };
+  const lower = text.toLowerCase().trim();
+  // Image prompts can be artistic, but we still want to avoid purely conversational or meta-talk
+  const conversationalMarkers = ["hey", "hello", "hi ", "morning", "gm ", "good morning", "i want", "generate", "create", "make an image", "show me", "i am", "im ", "i'm ", "i've ", "ive "];
+  for (const m of conversationalMarkers) {
+      if (lower.startsWith(m) || (lower.includes(m) && lower.split(m)[0].trim().length < 5)) {
+          return { isStylized: false, reason: `Contains conversational marker: "${m.trim()}"` };
+      }
+  }
+  if (text.includes("*") && !text.includes(" * ")) return { isStylized: false, reason: "Contains action markers (asterisks)" };
+  if (text.includes("?") && lower.split("?")[0].split(" ").length < 10) return { isStylized: false, reason: "Contains a direct question" };
+  const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/;
+  if (emojiRegex.test(text)) return { isStylized: false, reason: "Contains emojis" };
+  return { isStylized: true };
+};
+
 export const isLiteralVisualPrompt = (text) => {
   if (!text) return { isLiteral: false, reason: "Empty prompt" };
   const lower = text.toLowerCase().trim();

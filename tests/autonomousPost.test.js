@@ -112,7 +112,7 @@ describe('Bot Autonomous Posting', () => {
 
     llmService.generateResponse.mockImplementation((messages) => {
         const fullContent = JSON.stringify(messages);
-        if (fullContent.includes('Would you like to share a visual expression')) {
+        if (fullContent.includes('Would you like to share a visual expression (image)')) {
             if (fullContent.includes('image preference')) return Promise.resolve('{ "choice": "image", "reason": "Feeling visual" }');
             return Promise.resolve('{ "choice": "text", "reason": "Thinking" }');
         }
@@ -161,7 +161,7 @@ describe('Bot Autonomous Posting', () => {
 
     llmService.generateResponse.mockImplementation((messages) => {
         const fullContent = JSON.stringify(messages);
-        if (fullContent.includes('Would you like to share a visual expression')) {
+        if (fullContent.includes('Would you like to share a visual expression (image)')) {
             return Promise.resolve('{ "choice": "image", "mode": "SINCERE", "reason": "test" }');
         }
         if (fullContent.includes('identifying a deep topic for a text post')) return Promise.resolve('Existence');
@@ -174,8 +174,43 @@ describe('Bot Autonomous Posting', () => {
     await bot.performAutonomousPost();
 
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Daily image limit reached. Forcing choice to text.'));
-    // It should then proceed to post text
     expect(blueskyService.post).toHaveBeenCalledWith('Thought.', null, expect.any(Object));
     consoleSpy.mockRestore();
+  });
+
+
+  it('should handle autonomous image posts with stylized prompts', async () => {
+    dataStore.getDailyStats.mockReturnValue({ text_posts: 0, image_posts: 0 });
+    llmService.generateResponse.mockImplementation((messages) => {
+        const fullContent = JSON.stringify(messages);
+        if (fullContent.includes('Would you like to share a visual expression (image)')) {
+            return Promise.resolve('{ "choice": "image", "mode": "SINCERE", "reason": "test" }');
+        }
+        if (fullContent.includes('Identify a visual topic')) {
+            return Promise.resolve('{ "topic": "Cyberpunk Lighthouse", "prompt": "A gritty cyberpunk lighthouse with neon beams cutting through dense toxic fog, 35mm film grain, cinematic lighting" }');
+        }
+        if (fullContent.includes('Audit this image prompt for safety')) return Promise.resolve('COMPLIANT');
+        if (fullContent.includes('vision analysis')) return Promise.resolve('A futuristic lighthouse.');
+        if (fullContent.includes('alt-text')) return Promise.resolve('Alt text for lighthouse.');
+        if (fullContent.includes('caption')) return Promise.resolve('Caption for lighthouse.');
+        if (fullContent.includes('coherence')) return Promise.resolve('{ "score": 8 }');
+        return Promise.resolve('none');
+    });
+
+    imageService.generateImage.mockResolvedValue({ buffer: Buffer.from('fake-image-data'), prompt: 'A gritty cyberpunk lighthouse with neon beams cutting through dense toxic fog, 35mm film grain, cinematic lighting' });
+    blueskyService.uploadBlob.mockResolvedValue({ data: { blob: 'blob-id' } });
+    blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/2', cid: '2' });
+    llmService.isImageCompliant.mockResolvedValue({ compliant: true });
+    llmService.analyzeImage.mockResolvedValue('A futuristic lighthouse.');
+    llmService.verifyImageRelevance.mockResolvedValue({ relevant: true });
+    llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 8 });
+
+    await bot.performAutonomousPost();
+
+    expect(imageService.generateImage).toHaveBeenCalledWith(
+        expect.stringContaining('gritty cyberpunk lighthouse'),
+        expect.any(Object)
+    );
+    expect(blueskyService.post).toHaveBeenCalled();
   });
 });

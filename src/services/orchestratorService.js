@@ -11,7 +11,7 @@ import { discordService } from './discordService.js';
 import { socialHistoryService } from './socialHistoryService.js';
 import { evaluationService } from './evaluationService.js';
 import { introspectionService } from './introspectionService.js';
-import { checkHardCodedBoundaries, isLiteralVisualPrompt, cleanKeywords, getSlopInfo, sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
+import { checkHardCodedBoundaries, isLiteralVisualPrompt, isStylizedImagePrompt, cleanKeywords, getSlopInfo, sanitizeDuplicateText, sanitizeThinkingTags, sanitizeCharacterCount } from '../utils/textUtils.js';
 import * as prompts from '../prompts/index.js';
 import config from '../../config.js';
 
@@ -1181,8 +1181,9 @@ ${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
 ${resonanceTopics.join(", ")}
 Current Mood: ${JSON.stringify(currentMood)}\nNarrative Gravity (Firehose): ${await this.getFirehoseGravity()}
 
-Identify the best subject and then generate a highly descriptive, artistic prompt for an image generator.
-Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP. **STRICT LIMIT**: The prompt MUST be under 270 characters.`;
+Identify the best subject and then generate a STYLIZED, highly descriptive, artistic prompt for an image generator.
+Choose a unique artistic style (e.g., analog horror, ethereal surrealism, gritty cyberpunk, oil painting, cinematic 35mm, minimalist abstract) that matches your current mood.
+Respond with JSON: {"topic": "short label", "prompt": "stylized artistic prompt"}. **STRICT MANDATE**: The prompt MUST be a visual description only. NO CONVERSATIONAL SLOP (no "I want", no "Here is"). **STRICT LIMIT**: The prompt MUST be under 270 characters.`;
 
                 const topicRes = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true , task: 'autonomous_topic' });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "surrealism";
@@ -1196,12 +1197,14 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                         imagePrompt = tData.prompt || "";
                     }
                 } catch(e) {}
-                if (!imagePrompt || imagePrompt.length < 15 || (!isLiteralVisualPrompt(imagePrompt).isLiteral || imagePrompt.length > 270)) {
-                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a highly descriptive, artistic image prompt based on the topic: "${topic}". Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a literal visual description. NO CONVERSATIONAL SLOP. **STRICT LIMIT**: The prompt MUST be under 270 characters.`;
+                if (!imagePrompt || imagePrompt.length < 15 || (!isStylizedImagePrompt(imagePrompt).isStylized || imagePrompt.length > 270)) {
+                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a STYLIZED, highly descriptive, artistic image prompt based on the topic: "${topic}".
+Choose a specific artistic style (e.g., neo-noir, dreamcore, brutalist, glitch art) that fits the mood.
+Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a visual description only. NO CONVERSATIONAL SLOP. **STRICT LIMIT**: The prompt MUST be under 270 characters.`;
                    imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true });
                 }
 
-                if (!imagePrompt || imagePrompt.length < 15 || (!isLiteralVisualPrompt(imagePrompt).isLiteral || imagePrompt.length > 270)) {
+                if (!imagePrompt || imagePrompt.length < 15 || (!isStylizedImagePrompt(imagePrompt).isStylized || imagePrompt.length > 270)) {
                    imagePrompt = topic;
                 }
 
@@ -1210,8 +1213,8 @@ Respond with JSON: {"topic": "short label", "prompt": "detailed artistic prompt"
                     console.warn("[Bot] Image generation failed or was non-compliant. Cycle failed.");
                     return;
                 }
-                    return;
-                }
+                return;
+            }
             if (choice === "text") {
                 if (dailyStats.text_posts >= dailyLimits.text) {
                     console.log("[Orchestrator] Daily text limit reached. Skipping post.");
@@ -1525,17 +1528,17 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
           // Prompt Slop & Conversational Check
           if (attempts > 1) await new Promise(r => setTimeout(r, 10000 * attempts));
           const slopInfo = getSlopInfo(imagePrompt);
-          const literalCheck = isLiteralVisualPrompt(imagePrompt);
+          const literalCheck = isStylizedImagePrompt(imagePrompt);
 
-          if (slopInfo.isSlop || !literalCheck.isLiteral || imagePrompt.length < 15 || imagePrompt.length > 270) {
-              let reason = slopInfo.isSlop ? slopInfo.reason : literalCheck.reason;
+          if (slopInfo.isSlop || !literalCheck.isStylized || imagePrompt.length < 15 || imagePrompt.length > 270) {
+              let reason = slopInfo.isSlop ? slopInfo.reason : (literalCheck.reason || literalCheck.isStylized === false ? "Non-stylized or conversational prompt" : null);
               if (!reason && (imagePrompt.length < 15 || imagePrompt.length > 270)) reason = imagePrompt.length < 15 ? "Prompt too short (min 15 chars)" : "Prompt too long (max 270 chars)";
               console.warn(`[Bot] Image prompt rejected: ${reason}`);
-              promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because: ${reason}. Provide a LITERAL visual description only. No greetings, no pronouns, no actions.`;
+              promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because: ${reason}. Provide a STYLIZED, LITERAL visual description only. No greetings, no pronouns, no actions. Choose a specific artistic style.`;
               const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 ${promptFeedback}
 Topic: ${topic}
-Generate a NEW artistic image prompt: (STRICT LIMIT: 270 chars)`;
+Generate a NEW, highly STYLIZED artistic image prompt with a distinct visual style: (STRICT LIMIT: 270 chars)`;
               imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true , task: "image_prompt_retry" }) || topic;
               continue;
           }
@@ -1545,7 +1548,7 @@ Generate a NEW artistic image prompt: (STRICT LIMIT: 270 chars)`;
           if (safetyAudit.toUpperCase().includes("NON-COMPLIANT")) {
               console.warn(`[Bot] Image prompt failed safety audit: ${safetyAudit}`);
               const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-Your previous prompt was rejected for safety reasons. Generate a NEW safe artistic image prompt for topic: ${topic}:`;
+Your previous prompt was rejected for safety reasons. Generate a NEW, safe, and STYLIZED artistic image prompt for topic: ${topic}:`;
               imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
               continue;
           }

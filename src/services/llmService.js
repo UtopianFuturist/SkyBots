@@ -3,6 +3,7 @@ import https from 'https';
 import config from '../../config.js';
 import fs from 'fs/promises';
 import path from 'path';
+import * as prompts from '../prompts/index.js';
 
 export const persistentAgent = new https.Agent({ keepAlive: true });
 
@@ -448,6 +449,7 @@ Respond with JSON: { "intent": "informational|analytical|critical_analysis|conve
 
     const prompt = `You are sydney-chat, an autonomous agent on ${platformName}.
 Plan your next actions in response to: "${text}".
+${isAdmin ? prompts.instruction.ADMIN_DIRECTIVE_SYSTEM_PROMPT : ''}
 
 **MISSION: AUTONOMOUS RESPONSIVENESS**
 - If a user is talking to you or mentioned you, you should generally respond using the **${mainTool}** tool.

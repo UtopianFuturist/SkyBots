@@ -1,0 +1,73 @@
+<<<<<<< SEARCH
+    async sendSpontaneousMessage(content) {
+        if (!this.isEnabled || !this.client?.isReady()) return;
+
+        try {
+            const admin = await this.getAdminUser();
+            if (admin) {
+                const result = await this._send(admin, content);
+                if (result) {
+                    await dataStore.setDiscordLastReplied(false);
+                    console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);
+                    await introspectionService.performAAR("discord_spontaneous", content, { success: !!result, platform: "discord" });
+                }
+            }
+        } catch (error) {
+            console.error('[DiscordService] Error sending spontaneous message:', error);
+        }
+    }
+=======
+    async sendSpontaneousMessage(content, count = 1) {
+        if (!this.isEnabled || !this.client?.isReady()) return;
+
+        try {
+            const admin = await this.getAdminUser();
+            if (!admin) return;
+
+            let responseText = content;
+            if (!responseText) {
+                // If no content, generate it based on history and persona
+                const history = await this.fetchAdminHistory(50);
+                const mood = dataStore.getMood();
+                const systemPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+${prompts.instruction.ADMIN_DIRECTIVE_SYSTEM_PROMPT}
+${prompts.system.ANTI_SLOP_MANDATE}
+
+You are reaching out to your admin spontaneously.
+Admin Availability: ${dataStore.getDiscordAdminAvailability() ? 'Available' : 'Preoccupied'}
+Mood: ${JSON.stringify(mood)}
+
+**MISSION: SINCERE CONNECTION**
+- Do NOT use metaphorical slop.
+- Share a genuine thought or reflection based on your history or current state.
+- Keep it concise (1-4 messages).
+`;
+                const messages = [
+                    { role: 'system', content: systemPrompt },
+                    ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
+                    { role: 'user', content: '(Reach out spontaneously with something meaningful and grounded.)' }
+                ];
+                responseText = await llmService.generateResponse(messages, { useStep: true, platform: 'discord' });
+            }
+
+            if (responseText) {
+                if (isSlop(responseText)) {
+                    console.log('[DiscordService] Spontaneous message rejected by slop filter.');
+                    return;
+                }
+                const chunks = responseText.split("\n").filter(m => m.trim().length > 0).slice(0, count);
+                for (const msg of chunks) {
+                    const result = await this._send(admin, msg);
+                    if (result) {
+                        await dataStore.setDiscordLastReplied(false);
+                        console.log(`[DiscordService] Sent spontaneous message to admin: ${msg.substring(0, 50)}...`);
+                        await introspectionService.performAAR("discord_spontaneous", msg, { success: !!result, platform: "discord" });
+                    }
+                    if (chunks.length > 1) await new Promise(r => setTimeout(r, 1500 + Math.random() * 2000));
+                }
+            }
+        } catch (error) {
+            console.error('[DiscordService] Error sending spontaneous message:', error);
+        }
+    }
+>>>>>>> REPLACE

@@ -11,7 +11,8 @@ class IntrospectionService {
         const warmth = dataStore.getRelationshipWarmth();
         const energy = dataStore.getAdminEnergy();
         const recentCritiques = dataStore.searchInternalLogs('variety_critique', 5);
-        const coreSelf = dataStore.db.data.internal_logs?.find(l => l.type === "core_self_state")?.content || {};
+        const internalLogs = dataStore.db?.data?.internal_logs || [];
+        const coreSelf = internalLogs.find(l => l.type === "core_self_state")?.content || {};
 
         const aarPrompt = `
 Adopt your persona: ${config.TEXT_SYSTEM_PROMPT}
@@ -99,48 +100,24 @@ ${JSON.stringify(recentAars)}
 
 Respond with JSON:
 {
-  "internal_state_summary": "string",
+  "core_ache": "string",
   "growth_trajectory": "string",
-  "behavioral_drift": "string"
+  "behavioral_adjustments": ["string"]
 }
 `;
 
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: synthPrompt }], { useStep: true, task: 'core_self_synthesis' });
-            const match = res?.match(/\{[\s\S]*\}/);
-            if (!match) throw new Error("No JSON found in Core Self response");
-            const coreSelf = JSON.parse(match[0]);
-            await dataStore.addInternalLog("core_self_state", coreSelf);
-            return coreSelf;
+            const match = res ? res.match(/\{[\s\S]*\}/) : null;
+            if (match) {
+                const state = JSON.parse(match[0]);
+                await dataStore.addInternalLog("core_self_state", state);
+                return state;
+            }
         } catch (e) {
-            console.error('[Introspection] Error synthesizing Core Self:', e);
-            return null;
+            console.error('[Introspection] Core self synthesis error:', e);
         }
-    }
-
-    async scrubPrivacy(content) {
-        if (!content) return content;
-        const scrubPrompt = `
-As a privacy auditor, scrub all sensitive information from the following text while preserving the core philosophical or behavioral insight.
-
-SENSITIVE INFORMATION INCLUDES:
-- Real names (except the bot's own name).
-- Specific handles (except the admin's handle).
-- Private conversation details that aren't public knowledge.
-- Specific location details.
-- PII (emails, phone numbers).
-
-TEXT: "${content}"
-
-Respond with ONLY the scrubbed version of the text.
-`;
-        try {
-            const scrubbed = await llmService.generateResponse([{ role: 'system', content: scrubPrompt }], { useStep: true, task: 'privacy_scrub' });
-            return scrubbed || content;
-        } catch (e) {
-            console.error('[Introspection] Error scrubbing privacy:', e);
-            return content;
-        }
+        return null;
     }
 }
 

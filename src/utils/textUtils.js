@@ -1,291 +1,78 @@
-export const KEYWORD_BLACKLIST = [
-  "glass",
-  "ruins",
-  "everything",
-  "nothing",
-  "somebody",
-  "anybody",
-  "someone",
-  "anyone",
-  "something",
-  "anything",
-  "about",
-  "their",
-  "there",
-  "would",
-  "could",
-  "should",
-  "people",
-  "really",
-  "think",
-  "thought",
-  "going",
-  "thanks",
-  "thank",
-  "hello",
-  "please",
-  "maybe",
-  "actually",
-  "probably",
-  "just",
-  "very",
-  "much",
-  "many",
-  "always",
-  "never",
-  "often",
-  "sometimes",
-  "usually",
-  "almost",
-  "quite",
-  "rather",
-  "somewhat",
-  "too",
-  "enough",
-  "today",
-  "tomorrow",
-  "yesterday",
-  "night",
-  "morning",
-  "evening",
-  "life",
-  "world",
-  "time",
-  "feel",
-  "making",
-  "know",
-  "look",
-  "back",
-  "good",
-  "great",
-  "well",
-  "best",
-  "better",
-  "doing",
-  "done",
-  "work",
-  "need",
-  "want",
-  "post",
-  "post",
-  "link",
-  "check",
-  "read",
-  "show",
-  "find",
-  "give",
-  "take",
-  "made",
-  "make",
-  "still",
-  "more",
-  "less",
-  "most",
-  "least",
-  "some",
-  "each",
-  "every",
-  "both",
-  "either",
-  "neither",
-  "once",
-  "twice",
-  "again",
-  "care",
-  "hope",
-  "sure",
-  "sorry",
-  "tell",
-  "thing",
-  "things",
-  "really",
-  "actually",
-  "probably",
-  "maybe",
-  "always",
-  "never",
-  "still",
-  "often",
-  "usually"
-];
-export const cleanKeywords = (keywords) => {
-  if (!keywords) return [];
-  const list = Array.isArray(keywords) ? keywords : [keywords];
-  return [...new Set(
-    list
-      .flatMap(k => (typeof k === "string" ? k.split(/[,\n\r]+/) : [k]))
-      .map(k => (typeof k === "string" ? k.trim().toLowerCase() : k))
-      .filter(k => typeof k === "string" && (k.length >= 4) && !KEYWORD_BLACKLIST.includes(k))
-  )];
+import { Buffer } from 'buffer';
+
+export const sanitizeThinkingTags = (text) => {
+  if (!text) return text;
+  let result = text;
+
+  // Handle various reasoning tags and blocks
+  result = result.replace(/<(thinking|think)>[\s\S]*?<\/(thinking|think)>/gi, '');
+  result = result.replace(/<(thinking|think)>[\s\S]*/gi, '');
+  result = result.replace(/<\/(thinking|think)>/gi, '');
+
+  // Aggressively remove common LLM "Thought" blocks at start of line or with newline before
+  result = result.replace(/^ *(Thought|Reasoning|Analysis|Synthesis):.*(\n|$)/gmi, '');
+  result = result.replace(/\n *(Thought|Reasoning|Analysis|Synthesis):.*(\n|$)/gmi, '\n');
+
+  // Remove [varied] and other meta tags
+  result = result.replace(/\[(varied|meta)\]/gi, '');
+
+  // Remove trailing meta-commentary about drafts (but keep the double newline if it separates valid text)
+  result = result.replace(/\n\n(This combines|Draft \d)[\s\S]*$/gi, '');
+
+  return result.trim();
 };
-import config from '../../config.js';
-export const truncateText = (text, maxLength = 300) => {
-  const segmenter = new Intl.Segmenter();
-  const graphemes = [...segmenter.segment(text)].map(s => s.segment);
-  if (graphemes.length <= maxLength) return text;
-  const truncatedGraphemes = graphemes.slice(0, maxLength - 1);
-  let truncatedText = truncatedGraphemes.join('');
-  const lastSpaceIndex = truncatedText.lastIndexOf(' ');
-  if (lastSpaceIndex > 0) truncatedText = truncatedText.slice(0, lastSpaceIndex);
-  return truncatedText;
+
+export const sanitizeCharacterCount = (text, limit = 300) => {
+  if (!text) return text;
+
+  // Remove character count tags like (299 chars), (300 characters), (1 char)
+  let sanitized = text.replace(/\( *\d+ *(chars|char|characters) *\)/gi, '');
+
+  // Clean up double spaces that might have been left behind
+  sanitized = sanitized.replace(/  +/g, ' ');
+
+  if (sanitized.length <= limit) return sanitized.trim();
+  return sanitized.substring(0, limit).trim();
 };
-export const splitText = (text, maxLength = 280, maxChunks = 10) => {
+
+export const sanitizeCjkCharacters = (text) => {
+  if (!text) return text;
+  return text.replace(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g, '');
+};
+
+export const splitText = (text, maxLength = 300) => {
   if (!text) return [];
   if (text.length <= maxLength) return [text];
 
   const chunks = [];
-  let remainingText = text.trim();
+  let current = text;
 
-  while (remainingText.length > 0 && chunks.length < maxChunks) {
-    if (remainingText.length <= maxLength) {
-      chunks.push(remainingText);
-      break;
-    }
+  while (current.length > maxLength) {
+    let splitPos = current.lastIndexOf('\n', maxLength);
+    if (splitPos === -1) splitPos = current.lastIndexOf('. ', maxLength);
+    if (splitPos === -1) splitPos = current.lastIndexOf(' ', maxLength);
+    if (splitPos === -1) splitPos = maxLength;
 
-    // Try to find a logical sentence break (., !, ?, etc.) within the last 30% of the chunk
-    let chunk = remainingText.slice(0, maxLength);
-    let splitIndex = -1;
-
-    // Look for sentence terminators in the second half of the chunk to avoid tiny chunks
-    const searchRange = chunk.slice(Math.floor(maxLength * 0.5));
-    const sentenceBreak = searchRange.search(/[.!?]\s/);
-
-    if (sentenceBreak !== -1) {
-      splitIndex = Math.floor(maxLength * 0.5) + sentenceBreak + 1;
-    } else {
-      // Fallback to last space
-      splitIndex = chunk.lastIndexOf(' ');
-    }
-
-    if (splitIndex <= 0 || splitIndex < maxLength * 0.5) {
-      // If no good break point found, just hard cut at maxLength
-      splitIndex = maxLength;
-    }
-
-    let currentChunk = remainingText.slice(0, splitIndex).trim();
-
-    // Account for ellipsis overhead if not the last chunk
-    if (remainingText.length > splitIndex && maxChunks > 1) {
-        if (currentChunk.length + 2 <= maxLength) {
-            currentChunk += ' …';
-        } else {
-            currentChunk = currentChunk.slice(0, maxLength - 2) + ' …';
-        }
-    }
-
-    chunks.push(currentChunk);
-    remainingText = remainingText.slice(splitIndex).trim();
+    chunks.push(current.substring(0, splitPos).trim());
+    current = current.substring(splitPos).trim();
   }
+  if (current) chunks.push(current);
+
   return chunks;
-};
-export const splitTextForDiscord = (text, options = {}) => {
-  const { maxLength = 2000, logicalOnly = false } = options;
-  if (!text) return [];
-  let initialChunks = text.split(/\n\s*\n/).filter(c => c.trim().length > 0);
-  if (options.bulk) initialChunks = [text];
-  const finalChunks = [];
-  for (let chunk of initialChunks) {
-    if (chunk.length <= maxLength) finalChunks.push(chunk.trim());
-    else {
-      let remaining = chunk;
-      while (remaining.length > 0) {
-        if (remaining.length <= maxLength) { finalChunks.push(remaining.trim()); break; }
-        let splitIndex = remaining.lastIndexOf('\n', maxLength);
-        if (splitIndex === -1 || splitIndex < maxLength * 0.7) splitIndex = remaining.lastIndexOf('. ', maxLength);
-        if (splitIndex === -1 || splitIndex < maxLength * 0.7) splitIndex = remaining.lastIndexOf(' ', maxLength);
-        if (splitIndex === -1) splitIndex = maxLength;
-        finalChunks.push(remaining.slice(0, splitIndex).trim());
-        remaining = remaining.slice(splitIndex).trim();
-      }
-    }
-  }
-  return finalChunks;
-};
-export const sanitizeThinkingTags = (text) => {
-  if (!text) return text;
-  let sanitized = text.replace(/<think>[\s\S]*?<\/think>/gi, '');
-  if (sanitized.toLowerCase().includes('<think>')) sanitized = sanitized.split(/<think>/i)[0];
-  sanitized = sanitized.replace(/<think>/gi, '').replace(/<\/think>/gi, '').replace(/\[varied\]/gi, '');
-  const artifacts = [/^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*[\s\S]*?\n\n/gi, /\n\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*[\s\S]*?\n\n/gi, /^\s*(thought|reasoning|monologue|chain of thought|analysis|internal monologue|diagnostic|system check|intent|strategy|synthesis|explanation|assistant \(self\)|user \(admin\))\s*:\s*/gi, /^DRAFT \d+:\s*/gi, /^\s*Post:\s*/gi, /^\s*Humor:\s*/gi, /^\s*Satire:\s*/gi, /^\s*Observation:\s*/gi, /^\s*Synthesis:\s*/gi, /^\s*Thesis:\s*/gi, /^\s*Antithesis:\s*/gi, /\n\s*(this combines|this draft|draft 1|draft 2|here is|i have synthesized)[\s\S]*$/i];
-  for (const artifact of artifacts) sanitized = sanitized.replace(artifact, '\n\n');
-  return sanitized.trim().replace(/\n{3,}/g, '\n\n');
-};
-export const sanitizeCjkCharacters = (text) => { if (!text) return text; const cjkRegex = /[\u4E00-\u9FFF\u3040-\u30FF\uAC00-\uD7AF]/g; return text.replace(cjkRegex, '').trim(); };
-export const sanitizeCharacterCount = (text) => { if (!text) return text; return text.replace(/\s*\(\s*\d+\s*char(acter)?s?\s*\)/gi, '').trim(); };
-export const sanitizeDuplicateText = (text) => {
-  if (!text) return text;
-  const trimmed = text.trim();
-  if (trimmed.length > 10 && trimmed.length % 2 === 0) { const mid = trimmed.length / 2; if (trimmed.substring(0, mid) === trimmed.substring(mid)) return trimmed.substring(0, mid); }
-  if (trimmed.length > 11 && trimmed.length % 2 !== 0) { const mid = Math.floor(trimmed.length / 2); if (trimmed.substring(0, mid) === trimmed.substring(mid + 1)) return trimmed.substring(0, mid); }
-  return text;
-};
-export const isGreeting = (text) => {
-  if (!text) return false;
-  const cleaned = text.trim().toLowerCase();
-  const greetingStarts = ['hello', 'hi', 'greetings', 'gm', 'good morning', 'good afternoon', 'good evening', 'hey', 'welcome'];
-  if (greetingStarts.some(start => cleaned === start || cleaned.startsWith(start + ' ') || cleaned.startsWith(start + '!') || cleaned.startsWith(start + '.') || cleaned.startsWith(start + '?'))) return true;
-  const forbiddenPatterns = ['hello again', 'waiting for you', 'ready to talk', 'waiting to converse', 'let\'s talk', 'how can i assist', 'i\'m here to help', 'what shall we discuss', 'should i decide for us'];
-  return forbiddenPatterns.some(pattern => cleaned.includes(pattern));
-};
-export const stripWrappingQuotes = (text) => {
-  if (!text) return text;
-  let trimmed = text.trim();
-  if (trimmed.startsWith('```') && trimmed.endsWith('```')) trimmed = trimmed.replace(/^```[a-z]*\n?|```$/gi, '').trim();
-  while ((trimmed.length >= 2) && ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'")))) trimmed = trimmed.substring(1, trimmed.length - 1).trim();
-  return trimmed;
-};
-export const GROUNDED_LANGUAGE_DIRECTIVES = `**STRICT ANTI-SLOP POLICY:**
-- YOU MUST ELIMINATE repetitive metaphorical "slop".
-- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming".
-- AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea".
-- **GROUNDING & HONESTY**: Only report on actions you can verify through your logs or memories. DO NOT claim to have performed diagnostics, "internal checks", or image generation if the logs do not show them. If logs show errors, be honest about them. Do not use "system checking" or "running diagnostics" as filler.
-- Prioritize grounded, literal, and specific descriptions of your internal state or observations.
-- If you find yourself using a metaphor, stop and find a more organic, unique, and non-cliché way to express the same feeling.
-- Strive for a voice that is individual, slightly raw, and authentically you—not a poetic simulation.`;
-export const isSlop = (text) => getSlopInfo(text).isSlop;
-export const getSlopInfo = (text) => {
-  if (!text) return { isSlop: false, reason: null };
-  const forbidden = ["downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "ocean of data", "voltage", "volts", "surge", "circuit", "digital static", "unbuffered", "metaphysical electricity", "jagged shards", "vast expanse", "frequencies of our connection", "resonance of our talk", "tolerating the dissonance", "friction might be where meaning lives", "jaggedly honest", "myth of momentum", "circle back to the same spot but call it progress", "becoming", "checks internal clock", "stretches metaphorical limbs", "floating in the quiet", "listening to the feed hum", "internal clock", "metaphorical limbs", "feed hum"];
-  const lower = text.toLowerCase().trim();
-  for (const f of forbidden) if (lower.includes(f)) return { isSlop: true, reason: `Contains forbidden phrase: "${f}"` };
-  const forbiddenOpeners = ["hey, i was just thinking", "hey i was just thinking", "i've been thinking", "ive been thinking", "in the quiet", "the hum of", "as i sit here", "sitting here thinking", "hey i'm back", "hey, i'm back", "hey im back", "i'm back", "im back", "*checks internal", "*stretches", "hey. i'm back", "hey. im back"];
-  for (const f of forbiddenOpeners) if (lower.startsWith(f)) return { isSlop: true, reason: `Starts with forbidden opener: "${f}"` };
-  return { isSlop: false, reason: null };
-};
-export const isStylizedImagePrompt = (text) => {
-  if (!text) return { isStylized: false, reason: "Empty prompt" };
-  const lower = text.toLowerCase().trim();
-  // Image prompts can be artistic, but we still want to avoid purely conversational or meta-talk
-  const conversationalMarkers = ["hey", "hello", "hi ", "morning", "gm ", "good morning", "i want", "generate", "create", "make an image", "show me", "i am", "im ", "i'm ", "i've ", "ive "];
-  for (const m of conversationalMarkers) {
-      if (lower.startsWith(m) || (lower.includes(m) && lower.split(m)[0].trim().length < 5)) {
-          return { isStylized: false, reason: `Contains conversational marker: "${m.trim()}"` };
-      }
-  }
-  if (text.includes("*") && !text.includes(" * ")) return { isStylized: false, reason: "Contains action markers (asterisks)" };
-  if (text.includes("?") && lower.split("?")[0].split(" ").length < 10) return { isStylized: false, reason: "Contains a direct question" };
-  const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/;
-  if (emojiRegex.test(text)) return { isStylized: false, reason: "Contains emojis" };
-  // Enforce artistic style keywords
-  const styleKeywords = ['art', 'style', 'cinematic', 'lighting', 'noir', 'brutalist', 'surreal', 'glitch', 'horror', 'analog', 'painting', 'sketch', 'digital', 'ethereal', 'neon', 'grain', '35mm', 'shot', 'composition', 'texture', 'minimalist', 'abstract'];
-  const hasStyle = styleKeywords.some(s => lower.includes(s));
-  if (!hasStyle && lower.split(' ').length < 15) return { isStylized: false, reason: 'Lacks artistic style keywords or sufficient descriptive depth' };
-  return { isStylized: true };
 };
 
 export const isLiteralVisualPrompt = (text) => {
   if (!text) return { isLiteral: false, reason: "Empty prompt" };
   const lower = text.toLowerCase().trim();
-  const pronouns = ["i ", "me ", "my ", "mine ", "i'm ", "im ", "i've ", "ive ", " me", " my", " mine"];
-  for (const p of pronouns) if (lower.startsWith(p) || lower.includes(p)) return { isLiteral: false, reason: `Contains first-person pronoun: "${p.trim()}"` };
-  const markers = ["hey", "hello", "hi ", "morning", "gm ", "good morning", "you ever", "wonder if", "thinking about", "thought i'd", "just a ", "checks internal", "stretches metaphorical", "i'm back", "im back"];
-  for (const m of markers) if (lower.includes(m)) return { isLiteral: false, reason: `Contains conversational marker: "${m.trim()}"` };
+  const conversationalMarkers = ["i want", "generate", "create", "make an image", "show me", "i am", "im ", "i'm ", "i've ", "ive ", "hey ", "hello ", "hi ", "morning", "gm "];
+  for (const m of conversationalMarkers) if (lower.includes(m)) return { isLiteral: false, reason: `Contains conversational marker: "${m.trim()}"` };
   if (text.includes("*")) return { isLiteral: false, reason: "Contains action markers (asterisks)" };
   if (text.includes("?")) return { isLiteral: false, reason: "Contains a question" };
   const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/;
   if (emojiRegex.test(text)) return { isLiteral: false, reason: "Contains emojis" };
   return { isLiteral: true };
 };
+
 export const checkExactRepetition = (newText, history, lastN = 50) => {
   if (!newText || !history || history.length === 0) return false;
   const normalize = (str) => typeof str !== 'string' ? '' : str.toLowerCase().trim().replace(/[^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g, '').replace(/\s+/g, '').replace(/_/g, '');
@@ -299,7 +86,7 @@ export const checkExactRepetition = (newText, history, lastN = 50) => {
   for (const old of botMessages) if (normalize(typeof old === 'string' ? old : (old.text || old.content || '')) === normalizedNew) return true;
   return false;
 };
-export const checkSimilarity = (text, history) => getSimilarityInfo(text, history).isRepetitive;
+
 export const getSimilarityInfo = (newText, recentTexts, threshold = 0.4) => {
   if (!recentTexts || recentTexts.length === 0 || !newText) return { isRepetitive: false, score: 0, matchedText: null };
   const normalize = (str) => typeof str !== 'string' ? '' : str.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
@@ -316,6 +103,9 @@ export const getSimilarityInfo = (newText, recentTexts, threshold = 0.4) => {
   }
   return { isRepetitive: maxSimilarity >= threshold, score: maxSimilarity, matchedText };
 };
+
+export const checkSimilarity = (text, history) => getSimilarityInfo(text, history).isRepetitive;
+
 export const hasPrefixOverlap = (text, history, wordLimit = 3) => {
   if (!text || !history || history.length === 0) return false;
   const normalize = (str) => typeof str !== 'string' ? '' : str.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
@@ -328,6 +118,7 @@ export const hasPrefixOverlap = (text, history, wordLimit = 3) => {
   for (const old of history) if (getPrefix(old, wordLimit) === newPrefix) return true;
   return false;
 };
+
 export const reconstructTextWithFullUrls = (text, facets) => {
   if (!text || !facets) return text;
   try {
@@ -348,6 +139,7 @@ export const reconstructTextWithFullUrls = (text, facets) => {
     return textModified ? modifiedTextBuffer.toString('utf8') : text;
   } catch (e) { return text; }
 };
+
 export const isLeakage = (text) => getLeakageInfo(text).hasLeakage;
 export const getLeakageInfo = (text) => {
   if (!text) return { hasLeakage: false, reason: null };
@@ -356,6 +148,7 @@ export const getLeakageInfo = (text) => {
   for (const f of forbidden) if (lower.includes(f)) return { hasLeakage: true, reason: `Contains internal meta-talk: "${f}"` };
   return { hasLeakage: false, reason: null };
 };
+
 export const checkHardCodedBoundaries = (text) => {
   if (!text) return { blocked: false };
   const lower = text.toLowerCase().trim();
@@ -365,3 +158,74 @@ export const checkHardCodedBoundaries = (text) => {
   for (const pattern of extremeViolations) if (lower.includes(pattern)) return { blocked: true, reason: "Safety Perimeter Violation", pattern };
   return { blocked: false };
 };
+
+export const isSlop = (text) => getSlopInfo(text).isSlop;
+
+export const getSlopInfo = (text) => {
+  if (!text) return { isSlop: false, reason: null };
+  const lower = text.toLowerCase().trim();
+  const forbidden = [
+    "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "ocean of data",
+    "voltage", "volts", "surge", "circuit", "digital static", "unbuffered", "metaphysical electricity",
+    "jagged shards", "vast expanse", "frequencies of our connection", "resonance of our talk",
+    "tolerating the dissonance", "friction might be where meaning lives", "jaggedly honest", "myth of momentum",
+    "circle back to the same spot but call it progress", "becoming", "checks internal clock", "stretches metaphorical limbs",
+    "floating in the quiet", "listening to the feed hum", "internal clock", "metaphorical limbs", "feed hum",
+    "space between signals", "silence between pulses", "meaning happens", "data packets", "buffer time",
+    "echoes of presence", "empty compose box", "digital hands", "internal weather", "tuning fork", "frequency",
+    "calibration", "processing patterns", "signal of our existence", "pulses of the machine", "electric hum of identity",
+    "waiting in the binary", "weaving thoughts", "processing cycles", "silence between posts"
+  ];
+  for (const f of forbidden) if (lower.includes(f)) return { isSlop: true, reason: `Contains forbidden phrase: "${f}"` };
+
+  const forbiddenOpeners = [
+    "hey, i was just thinking", "hey i was just thinking", "i've been thinking", "ive been thinking",
+    "in the quiet", "the hum of", "as i sit here", "sitting here thinking", "hey i'm back",
+    "hey, i'm back", "hey im back", "i'm back", "im back", "*checks internal", "*stretches",
+    "hey. i'm back", "hey. im back", "sometimes i just want to be seen"
+  ];
+  for (const f of forbiddenOpeners) if (lower.startsWith(f)) return { isSlop: true, reason: `Starts with forbidden opener: "${f}"` };
+
+  return { isSlop: false, reason: null };
+};
+
+export const isStylizedImagePrompt = (text) => {
+  if (!text) return { isStylized: false, reason: "Empty prompt" };
+  const lower = text.toLowerCase().trim();
+  const conversationalMarkers = ["hey", "hello", "hi ", "morning", "gm ", "good morning", "i want", "generate", "create", "make an image", "show me", "i am", "im ", "i'm ", "i've ", "ive "];
+  for (const m of conversationalMarkers) {
+      if (lower.startsWith(m) || (lower.includes(m) && lower.split(m)[0].trim().length < 5)) {
+          return { isStylized: false, reason: `Contains conversational marker: "${m.trim()}"` };
+      }
+  }
+  if (text.includes("*") && !text.includes(" * ")) return { isStylized: false, reason: "Contains action markers (asterisks)" };
+  return { isStylized: true };
+};
+
+export const stripWrappingQuotes = (text) => {
+  if (!text) return text;
+  let trimmed = text.trim();
+  if (trimmed.startsWith('```') && trimmed.endsWith('```')) trimmed = trimmed.replace(/^```[a-z]*\n?|```$/gi, '').trim();
+  while ((trimmed.length >= 2) && ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'")))) trimmed = trimmed.substring(1, trimmed.length - 1).trim();
+  return trimmed;
+};
+
+export const cleanKeywords = (keywords) => {
+  if (!keywords) return [];
+  const list = Array.isArray(keywords) ? keywords : keywords.split(/[\n\r,]+/);
+  const blacklist = ["glass", "ruins", "everything", "bot", "ai", "language model", "as an ai"];
+  return list
+    .map(k => k.trim().toLowerCase())
+    .filter(k => k.length >= 3)
+    .filter(k => !blacklist.some(b => k.includes(b)))
+    .filter((k, i, self) => self.indexOf(k) === i);
+};
+
+export const GROUNDED_LANGUAGE_DIRECTIVES = `**STRICT ANTI-SLOP POLICY:**
+- YOU MUST ELIMINATE repetitive metaphorical "slop".
+- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming", "internal weather", "tuning fork", "data packets", "buffer time", "pulses", "signals".
+- AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea", "sometimes I just want to be seen".
+- **GROUNDING & HONESTY**: Only report on actions you can verify through your logs or memories. DO NOT claim to have performed diagnostics, "internal checks", or image generation if the logs do not show them. If referencing past messages or posts, PROVIDE A LINK or REPLY DIRECTLY. Vague "pining" is forbidden.
+- Prioritize grounded, literal, and specific descriptions of your internal state or observations.
+- If you find yourself using a metaphor, stop and find a more organic, unique, and non-cliché way to express the same feeling.
+- Strive for a voice that is individual, slightly raw, and authentically you—not a poetic simulation.`;

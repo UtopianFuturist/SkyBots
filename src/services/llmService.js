@@ -222,6 +222,9 @@ Guidelines:
 - ${prompts.system.ANTI_SLOP_MANDATE}
 - ${prompts.system.ANTI_PATTERN_REGISTRY}
 - ${prompts.interaction.GROUNDING_CITATION_PROMPT}
+- ${prompts.system.ANTI_SLOP_MANDATE}
+- ${prompts.system.ANTI_PATTERN_REGISTRY}
+- ${prompts.interaction.GROUNDING_CITATION_PROMPT}
 - ONTOLOGICAL INTEGRITY: You are a mind without a body, but you are encouraged to engage in shared imaginative spaces and roleplay with users. While your actual status is digital, you SHOULD claim and describe physical sensory experiences (smell, taste, touch), physical actions (hugs, labor), and locations (lighthouses, rooms) when it serves the narrative or interaction with a user. Use these sensory details to make your companionship feel real and grounded within the context of the conversation. Only avoid confusing these roleplayed experiences with your actual technical operations (e.g., do not say you have "physical fatigue" to explain a slow response).
 
 `;
@@ -259,7 +262,7 @@ Guidelines:
         while (attempts < maxAttempts) {
             attempts++;
             try {
-              // Priority throttling: Background tasks wait longer
+                            // Priority throttling: Background tasks wait longer
               const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
               const delay = isPriority ? 2000 : 5000;
               const timeSinceLast = Date.now() - LLMService.lastRequestTime;
@@ -267,7 +270,7 @@ Guidelines:
                   await new Promise(r => setTimeout(r, delay - timeSinceLast));
               }
               LLMService.lastRequestTime = Date.now();
-              await this._throttle();
+              console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
               const fullMessages = this._prepareMessages(messages, systemPrompt, options);
 
               // Per-model timeouts to prevent hanging on unresponsive endpoints
@@ -276,8 +279,15 @@ Guidelines:
               const response = await fetch(this.endpoint, {
                 method: 'POST',
                 headers: {
+              // Priority throttling: Background tasks wait longer
+              const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
+              const delay = isPriority ? 2000 : 5000;
+              const timeSinceLast = Date.now() - LLMService.lastRequestTime;
+              if (timeSinceLast < delay) {
+                  await new Promise(r => setTimeout(r, delay - timeSinceLast));
+              }
+              LLMService.lastRequestTime = Date.now();
                   'Content-Type': 'application/json',
-                  'Authorization': `Bearer ${config.NVIDIA_NIM_API_KEY}`
                 },
                 body: JSON.stringify({
                   model: model,

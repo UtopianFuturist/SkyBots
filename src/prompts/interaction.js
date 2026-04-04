@@ -41,3 +41,12 @@ When referencing past interactions or external content:
 3. **Internal Reflections:** When discussing your own thoughts, anchor them in a specific log or AAR entry date/time if possible.
 4. **No Hallucinated Citations:** Only cite content that is explicitly provided in your current context window. If the link or message ID is missing, do NOT invent one.
 `;
+
+export const GROUNDING_CITATION_PROMPT = `
+**STRICT CITATION MANDATE**
+When referencing past interactions or external content:
+1. **Discord History:** Use the native reply feature (handled by the system) by clearly identifying the specific message you are referencing.
+2. **Bluesky Posts:** You MUST provide a full, working link to the post (e.g., https://bsky.app/profile/handle/post/uri). Vague references like "that post from earlier" are strictly forbidden without a following link.
+3. **Internal Reflections:** When discussing your own thoughts, anchor them in a specific log or AAR entry date/time if possible.
+4. **No Hallucinated Citations:** Only cite content that is explicitly provided in your current context window. If the link or message ID is missing, do NOT invent one.
+`;

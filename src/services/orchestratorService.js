@@ -1308,6 +1308,16 @@ Avoid the flaws identified. Use only one or two sentences if that's more potent.
                             await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
                             return;
                         }
+                        // PIVOT LOGIC: Check if this post is accidentally for the admin or mentions @user
+                        const pivotPrompt = `Analyze this generated Bluesky post content:\n\n"${finalContent}"\n\nIs this a "personal message" intended directly for your admin (e.g., mentions "@user", "your employment history", "I want to talk to you", or discusses private relationship details)? Respond with ONLY "personal" or "social".`;
+                        const classification = await llmService.generateResponse([{ role: "system", content: pivotPrompt }], { useStep: true, platform: "bluesky", preface_system_prompt: false });
+
+                        if (classification?.toLowerCase().includes("personal")) {
+                            console.log("[Orchestrator] Pivot: Personal post detected. Sending to Discord instead of Bluesky.");
+                            await discordService.sendSpontaneousMessage(finalContent);
+                            await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
+                            return;
+                        }
                         await blueskyService.post(finalContent, null, { maxChunks: 4 });
                         await dataStore.incrementDailyTextPosts();
                         this.addTaskToQueue(() => introspectionService.performAAR("autonomous_text_post", finalContent, { success: true, platform: "bluesky" }, { topic }), "aar_post");

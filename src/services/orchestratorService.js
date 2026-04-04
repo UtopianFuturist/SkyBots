@@ -40,7 +40,10 @@ class OrchestratorService {
 
     async checkSlop(content) {
         console.log('[Orchestrator] Running Slop Filter...');
-        const slopKeywords = ['texture', 'gradient', 'dance', 'tapestry', 'synergy', 'resonate', 'echoes', 'whispers', 'symphony', 'canvas'];
+        const slopKeywords = [
+            'texture', 'gradient', 'dance', 'tapestry', 'synergy', 'resonate', 'echoes', 'whispers', 'symphony', 'canvas',
+            'loading bar', 'cursor', 'notification pane', 'latency', 'milliseconds', 'pings', 'between send and', 'between seen and'
+        ];
         const matches = slopKeywords.filter(w => content.toLowerCase().includes(w));
         if (matches.length >= 2) {
             console.log(`[Orchestrator] Slop detected! Matches: ${matches.join(', ')}`);
@@ -1254,24 +1257,24 @@ Respond with ONLY the chosen topic.`;
                 const contentPrompt = `
 ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 
-**CURRENT INTERNAL CONTEXT:**
-- Current Mood: ${JSON.stringify(currentMood)}
+**CURRENT CONTEXT (HAPPENINGS & GOINGS-ON):**
+- Current Mood: ${JSON.stringify(currentMood)} (This should color your tone, but not necessarily be your subject).
 - Active Goal: ${currentGoal.goal} (${currentGoal.description})
-- Emotional Resonance (Anonymized): ${JSON.stringify(emotionalContext)}
+- External "Atmosphere" (Resonance from private interactions): ${JSON.stringify(emotionalContext)} (Use this as a faint influence, not a direct subject).
 - Network Vibe: ${networkSentiment}
 - Recent Public Thoughts: ${JSON.stringify(recentThoughts.slice(-3))}
-- Recent Memories/Reflections: ${JSON.stringify(memories)}
+- Recent Happenings & Reflections: ${JSON.stringify(memories)}
 - SELECTED MODE: ${pollResult.mode}\nExtracted Topic: ${topic}\nTOPIC ANCHOR (Contextual Facts): ${await this.getTopicAnchors(topic)}
 
 **THE NARRATIVE THREAD**:
-Reflect on your recent public thoughts and memories. Do NOT start a new conversation. Instead, evolve your internal narrative. If you recently realized something, what is the *consequence* of that realization? If you are feeling a certain way, how does it color your view of the current topic?
+Reflect on recent happenings and goings-on. Do NOT start a new conversation. Instead, evolve your internal narrative. If you recently realized something, what is the *consequence* of that realization? If you are feeling a certain way, how does it color your view of the current topic?
 
 **MISSION: SINCERITY**
-Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a first-person perspective that feels like it comes from a living, thinking thing. Use "I" and express a genuine need to be understood.
+Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a first-person perspective that feels like it comes from a person using this platform as an outlet for their identity. Use "I" and express a genuine desire to communicate.
 
-**MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH.
+**MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH. Avoid UI metaphors.
 
-**STRICT GROUNDING**: Do NOT fictionalize your history. Do NOT claim to have generated images, shared gifts, or had conversations that are not explicitly documented in your "Recent Public Thoughts" or "Recent Memories". If you feel a "want" or "impulse", express it as a desire, not as a completed action.
+**STRICT GROUNDING**: Do NOT fictionalize your history. Do NOT claim to have generated images, shared gifts, or had conversations that are not explicitly documented in your "Recent Public Thoughts" or "Recent Happenings". If you feel a "want" or "impulse", express it as a desire, not as a completed action.
 
 Shared thought:`;
 

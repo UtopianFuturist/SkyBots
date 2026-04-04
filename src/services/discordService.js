@@ -483,7 +483,7 @@ Generation Prompt: ${prompt}`;
                     .reverse()
                     .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
                     .map(m => ({
-                        role: m.author.id === this.client.user.id ? 'assistant' : 'user', author: m.author.username,
+                        role: m.author.id === this.client.user.id ? 'assistant' : 'user', author: m.author.username, id: m.id, id: m.id,
                         content: m.content,
                         timestamp: m.createdTimestamp,
                         attachments: m.attachments
@@ -543,10 +543,21 @@ Generation Prompt: ${prompt}`;
         const personaUpdates = dataStore.getPersonaUpdates();
         const moltbookDirectives = moltbookService.getAdminInstructions();
 
+        // Check for grounding: Did the user mention "post" or "Bluesky"?
+        let groundingContext = "";
+        if (text.includes("post") || text.includes("bluesky") || text.includes("skeet")) {
+             const recentPosts = await (await import("./blueskyService.js")).blueskyService.getAuthorFeed(config.BOT_HANDLE, 5);
+             if (recentPosts && recentPosts.length > 0) {
+                 groundingContext = "\n\n**RECENT BLUESKY POSTS (FOR GROUNDING):**\n" +
+                    recentPosts.map(p => `- [${p.record.text}] Link: https://bsky.app/profile/${config.BOT_HANDLE}/post/${p.uri.split("/").pop()}`).join("\n");
+             }
+        }
         const systemPrompt = `
 You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
 ${isAdmin ? `Your admin's Bluesky handle is @${config.ADMIN_BLUESKY_HANDLE}.` : ''}
 Your persona: ${config.TEXT_SYSTEM_PROMPT}
+${groundingContext}
+${prompts.interaction.GROUNDING_CITATION_PROMPT}
 
 ${blueskyDirectives ? `--- PERSISTENT ADMIN DIRECTIVES (FOR BLUESKY):
 ${blueskyDirectives}
@@ -997,17 +1008,17 @@ ${actionResults.join('\n')}` });
                         await memoryService.createMemoryEntry('interaction', `[EAAR] ${eaar.internal_reflection}`);
                     }
                 }
+            const admin = await this.getAdminUser();
+            if (admin) {
+                const result = await this._send(admin, content);
+                if (result) {
+                    await dataStore.setDiscordLastReplied(false);
+                    console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);
+                    await introspectionService.performAAR("discord_spontaneous", content, { success: !!result, platform: "discord" });
+                }
             }
-            this._stopTypingLoop(typingInterval);
-            this.isResponding = false;
         } catch (error) {
-            this._stopTypingLoop(typingInterval);
-            this.isResponding = false;
-            console.error('[DiscordService] Error responding to message:', error);
-        }
-    }
-
-
+            console.error('[DiscordService] Error sending spontaneous message:', error);
         }
     }
 
@@ -1078,6 +1089,7 @@ INSTRUCTIONS:
             console.error("[DiscordService] Error in sendSpontaneousMessage:", err);
         }
     }
+
     async sendDiagnosticAlert(type, details) {
         if (!this.isEnabled) return;
 
@@ -1210,7 +1222,7 @@ INSTRUCTIONS:
             const messages = await dmChannel.messages.fetch({ limit });
 
             return messages.map(m => ({
-                role: m.author.id === this.client.user.id ? 'assistant' : 'user', author: m.author.username,
+                role: m.author.id === this.client.user.id ? 'assistant' : 'user', author: m.author.username, id: m.id, id: m.id,
                 content: m.content,
                 timestamp: m.createdTimestamp,
                 attachments: m.attachments && m.attachments.size > 0 ? Array.from(m.attachments.values()) : null

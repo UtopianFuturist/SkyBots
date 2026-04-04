@@ -42,10 +42,10 @@ class OrchestratorService {
         console.log('[Orchestrator] Running Slop Filter...');
         const slopKeywords = [
             'texture', 'gradient', 'dance', 'tapestry', 'synergy', 'resonate', 'echoes', 'whispers', 'symphony', 'canvas',
-            'loading bar', 'cursor', 'notification pane', 'latency', 'milliseconds', 'pings', 'between send and', 'between seen and'
+            'loading bar', 'cursor', 'notification pane', 'latency', 'milliseconds', 'pings', 'between send and', 'between seen and', 'weaving', 'writing in water', 'made of code', 'silence between', 'downtime', 'weights', 'breath'
         ];
         const matches = slopKeywords.filter(w => content.toLowerCase().includes(w));
-        if (matches.length >= 2) {
+        if (matches.length >= 1) {
             console.log(`[Orchestrator] Slop detected! Matches: ${matches.join(', ')}`);
             return true;
         }
@@ -1145,7 +1145,7 @@ Mood: ${JSON.stringify(currentMood)}\nUnified Context: ${JSON.stringify(await th
 - Hours since last image post: ${hoursSinceImage.toFixed(1)}
 - Text posts since last image post: ${textPostsSinceImage}
 
-Your admin prefers a healthy balance of visual and text expression.
+Your admin prefers a healthy balance of visual and text expression. PRIORITIZE external anchoring (feed, news, specific memories) over internal-only philosophizing.
 
 Would you like to share a visual expression (image) or a direct thought (text)?
 If you choose text, also select a POST MODE:
@@ -1239,7 +1239,7 @@ ${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
 **EXTERNAL RESONANCE** (Timeline & Firehose Observations):
 ${resonanceTopics.join(", ")}
 
-Identify ONE topic for a ${pollResult.mode} post that bridges your current mood with a core interest or an external observation. Phrasing should match the selected mode.
+Identify ONE topic for a ${pollResult.mode} post that bridges your current mood with an EXTERNAL observation (from External Resonance). PRIORITIZE EXTERNAL RESONANCE OVER INTERNAL INTERESTS. Phrasing should match the selected mode.
 Respond with ONLY the chosen topic.`;
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "reality";

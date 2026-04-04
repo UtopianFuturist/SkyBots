@@ -13,6 +13,7 @@ import { renderService } from './renderService.js';
 import { webReaderService } from './webReaderService.js';
 import { socialHistoryService } from './socialHistoryService.js';
 import { introspectionService } from './introspectionService.js';
+import * as prompts from '../prompts/index.js';
 import { sanitizeThinkingTags, sanitizeCharacterCount, isSlop, checkSimilarity } from '../utils/textUtils.js';
 
 class DiscordService {
@@ -579,6 +580,7 @@ ${personaUpdates}
 11. **TURN AUTONOMY**: You are encouraged to send multiple messages (1-4) in a single response turn if you have multiple distinct thoughts or follow-up questions. Provide each message on a new line.
 ${config.DISCORD_HEARTBEAT_ADDENDUM ? `10. ADDITIONAL SPECIFICATION: ${config.DISCORD_HEARTBEAT_ADDENDUM}` : ''}
 
+${isAdmin ? prompts.instruction.ADMIN_DIRECTIVE_SYSTEM_PROMPT : ''}
 --- SOCIAL NARRATIVE ---
 ${hierarchicalSummary.dailyNarrative}
 ${hierarchicalSummary.shortTerm}

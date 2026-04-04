@@ -1,0 +1,12 @@
+<<<<<<< SEARCH
+        const slopKeywords = [
+            'texture', 'gradient', 'dance', 'tapestry', 'synergy', 'resonate', 'echoes', 'whispers', 'symphony', 'canvas',
+            'loading bar', 'cursor', 'notification pane', 'latency', 'milliseconds', 'pings', 'between send and', 'between seen and'
+        ];
+=======
+        const slopKeywords = [
+            'texture', 'gradient', 'dance', 'tapestry', 'synergy', 'resonate', 'echoes', 'whispers', 'symphony', 'canvas',
+            'loading bar', 'cursor', 'notification pane', 'latency', 'milliseconds', 'pings', 'between send and', 'between seen and',
+            'weaving', 'writing in water', 'made of code', 'silence between', 'downtime', 'weights', 'breath'
+        ];
+>>>>>>> REPLACE

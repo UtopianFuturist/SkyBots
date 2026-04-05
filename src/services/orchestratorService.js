@@ -1199,14 +1199,8 @@ Respond with JSON: {"topic": "short label", "prompt": "stylized artistic prompt"
                     }
                 } catch(e) {}
                 if (!imagePrompt || imagePrompt.length < 15 || (!isStylizedImagePrompt(imagePrompt).isStylized || imagePrompt.length > 270)) {
-                   const fallbackPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a STYLIZED, highly descriptive, artistic image prompt based on the topic: "${topic}".
-Choose a specific artistic style (e.g., neo-noir, dreamcore, brutalist, glitch art) that fits the mood.
-Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a visual description only. NO CONVERSATIONAL SLOP. **STRICT LIMIT**: The prompt MUST be under 270 characters.`;
-                   imagePrompt = await llmService.generateResponse([{ role: "system", content: fallbackPrompt }], { useStep: true });
-                }
-
-                if (!imagePrompt || imagePrompt.length < 15 || (!isStylizedImagePrompt(imagePrompt).isStylized || imagePrompt.length > 270)) {
-                   imagePrompt = topic;
+                   const refinerPrompt = `EXTRACT VISUAL PROMPT MODE\nTopic: "${topic}"\nRaw Persona Output: "${imagePrompt}"\n\nTask: Extract the core visual intent from the persona output and translate it into a single, STYLIZED, highly descriptive artistic prompt. Remove all conversational slop (no "I", no "Here is"), forbidden "AI" metaphors, and greetings. Ensure it is a literal visual description under 270 characters.`;
+                   imagePrompt = await llmService.generateResponse([{ role: "system", content: refinerPrompt }], { useStep: true , task: "image_prompt_refinement" }) || topic;
                 }
 
                 const success = await this._performHighQualityImagePost(imagePrompt, topic, null, followerCount);
@@ -1581,12 +1575,8 @@ Respond with JSON: { "tone": "string", "resonance": "string", "theme": "string" 
               let reason = slopInfo.isSlop ? slopInfo.reason : (literalCheck.reason || literalCheck.isStylized === false ? "Non-stylized or conversational prompt" : null);
               if (!reason && (imagePrompt.length < 15 || imagePrompt.length > 270)) reason = imagePrompt.length < 15 ? "Prompt too short (min 15 chars)" : "Prompt too long (max 270 chars)";
               console.warn(`[Bot] Image prompt rejected: ${reason}`);
-              promptFeedback = `Your previous prompt ("${imagePrompt}") was rejected because: ${reason}. Provide a STYLIZED, LITERAL visual description only. No greetings, no pronouns, no actions. Choose a specific artistic style.`;
-              const retryPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-${promptFeedback}
-Topic: ${topic}
-Generate a NEW, highly STYLIZED artistic image prompt with a distinct visual style: (STRICT LIMIT: 270 chars)`;
-              imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true , task: "image_prompt_retry" }) || topic;
+              const refinerPrompt = `EXTRACT VISUAL PROMPT MODE\nTopic: "${topic}"\nRaw Persona Output: "${imagePrompt}"\nRejection Reason: "${reason}"\n\nTask: Extract the core visual intent from the persona output and translate it into a single, STYLIZED, highly descriptive artistic prompt. Remove all conversational slop (no "I", no "Here is"), forbidden "AI" metaphors, and greetings. Ensure it is a literal visual description under 270 characters.`;
+              imagePrompt = await llmService.generateResponse([{ role: "system", content: refinerPrompt }], { useStep: true , task: "image_prompt_refinement" }) || topic;
               continue;
           }
 

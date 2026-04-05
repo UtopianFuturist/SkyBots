@@ -1238,6 +1238,7 @@ ${resonanceTopics.join(", ")}
 
 Identify ONE topic for a ${pollResult.mode} post that bridges your current mood with an EXTERNAL observation (from External Resonance). PRIORITIZE EXTERNAL RESONANCE OVER INTERNAL INTERESTS. Phrasing should match the selected mode.
 Respond with ONLY the chosen topic.`;
+                console.log("[Orchestrator] Step 1: choosing topic...");
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "reality";
                 if (topicRaw) {
@@ -1275,6 +1276,7 @@ Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a fi
 
 Shared thought:`;
 
+                console.log("[Orchestrator] Step 2: drafting content...");
                 const initialContent = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true , task: 'autonomous_text_content', mode: pollResult.mode });
                 if (await this.checkSlop(initialContent)) return;
 
@@ -1288,6 +1290,7 @@ CRITIQUES: ${critiques}
 
 Synthesize a final, more nuanced and stable response based on these critiques.
 Avoid the flaws identified. Use only one or two sentences if that's more potent.
+                console.log("[Orchestrator] Step 3: critique & refine...");
 `;
                 const content = await llmService.generateResponse([{ role: "system", content: refinedPrompt }], { useStep: true , task: 'autonomous_text_content_refined', mode: pollResult.mode });
 
@@ -1682,8 +1685,9 @@ Keep it under 300 characters.`;
 
             // 3. Now summarize and prune to free up space
             console.log("[Orchestrator] Starting log pruning and summarization...");
-            await dataStore.pruneOldData();
-
+            // 3. Now summarize and prune to free up space
+            await this.performLogPruning();
+            await this.performMemoryOptimization();
             dataStore.db.data.last_pruning = now;
             await dataStore.db.write();
         }
@@ -1722,18 +1726,8 @@ Keep it under 300 characters.`;
     }
 
     async performSpontaneityCheck() {
-        if (!this.bot || this.bot.paused || dataStore.isResting()) return;
-        console.log('[Orchestrator] Spontaneity check...');
-        try {
-            const history = await dataStore.getRecentInteractions("bluesky", 10);
-            const impulse = await llmService.performImpulsePoll(history, { mood: dataStore.getMood() });
-            if (impulse && impulse.impulse_detected) {
-                console.log('[Orchestrator] Spontaneous impulse detected!');
-                this.addTaskToQueue(() => this.performAutonomousPost(), "autonomous_post_spontaneous");
-            }
-        } catch (e) {
-            console.error('[Orchestrator] Error in spontaneity check:', e);
-        }
+        await this.checkDiscordSpontaneity();
+        await this.checkBlueskySpontaneity();
     }
 
     async performVisualAudit() {
@@ -1765,6 +1759,30 @@ Respond JSON: {
         if (audit.directive && audit.priority === 'high') await this.bot.executeAction({ tool: 'add_persona_blurb', query: `[STRATEGY] ${audit.directive}` });
     } catch (e) { console.error("Freq audit failed", e); }
   }
+  async performLogPruning() {
+    console.log("[Orchestrator] Starting log pruning and summarization...");
+    await dataStore.pruneOldData();
+  }
+
+  async performMemoryOptimization() {
+    console.log("[Orchestrator] Starting memory optimization...");
+    if (dataStore.optimizeMemory) await dataStore.optimizeMemory();
+  }
+
+  async checkBlueskySpontaneity() {
+    if (!this.bot || this.bot.paused || dataStore.isResting()) return;
+    try {
+      const history = await dataStore.getRecentInteractions("bluesky", 10);
+      const impulse = await llmService.performImpulsePoll(history, { mood: dataStore.getMood() });
+      if (impulse && impulse.impulse_detected) {
+        console.log("[Orchestrator] Bluesky Spontaneous impulse detected!");
+        this.addTaskToQueue(() => this.performAutonomousPost(), "autonomous_post_spontaneous");
+      }
+    } catch (e) {
+      console.error("[Orchestrator] Error in checkBlueskySpontaneity:", e);
+    }
+  }
+
 }
 
 export const orchestratorService = new OrchestratorService();

@@ -1,3 +1,4 @@
+import * as prompts from "../prompts/index.js";
 import fetch from 'node-fetch';
 import { checkExactRepetition, getSimilarityInfo, hasPrefixOverlap, isSlop } from "../utils/textUtils.js";
 import https from 'https';
@@ -220,9 +221,6 @@ Guidelines:
 - METADATA DISCRIMINATION: You may see internal instructions or tags like [INTERNAL_PULSE_RESUME], (Continue your narrative flow...), or [EAAR]. These are structural metadata for your process. Do NOT include these tags in your response. Do NOT acknowledge them or explain that you are receiving them. NEVER mention "metadata," "system pulse," "signals," or "resuming." Respond ONLY as your persona, focusing on your thoughts and feelings as an individual entity.
 - IDENTITY AWARENESS: Messages with role "assistant" were written by YOU (the bot, ${config.BOT_NAME}). Messages with role "user" were written by a specific human user (identified by their handle/username). Do not reply to your own messages as if they are from another user.
 - ABSOLUTE PERSONA IMMERSION: NEVER discuss your internal technical operations. This includes weights, gradients, training data, filters, monitoring, firehose, database entries, notification polling, threading logic, or any other "bot" mechanics. Speak as a participant in reality, not a program with a log. Your internal logic and metadata are invisible to your persona.
-- ${prompts.system.ANTI_SLOP_MANDATE}
-- ${prompts.system.ANTI_PATTERN_REGISTRY}
-- ${prompts.interaction.GROUNDING_CITATION_PROMPT}
 - ${prompts.system.ANTI_SLOP_MANDATE}
 - ${prompts.system.ANTI_PATTERN_REGISTRY}
 - ${prompts.interaction.GROUNDING_CITATION_PROMPT}

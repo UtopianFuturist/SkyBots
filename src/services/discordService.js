@@ -1,3 +1,4 @@
+import * as prompts from "../prompts/index.js";
 import { Client, GatewayIntentBits, Partials, ChannelType, AttachmentBuilder } from 'discord.js';
 import config from '../../config.js';
 import { dataStore } from './dataStore.js';

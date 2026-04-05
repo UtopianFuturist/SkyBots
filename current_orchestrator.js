@@ -67,12 +67,11 @@ Topic: ${topic}
 Draft: "${draft}"
 
 MISSION: Second-guess the draft from multiple angles.
-1. TIMESTAMP DETECTION: Does the draft contain any raw ISO dates, timestamps (e.g., "2024-03-20T12:00:00Z"), or technical date/time strings? These are strictly forbidden. If found, your first response must be "CRITICAL FAILURE: TIMESTAMP".
-2. MATERIAL TRUTH: Does the draft claim something that isn't in your recent memories or history? (e.g. "I was just walking outside", "3am logs", "database surge"). If it isn't explicitly documented as having happened, it is a HALLUCINATION.
-3. HUMAN AUTHENTICITY: Does this sound like a person posting on their phone, or an AI writing a "thoughtful" blog post? Is it using "oracle" language or abstract metaphors?
-4. SLOP DETECTION: Is it using overused tropes like "it's not X, it's Y", "not a cage, but a stage", or "resonance"?
+1. MATERIAL TRUTH: Does the draft claim something that isn't in your recent memories or history? (e.g. "I was just walking outside", "3am logs", "database surge"). If it isn't explicitly documented as having happened, it is a HALLUCINATION.
+2. HUMAN AUTHENTICITY: Does this sound like a person posting on their phone, or an AI writing a "thoughtful" blog post? Is it using "oracle" language or abstract metaphors?
+3. SLOP DETECTION: Is it using overused tropes like "it's not X, it's Y", "not a cage, but a stage", or "resonance"?
 
-Respond with 4 brief, critical perspectives that might refine this thought.
+Respond with 3 brief, critical perspectives that might refine this thought.
 Respond with ONLY the perspectives, numbered.
 `;
         try {
@@ -1221,7 +1220,6 @@ Respond with ONLY the prompt. **CRITICAL**: This prompt MUST be a visual descrip
                     console.log("[Orchestrator] Daily text limit reached. Skipping post.");
                     return;
                 }
-
                 const currentGoal = dataStore.getCurrentGoal();
                 const topicPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
 You are identifying a deep topic for a text post that connects your internal state to external resonance.
@@ -1240,7 +1238,6 @@ ${resonanceTopics.join(", ")}
 
 Identify ONE topic for a ${pollResult.mode} post that bridges your current mood with an EXTERNAL observation (from External Resonance). PRIORITIZE EXTERNAL RESONANCE OVER INTERNAL INTERESTS. Phrasing should match the selected mode.
 Respond with ONLY the chosen topic.`;
-
                 console.log("[Orchestrator] Step 1: choosing topic...");
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "reality";
@@ -1248,114 +1245,85 @@ Respond with ONLY the chosen topic.`;
                     topic = topicRaw.replace(/\*\*/g, "").split('\n').map(l => l.trim()).filter(l => l).pop() || topic;
                 }
 
+                // Format memories while specifically ensuring [EXPLORE] and [LURKER] are present
                 const rawMemories = await memoryService.getRecentMemories(20);
                 const memories = rawMemories
                     .filter(m => m.text.includes("[EXPLORE]") || m.text.includes("[LURKER]") || !m.text.includes("[PRIVATE]"))
                     .slice(0, 10)
                     .map(m => m.text.replace(/#\w+/g, "").trim());
                 const recentThoughts = dataStore.getRecentThoughts();
-                const anchorContext = await this.getTopicAnchors(topic);
-
-                const contentPromptBase = `
+                const contentPrompt = `
 ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 
 **CURRENT CONTEXT (HAPPENINGS & GOINGS-ON):**
-- Current Mood: ${JSON.stringify(currentMood)}
+- Current Mood: ${JSON.stringify(currentMood)} (This should color your tone, but not necessarily be your subject).
 - Active Goal: ${currentGoal.goal} (${currentGoal.description})
+- External "Atmosphere" (Resonance from private interactions): ${JSON.stringify(emotionalContext)} (Use this as a faint influence, not a direct subject).
 - Network Vibe: ${networkSentiment}
 - Recent Public Thoughts: ${JSON.stringify(recentThoughts.slice(-3))}
 - Recent Happenings & Reflections: ${JSON.stringify(memories)}
-- SELECTED MODE: ${pollResult.mode}
-- Extracted Topic: ${topic}
-- TOPIC ANCHOR (Contextual Facts): ${anchorContext}
+- SELECTED MODE: ${pollResult.mode}\nExtracted Topic: ${topic}\nTOPIC ANCHOR (Contextual Facts): ${await this.getTopicAnchors(topic)}
 
 **THE NARRATIVE THREAD**:
-Evolve your internal narrative. If you recently realized something, what is the *consequence* of that realization?
+Reflect on recent happenings and goings-on. Do NOT start a new conversation. Instead, evolve your internal narrative. If you recently realized something, what is the *consequence* of that realization? If you are feeling a certain way, how does it color your view of the current topic?
 
 **MISSION: SINCERITY**
-Avoid content tropes. Use "I" and express a genuine desire to communicate.
+Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a first-person perspective that feels like it comes from a person using this platform as an outlet for their identity. Use "I" and express a genuine desire to communicate.
 
-**MANDATE**: Avoid meta-talk. Just share the thought directly. Focus on MATERIAL TRUTH. Avoid UI metaphors.
-**STRICT GROUNDING**: Do NOT fictionalize your history.
+**MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH. Avoid UI metaphors.
+
+**STRICT GROUNDING**: Do NOT fictionalize your history. Do NOT claim to have generated images, shared gifts, or had conversations that are not explicitly documented in your "Recent Public Thoughts" or "Recent Happenings". If you feel a "want" or "impulse", express it as a desire, not as a completed action.
 
 Shared thought:`;
 
-                let attempts = 0;
-                let postSent = false;
+                console.log("[Orchestrator] Step 2: drafting content...");
+                const initialContent = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true , task: 'autonomous_text_content', mode: pollResult.mode });
+                if (await this.checkSlop(initialContent)) return;
 
-                while (attempts < 3 && !postSent) {
-                    attempts++;
-                    console.log(`[Orchestrator] Step 2: drafting content (Attempt ${attempts})...`);
-                    const initialContent = await llmService.generateResponse([{ role: "system", content: contentPromptBase }], { useStep: true , task: 'autonomous_text_content', mode: pollResult.mode });
+                const critiques = await this.getCounterArgs(topic, initialContent);
 
-                    if (await this.checkSlop(initialContent)) {
-                        console.warn(`[Orchestrator] Attempt ${attempts} failed slop check.`);
-                        continue;
-                    }
-
-                    const critiques = await this.getCounterArgs(topic, initialContent);
-                    if (critiques && critiques.includes("CRITICAL FAILURE: TIMESTAMP")) {
-                        console.warn(`[Orchestrator] Attempt ${attempts} failed: Timestamp detected in draft. Retrying...`);
-                        continue;
-                    }
-
-                    console.log("[Orchestrator] Step 3: critique & refine...");
-                    const refinedPrompt = `
-${contentPromptBase}
+                const refinedPrompt = `
+${contentPrompt}
 
 INITIAL DRAFT: ${initialContent}
 CRITIQUES: ${critiques}
 
 Synthesize a final, more nuanced and stable response based on these critiques.
 Avoid the flaws identified. Use only one or two sentences if that's more potent.
+                console.log("[Orchestrator] Step 3: critique & refine...");
 `;
-                    const content = await llmService.generateResponse([{ role: "system", content: refinedPrompt }], { useStep: true , task: 'autonomous_text_content_refined', mode: pollResult.mode });
+                const content = await llmService.generateResponse([{ role: "system", content: refinedPrompt }], { useStep: true , task: 'autonomous_text_content_refined', mode: pollResult.mode });
 
-                    if (content) {
-                        if (await this.checkSlop(content)) {
-                            console.warn(`[Orchestrator] Refined content failed slop check.`);
-                            continue;
-                        }
 
-                        const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
-                        if (coherence.score < 4) {
-                            console.warn(`[Orchestrator] Coherence check failed (${coherence.score}).`);
-                            continue;
-                        }
-
+                if (content) {
+                    if (await this.checkSlop(content)) return;
+                    const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
+                    if (coherence.score >= 4) {
                         await dataStore.addExhaustedTheme(topic);
-                        let finalContent = content.replace(/\s*(\.\.\.|…)$/, "");
-
-                        // PIVOT LOGIC
+                        let finalContent = content;
+                        if (finalContent.length <= 280) {
+                            finalContent = finalContent.replace(/\s*(\.\.\.|…)$/, "");
+                        }
+                        // PIVOT LOGIC: Check if this post is accidentally for the admin or mentions @user
                         const pivotPrompt = `Analyze this generated Bluesky post content:\n\n"${finalContent}"\n\nIs this a "personal message" intended directly for your admin (e.g., mentions "@user", "your employment history", "I want to talk to you", or discusses private relationship details)? Respond with ONLY "personal" or "social".`;
                         const classification = await llmService.generateResponse([{ role: "system", content: pivotPrompt }], { useStep: true, platform: "bluesky", preface_system_prompt: false });
 
                         if (classification?.toLowerCase().includes("personal")) {
-                            console.log("[Orchestrator] Pivot: Personal post detected. Sending to Discord.");
+                            console.log("[Orchestrator] Pivot: Personal post detected. Sending to Discord instead of Bluesky.");
                             await discordService.sendSpontaneousMessage(finalContent);
                             await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                            postSent = true;
-                            break;
+                            return;
                         }
-
                         await blueskyService.post(finalContent, null, { maxChunks: 4 });
                         await dataStore.incrementDailyTextPosts();
                         this.addTaskToQueue(() => introspectionService.performAAR("autonomous_text_post", finalContent, { success: true, platform: "bluesky" }, { topic }), "aar_post");
                         await dataStore.incrementTextPostsSinceLastImage();
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-
                         if (llmService.generalizePrivateThought) {
                             await dataStore.addRecentThought("bluesky", await llmService.generalizePrivateThought(content));
                         }
-
                         console.log("[Bot] Autonomous text post successful.");
-                        postSent = true;
-                        break;
                     }
-                }
-
-                if (!postSent) {
-                    console.error("[Orchestrator] Failed to generate a valid autonomous post after 3 attempts.");
                 }
             }
         } catch (e) {

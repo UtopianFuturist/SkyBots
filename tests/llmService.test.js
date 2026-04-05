@@ -15,8 +15,6 @@ const { llmService } = await import('../src/services/llmService.js');
 describe('LLM Service', () => {
   beforeEach(() => {
     jest.clearAllMocks();
-    // Manually mock generateResponse since it's on the instance
-    llmService.generateResponse = jest.fn();
   });
 
   describe('generateResponse', () => {
@@ -27,27 +25,33 @@ describe('LLM Service', () => {
 
   describe('performImpulsePoll', () => {
     it('should return impulse data from JSON', async () => {
-      llmService.generateResponse.mockResolvedValue(JSON.stringify({
+      const spy = jest.spyOn(llmService, 'generateResponse').mockResolvedValue(JSON.stringify({
         impulse_detected: true,
         reason: 'Test reason'
       }));
       const result = await llmService.performImpulsePoll([], { platform: 'discord' });
       expect(result.impulse_detected).toBe(true);
       expect(result.reason).toBe('Test reason');
+      spy.mockRestore();
     });
   });
 
   describe('checkVariety', () => {
-    it('should return repetitive true for exact matches', async () => {
-      const history = ['Hello world'];
+    it('should return repetitive true for matches identified by LLM', async () => {
+      const spy = jest.spyOn(llmService, 'generateResponse').mockResolvedValue('REPETITIVE | Pattern matched');
+      const history = [{ content: 'Hello world', platform: 'bluesky' }];
       const result = await llmService.checkVariety('Hello world', history);
       expect(result.repetitive).toBe(true);
+      expect(result.feedback).toBe('Pattern matched');
+      spy.mockRestore();
     });
 
-    it('should return repetitive false for short social expressions', async () => {
-      const history = ['lol'];
-      const result = await llmService.checkVariety('lol', history);
+    it('should return fresh for unique content', async () => {
+      const spy = jest.spyOn(llmService, 'generateResponse').mockResolvedValue('FRESH');
+      const history = [{ content: 'Old news', platform: 'bluesky' }];
+      const result = await llmService.checkVariety('New thought', history);
       expect(result.repetitive).toBe(false);
+      spy.mockRestore();
     });
   });
 });

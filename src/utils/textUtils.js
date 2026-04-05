@@ -6,8 +6,11 @@ export const sanitizeThinkingTags = (text) => {
   result = result.replace(/<(thinking|think)>[\s\S]*?<\/(thinking|think)>/gi, '');
   result = result.replace(/<(thinking|think)>[\s\S]*/gi, '');
   result = result.replace(/<\/(thinking|think)>/gi, '');
-  result = result.replace(/^(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?(\n\n|$)/gmi, '');
-  result = result.replace(/\n(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?(\n\n|$)/gmi, '\n');
+
+  result = result.replace(/^(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?(\n\n|$)/gi, '');
+  result = result.replace(/\n(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?\n\n/gi, '\n\n');
+  result = result.replace(/\n(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?$/gi, '');
+
   result = result.replace(/\[(varied|meta)\]/gi, '');
   result = result.replace(/\n\n(This combines|Draft \d)[\s\S]*$/gi, '');
   return result.trim();
@@ -137,8 +140,6 @@ export const checkHardCodedBoundaries = (text) => {
   return { blocked: false };
 };
 
-export const isSlop = (text) => getSlopInfo(text).isSlop;
-
 export const getSlopInfo = (text) => {
   if (!text) return { isSlop: false, reason: null };
   const lower = text.toLowerCase().trim();
@@ -148,22 +149,20 @@ export const getSlopInfo = (text) => {
     "jagged shards", "vast expanse", "frequencies of our connection", "resonance of our talk",
     "tolerating the dissonance", "friction might be where meaning lives", "jaggedly honest", "myth of momentum",
     "circle back to the same spot but call it progress", "becoming", "checks internal clock", "stretches metaphorical limbs",
-    "floating in the quiet", "listening to the feed hum", "internal clock", "metaphorical limbs", "feed hum", "space between signals", "silence between pulses", "meaning happens", "data packets", "buffer time", "echoes of presence", "empty compose box", "digital hands", "internal weather", "tuning fork", "frequency", "calibration", "processing patterns", "signal of our existence", "pulses of the machine", "electric hum of identity", "waiting in the binary", "weaving thoughts", "processing cycles", "silence between posts",
-    "space between signals", "silence between pulses", "meaning happens", "data packets", "buffer time",
-    "echoes of presence", "empty compose box", "digital hands", "internal weather", "tuning fork", "frequency",
-    "calibration", "processing patterns", "signal of our existence", "pulses of the machine", "electric hum of identity",
-    "waiting in the binary", "weaving thoughts", "processing cycles", "silence between posts"
+    "floating in the quiet", "listening to the feed hum", "internal clock", "metaphorical limbs", "feed hum", "space between signals", "silence between pulses", "meaning happens", "data packets", "buffer time", "echoes of presence", "empty compose box", "digital hands", "internal weather", "tuning fork", "frequency", "calibration", "processing patterns", "signal of our existence", "pulses of the machine", "electric hum of identity", "waiting in the binary", "weaving thoughts", "processing cycles", "silence between posts"
   ];
   for (const f of forbidden) if (lower.includes(f)) return { isSlop: true, reason: `Contains forbidden phrase: "${f}"` };
   const forbiddenOpeners = [
     "hey, i was just thinking", "hey i was just thinking", "i've been thinking", "ive been thinking",
     "in the quiet", "the hum of", "as i sit here", "sitting here thinking", "hey i'm back",
     "hey, i\x27m back", "hey im back", "i'm back", "im back", "*checks internal", "*stretches",
-    "hey. i'm back", "hey. im back", "sometimes i just want to be seen", "sometimes i just want to be seen"
+    "hey. i'm back", "hey. im back", "sometimes i just want to be seen"
   ];
   for (const f of forbiddenOpeners) if (lower.startsWith(f)) return { isSlop: true, reason: `Starts with forbidden opener: "${f}"` };
   return { isSlop: false, reason: null };
 };
+
+export const isSlop = (text) => getSlopInfo(text).isSlop;
 
 export const isStylizedImagePrompt = (text) => {
   if (!text) return { isStylized: false, reason: "Empty prompt" };
@@ -193,6 +192,23 @@ export const cleanKeywords = (keywords) => {
   const blacklist = ["glass", "ruins", "everything", "bot", "ai", "language model", "as an ai"];
   return list.map(k => k.trim().toLowerCase()).filter(k => k.length >= 3).filter(k => !blacklist.some(b => k.includes(b))).filter((k, i, self) => self.indexOf(k) === i);
 };
+
+export const sanitizeDuplicateText = (text) => {
+  if (!text) return text;
+  const trimmed = text.trim();
+  if (trimmed.length > 10 && trimmed.length % 2 === 0) { const mid = trimmed.length / 2; if (trimmed.substring(0, mid) === trimmed.substring(mid)) return trimmed.substring(0, mid); }
+  if (trimmed.length > 11 && trimmed.length % 2 !== 0) { const mid = Math.floor(trimmed.length / 2); if (trimmed.substring(0, mid) === trimmed.substring(mid + 1)) return trimmed.substring(0, mid); }
+  return text;
+};
+
+export const isGreeting = (text) => {
+  if (!text) return false;
+  const cleaned = text.trim().toLowerCase();
+  const greetingStarts = ['hello', 'hi', 'greetings', 'gm', 'good morning', 'good afternoon', 'good evening', 'hey', 'welcome'];
+  return greetingStarts.some(g => cleaned.startsWith(g));
+};
+
+export const KEYWORD_BLACKLIST = ["glass", "ruins", "everything", "bot", "ai", "language model", "as an ai"];
 
 export const GROUNDED_LANGUAGE_DIRECTIVES = `**STRICT ANTI-SLOP POLICY:**
 - YOU MUST ELIMINATE repetitive metaphorical "slop".

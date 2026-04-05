@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { checkExactRepetition, getSimilarityInfo, hasPrefixOverlap, isSlop } from "../utils/textUtils.js";
 import https from 'https';
 import config from '../../config.js';
 import fs from 'fs/promises';
@@ -263,8 +264,8 @@ Guidelines:
             attempts++;
             try {
                             // Priority throttling: Background tasks wait longer
-              const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
-              const delay = isPriority ? 2000 : 5000;
+            const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
+            const delay = isPriority ? 2000 : 5000;
               const timeSinceLast = Date.now() - LLMService.lastRequestTime;
               if (timeSinceLast < delay) {
                   await new Promise(r => setTimeout(r, delay - timeSinceLast));
@@ -279,14 +280,6 @@ Guidelines:
               const response = await fetch(this.endpoint, {
                 method: 'POST',
                 headers: {
-              // Priority throttling: Background tasks wait longer
-              const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
-              const delay = isPriority ? 2000 : 5000;
-              const timeSinceLast = Date.now() - LLMService.lastRequestTime;
-              if (timeSinceLast < delay) {
-                  await new Promise(r => setTimeout(r, delay - timeSinceLast));
-              }
-              LLMService.lastRequestTime = Date.now();
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
@@ -299,7 +292,6 @@ Guidelines:
                 signal: options.abortSignal,
                 timeout: modelTimeout
               });
-
               if (!response.ok) {
                   const errorText = await response.text();
                   console.warn(`[LLMService] Model ${model} failed (HTTP ${response.status}): ${errorText.substring(0, 100)}`);
@@ -387,7 +379,7 @@ Guidelines:
   async checkVariety(newText, history, options = {}) {
     if (!newText || !history || history.length === 0) return { repetitive: false };
 
-    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
+    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || "UNKNOWN"}] ${t.content || t.text}`).join("\n");
     const systemPrompt = `
       You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.
       RECENT HISTORY:
@@ -421,10 +413,10 @@ Guidelines:
       Respond directly. Do not include reasoning or <think> tags.
     `.trim();
 
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false, ...options });
+    const response = await this.generateResponse([{ role: "system", content: systemPrompt }], { useStep: true, preface_system_prompt: false, ...options });
 
-    if (response && response.toUpperCase().startsWith('REPETITIVE')) {
-      return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };
+    if (response && response.toUpperCase().startsWith("REPETITIVE")) {
+      return { repetitive: true, feedback: response.split("|")[1]?.trim() || "Too similar to recent history." };
     }
     return { repetitive: false };
   }

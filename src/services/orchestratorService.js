@@ -15,6 +15,7 @@ import { checkHardCodedBoundaries, isLiteralVisualPrompt, isStylizedImagePrompt,
 import * as prompts from '../prompts/index.js';
 import config from '../../config.js';
 
+import fs from "fs";
 const AUTONOMOUS_POST_SYSTEM_PROMPT = (followerCount) => prompts.system.AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount);
 
 class OrchestratorService {
@@ -41,7 +42,7 @@ class OrchestratorService {
     async checkSlop(content) {
         console.log('[Orchestrator] Running Slop Filter...');
         const slopKeywords = ['texture', 'gradient', 'dance', 'tapestry', 'synergy', 'resonate', 'echoes', 'whispers', 'symphony', 'canvas'];
-        const matches = slopKeywords.filter(w => content.toLowerCase().includes(w));
+        const matches = slopKeywords.filter(w => content && content.toLowerCase().includes(w));
         if (matches.length >= 2) {
             console.log(`[Orchestrator] Slop detected! Matches: ${matches.join(', ')}`);
             return true;
@@ -1158,7 +1159,7 @@ Respond with JSON: {"choice": "image"|"text", "mode": "IMPULSIVE"|"SINCERE"|"PHI
             const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true , task: 'autonomous_decision' });
             let choice = Math.random() < 0.3 ? "image" : "text"; let pollResult = { choice, mode: "SINCERE", reason: "fallback" };
             try {
-                const match = decisionRes.match(/\{[\s\S]*\}/);
+                const match = decisionRes && decisionRes.match(/\{[\s\S]*\}/);
                 if (match) {
                     pollResult = JSON.parse(match[0]);
                     choice = pollResult.choice;
@@ -1191,7 +1192,7 @@ Respond with JSON: {"topic": "short label", "prompt": "stylized artistic prompt"
                 let imagePrompt = "";
 
                 try {
-                    const match = topicRes.match(/\{[\s\S]*\}/);
+                    const match = topicRes && topicRes.match(/\{[\s\S]*\}/);
                     if (match) {
                         const tData = JSON.parse(match[0]);
                         topic = tData.topic || topic;

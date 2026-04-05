@@ -1008,28 +1008,15 @@ ${actionResults.join('\n')}` });
                         await memoryService.createMemoryEntry('interaction', `[EAAR] ${eaar.internal_reflection}`);
                     }
                 }
-            const admin = await this.getAdminUser();
-            if (admin) {
-                const result = await this._send(admin, content);
-                if (result) {
-                    await dataStore.setDiscordLastReplied(false);
-                    console.log(`[DiscordService] Sent spontaneous message to admin: ${content.substring(0, 50)}...`);
-                    await introspectionService.performAAR("discord_spontaneous", content, { success: !!result, platform: "discord" });
-                }
             }
+            this._stopTypingLoop(typingInterval);
+            this.isResponding = false;
         } catch (error) {
-            console.error('[DiscordService] Error sending spontaneous message:', error);
+            console.error('[DiscordService] Error in respond:', error);
+            this._stopTypingLoop(typingInterval);
+            this.isResponding = false;
         }
     }
-
-    /**
-     * Proactively sends a diagnostic alert to the admin about system issues.
-     */
-
-    /**
-     * Proactively sends a message to the admin on Discord.
-     * If message is null, it generates a spontaneous thought based on recent history.
-     */
     async sendSpontaneousMessage(message = null, messageCount = 1) {
         if (!this.isEnabled || !this.client?.isReady()) return;
 

@@ -18,6 +18,7 @@ describe('Introspection Service', () => {
     llmService.generateResponse = jest.fn();
     dataStore.getMood = jest.fn().mockReturnValue({ valence: 0, arousal: 0, stability: 1 });
     dataStore.addInternalLog = jest.fn();
+    dataStore.db = { data: { internal_logs: [] } };
     dataStore.addSessionLesson = jest.fn();
   });
 

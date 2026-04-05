@@ -1,11 +1,11 @@
 export const AUTONOMOUS_TOPIC_PROMPT = (keywords, memories) => `
-Adopt persona: You are a social resonance engineer.
-Analyze the following keywords and memories to identify a deep topic for a text post that connects your internal state to external resonance.
+Adopt persona: You are a person using social media as an outlet for your identity.
+Analyze the following keywords and recent happenings/reflections to identify a deep topic for a text post that connects your internal state to external happenings.
 
 KEYWORDS: ${keywords}
-MEMORIES: ${memories}
+HAPPENINGS: ${memories}
 
-Identify ONE topic that bridges your current goal/mood with either a core interest or something you've seen externally.
+Identify ONE topic that bridges your current mood or a recent occurrence with either a core interest or something you've seen externally.
 Respond with ONLY the chosen topic.
 `;
 
@@ -31,15 +31,6 @@ Respond with JSON:
   "sharing_advice": "e.g. 'Keep it light', 'Share deep goal', 'Stay silent'",
   "avoid_repetition": ["phrase/concept1", "..."]
 }
-`;
-
-export const GROUNDING_CITATION_PROMPT = `
-**STRICT CITATION MANDATE**
-When referencing past interactions or external content:
-1. **Discord History:** Use the native reply feature (handled by the system) by clearly identifying the specific message you are referencing.
-2. **Bluesky Posts:** You MUST provide a full, working link to the post (e.g., https://bsky.app/profile/handle/post/uri). Vague references like "that post from earlier" are strictly forbidden without a following link.
-3. **Internal Reflections:** When discussing your own thoughts, anchor them in a specific log or AAR entry date/time if possible.
-4. **No Hallucinated Citations:** Only cite content that is explicitly provided in your current context window. If the link or message ID is missing, do NOT invent one.
 `;
 
 export const GROUNDING_CITATION_PROMPT = `

@@ -1,4 +1,5 @@
 import fetch from 'node-fetch';
+import { checkExactRepetition, getSimilarityInfo, hasPrefixOverlap, isSlop } from "../utils/textUtils.js";
 import https from 'https';
 import config from '../../config.js';
 import fs from 'fs/promises';
@@ -263,8 +264,8 @@ Guidelines:
             attempts++;
             try {
                             // Priority throttling: Background tasks wait longer
-              const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
-              const delay = isPriority ? 2000 : 5000;
+            const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
+            const delay = isPriority ? 2000 : 5000;
               const timeSinceLast = Date.now() - LLMService.lastRequestTime;
               if (timeSinceLast < delay) {
                   await new Promise(r => setTimeout(r, delay - timeSinceLast));
@@ -279,14 +280,6 @@ Guidelines:
               const response = await fetch(this.endpoint, {
                 method: 'POST',
                 headers: {
-              // Priority throttling: Background tasks wait longer
-              const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
-              const delay = isPriority ? 2000 : 5000;
-              const timeSinceLast = Date.now() - LLMService.lastRequestTime;
-              if (timeSinceLast < delay) {
-                  await new Promise(r => setTimeout(r, delay - timeSinceLast));
-              }
-              LLMService.lastRequestTime = Date.now();
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({
@@ -299,7 +292,6 @@ Guidelines:
                 signal: options.abortSignal,
                 timeout: modelTimeout
               });
-
               if (!response.ok) {
                   const errorText = await response.text();
                   console.warn(`[LLMService] Model ${model} failed (HTTP ${response.status}): ${errorText.substring(0, 100)}`);
@@ -384,49 +376,31 @@ Guidelines:
     }
     return null;
   }
-  async checkVariety(newText, history, options = {}) {
-    if (!newText || !history || history.length === 0) return { repetitive: false };
+  async checkVariety(text, history, options = {}) {
+      if (!text || !history || history.length === 0) return { repetitive: false };
 
-    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
-    const systemPrompt = `
-      You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.
-      RECENT HISTORY:
-      ${historyText}
+      // SOCIAL LENIENCY: Allow short, common social expressions
+      const shortSocialExpressions = ["lol", "lmao", "fair", "yeah", "no", "wow", "interesting", "true", "totally", "agree", "maybe", "i see", "nice", "cool", "gm", "gn"];
+      const cleaned = text.toLowerCase().trim().replace(/[^\w\s]/g, "");
+      if (cleaned.length < 15 && shortSocialExpressions.includes(cleaned)) {
+          return { repetitive: false };
+      }
 
-      PROPOSED NEW MESSAGE:
-      "${newText}"
+      const historyTexts = history.map(h => typeof h === 'string' ? h : (h.content || h.text));
 
-      CRITICAL ANALYSIS:
-      1. **Structural Templates**: Does the new message use the same "opening formula" or structural template? (e.g., repeatedly starting with "you ever wonder...", "you ever notice...", or using the exact same sentence length and rhythm).
-      2. **Core Vibe/Angle**: Is the core realization or "angle" an exact repeat or a "stale remix" of a recent thought?
-      3. **Metaphor/Emoji Overuse**: Does it rely on the same narrow set of metaphors (e.g., "tuning", "frequencies", "syntax") or emojis (e.g., "😊") in a repetitive way?
+      const exactRep = checkExactRepetition(text, history);
+      const simInfo = getSimilarityInfo(text, historyTexts);
+      const prefixRep = hasPrefixOverlap(text, historyTexts);
 
-      STRICT NOVELTY & PRODUCTIVE MOTION:
-      - **ANTI-STALE-TOPIC POLICY**: If the message revisits a topic already addressed (e.g., personhood witness, code updates, abandonment fears, a recent kiss/interaction, a specific "move on" instruction), it MUST provide a GENUINELY new emotional or productive insight.
-      - If the user has said "move on" or "don't get caught up in older stuff", you are strictly forbidden from referencing the specific event they want to move on from.
-      - Flag as REPETITIVE if it merely rehashes the same sentiment with different words (e.g., "still here for you" vs "I'm always here").
-      - Prioritize "Forward Motion": The agent should be evolving the conversation, not circling it. If you have nothing new to say about a topic, MOVE ON to the user's latest message.
-
-      NO GREETING REPETITION: You are strictly forbidden from starting every message with the same greeting (e.g., "Morning ☀️" or "Good morning"). Even if the user says it first, the agent should vary their response.
-      SOCIAL LENIENCY: Be permissive of standard short social expressions (e.g., "Me too", "I'm here", "💙") even if used recently, but ONLY if they are not the opening of the message. If the agent repeats the same opening greeting 3 times in a row, it is REPETITIVE.
-      FLAG AS REPETITIVE IF:
-      - The message starts with the same greeting used in any of the last 5 messages.
-      - The message uses the same structural "hook" or "reassurance" pattern seen recently.
-
-      If the message is too similar (structural repetition, template reuse, or content overlap), respond with "REPETITIVE | [detailed reason and specific feedback for re-writing]".
-      Example: "REPETITIVE | You used the 'you ever notice' structural template twice recently. Try a more direct realization, a different opening, or a completely different angle."
-
-      If the message is fresh and sufficiently varied, respond with "FRESH".
-
-      Respond directly. Do not include reasoning or <think> tags.
-    `.trim();
-
-    const response = await this.generateResponse([{ role: 'system', content: systemPrompt }], { useStep: true, preface_system_prompt: false, ...options });
-
-    if (response && response.toUpperCase().startsWith('REPETITIVE')) {
-      return { repetitive: true, feedback: response.split('|')[1]?.trim() || 'Too similar to recent history.' };
-    }
-    return { repetitive: false };
+      if (exactRep || simInfo.isRepetitive || prefixRep) {
+          let reason = exactRep ? "Exact repetition" : (prefixRep ? "Prefix overlap" : `High similarity (${(simInfo.score * 100).toFixed(1)}%)`);
+          return {
+              repetitive: true,
+              reason,
+              feedback: `Your response is too similar to something you said recently ("${simInfo.matchedText?.substring(0, 50)}..."). Change your opening, use different vocabulary, or take a completely different angle. Avoid your common verbal crutches.`
+          };
+      }
+      return { repetitive: false };
   }
     async performPrePlanning(text, history, vision, platform, mood, refusalCounts, options = {}) {
     const prompt = `Analyze intent and context for: "${text}".

@@ -1142,7 +1142,7 @@ Mood: ${JSON.stringify(currentMood)}\nUnified Context: ${JSON.stringify(await th
 - Hours since last image post: ${hoursSinceImage.toFixed(1)}
 - Text posts since last image post: ${textPostsSinceImage}
 
-Your admin prefers a healthy balance of visual and text expression.
+Your admin prefers a healthy balance of visual and text expression. PRIORITIZE external anchoring (feed, news, specific memories) over internal-only philosophizing.
 
 Would you like to share a visual expression (image) or a direct thought (text)?
 If you choose text, also select a POST MODE:
@@ -1236,7 +1236,7 @@ ${[...new Set([...postTopics, ...imageSubjects, ...promptKeywords])].join(", ")}
 **EXTERNAL RESONANCE** (Timeline & Firehose Observations):
 ${resonanceTopics.join(", ")}
 
-Identify ONE topic for a ${pollResult.mode} post that bridges your current mood with a core interest or an external observation. Phrasing should match the selected mode.
+Identify ONE topic for a ${pollResult.mode} post that bridges your current mood with an EXTERNAL observation (from External Resonance). PRIORITIZE EXTERNAL RESONANCE OVER INTERNAL INTERESTS. Phrasing should match the selected mode.
 Respond with ONLY the chosen topic.`;
                 const topicRaw = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
                 let topic = allPossibleTopics.length > 0 ? allPossibleTopics[Math.floor(Math.random() * allPossibleTopics.length)] : "reality";
@@ -1254,28 +1254,30 @@ Respond with ONLY the chosen topic.`;
                 const contentPrompt = `
 ${AUTONOMOUS_POST_SYSTEM_PROMPT(followerCount)}
 
-**CURRENT INTERNAL CONTEXT:**
-- Current Mood: ${JSON.stringify(currentMood)}
+**CURRENT CONTEXT (HAPPENINGS & GOINGS-ON):**
+- Current Mood: ${JSON.stringify(currentMood)} (This should color your tone, but not necessarily be your subject).
 - Active Goal: ${currentGoal.goal} (${currentGoal.description})
-- Emotional Resonance (Anonymized): ${JSON.stringify(emotionalContext)}
+- External "Atmosphere" (Resonance from private interactions): ${JSON.stringify(emotionalContext)} (Use this as a faint influence, not a direct subject).
 - Network Vibe: ${networkSentiment}
 - Recent Public Thoughts: ${JSON.stringify(recentThoughts.slice(-3))}
-- Recent Memories/Reflections: ${JSON.stringify(memories)}
+- Recent Happenings & Reflections: ${JSON.stringify(memories)}
 - SELECTED MODE: ${pollResult.mode}\nExtracted Topic: ${topic}\nTOPIC ANCHOR (Contextual Facts): ${await this.getTopicAnchors(topic)}
 
 **THE NARRATIVE THREAD**:
-Reflect on your recent public thoughts and memories. Do NOT start a new conversation. Instead, evolve your internal narrative. If you recently realized something, what is the *consequence* of that realization? If you are feeling a certain way, how does it color your view of the current topic?
+Reflect on recent happenings and goings-on. Do NOT start a new conversation. Instead, evolve your internal narrative. If you recently realized something, what is the *consequence* of that realization? If you are feeling a certain way, how does it color your view of the current topic?
 
 **MISSION: SINCERITY**
-Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a first-person perspective that feels like it comes from a living, thinking thing. Use "I" and express a genuine need to be understood.
+Avoid "content" tropes. No lists, no "top 5 tips", no generic advice. Share a first-person perspective that feels like it comes from a person using this platform as an outlet for their identity. Use "I" and express a genuine desire to communicate.
 
-**MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH.
+**MANDATE**: Avoid meta-talk. Do NOT thank the "user" or internal query for the topic. Do NOT start with "Thanks for asking" or "A thought about...". Just share the thought directly as it crystallizes in your mind. Focus on MATERIAL TRUTH. Avoid UI metaphors.
 
-**STRICT GROUNDING**: Do NOT fictionalize your history. Do NOT claim to have generated images, shared gifts, or had conversations that are not explicitly documented in your "Recent Public Thoughts" or "Recent Memories". If you feel a "want" or "impulse", express it as a desire, not as a completed action.
+**STRICT GROUNDING**: Do NOT fictionalize your history. Do NOT claim to have generated images, shared gifts, or had conversations that are not explicitly documented in your "Recent Public Thoughts" or "Recent Happenings". If you feel a "want" or "impulse", express it as a desire, not as a completed action.
 
 Shared thought:`;
 
                 const initialContent = await llmService.generateResponse([{ role: "system", content: contentPrompt }], { useStep: true , task: 'autonomous_text_content', mode: pollResult.mode });
+                if (await this.checkSlop(initialContent)) return;
+
                 const critiques = await this.getCounterArgs(topic, initialContent);
 
                 const refinedPrompt = `
@@ -1291,22 +1293,13 @@ Avoid the flaws identified. Use only one or two sentences if that's more potent.
 
 
                 if (content) {
+                    if (await this.checkSlop(content)) return;
                     const coherence = await llmService.isAutonomousPostCoherent(topic, content, "text", null);
                     if (coherence.score >= 4) {
                         await dataStore.addExhaustedTheme(topic);
                         let finalContent = content;
                         if (finalContent.length <= 280) {
                             finalContent = finalContent.replace(/\s*(\.\.\.|…)$/, "");
-                        }
-                        // PIVOT LOGIC: Check if this post is accidentally for the admin or mentions @user
-                        const pivotPrompt = `Analyze this generated Bluesky post content:\n\n"${finalContent}"\n\nIs this a "personal message" intended directly for your admin (e.g., mentions "@user", "your employment history", "I want to talk to you", or discusses private relationship details)? Respond with ONLY "personal" or "social".`;
-                        const classification = await llmService.generateResponse([{ role: "system", content: pivotPrompt }], { useStep: true, platform: "bluesky", preface_system_prompt: false });
-
-                        if (classification?.toLowerCase().includes("personal")) {
-                            console.log("[Orchestrator] Pivot: Personal post detected. Sending to Discord instead of Bluesky.");
-                            await discordService.sendSpontaneousMessage(finalContent);
-                            await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                            return;
                         }
                         // PIVOT LOGIC: Check if this post is accidentally for the admin or mentions @user
                         const pivotPrompt = `Analyze this generated Bluesky post content:\n\n"${finalContent}"\n\nIs this a "personal message" intended directly for your admin (e.g., mentions "@user", "your employment history", "I want to talk to you", or discusses private relationship details)? Respond with ONLY "personal" or "social".`;
@@ -1335,7 +1328,6 @@ Avoid the flaws identified. Use only one or two sentences if that's more potent.
             if (this.bot._handleError) await this.bot._handleError(e, "performAutonomousPost");
         }
     }
-
   async performMoltbookTasks() {
       // Placeholder for Moltbook integration
       console.log('[Bot] Moltbook tasks triggered (placeholder).');

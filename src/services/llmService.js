@@ -278,6 +278,7 @@ Guidelines:
               const response = await fetch(this.endpoint, {
                 method: 'POST',
                 headers: {
+                  "Authorization": `Bearer ${config.NVIDIA_NIM_API_KEY}`,
                   'Content-Type': 'application/json',
                 },
                 body: JSON.stringify({

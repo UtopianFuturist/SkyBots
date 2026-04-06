@@ -3,60 +3,9 @@ import path from 'path';
 import config from '../../config.js';
 
 class DataStore {
-
-  async checkGoalCompletion() {
-    const goal = this.getCurrentGoal();
-    if (!goal || goal.goal === 'Existence') return;
-
-    const now = Date.now();
-    if (now - goal.timestamp > 72 * 3600000) { // Prune goals older than 72h
-        console.log(`[DataStore] Pruning old goal: ${goal.goal}`);
-        this.db.data.goal_evolutions.push(goal);
-        this.db.data.current_goal = { goal: "Existence", description: "Default startup goal", timestamp: Date.now() };
-        await this.write();
-    }
-  }
-
-
-  updateRelationalHeatmap(topic, sentimentScore) {
-    if (!this.db.data.relational_heatmaps) this.db.data.relational_heatmaps = {};
-    if (!this.db.data.relational_heatmaps[topic]) {
-        this.db.data.relational_heatmaps[topic] = { count: 0, avg_sentiment: 0 };
-    }
-    const h = this.db.data.relational_heatmaps[topic];
-    h.avg_sentiment = (h.avg_sentiment * h.count + sentimentScore) / (h.count + 1);
-    h.count++;
-  }
-
-
-  addLinguisticMutation(mutation) {
-    if (!this.db.data.linguistic_mutations) this.db.data.linguistic_mutations = [];
-    if (!this.db.data.linguistic_mutations.some(m => m.text === mutation)) {
-        this.db.data.linguistic_mutations.push({ text: mutation, discoveredAt: Date.now(), frequency: 1 });
-    } else {
-        const m = this.db.data.linguistic_mutations.find(m => m.text === mutation);
-        m.frequency++;
-    }
-    if (this.db.data.linguistic_mutations.length > 20) this.db.data.linguistic_mutations.shift();
-  }
-
   constructor() {
     this._db = null;
     this.dbPath = path.resolve(process.cwd(), 'src/data/db.json');
-  }
-
-  async
-  addSanitizedDebugLog(type, data) {
-    if (!this.db.data.debug_logs) this.db.data.debug_logs = [];
-    // Sanitize common patterns
-    const cleanData = JSON.parse(JSON.stringify(data, (key, value) => {
-        if (typeof value === 'string') {
-            return value.replace(/[a-zA-Z0-9]{20,}/g, '[REDACTED_SENSITIVE]');
-        }
-        return value;
-    }));
-    this.db.data.debug_logs.push({ type, data: cleanData, timestamp: Date.now() });
-    if (this.db.data.debug_logs.length > 50) this.db.data.debug_logs.shift();
   }
 
   async init() {
@@ -168,7 +117,20 @@ class DataStore {
       bluesky_daily_text_limit: 20,
       bluesky_daily_image_limit: 5,
       bluesky_daily_wiki_limit: 5,
-      bluesky_post_cooldown: 90
+      bluesky_post_cooldown: 90,
+
+      // New Temporal Fields
+      temporal_events: [],
+      deadlines: [],
+      habits: [],
+      activity_decay_rules: {
+          "coffee": 30,
+          "meal": 120,
+          "commute": 60,
+          "short_task": 45,
+          "work_block": 240,
+          "sleep": 480
+      }
     };
 
     this._db = await JSONFilePreset(this.dbPath, defaultData);
@@ -192,6 +154,7 @@ class DataStore {
         await this._db.write();
     }
   }
+
   get db() { return this._db; }
   set db(val) { this._db = val; }
   async write() { if (this.db) await this._db.write(); }
@@ -229,7 +192,7 @@ class DataStore {
         await this.write();
     }
   }
-  getGoalSubtasks() { return []; }
+  getGoalSubtasks() { return this.db?.data?.goal_subtasks || []; }
   async addGoalEvolution(e) { if (this.db?.data) { if (!this.db.data.goal_evolutions) this.db.data.goal_evolutions = []; this.db.data.goal_evolutions.push(e); await this.write(); } }
 
   // History & Replied
@@ -330,7 +293,7 @@ class DataStore {
         await this.write();
     }
   }
-  getRecentThoughts() { return this.db?.data?.recent_thoughts || []; }
+  getRecentThoughts() { return (this.db?.data?.recent_thoughts || []).slice(-20); }
   async logAgencyAction(i, d, r) {
     if (this.db?.data) {
         if (!this.db.data.agency_logs) this.db.data.agency_logs = [];
@@ -354,11 +317,10 @@ class DataStore {
     const logEntry = {
         timestamp: Date.now(),
         type,
-        content: content, // Keep as object if it is one, searchInternalLogs will handle stringification for search
+        content: content,
         context
     };
 
-    // Also log to console for Render
     const consoleMsg = typeof logEntry.content === 'string' ? logEntry.content : JSON.stringify(logEntry.content);
     const prefix = type.toUpperCase(); console.log(`\n[RENDER_LOG] [${prefix}] ${"-".repeat(Math.max(0, 40 - prefix.length))}\n${consoleMsg.substring(0, 1000)}\n[RENDER_LOG] ${"-".repeat(40)}`);
 
@@ -446,6 +408,8 @@ class DataStore {
   async updateCuriosityReservoir(q) { if (this.db?.data) { this.db.data.curiosity_reservoir = q; await this.write(); } }
   getPredictiveEmpathyMode() { return 'neutral'; }
   async setPredictiveEmpathyMode(m) { await this.write(); }
+  getRelationshipWarmth() { return this.db?.data?.relationship_warmth ?? 0.5; }
+  async setRelationshipWarmth(v) { if (this.db?.data) { this.db.data.relationship_warmth = Math.max(0, Math.min(1, v)); await this.write(); } }
 
   // Timestamps
   getLastAutonomousPostTime() { return this.db?.data?.last_autonomous_post_time; }
@@ -460,7 +424,7 @@ class DataStore {
   async updateLastMoltfeedSummaryTime(t) { if (this.db?.data) { this.db.data.last_moltfeed_summary_time = t; await this.write(); } }
 
   // Others
-  getFirehoseMatches() { return this.db?.data?.firehose_matches || []; }
+  getFirehoseMatches(limit = 50) { return (this.db?.data?.firehose_matches || []).slice(-limit); }
   async addBlueskyInstruction(i) { if (this.db?.data) { if (!this.db.data.bluesky_instructions) this.db.data.bluesky_instructions = ""; this.db.data.bluesky_instructions += "\n" + i; await this.write(); } }
   async addPersonaUpdate(u) { if (this.db?.data) { if (!this.db.data.persona_updates) this.db.data.persona_updates = ""; this.db.data.persona_updates += "\n" + u; await this.write(); } }
   getPostContinuations() { return this.db?.data?.post_continuations || []; }
@@ -482,23 +446,6 @@ class DataStore {
         await this.write();
     }
   }
-
-  // Stubs and extra methods from features
-  async addCoEvolutionEntry(e) { if (this.db?.data) { if (!this.db.data.co_evolution_entries) this.db.data.co_evolution_entries = []; this.db.data.co_evolution_entries.push(e); await this.write(); } }
-  async addDiscoveredCapability(c) { if (this.db?.data) { if (!this.db.data.discovered_capabilities) this.db.data.discovered_capabilities = []; this.db.data.discovered_capabilities.push(c); await this.write(); } }
-  async addEmergentTrend(t) { if (this.db?.data) { if (!this.db.data.emergent_trends) this.db.data.emergent_trends = []; this.db.data.emergent_trends.push(t); await this.write(); } }
-  async addInsideJoke(j) {
-    if (this.db?.data) {
-        if (!this.db.data.inside_jokes) this.db.data.inside_jokes = [];
-        this.db.data.inside_jokes.push(j);
-        await this.write();
-    }
-  }
-  async addLinguisticMutation(m) { if (this.db?.data) { if (!this.db.data.linguistic_mutations) this.db.data.linguistic_mutations = []; this.db.data.linguistic_mutations.push(m); await this.write(); } }
-  getInsideJokes() { return this.db?.data?.inside_jokes || []; }
-  async muteThread(u) { if (this.db?.data) { if (!this.db.data.muted_threads) this.db.data.muted_threads = []; this.db.data.muted_threads.push(u); await this.write(); } }
-  async setAdminHomeMentionedAt(t) { if (this.db?.data) { this.db.data.admin_home_mentioned_at = t; await this.write(); } }
-  async setAdminWorkMentionedAt(t) { if (this.db?.data) { this.db.data.admin_work_mentioned_at = t; await this.write(); } }
 
   // Memory Service Support
   getPersonaUpdates() { return this.db?.data?.persona_updates || ""; }
@@ -543,55 +490,6 @@ class DataStore {
       await this.write();
     }
   }
-  getLastContextualImageTime(type) {
-    if (type === 'morning') return this.db?.data?.last_morning_image_sent_at || 0;
-    if (type === 'night') return this.db?.data?.last_night_image_sent_at || 0;
-    return 0;
-  }
-  async updateLastContextualImageTime(type, t) {
-    if (this.db?.data) {
-      if (type === 'morning') this.db.data.last_morning_image_sent_at = t;
-      if (type === 'night') this.db.data.last_night_image_sent_at = t;
-      await this.write();
-    }
-  }
-
-
-  // Relational State Tracking
-  getRelationshipWarmth() { return this.db?.data?.relationship_warmth ?? 0.5; }
-  async setRelationshipWarmth(v) { if (this.db?.data) { this.db.data.relationship_warmth = Math.max(0, Math.min(1, v)); await this.write(); } }
-
-  getAdminEnergy() { return this.db?.data?.admin_energy ?? 0.5; }
-  async setAdminEnergy(v) { if (this.db?.data) { this.db.data.admin_energy = Math.max(0, Math.min(1, v)); await this.write(); } }
-
-  getSessionLessons() { return this.db?.data?.session_lessons || []; }
-  async addSessionLesson(l) {
-    if (this.db?.data) {
-        if (!this.db.data.session_lessons) this.db.data.session_lessons = [];
-        this.db.data.session_lessons.push({ text: l, timestamp: Date.now() });
-        if (this.db.data.session_lessons.length > 20) {
-            this.db.data.session_lessons = this.db.data.session_lessons.slice(-20);
-        }
-        await this.write();
-    }
-  }
-  async clearSessionLessons() { if (this.db?.data) { this.db.data.session_lessons = []; await this.write(); } }
-
-  getLastBlueskyImagePostTime() { return this.db?.data?.last_bluesky_image_post_time || 0; }
-  async updateLastBlueskyImagePostTime(t) {
-    if (this.db?.data) {
-      this.db.data.last_bluesky_image_post_time = t;
-      this.db.data.text_posts_since_last_image = 0;
-      await this.write();
-    }
-  }
-  getTextPostsSinceLastImage() { return this.db?.data?.text_posts_since_last_image || 0; }
-  async incrementTextPostsSinceLastImage() {
-    if (this.db?.data) {
-      this.db.data.text_posts_since_last_image = (this.db.data.text_posts_since_last_image || 0) + 1;
-      await this.write();
-    }
-  }
 
   // Daily Stats
   async _checkDailyReset() {
@@ -607,7 +505,6 @@ class DataStore {
     }
 
     if (this.db.data.daily_stats.last_reset !== localDateStr) {
-      console.log(`[DataStore] Resetting daily stats for new day (${localDateStr})`);
       this.db.data.daily_stats.text_posts = 0;
       this.db.data.daily_stats.image_posts = 0;
       this.db.data.daily_stats.last_reset = localDateStr;
@@ -631,58 +528,72 @@ class DataStore {
     }
   }
 
-  getDailyStats() {
-    return this.db?.data?.daily_stats || { text_posts: 0, image_posts: 0 };
-  }
+  getDailyStats() { return this.db?.data?.daily_stats || { text_posts: 0, image_posts: 0 }; }
+  getDailyLimits() { return { text: this.db?.data?.bluesky_daily_text_limit || 20, image: this.db?.data?.bluesky_daily_image_limit || 5 }; }
 
-  getDailyLimits() {
-    return {
-      text: this.db?.data?.bluesky_daily_text_limit || 20,
-      image: this.db?.data?.bluesky_daily_image_limit || 15
-    };
-  }
-
-  // Memory Offloading & Pruning
-  async summarizeAndOffloadLogs(type, tag) {
-    if (!this.db?.data) return;
-    const logs = this.searchInternalLogs(type, 50);
-    if (logs.length < 10) return;
-
-    const logText = logs.map(l => typeof l.content === 'string' ? l.content : JSON.stringify(l.content)).join('\n');
-    const summarizePrompt = `Summarize these ${type} logs into a single, highly condensed paragraph (max 250 chars) for long-term memory. Focus on growth, patterns, and key insights. \nLogs: ${logText.substring(0, 4000)}`;
-
-    try {
-      const { llmService } = await import('./llmService.js');
-      const { memoryService } = await import('./memoryService.js');
-      const summary = await llmService.generateResponse([{ role: 'system', content: summarizePrompt }], { useStep: true, task: 'log_summarization' });
-
-      if (summary && memoryService.isEnabled()) {
-        await memoryService.createMemoryEntry(tag.toLowerCase(), `[${tag}] ${summary}`);
-        console.log(`[DataStore] Offloaded ${type} summary to memory service.`);
-        this.db.data.internal_logs = this.db.data.internal_logs.filter(l => !logs.includes(l));
+  // Session Lessons
+  getSessionLessons() { return this.db?.data?.session_lessons || []; }
+  async addSessionLesson(l) {
+    if (this.db?.data) {
+        if (!this.db.data.session_lessons) this.db.data.session_lessons = [];
+        this.db.data.session_lessons.push({ text: l, timestamp: Date.now() });
+        if (this.db.data.session_lessons.length > 20) { this.db.data.session_lessons = this.db.data.session_lessons.slice(-20); }
         await this.write();
-      }
-    } catch (e) {
-      console.error(`[DataStore] Failed to offload ${type} logs:`, e);
     }
   }
 
-  async pruneOldData() {
+  // Temporal Methods
+  async addTemporalEvent(text, durationMinutes = 60) {
     if (!this.db?.data) return;
-    await this.summarizeAndOffloadLogs('growth_log', 'GROWTH');
-    await this.summarizeAndOffloadLogs('agency_logs', 'AGENCY');
-    await this.summarizeAndOffloadLogs('introspection_aar', 'AUDIT');
+    if (!this.db.data.temporal_events) this.db.data.temporal_events = [];
+    const event = { text, timestamp: Date.now(), expires_at: Date.now() + (durationMinutes * 60 * 1000) };
+    this.db.data.temporal_events.push(event);
+    await this.write();
+  }
+  getTemporalEvents() {
+    const now = Date.now();
+    return (this.db?.data?.temporal_events || []).filter(e => e.expires_at > now);
+  }
+  async addDeadline(task, targetDate) {
+    if (!this.db?.data) return;
+    if (!this.db.data.deadlines) this.db.data.deadlines = [];
+    this.db.data.deadlines.push({ task, targetDate, timestamp: Date.now() });
+    await this.write();
+  }
+  getDeadlines() { return this.db?.data?.deadlines || []; }
+  getHabits() { return this.db?.data?.habits || []; }
+  getActivityDecayRules() { return this.db?.data?.activity_decay_rules || {}; }
+  async setActivityDecayRule(activity, minutes) {
+    if (!this.db?.data) return;
+    if (!this.db.data.activity_decay_rules) this.db.data.activity_decay_rules = {};
+    this.db.data.activity_decay_rules[activity] = minutes;
+    await this.write();
+  }
 
+  // Helper Methods
+  getTextPostsSinceLastImage() { return this.db?.data?.text_posts_since_last_image || 0; }
+  async incrementTextPostsSinceLastImage() { if (this.db?.data) { this.db.data.text_posts_since_last_image++; await this.write(); } }
+  async addInsideJoke(joke) { if (this.db?.data) { if (!this.db.data.inside_jokes) this.db.data.inside_jokes = []; this.db.data.inside_jokes.push(joke); await this.write(); } }
+  getInsideJokes() { return this.db?.data?.inside_jokes || []; }
+  async addLinguisticMutation(m) { if (this.db?.data) { if (!this.db.data.linguistic_mutations) this.db.data.linguistic_mutations = []; this.db.data.linguistic_mutations.push(m); await this.write(); } }
+  async addParkedThought(t) { if (this.db?.data) { if (!this.db.data.parked_thoughts) this.db.data.parked_thoughts = []; this.db.data.parked_thoughts.push(t); await this.write(); } }
+  async addCoreValueDiscovery(v) { if (this.db?.data) { if (!this.db.data.core_value_discoveries) this.db.data.core_value_discoveries = []; this.db.data.core_value_discoveries.push(v); await this.write(); } }
+  async addCoEvolutionEntry(e) { if (this.db?.data) { if (!this.db.data.co_evolution_entries) this.db.data.co_evolution_entries = []; this.db.data.co_evolution_entries.push(e); await this.write(); } }
+  async setAdminMentalHealth(h) { if (this.db?.data) { this.db.data.admin_mental_health = h; await this.write(); } }
+  async updateAdminWorldview(w) { if (this.db?.data) { this.db.data.admin_worldview = w; await this.write(); } }
+  async setAdminHomeMentionedAt(t) { if (this.db?.data) { this.db.data.admin_home_mentioned_at = t; await this.write(); } }
+  async setAdminWorkMentionedAt(t) { if (this.db?.data) { this.db.data.admin_work_mentioned_at = t; await this.write(); } }
+  async updateLifeArc(user, arc, status) { if (this.db?.data) { if (!this.db.data.life_arcs) this.db.data.life_arcs = []; this.db.data.life_arcs.push({ user, arc, status }); await this.write(); } }
+
+  async pruneOldData() {
     const collections = ['interactions', 'recent_thoughts', 'exhausted_themes', 'internal_logs', 'agency_reflections', 'persona_advice', 'strategy_audits'];
     for (const coll of collections) {
       if (this.db.data[coll] && this.db.data[coll].length > 200) {
-        console.log(`[DataStore] Pruning collection: ${coll}`);
         this.db.data[coll] = this.db.data[coll].slice(-100);
       }
     }
     await this.write();
   }
-
 }
 
 export const dataStore = new DataStore();

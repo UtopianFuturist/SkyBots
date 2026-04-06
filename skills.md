@@ -479,3 +479,67 @@ Query your current internal processes and context.
   }
 }
 ```
+
+### set_temporal_event
+Set an active temporal hook for the admin (e.g., "coffee", "meeting", "work task") to avoid interrupting or to follow up.
+```json
+{
+  "name": "set_temporal_event",
+  "description": "Sets a time-sensitive hook for the admin's current activity. Use this to track when they mention a specific task or commitment.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "text": { "type": "string", "description": "Description of the activity (e.g., 'In a meeting', 'At lunch')." },
+      "duration_minutes": { "type": "number", "description": "Expected duration in minutes. Use 30 for coffee, 60 for lunch, 120 for movies, etc." }
+    },
+    "required": ["text", "duration_minutes"]
+  }
+}
+```
+
+### track_deadline
+Track a specific upcoming deadline or target date for the admin.
+```json
+{
+  "name": "track_deadline",
+  "description": "Registers a fixed deadline or target date/time for an admin task. Use this when the admin mentions 'by tomorrow', 'next Friday', or 'at 3pm'.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "task": { "type": "string", "description": "The task or event associated with the deadline." },
+      "target_date": { "type": "string", "description": "The target date or time (e.g., '2025-03-20', 'Friday morning', 'in 3 days')." }
+    },
+    "required": ["task", "target_date"]
+  }
+}
+```
+
+### update_activity_duration
+Update the standard decay time for a recurring activity type.
+```json
+{
+  "name": "update_activity_duration",
+  "description": "Modifies the default duration (in minutes) for a specific category of admin activity. Use this if the admin corrects you about how long their tasks take.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "activity": { "type": "string", "description": "The category name (e.g., 'meal', 'work_block', 'short_task')." },
+      "minutes": { "type": "number", "description": "New default duration in minutes." }
+    },
+    "required": ["activity", "minutes"]
+  }
+}
+```
+
+### get_admin_time_context
+Retrieve the most detailed current temporal context for the admin, including active hooks and habits.
+```json
+{
+  "name": "get_admin_time_context",
+  "description": "Fetches a synthesized report of the admin's local time, active activity hooks, deadlines, and detected habits. Use this to maintain temporal synchronization.",
+  "parameters": {
+    "type": "object",
+    "properties": {}
+  }
+}
+```

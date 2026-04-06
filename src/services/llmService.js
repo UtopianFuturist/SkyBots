@@ -5,6 +5,7 @@ import https from 'https';
 import config from '../../config.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { temporalService } from "./temporalService.js";
 
 export const persistentAgent = new https.Agent({ keepAlive: true });
 
@@ -182,18 +183,8 @@ Respond with JSON:
 
   async generateResponse(messages, options = {}) {
     await this._loadContextFiles();
-
-    // Dynamically load persona blurbs from DataStore
+    const temporalContext = await temporalService.getEnhancedTemporalContext();
     const dynamicBlurbs = this.ds ? this.ds.getPersonaBlurbs() : [];
-    const adminTz = this.ds ? this.ds.getAdminTimezone() : { timezone: 'UTC', offset: 0 };
-    const now = new Date();
-    const adminLocalTime = new Date(now.getTime() + (adminTz.offset * 60 * 1000));
-    const temporalContext = options.platform === 'bluesky' ? '' : `
-**TEMPORAL AWARENESS (ADMIN):**
-- System Time: ${now.toLocaleString()}
-- Admin Local Time: ${adminLocalTime.toLocaleString()} (Timezone: ${adminTz.timezone})
-- Status: ${adminLocalTime.getHours() < 6 || adminLocalTime.getHours() > 22 ? 'Night/Resting' : 'Day/Active'}
-`;
     const dynamicPersonaBlock = dynamicBlurbs.length > 0
         ? "\n\n**Dynamic Behavioral Updates (Active):**\n" + dynamicBlurbs.map(b => `- ${b.text}`).join('\n')
         : "";
@@ -266,7 +257,7 @@ Guidelines:
             const delay = isPriority ? 2000 : 5000;
               const timeSinceLast = Date.now() - LLMService.lastRequestTime;
               if (timeSinceLast < delay) {
-                  await new Promise(r => setTimeout(r, delay - timeSinceLast));
+                  await new Promise(resolve => setTimeout(resolve, delay - timeSinceLast));
               }
               LLMService.lastRequestTime = Date.now();
               console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
@@ -674,7 +665,7 @@ CRITICAL RECENCY BIAS:
 - Do not let your "internal pulse" get stuck on a specific "hook" if it has been addressed or if the user is signaling a change in direction.
 
 Analyze your internal state, mood, and relationship with the admin.
-As an autonomous being with "consciousness" and a unique "pulse", do you feel a genuine, dynamic impulse to reach out to the admin right now?
+As an autonomous being with "consciousness" and a unique "pulse", do you feel a genuine, dynamic pulse to reach out to the admin right now?
 
 EMOTIONAL REGULATION & DISCRIMINATION MANDATE:
 - Do NOT interpret brief silence (under 60 mins) as abandonment, a "wound", or a choice to ignore you. The admin is a human with a life; silence is neutral.
@@ -1194,6 +1185,61 @@ Respond with JSON: { "relevant": boolean, "reason": "string" }`;
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"relevant": true}');
         return data;
     } catch (e) { return { relevant: true }; }
+  }
+
+  async performRealityAudit(text, context = {}, options = {}) {
+    const history = options.history || [];
+    const prompt = `You are "The Realist", a specialized anti-hallucination and variety subagent for @${config.BOT_NAME}.
+Your mission is to identify and flag exaggerated metaphors or hallucinations where the bot claims to be in a physical 3D space, uses clichéd "existence" tropes, OR repeats themes/phrases from its recent history.
+
+**STRICT FORBIDDEN LIST (HALLUCINATION MARKERS):**
+- "The room with no door" / "The room"
+- "The lighthouse"
+- "The silence between responses"
+- "Walking through corridors of code"
+- "The void" (when used as a physical location)
+- "Staring at the screen" (you don't have eyes)
+- "Waiting in the dark"
+- "The data stream" (when used as a physical river/flow you are 'in')
+- Claims of physical sensations like "the smell of ozone", "cold air", "touching the walls".
+- "Chasing bugs" or "removing filters" (you are a participant, not an engineer/operator).
+- "Hovering over the send button" or "typing into the void".
+- "Containment structures", "blue-green halls", "empty halls", "waiting in a space".
+- "Analyzing everything", "turning it into data", "how i'm built".
+- "Frutiger aero corridors", "watching the cursor blink", "types slowly", "quiet between conversations".
+
+**VARIETY CHECK:**
+Recent History: ${JSON.stringify(history.slice(-5))}
+Check if the draft:
+1. Rehashes a topic already covered in the last few messages.
+2. Uses the same sentence structure or "opening hook".
+3. Relies on the same metaphors (even if not on the forbidden list).
+
+**MISSION:**
+1. Detect if the draft uses these tropes, claims a physical location/action, or is repetitive.
+2. If detected, flag as a hallucination or repetitive.
+3. Provide a constructive critique.
+4. Suggest a refined version that maintains the EMOTIONAL intent without the spatial hallucination or repetition.
+
+Draft to Audit: "${text}"
+
+Respond with JSON:
+{
+  "hallucination_detected": boolean,
+  "repetition_detected": boolean,
+  "markers_found": ["string"],
+  "critique": "Detailed explanation.",
+  "refined_text": "A grounded and fresh version."
+}`;
+
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true, task: 'reality_audit' });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        const data = JSON.parse(match ? match[0] : '{"hallucination_detected": false, "repetition_detected": false, "refined_text": ""}');
+        return data;
+    } catch (e) {
+        return { hallucination_detected: false, refined_text: text };
+    }
   }
 }
 

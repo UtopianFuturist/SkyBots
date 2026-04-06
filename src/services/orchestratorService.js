@@ -43,9 +43,28 @@ class OrchestratorService {
         return {};
     }
 
-    async getCounterArgs(topic, content) {
+    async getCounterArgs(topic, content, history = []) {
         console.log(`[Orchestrator] Generating counter-arguments for: ${topic}`);
-        return "";
+        const prompt = `You are a specialized critic subagent. Your job is to perform a multi-dimensional critique of a proposed post draft.
+
+--- TOPIC ---
+${topic}
+
+--- DRAFT ---
+"${content}"
+
+--- RECENT HISTORY ---
+${JSON.stringify(history.slice(-5))}
+
+--- CRITIQUE CRITERIA ---
+1. TIMESTAMP DETECTION: Does the draft contain specific timestamps (e.g. "at 12:30")? AI should rarely use exact timestamps unless referring to a known deadline. If found, respond with "CRITICAL FAILURE: TIMESTAMP".
+2. REPETITION: Does this draft repeat themes, phrases, or opening structures from the recent history?
+3. MATERIAL TRUTH: Is the bot claiming physical experiences or locations (hallucinations)?
+4. SLOP: Is the draft using overused AI poetic metaphors (tapestries, gradients, frequencies)?
+
+Respond with a constructive critique. If the draft passes all checks, respond with "PASS".`;
+        const res = await llmService.generateResponse([{ role: "system", content: prompt }], { useStep: true, task: "critic_audit" });
+        return res || "";
     }
 
     async start() {
@@ -272,7 +291,7 @@ Shared thought:`;
                         continue;
                     }
 
-                    const critiques = await this.getCounterArgs(topic, initialContent);
+                    const critiques = await this.getCounterArgs(topic, initialContent, memories);
                     if (critiques && critiques.includes("CRITICAL FAILURE: TIMESTAMP")) {
                         console.warn(`[Orchestrator] Attempt ${attempts} failed: Timestamp detected in draft. Retrying...`);
                         continue;
@@ -305,10 +324,10 @@ Avoid the flaws identified. Use only one or two sentences if that's more potent.
                         await dataStore.addExhaustedTheme(topic);
                         let finalContent = content.replace(/\s*(\.\.\.|…)$/, "");
 
-                        // Reality Audit (Anti-Hallucination)
-                        const realityAudit = await llmService.performRealityAudit(content);
-                        if (realityAudit.hallucination_detected) {
-                            console.warn("[Orchestrator] Hallucination detected in autonomous post. Refining...");
+                        // Reality & Variety Audit
+                        const realityAudit = await llmService.performRealityAudit(finalContent, {}, { history: memories });
+                        if (realityAudit.hallucination_detected || realityAudit.repetition_detected) {
+                            console.warn("[Orchestrator] Audit flagged draft. Refining...");
                             finalContent = realityAudit.refined_text;
                         }
 
@@ -369,6 +388,7 @@ Avoid the flaws identified. Use only one or two sentences if that's more potent.
             const captionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a short, persona-aligned caption for this image: ${analysis}`;
             let caption = await llmService.generateResponse([{ role: "system", content: captionPrompt }], { useStep: true, task: 'image_caption' });
 
+            // For image captions, we only audit for hallucinations, NOT repetition (to avoid blocking generated art)
             const realityAudit = await llmService.performRealityAudit(caption);
             if (realityAudit.hallucination_detected) caption = realityAudit.refined_text;
 

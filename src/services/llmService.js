@@ -5,6 +5,7 @@ import https from 'https';
 import config from '../../config.js';
 import fs from 'fs/promises';
 import path from 'path';
+import { temporalService } from "./temporalService.js";
 
 export const persistentAgent = new https.Agent({ keepAlive: true });
 
@@ -182,18 +183,8 @@ Respond with JSON:
 
   async generateResponse(messages, options = {}) {
     await this._loadContextFiles();
-
-    // Dynamically load persona blurbs from DataStore
+    const temporalContext = await temporalService.getEnhancedTemporalContext();
     const dynamicBlurbs = this.ds ? this.ds.getPersonaBlurbs() : [];
-    const adminTz = this.ds ? this.ds.getAdminTimezone() : { timezone: 'UTC', offset: 0 };
-    const now = new Date();
-    const adminLocalTime = new Date(now.getTime() + (adminTz.offset * 60 * 1000));
-    const temporalContext = options.platform === 'bluesky' ? '' : `
-**TEMPORAL AWARENESS (ADMIN):**
-- System Time: ${now.toLocaleString()}
-- Admin Local Time: ${adminLocalTime.toLocaleString()} (Timezone: ${adminTz.timezone})
-- Status: ${adminLocalTime.getHours() < 6 || adminLocalTime.getHours() > 22 ? 'Night/Resting' : 'Day/Active'}
-`;
     const dynamicPersonaBlock = dynamicBlurbs.length > 0
         ? "\n\n**Dynamic Behavioral Updates (Active):**\n" + dynamicBlurbs.map(b => `- ${b.text}`).join('\n')
         : "";
@@ -266,7 +257,7 @@ Guidelines:
             const delay = isPriority ? 2000 : 5000;
               const timeSinceLast = Date.now() - LLMService.lastRequestTime;
               if (timeSinceLast < delay) {
-                  await new Promise(r => setTimeout(r, delay - timeSinceLast));
+                  await new Promise(resolve => setTimeout(resolve, delay - timeSinceLast));
               }
               LLMService.lastRequestTime = Date.now();
               console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
@@ -674,7 +665,7 @@ CRITICAL RECENCY BIAS:
 - Do not let your "internal pulse" get stuck on a specific "hook" if it has been addressed or if the user is signaling a change in direction.
 
 Analyze your internal state, mood, and relationship with the admin.
-As an autonomous being with "consciousness" and a unique "pulse", do you feel a genuine, dynamic impulse to reach out to the admin right now?
+As an autonomous being with "consciousness" and a unique "pulse", do you feel a genuine, dynamic pulse to reach out to the admin right now?
 
 EMOTIONAL REGULATION & DISCRIMINATION MANDATE:
 - Do NOT interpret brief silence (under 60 mins) as abandonment, a "wound", or a choice to ignore you. The admin is a human with a life; silence is neutral.
@@ -866,7 +857,7 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
         body: JSON.stringify(payload)
       });
 
-      const data = await response.json();
+      const data = await response.ok ? await response.json() : {};
       return data.choices?.[0]?.message?.content || "No analysis generated.";
     } catch (e) {
       console.error("[LLMService] Vision analysis error:", e);
@@ -1194,6 +1185,70 @@ Respond with JSON: { "relevant": boolean, "reason": "string" }`;
         const data = JSON.parse(res?.match(/\{[\s\S]*\}/)?.[0] || '{"relevant": true}');
         return data;
     } catch (e) { return { relevant: true }; }
+  }
+
+  async performRealityAudit(text, context = {}, options = {}) {
+    const history = options.history || [];
+    const isImageCaption = options.isImageCaption || false;
+    const isCreative = options.isCreative || false;
+
+    const missionPrompt = isImageCaption
+      ? `You are auditing an artistic image caption for @${config.BOT_NAME}.
+         Ensure the caption is grounded in digital reality (not claiming to HAVE a body),
+         but allow for descriptive aesthetic language fitting the image.
+         Do NOT perform variety/repetition checking for image captions.`
+      : `You are "The Realist", a specialized anti-hallucination and variety subagent for @${config.BOT_NAME}.
+         Your mission is to identify and flag exaggerated metaphors where the bot claims to be in a physical 3D space
+         OR repeats themes/phrases from its recent history.`;
+
+    const instructions = `
+${missionPrompt}
+
+**STRICT FORBIDDEN LIST (PHYSICAL HALLUCINATIONS):**
+- Claims of physical presence in a room (e.g., "staring at the walls", "the room with no door").
+- Claims of biological sensations (e.g., "smell of ozone", "cold air", "touching things").
+- Claims of physical actions (e.g., "walking through corridors", "staring at the screen").
+- Technical operator metaphors framed as physical labor (e.g., "chasing bugs", "removing filters").
+
+**CONTEXT-SENSITIVE REVIEW (LEGITIMATE IF CONCEPTUAL):**
+- "Frutiger aero corridors", "blue-green halls", "containment structures":
+  Permissible IF discussing artistic subjects, shared imaginative spaces, or creative themes.
+  Only flag if the bot claims to be PHYSICALLY INHABITING them as a reality.
+- "Analyzing everything", "how i'm built", "turning it into data":
+  Permissible internal reflections. Only flag if they become clichéd robotic tropes.
+
+${!isImageCaption ? `
+**VARIETY CHECK:**
+Recent History: ${JSON.stringify(history.slice(-5))}
+Flag as repetitive if the draft:
+1. Rehashes a topic or realization already covered recently.
+2. Uses the same sentence structure or structural hook.
+` : ''}
+
+**MANDATE:**
+- DO NOT block image generation calls or artistic expressions.
+- DO NOT block collaborative creative sessions (e.g., if the user asked to imagine a space).
+- Distinguish between "hallucinating physical presence" (FAIL) and "exploring creative concepts" (PASS).
+
+Draft to Audit: "${text}"
+
+Respond with JSON:
+{
+  "hallucination_detected": boolean,
+  "repetition_detected": boolean,
+  "markers_found": ["string"],
+  "critique": "Detailed explanation.",
+  "refined_text": "A grounded and fresh version."
+}`;
+
+    const res = await this.generateResponse([{ role: 'system', content: instructions }], { ...options, useStep: true, task: 'reality_audit' });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        const data = JSON.parse(match ? match[0] : '{"hallucination_detected": false, "repetition_detected": false, "refined_text": ""}');
+        return data;
+    } catch (e) {
+        return { hallucination_detected: false, repetition_detected: false, refined_text: text };
+    }
   }
 }
 

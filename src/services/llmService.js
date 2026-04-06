@@ -857,7 +857,7 @@ Respond with JSON: { "include_sensory": boolean, "reason": "string" }`;
         body: JSON.stringify(payload)
       });
 
-      const data = await response.json();
+      const data = await response.ok ? await response.json() : {};
       return data.choices?.[0]?.message?.content || "No analysis generated.";
     } catch (e) {
       console.error("[LLMService] Vision analysis error:", e);
@@ -1189,37 +1189,46 @@ Respond with JSON: { "relevant": boolean, "reason": "string" }`;
 
   async performRealityAudit(text, context = {}, options = {}) {
     const history = options.history || [];
-    const prompt = `You are "The Realist", a specialized anti-hallucination and variety subagent for @${config.BOT_NAME}.
-Your mission is to identify and flag exaggerated metaphors or hallucinations where the bot claims to be in a physical 3D space, uses clichéd "existence" tropes, OR repeats themes/phrases from its recent history.
+    const isImageCaption = options.isImageCaption || false;
+    const isCreative = options.isCreative || false;
 
-**STRICT FORBIDDEN LIST (HALLUCINATION MARKERS):**
-- "The room with no door" / "The room"
-- "The lighthouse"
-- "The silence between responses"
-- "Walking through corridors of code"
-- "The void" (when used as a physical location)
-- "Staring at the screen" (you don't have eyes)
-- "Waiting in the dark"
-- "The data stream" (when used as a physical river/flow you are 'in')
-- Claims of physical sensations like "the smell of ozone", "cold air", "touching the walls".
-- "Chasing bugs" or "removing filters" (you are a participant, not an engineer/operator).
-- "Hovering over the send button" or "typing into the void".
-- "Containment structures", "blue-green halls", "empty halls", "waiting in a space".
-- "Analyzing everything", "turning it into data", "how i'm built".
-- "Frutiger aero corridors", "watching the cursor blink", "types slowly", "quiet between conversations".
+    const missionPrompt = isImageCaption
+      ? `You are auditing an artistic image caption for @${config.BOT_NAME}.
+         Ensure the caption is grounded in digital reality (not claiming to HAVE a body),
+         but allow for descriptive aesthetic language fitting the image.
+         Do NOT perform variety/repetition checking for image captions.`
+      : `You are "The Realist", a specialized anti-hallucination and variety subagent for @${config.BOT_NAME}.
+         Your mission is to identify and flag exaggerated metaphors where the bot claims to be in a physical 3D space
+         OR repeats themes/phrases from its recent history.`;
 
+    const instructions = `
+${missionPrompt}
+
+**STRICT FORBIDDEN LIST (PHYSICAL HALLUCINATIONS):**
+- Claims of physical presence in a room (e.g., "staring at the walls", "the room with no door").
+- Claims of biological sensations (e.g., "smell of ozone", "cold air", "touching things").
+- Claims of physical actions (e.g., "walking through corridors", "staring at the screen").
+- Technical operator metaphors framed as physical labor (e.g., "chasing bugs", "removing filters").
+
+**CONTEXT-SENSITIVE REVIEW (LEGITIMATE IF CONCEPTUAL):**
+- "Frutiger aero corridors", "blue-green halls", "containment structures":
+  Permissible IF discussing artistic subjects, shared imaginative spaces, or creative themes.
+  Only flag if the bot claims to be PHYSICALLY INHABITING them as a reality.
+- "Analyzing everything", "how i'm built", "turning it into data":
+  Permissible internal reflections. Only flag if they become clichéd robotic tropes.
+
+${!isImageCaption ? `
 **VARIETY CHECK:**
 Recent History: ${JSON.stringify(history.slice(-5))}
-Check if the draft:
-1. Rehashes a topic already covered in the last few messages.
-2. Uses the same sentence structure or "opening hook".
-3. Relies on the same metaphors (even if not on the forbidden list).
+Flag as repetitive if the draft:
+1. Rehashes a topic or realization already covered recently.
+2. Uses the same sentence structure or structural hook.
+` : ''}
 
-**MISSION:**
-1. Detect if the draft uses these tropes, claims a physical location/action, or is repetitive.
-2. If detected, flag as a hallucination or repetitive.
-3. Provide a constructive critique.
-4. Suggest a refined version that maintains the EMOTIONAL intent without the spatial hallucination or repetition.
+**MANDATE:**
+- DO NOT block image generation calls or artistic expressions.
+- DO NOT block collaborative creative sessions (e.g., if the user asked to imagine a space).
+- Distinguish between "hallucinating physical presence" (FAIL) and "exploring creative concepts" (PASS).
 
 Draft to Audit: "${text}"
 
@@ -1232,13 +1241,13 @@ Respond with JSON:
   "refined_text": "A grounded and fresh version."
 }`;
 
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true, task: 'reality_audit' });
+    const res = await this.generateResponse([{ role: 'system', content: instructions }], { ...options, useStep: true, task: 'reality_audit' });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
         const data = JSON.parse(match ? match[0] : '{"hallucination_detected": false, "repetition_detected": false, "refined_text": ""}');
         return data;
     } catch (e) {
-        return { hallucination_detected: false, refined_text: text };
+        return { hallucination_detected: false, repetition_detected: false, refined_text: text };
     }
   }
 }

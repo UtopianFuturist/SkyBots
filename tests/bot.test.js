@@ -47,6 +47,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     generateAltText: jest.fn().mockResolvedValue('alt text'),
     verifyImageRelevance: jest.fn().mockResolvedValue({ relevant: true }),
     performImpulsePoll: jest.fn().mockResolvedValue({ impulse_detected: false }),
+    performRealityAudit: jest.fn().mockResolvedValue({ hallucination_detected: false, markers_found: [], critique: "", refined_text: "" }),
     isAutonomousPostCoherent: jest.fn().mockResolvedValue({ score: 10 }),
     isImageCompliant: jest.fn().mockResolvedValue({ compliant: true }),
     setDataStore: jest.fn(),

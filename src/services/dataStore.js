@@ -110,6 +110,7 @@ class DataStore {
       social_resonance: {},
       trace_logs: [],
       last_keyword_evolution: 0,
+      last_temporal_decay: 0,
       last_persona_evolution: 0,
       last_agency_reflection: 0,
       last_core_value_discovery: 0,
@@ -119,6 +120,10 @@ class DataStore {
       last_mood_trend: 0,
       last_persona_audit: 0,
       last_soul_mapping: 0,
+      temporal_events: [],
+      deadlines: [],
+      habits: [],
+      activity_decay_rules: { lunch: 60, meeting: 60, commute: 45, break: 15 },
       last_strategy_audit: 0,
       last_tool_discovery: 0,
       last_research_project: 0,
@@ -683,6 +688,18 @@ class DataStore {
     await this.write();
   }
 
+
+  // Temporal Awareness
+  getTemporalEvents() { return this.db?.data?.temporal_events || []; }
+  async addTemporalEvent(text, expires_at) { if (this.db?.data) { if (!this.db.data.temporal_events) this.db.data.temporal_events = []; this.db.data.temporal_events.push({ text, expires_at }); await this.write(); } }
+  getDeadlines() { return this.db?.data?.deadlines || []; }
+  async addDeadline(task, targetDate) { if (this.db?.data) { if (!this.db.data.deadlines) this.db.data.deadlines = []; this.db.data.deadlines.push({ task, targetDate }); await this.write(); } }
+  getHabits() { return this.db?.data?.habits || []; }
+  async addHabit(pattern) { if (this.db?.data) { if (!this.db.data.habits) this.db.data.habits = []; const existing = this.db.data.habits.find(h => h.pattern === pattern); if (existing) existing.frequency++; else this.db.data.habits.push({ pattern, frequency: 1 }); await this.write(); } }
+  getActivityDecayRules() { return this.db?.data?.activity_decay_rules || {}; }
+  async setActivityDecayRules(rules) { if (this.db?.data) this.db.data.activity_decay_rules = rules; await this.write(); }
+  getAdminTimezone() { return { timezone: this.db?.data?.admin_timezone || 'UTC', offset: this.db?.data?.admin_local_time_offset || 0 }; }
+  async setAdminTimezone(timezone, offset) { if (this.db?.data) { this.db.data.admin_timezone = timezone; this.db.data.admin_local_time_offset = offset; await this.write(); } }
 }
 
 export const dataStore = new DataStore();

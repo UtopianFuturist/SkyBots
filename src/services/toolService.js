@@ -29,6 +29,19 @@ class ToolService {
     const tools = {};
     const bareList = [];
 
+    // Parse Bare List Table
+    const tableMatch = content.match(/\| Tool Name \| Primary Intent \|\r?\n\|-+\|-+\|\r?\n([\s\S]*?)(?=\r?\n\r?\n|---|$)/);
+    if (tableMatch) {
+        const rows = tableMatch[1].trim().split(/\r?\n/);
+        for (const row of rows) {
+            const parts = row.split('|').map(p => p.trim()).filter(Boolean);
+            if (parts.length >= 2) {
+                const name = parts[0].replace(/`/g, '');
+                bareList.push({ name, intent: parts[1] });
+            }
+        }
+    }
+
     // Parse Full Definitions (JSON Blocks)
     // We look for sections like ### tool_name followed by a JSON block
     const toolSections = content.split(/###\s+/).slice(1);
@@ -36,16 +49,11 @@ class ToolService {
         const lines = section.split(/\r?\n/);
         const name = lines[0].trim().toLowerCase();
 
-        const jsonMatch = section.match(/```json\r?\n([\s\S]*?)```/);
+        const jsonMatch = section.match(/\`\`\`json\r?\n([\s\S]*?)\`\`\`/);
         if (jsonMatch) {
             try {
                 const schema = JSON.parse(jsonMatch[1]);
                 tools[name] = schema;
-
-                // Add to bare list if not already there
-                if (!bareList.find(b => b.name === name)) {
-                    bareList.push({ name, intent: schema.description || "No description." });
-                }
             } catch (e) {
                 console.warn(`[ToolService] Failed to parse JSON for tool: ${name}`);
             }

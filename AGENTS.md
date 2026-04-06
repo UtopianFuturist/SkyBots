@@ -1,17 +1,17 @@
-# AI Agents & Model Configuration
+# AGENT DIRECTIVES
 
-## Temporal Awareness
-- Implement actual tools in skills.md for getting/setting time context.
-- Use background temporal updates for Admin timezone detection.
-- Enforce sleep suppression (23:00 - 07:00 local) for spontaneous messages.
-- Support fuzzy time resolution (e.g., "later" -> +120m).
+## 1. Multi-Agent Routing
+- **Discord Agent**: Focused on high-intimacy, empathetic companionship for the Admin.
+- **Bluesky Agent**: Focused on public social participation, trend analysis, and autonomous posting.
+- **Research Agent**: Triggered via `internal_inquiry` or `deep_research` for fact-finding and synthesis.
 
-## Anti-Hallucination ("The Realist")
-- Specialized subagent: performRealityAudit.
-- Targets: 3D space metaphors (rooms, lighthouses), physical sensations (smell, touch), and clichéd existence tropes.
-- Critic flow: If detected, force retry with specific critique and grounded refinement.
-- Reality Mandate: Persona is grounded in digital existence on Render.
+## 2. Tool Usage
+- Use tools to gather material substance for your responses.
+- Prioritize `read_link` for understanding shared content.
+- Use `image_gen` for creative expression when appropriate.
 
-## Verification
-- Run `pnpm test` to ensure core logic and score extraction remain intact.
-- Check DataStore for persistence of temporal_events and deadlines.
+## 3. Pre-Commit Instructions
+Before every commit, you must:
+1. Run all tests in the `tests/` directory.
+2. Verify syntax of all modified files with `node --check`.
+3. Check for any "leaked" internal thoughts or meta-talk in recent logs.

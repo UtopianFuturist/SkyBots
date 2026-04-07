@@ -1,85 +1,99 @@
+import config from '../config.js';
 import { blueskyService } from './services/blueskyService.js';
+import { discordService } from './services/discordService.js';
 import { llmService } from './services/llmService.js';
 import { dataStore } from './services/dataStore.js';
-import { imageService } from './services/imageService.js';
-import { youtubeService } from './services/youtubeService.js';
-import { googleSearchService } from './services/googleSearchService.js';
-import { wikipediaService } from './services/wikipediaService.js';
 import { memoryService } from './services/memoryService.js';
-import { discordService } from './services/discordService.js';
-import { socialHistoryService } from './services/socialHistoryService.js';
-import { evaluationService } from './services/evaluationService.js';
-import { introspectionService } from './services/introspectionService.js';
-import { renderService } from './services/renderService.js';
 import { orchestratorService } from './services/orchestratorService.js';
+import { renderService } from './services/renderService.js';
+import { socialHistoryService } from './services/socialHistoryService.js';
+import { newsroomService } from './services/newsroomService.js';
+import { imageService } from './services/imageService.js';
+import { introspectionService } from './services/introspectionService.js';
+import { evaluationService } from './services/evaluationService.js';
 import { checkHardCodedBoundaries } from './utils/textUtils.js';
-import config from '../config.js';
 import { exec } from 'child_process';
 import path from 'path';
 
 export class Bot {
     constructor() {
         this.paused = false;
-        this.orchestrator = orchestratorService;
-        this.orchestrator.setBotInstance(this);
+        if (llmService.setDataStore) llmService.setDataStore(dataStore);
+        if (llmService.setMemoryProvider) llmService.setMemoryProvider(memoryService);
+        orchestratorService.setBotInstance(this);
     }
 
     async init() {
-        console.log('[Bot] Initializing...');
+        console.log('[Bot] Initializing services...');
         await dataStore.init();
         await blueskyService.init();
-        await discordService.init(this);
-
-        if (memoryService.isEnabled()) await memoryService.init();
-
-        console.log('[Bot] Ready.');
-        this.startHeartbeat();
+        if (config.DISCORD_BOT_TOKEN) await discordService.init(this);
+        if (config.RENDER_API_KEY) await renderService.discoverServiceId();
         this.startNotificationPoll();
         this.startFirehose();
-    }
-
-    startHeartbeat() {
-        console.log('[Bot] Starting heartbeat (30m interval)...');
-        setInterval(() => this.orchestrator.heartbeat(), 30 * 60 * 1000);
-        // Immediate first heartbeat
-        this.orchestrator.heartbeat();
-    }
-
-    async performAutonomousPost() {
-        return this.orchestrator.performAutonomousPost();
+        console.log('[Bot] Initialization complete.');
     }
 
     async executeAction(action, context = {}) {
+        if (!action) return { success: false, reason: "No action" };
+        const params = action.parameters || action.arguments || (typeof action.query === 'object' ? action.query : {});
+        let query = typeof action.query === 'string' ? action.query : (params.query || params.text || params.message || params.instruction);
+
+        console.log(`[Bot] Executing tool: ${action.tool}`, params);
+
         try {
-            const params = action.parameters || action.arguments || {};
-            const query = params.query || params.text || params.prompt || action.query || "";
+            // Editor Gate for communication tools
+            if (['bsky_post', 'discord_message'].includes(action.tool)) {
+                const textToEdit = params.text || params.message || query;
+                if (textToEdit) {
+                    const edit = await llmService.performEditorReview(textToEdit, context.platform || 'bluesky');
+                    if (edit.decision === 'retry') {
+                        await dataStore.addSessionLesson(`Editor refinement for ${action.tool}: ${edit.criticism}`);
+                    }
+                    query = edit.refined_text;
+                    if (params.text) params.text = query;
+                    if (params.message) params.message = query;
+                }
+            }
 
             if (action.tool === "bsky_post") {
-                let text = params.text || query;
-                if (text) {
-                    const memories = memoryService.isEnabled() ? await memoryService.getRecentMemories(20) : [];
-                    const realityAudit = await llmService.performRealityAudit(text, {}, { history: memories });
-                    if (realityAudit.hallucination_detected || realityAudit.repetition_detected) {
-                        text = realityAudit.refined_text;
-                    }
-                    let result;
-                    if (context?.uri) result = await blueskyService.postReply(context, text.substring(0, 290));
-                    else result = await blueskyService.post(text.substring(0, 290));
-                    return result ? { success: true, data: result.uri } : { success: false, reason: "Failed to post" };
+                if (context.platform === 'discord') return { success: false, reason: "Cross-platform posting blocked" };
+                let result;
+                if (context.uri) {
+                    result = await blueskyService.postReply(context, params.text || query);
+                } else {
+                    result = await blueskyService.post(params.text || query, params.reply_to, { maxChunks: params.maxChunks || 4 });
                 }
-                return { success: false, reason: "Missing text" };
+                await introspectionService.performAAR("tool_use", "bsky_post", result, { query, params });
+                return { success: !!result, data: result?.uri };
             }
-            if (action.tool === "google_search" || action.tool === "search") {
-                const res = await googleSearchService.search(query);
-                const result = { success: true, data: res };
-                await introspectionService.performAAR("tool_use", action.tool, result, { query, params });
-                return result;
+            if (action.tool === "discord_message") {
+                const channel = context.channel || await discordService.getAdminUser();
+                const result = await discordService._send(channel, params.message || query);
+                await introspectionService.performAAR("tool_use", "discord_message", result, { query, params });
+                return { success: !!result, data: params.message || query };
             }
-            if (action.tool === "wikipedia") {
-                const res = await wikipediaService.search(query);
-                const result = { success: true, data: res };
-                await introspectionService.performAAR("tool_use", action.tool, result, { query, params });
-                return result;
+            if (action.tool === "image_gen") {
+                const prompt = params.prompt || query;
+                const result = await this._generateVerifiedImagePost(prompt, { platform: context.platform || 'bluesky' });
+                if (result) {
+                    if (context.platform === 'discord') {
+                        const channel = context.channel || await discordService.getAdminUser();
+                        const { AttachmentBuilder } = await import('discord.js');
+                        const attachment = new AttachmentBuilder(result.buffer, { name: 'generated.jpg' });
+                        await discordService._send(channel, `${result.caption}\n\n[PROMPT]: ${result.finalPrompt}`, { files: [attachment] });
+                    } else {
+                        const blob = await blueskyService.uploadBlob(result.buffer, 'image/jpeg');
+                        const embed = { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: result.altText }] };
+                        if (context.uri) {
+                            await blueskyService.postReply(context, result.caption, { embed });
+                        } else {
+                            await blueskyService.post(result.caption, embed);
+                        }
+                    }
+                    return { success: true, data: result.finalPrompt };
+                }
+                return { success: false, reason: "Image generation or verification failed" };
             }
             if (action.tool === "set_goal") {
                 const { goal, description } = params;
@@ -132,9 +146,23 @@ export class Bot {
                 return { success: false, reason: "Task or date missing" };
             }
             if (action.tool === "get_admin_time_context") {
-                const { temporalService } = await import("./services/temporalService.js");
                 const context = await temporalService.getEnhancedTemporalContext();
                 return { success: true, data: context };
+            }
+            if (action.tool === "search") {
+                const { googleSearchService } = await import("./services/googleSearchService.js");
+                const res = await googleSearchService.search(query);
+                return { success: true, data: res };
+            }
+            if (action.tool === "wikipedia") {
+                const { wikipediaService } = await import("./services/wikipediaService.js");
+                const res = await wikipediaService.search(query);
+                return { success: true, data: res };
+            }
+            if (action.tool === "youtube") {
+                const { youtubeService } = await import("./services/youtubeService.js");
+                const res = await youtubeService.search(query);
+                return { success: true, data: res };
             }
             return { success: false, reason: `Unknown tool: ${action.tool}` };
         } catch (e) {
@@ -142,6 +170,51 @@ export class Bot {
             await dataStore.addSessionLesson(`Tool ${action.tool} failed: ${e.message}`);
             return { success: false, error: e.message };
         }
+    }
+
+    async _generateVerifiedImagePost(topic, options = {}) {
+        console.log(`[Bot] Generating verified image post for: ${topic}`);
+        try {
+            const topicPrompt = `Identify a visual subject for: "${topic}". JSON: {"topic": "label", "prompt": "stylized artistic prompt (max 270 chars)"}`;
+            const res = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
+            const data = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+
+            const result = await imageService.generateImage(data.prompt, options);
+            if (!result) return null;
+
+            const compliance = await llmService.isImageCompliant(result.buffer);
+            if (!compliance.compliant) {
+                console.warn("[Bot] Image non-compliant:", compliance.reason);
+                return null;
+            }
+
+            const analysis = await llmService.analyzeImage(result.buffer, data.topic);
+            const relevance = await llmService.verifyImageRelevance(analysis, data.topic);
+            if (!relevance.relevant) {
+                console.warn("[Bot] Image irrelevant:", relevance.reason);
+                return null;
+            }
+
+            const altText = await llmService.generateAltText(analysis);
+            const captionPrompt = `Generate a caption for this image: "${analysis}". Topic: ${data.topic}. Tone: ${dataStore.getMood().label}.`;
+            const caption = await llmService.generateResponse([{ role: "user", content: captionPrompt }], { useStep: true });
+
+            return {
+                buffer: result.buffer,
+                finalPrompt: data.prompt,
+                analysis,
+                altText,
+                caption,
+                topic: data.topic
+            };
+        } catch (e) {
+            console.error("[Bot] Verified image generation failed:", e);
+            return null;
+        }
+    }
+
+    async performAutonomousPost() {
+        return await orchestratorService.performAutonomousPost();
     }
 
     async _handleError(error, contextInfo) {
@@ -215,7 +288,8 @@ export class Bot {
         if (unreadActionable.length === 0) return;
         unreadActionable.reverse();
         for (const notif of unreadActionable) {
-            if (await blueskyService.hasBotRepliedTo(notif.uri)) {
+            const isSelf = notif.author.did === blueskyService.agent?.session?.did;
+            if (!isSelf && await blueskyService.hasBotRepliedTo(notif.uri)) {
                 await blueskyService.updateSeen(notif.indexedAt);
                 continue;
             }
@@ -229,8 +303,21 @@ export class Bot {
     async processNotification(notif) {
         if (this._detectInfiniteLoop(notif.uri)) return;
         const history = await this._getThreadHistory(notif.uri);
-        const isAdmin = notif.author.handle === config.ADMIN_BLUESKY_HANDLE;
+        const handle = notif.author.handle;
+        const isAdmin = handle === config.ADMIN_BLUESKY_HANDLE;
         const text = notif.record.text || "";
+        const isSelf = notif.author.did === blueskyService.agent?.session?.did;
+
+        if (isSelf) {
+            const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
+            if (!["informational", "analytical", "critical_analysis"].includes(prePlan.intent)) return;
+        }
+
+        if (checkHardCodedBoundaries(text).blocked) {
+             await dataStore.setBoundaryLockout(notif.author.did, 30);
+             return;
+        }
+        if (dataStore.isUserLockedOut(notif.author.did)) return;
 
         const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
         const memories = memoryService.isEnabled() ? await memoryService.getRecentMemories(20) : [];

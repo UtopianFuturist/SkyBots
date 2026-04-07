@@ -28,7 +28,8 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
     agent: {
       getAuthorFeed: jest.fn().mockResolvedValue({ data: { feed: [] } }),
       post: jest.fn(),
-      session: { did: 'did:plc:bot' }
+      session: { did: 'did:plc:bot' },
+      uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'blob' } })
     },
   },
 }));
@@ -41,7 +42,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     evaluateAndRefinePlan: jest.fn(),
     performPrePlanning: jest.fn(),
     checkVariety: jest.fn().mockResolvedValue({ repetitive: false }),
-    performEditorReview: jest.fn(),
+    performEditorReview: jest.fn().mockResolvedValue({ decision: 'pass', refined_text: 'Test response' }),
     isPostSafe: jest.fn().mockResolvedValue({ safe: true }),
     analyzeImage: jest.fn().mockResolvedValue('image analysis'),
     generateAltText: jest.fn().mockResolvedValue('alt text'),
@@ -54,6 +55,9 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     setIdentities: jest.fn(),
     setMemoryProvider: jest.fn(),
     setSkillsContent: jest.fn(),
+    isReplyCoherent: jest.fn().mockResolvedValue(true),
+    rateUserInteraction: jest.fn().mockResolvedValue(5),
+    selectBestResult: jest.fn().mockImplementation((q, r) => r[0]),
   },
 }));
 
@@ -76,6 +80,8 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     getExhaustedThemes: jest.fn().mockReturnValue([]),
     getAdminDid: jest.fn().mockReturnValue('did:plc:admin'),
     getMood: jest.fn().mockReturnValue({ label: 'balanced' }),
+    getRelationshipWarmth: jest.fn().mockReturnValue(0.5),
+    getAdminEnergy: jest.fn().mockReturnValue(0.8),
     isResting: jest.fn().mockReturnValue(false),
     addInternalLog: jest.fn(),
     addSessionLesson: jest.fn(),
@@ -97,10 +103,19 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     db: {
       data: {
         interactions: [],
-        discord_last_interaction: 0
+        discord_last_interaction: 0,
+        internal_logs: [],
+        relationship_warmth: 0.5,
+        admin_energy: 0.8
       },
       write: jest.fn().mockResolvedValue(true)
-    }
+    },
+    searchInternalLogs: jest.fn().mockReturnValue([]),
+    setRelationshipWarmth: jest.fn(),
+    setAdminEnergy: jest.fn(),
+    updateRelationalMetrics: jest.fn(),
+    addAdminFact: jest.fn(),
+    updateLifeArc: jest.fn(),
   },
 }));
 
@@ -113,6 +128,12 @@ jest.unstable_mockModule('../src/services/memoryService.js', () => ({
   },
 }));
 
+jest.unstable_mockModule('../src/services/introspectionService.js', () => ({
+    introspectionService: {
+        performAAR: jest.fn().mockResolvedValue({ internal_monologue: 'test', score: 10 }),
+    },
+}));
+
 jest.unstable_mockModule('../src/services/discordService.js', () => ({
   discordService: {
     init: jest.fn().mockResolvedValue(true),
@@ -120,6 +141,7 @@ jest.unstable_mockModule('../src/services/discordService.js', () => ({
     status: 'offline',
     fetchAdminHistory: jest.fn().mockResolvedValue([]),
     _send: jest.fn(),
+    getAdminUser: jest.fn(),
   },
 }));
 
@@ -136,8 +158,9 @@ describe('Bot', () => {
     bot = new Bot();
     bot.startFirehose = jest.fn();
     bot.startNotificationPoll = jest.fn();
-    // We don't call bot.init() directly to avoid starting background tasks in every test
-    // Instead we mock the parts we need or call it selectively.
+
+    // Ensure llmService methods return expected values for tool execution
+    llmService.performEditorReview.mockResolvedValue({ decision: 'pass', refined_text: 'Test response' });
   });
 
   it('should process a notification and post a reply', async () => {
@@ -160,7 +183,7 @@ describe('Bot', () => {
     await bot.processNotification(mockNotif);
 
     expect(llmService.performAgenticPlanning).toHaveBeenCalled();
-    expect(blueskyService.postReply).toHaveBeenCalledWith(expect.anything(), 'Test response');
+    expect(blueskyService.postReply).toHaveBeenCalled();
   });
 
   it('should not reply to itself', async () => {

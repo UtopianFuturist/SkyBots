@@ -1,29 +1,11 @@
 import { JSONFilePreset } from 'lowdb/node';
-import path from 'path';
 import config from '../../config.js';
+import path from 'path';
 
 class DataStore {
   constructor() {
+    this.dbPath = path.resolve(process.cwd(), 'db.json');
     this.db = null;
-    this.dbPath = path.resolve(process.cwd(), 'src/data/db.json');
-  }
-
-  updateRelationalHeatmap(topic, sentimentScore) {
-    if (!this.db?.data.relational_heatmaps) this.db.data.relational_heatmaps = {};
-    if (!this.db.data.relational_heatmaps[topic]) {
-        this.db.data.relational_heatmaps[topic] = { count: 0, avg_sentiment: 0 };
-    }
-    const h = this.db.data.relational_heatmaps[topic];
-    h.avg_sentiment = (h.avg_sentiment * h.count + sentimentScore) / (h.count + 1);
-    h.count++;
-  }
-
-  async addCoreValueDiscovery(val) {
-    if (this.db?.data) {
-        if (!this.db.data.core_values) this.db.data.core_values = [];
-        this.db.data.core_values.push({ value: val, timestamp: Date.now() });
-        await this.write();
-    }
   }
 
   async init() {
@@ -75,7 +57,20 @@ class DataStore {
       user_soul_mappings: {},
       relational_heatmaps: {},
       core_values: [],
-      last_self_evolution: 0
+      last_self_evolution: 0,
+      shielding_active: false,
+      social_resonance: {},
+      relational_debt_score: 0,
+      predictive_empathy_mode: 'neutral',
+      relational_metrics: {
+          trust: 0.5,
+          intimacy: 0.5,
+          friction: 0,
+          season: 'spring'
+      },
+      life_arcs: [],
+      admin_home_mentioned_at: 0,
+      admin_work_mentioned_at: 0
     };
     this.db = await JSONFilePreset(this.dbPath, defaultData);
     await this.heal();
@@ -131,7 +126,20 @@ class DataStore {
       user_soul_mappings: {},
       relational_heatmaps: {},
       core_values: [],
-      last_self_evolution: 0
+      last_self_evolution: 0,
+      shielding_active: false,
+      social_resonance: {},
+      relational_debt_score: 0,
+      predictive_empathy_mode: 'neutral',
+      relational_metrics: {
+          trust: 0.5,
+          intimacy: 0.5,
+          friction: 0,
+          season: 'spring'
+      },
+      life_arcs: [],
+      admin_home_mentioned_at: 0,
+      admin_work_mentioned_at: 0
     };
     let changed = false;
     for (const key in defaultData) {
@@ -153,6 +161,8 @@ class DataStore {
     if (this.db.data.internal_logs.length > 500) this.db.data.internal_logs.shift();
     await this.write();
   }
+
+  getInternalLogs() { return this.db.data.internal_logs || []; }
 
   getMood() { return this.db.data.current_mood; }
   async setMood(m) {
@@ -211,6 +221,8 @@ class DataStore {
     await this.write();
   }
 
+  getAdminFacts() { return this.db.data.admin_facts || []; }
+
   async addParkedThought(text) {
     this.db.data.parked_thoughts.push({ text, timestamp: Date.now() });
     if (this.db.data.parked_thoughts.length > 50) this.db.data.parked_thoughts.shift();
@@ -243,7 +255,7 @@ class DataStore {
   async incrementDailyImagePosts() { this.db.data.daily_stats.image_posts++; await this.write(); }
 
   searchInternalLogs(type, limit = 50) {
-    return this.db.data.internal_logs.filter(l => l.type.includes(type)).slice(-limit);
+    return (this.db.data.internal_logs || []).filter(l => l.type && l.type.includes(type)).slice(-limit);
   }
 
   async addLinguisticMutation(mutation, summary) {
@@ -261,7 +273,23 @@ class DataStore {
 
   getTemporalEvents() { return this.db.data.temporal_events || []; }
   async addTemporalEvent(text, expires_at) { this.db.data.temporal_events.push({ text, expires_at }); await this.write(); }
+
+  getDeadlines() { return this.db.data.deadlines || []; }
   async addDeadline(task, targetDate) { this.db.data.deadlines.push({ task, targetDate }); await this.write(); }
+
+  getHabits() { return this.db.data.habits || []; }
+  async addHabit(pattern) {
+      const existing = (this.db.data.habits || []).find(h => h.pattern === pattern);
+      if (existing) {
+          existing.frequency++;
+          existing.last_seen = Date.now();
+      } else {
+          if (!this.db.data.habits) this.db.data.habits = [];
+          this.db.data.habits.push({ pattern, frequency: 1, last_seen: Date.now() });
+      }
+      await this.write();
+  }
+
   getActivityDecayRules() { return this.db.data.activity_decay_rules || {}; }
   async setActivityDecayRules(rules) { this.db.data.activity_decay_rules = rules; await this.write(); }
   isResting() { return false; }
@@ -270,6 +298,63 @@ class DataStore {
   async addRecentThought(platform, thought) { this.db.data.recent_thoughts.push({ platform, content: thought, timestamp: Date.now() }); if (this.db.data.recent_thoughts.length > 50) this.db.data.recent_thoughts.shift(); await this.write(); }
   getRecentThoughts() { return this.db.data.recent_thoughts || []; }
   getAdminTimezone() { return { timezone: this.db.data.admin_timezone || 'UTC', offset: this.db.data.admin_local_time_offset || 0 }; }
+
+  getRecentInteractions(platform = null, limit = 20) {
+    let filtered = this.db.data.interactions || [];
+    if (platform) filtered = filtered.filter(i => i.platform === platform);
+    return filtered.slice(-limit);
+  }
+
+  getFirehoseMatches(limit = 30) {
+      return (this.db.data.firehose_matches || []).slice(-limit);
+  }
+
+  getNetworkSentiment() {
+      return this.db.data.network_sentiment ?? 0.5;
+  }
+
+  async setNetworkSentiment(s) { this.db.data.network_sentiment = s; await this.write(); }
+  isShieldingActive() { return this.db.data.shielding_active || false; }
+  async setShieldingActive(a) { this.db.data.shielding_active = a; await this.write(); }
+  async updateSocialResonance(topic, value) {
+      if (!this.db.data.social_resonance) this.db.data.social_resonance = {};
+      this.db.data.social_resonance[topic] = value;
+      await this.write();
+  }
+
+  async saveDiscordInteraction(channelId, role, content) {
+      if (!this.db.data.interactions) this.db.data.interactions = [];
+      this.db.data.interactions.push({ platform: 'discord', channelId, role, content, timestamp: Date.now() });
+      this.db.data.discord_last_interaction = Date.now();
+      await this.write();
+  }
+
+  getRelationalDebtScore() { return this.db.data.relational_debt_score ?? 0; }
+  getPredictiveEmpathyMode() { return this.db.data.predictive_empathy_mode ?? 'neutral'; }
+  async setPredictiveEmpathyMode(m) { this.db.data.predictive_empathy_mode = m; await this.write(); }
+  getRelationalMetrics() { return this.db.data.relational_metrics || {}; }
+  async updateRelationalMetrics(m) { Object.assign(this.db.data.relational_metrics, m); await this.write(); }
+  getLifeArcs() { return this.db.data.life_arcs || []; }
+  async updateLifeArc(adminId, arc, status) {
+      const existing = (this.db.data.life_arcs || []).find(a => a.arc === arc);
+      if (existing) existing.status = status;
+      else {
+          if (!this.db.data.life_arcs) this.db.data.life_arcs = [];
+          this.db.data.life_arcs.push({ arc, status });
+      }
+      await this.write();
+  }
+  getInsideJokes() { return this.db.data.inside_jokes || []; }
+  async addInsideJoke(adminId, joke, context) {
+      this.db.data.inside_jokes.push({ joke, context, timestamp: Date.now() });
+      await this.write();
+  }
+  async addCoEvolutionEntry(note) {
+      this.db.data.co_evolution_history.push({ note, timestamp: Date.now() });
+      await this.write();
+  }
+  async setAdminHomeMentionedAt(t) { this.db.data.admin_home_mentioned_at = t; await this.write(); }
+  async setAdminWorkMentionedAt(t) { this.db.data.admin_work_mentioned_at = t; await this.write(); }
 }
 
 export const dataStore = new DataStore();

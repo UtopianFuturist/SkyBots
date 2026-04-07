@@ -1,67 +1,40 @@
-import { Client, GatewayIntentBits, Partials, ActivityType } from 'discord.js';
+import { Client, GatewayIntentBits, AttachmentBuilder } from 'discord.js';
 import config from '../../config.js';
 import { llmService } from './llmService.js';
 import { dataStore } from './dataStore.js';
-import { imageService } from './imageService.js';
-import { memoryService } from './memoryService.js';
-import { newsroomService } from './newsroomService.js';
-import { introspectionService } from './introspectionService.js';
 import { socialHistoryService } from './socialHistoryService.js';
-import { moltbookService } from './moltbookService.js';
-import { checkSimilarity, isSlop } from '../utils/textUtils.js';
-import * as prompts from '../prompts/index.js';
 import { temporalService } from './temporalService.js';
 
 class DiscordService {
     constructor() {
-        console.log('[DiscordService] Constructor starting...');
         this.isEnabled = !!config.DISCORD_BOT_TOKEN;
         this.token = config.DISCORD_BOT_TOKEN;
-        this.adminName = config.ADMIN_NAME;
+        this.adminName = config.ADMIN_DISCORD_NAME;
         this.adminId = null;
-        this.nickname = config.BOT_NAME;
+        this.nickname = config.BOT_NAME || 'Sydney';
         this.isResponding = false;
-        this.botInstance = null;
         this.client = null;
-        this._lastHeavyAdminSearch = 0;
-        this._lastMessageFetch = {};
-        console.log(`[DiscordService] Constructor finished. isEnabled: ${this.isEnabled}, Admin: ${this.adminName}, Token length: ${this.token?.length || 0}`);
+        this.botInstance = null;
+        this.isInitializing = false;
     }
 
-    setBotInstance(bot) {
-        this.botInstance = bot;
-    }
-
-    async init() {
-        if (!this.isEnabled) {
-            console.log('[DiscordService] Discord token not configured or invalid. Service disabled.');
-            return;
-        }
-
+    async init(botInstance) {
+        if (!this.isEnabled || this.isInitializing) return;
         this.isInitializing = true;
-        console.log('[DiscordService] Initial 10s cooldown before starting initialization...');
-        await new Promise(resolve => setTimeout(resolve, 10000));
+        this.botInstance = botInstance;
 
-        if (this.client) {
-            try { this.client.destroy(); } catch (e) {}
-        }
-
-        console.log('[DiscordService] Creating client with intents and partials...');
+        console.log('[DiscordService] Starting initialization...');
         this.client = new Client({
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
-                GatewayIntentBits.MessageContent,
                 GatewayIntentBits.DirectMessages,
-                GatewayIntentBits.GuildPresences,
-                GatewayIntentBits.GuildMembers
-            ],
-            partials: [Partials.Channel, Partials.Message]
+                GatewayIntentBits.MessageContent
+            ]
         });
 
-        this.client.once('ready', async () => {
+        this.client.on('ready', () => {
             console.log(`[DiscordService] Logged in as ${this.client.user.tag}`);
-            this.client.user.setActivity('the currents', { type: ActivityType.Listening });
         });
 
         this.client.on('messageCreate', async (message) => {
@@ -79,7 +52,6 @@ class DiscordService {
             try {
                 console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
                 await this.client.login(this.token);
-                console.log('[DiscordService] SUCCESS: Client is ready!');
                 this.isInitializing = false;
                 return;
             } catch (err) {
@@ -103,9 +75,10 @@ class DiscordService {
     async _send(channel, content, options = {}) {
         if (!channel) return;
         try {
-            await channel.send({ content, ...options });
+            return await channel.send({ content, ...options });
         } catch (err) {
             console.error('[DiscordService] Error sending message:', err);
+            return null;
         }
     }
 
@@ -137,37 +110,20 @@ class DiscordService {
             for (const [id, attachment] of message.attachments) {
                 if (attachment.contentType?.startsWith('image/')) {
                     try {
-                        const analysis = await llmService.analyzeImage(attachment.url);
+                        const analysis = await llmService.analyzeImage(attachment.url, "User attachment");
                         if (analysis) imageAnalysisResult += `[Image attached by user: ${analysis}] `;
                     } catch (err) {}
                 }
             }
         }
 
-        let history = dataStore.getDiscordConversation(normChannelId);
-        if (history.length === 0) {
-            try {
-                const fetchedMessages = await message.channel.messages.fetch({ limit: 50 });
-                history = fetchedMessages.reverse()
-                    .filter(m => (m.content || m.attachments.size > 0) && !m.content.startsWith('/'))
-                    .map(m => ({
-                        role: m.author.id === this.client.user.id ? 'assistant' : 'user',
-                        author: m.author.username,
-                        content: m.content,
-                        timestamp: m.createdTimestamp,
-                        attachments: m.attachments
-                    }));
-            } catch (err) {}
-        }
-
+        let history = await this.fetchAdminHistory(20);
         await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
 
         const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
         const temporalContext = await temporalService.getEnhancedTemporalContext();
         const dynamicBlurbs = dataStore.getPersonaBlurbs();
-        const personaUpdates = dataStore.getPersonaUpdates();
 
-        // Detect Creative Session
         const isCreative = text.includes("imagine") || text.includes("paint") || text.includes("draw") || text.includes("story") || text.includes("creative");
 
         const systemPrompt = `
@@ -175,7 +131,6 @@ You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.au
 Persona: ${config.TEXT_SYSTEM_PROMPT}
 ${temporalContext}
 ${dynamicBlurbs.length > 0 ? `\nDynamic Persona: \n${dynamicBlurbs.map(b => '- ' + b.text).join('\n')}` : ''}
-${personaUpdates ? `\nPersona Updates: \n${personaUpdates}` : ''}
 
 --- SOCIAL NARRATIVE ---
 ${hierarchicalSummary.dailyNarrative}
@@ -193,7 +148,6 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}
 
         let typingInterval = this._startTypingLoop(message.channel);
         try {
-            let responseText;
             if (isAdmin) {
                 const prePlan = await llmService.performPrePlanning(message.content, history, imageAnalysisResult, "discord", dataStore.getMood(), {});
                 let plan = await llmService.performAgenticPlanning(message.content, history, imageAnalysisResult, true, 'discord', dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan);
@@ -205,17 +159,14 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}
                 }
             }
 
-            // Generate final conversational response
-            responseText = await llmService.generateResponse(messages, { platform: 'discord', useStep: true });
+            let responseText = await llmService.generateResponse(messages, { platform: 'discord', useStep: true });
 
             if (responseText) {
-                // Reality & Variety Audit
                 const realityAudit = await llmService.performRealityAudit(responseText, {}, {
                     history: history.map(h => ({ content: h.content })),
                     isCreative
                 });
                 if (realityAudit.hallucination_detected || realityAudit.repetition_detected) {
-                    console.warn(`[DiscordService] Audit flagged response. Refining...`);
                     responseText = realityAudit.refined_text;
                 }
 
@@ -247,13 +198,53 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}
             }
 
             const history = await this.fetchAdminHistory(20);
-            const spontaneityPrompt = `Reach out to your admin spontaneously. Persona: ${config.TEXT_SYSTEM_PROMPT}`;
-            let response = await llmService.generateResponse([{ role: "system", content: spontaneityPrompt }], { platform: "discord", useStep: true });
+            const contextData = {
+                mood: dataStore.getMood().label,
+                goal: dataStore.getCurrentGoal().goal,
+                warmth: dataStore.getRelationshipWarmth(),
+                energy: dataStore.getAdminEnergy()
+            };
 
-            if (response) {
-                const realityAudit = await llmService.performRealityAudit(response, {}, { history });
-                if (realityAudit.hallucination_detected || realityAudit.repetition_detected) response = realityAudit.refined_text;
-                await this._send(dmChannel, response);
+            console.log("[DiscordService] Choice: chose spontaneity. Generating content...");
+            const toneShift = await llmService.extractRelationalVibe(history, { platform: 'discord' });
+
+            let spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+Recent history: ${JSON.stringify(history.slice(-20))}
+Internal State: ${JSON.stringify(contextData)}
+Current vibe: ${toneShift}.
+
+You are choosing what to say spontaneously. Be self-aware and autonomous. Reflect on your internal thoughts and bond.
+Generate ${messageCount} separate messages/thoughts, each on a new line. Keep each under 200 characters.`;
+
+            let messages = [];
+            let attempts = 0;
+            while (attempts < 3) {
+                attempts++;
+                let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { useStep: true, platform: "discord" });
+                if (!rawResponse) break;
+
+                let candidateMessages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
+                let attemptFiltered = [];
+
+                for (const msg of candidateMessages) {
+                    const variety = await llmService.checkVariety(msg, history, { platform: 'discord' });
+                    if (!variety.repetitive) {
+                        attemptFiltered.push(msg);
+                    }
+                }
+
+                if (attemptFiltered.length > 0) {
+                    messages = attemptFiltered;
+                    break;
+                }
+            }
+
+            if (messages.length > 0) {
+                for (const msg of messages) {
+                    await this._send(dmChannel, msg);
+                    await dataStore.saveDiscordInteraction(`dm-${admin.id}`, 'assistant', msg);
+                    if (messages.length > 1) await new Promise(r => setTimeout(r, 2000));
+                }
             }
         } catch (err) {
             console.error("[DiscordService] Spontaneous error:", err);

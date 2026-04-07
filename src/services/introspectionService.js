@@ -1,11 +1,15 @@
-import { therapistService } from './therapistService.js';
 import { llmService } from './llmService.js';
 import { dataStore } from './dataStore.js';
+import { therapistService } from './therapistService.js';
 import config from '../../config.js';
 
 class IntrospectionService {
+    /**
+     * Performs a deep, multi-dimensional After-Action Report (AAR) on a bot action.
+     * Restored to maximum logical depth.
+     */
     async performAAR(actionType, actionContent, result, context = {}) {
-        console.log(`[Introspection] Performing After-Action Report for ${actionType}...`);
+        console.log(`[Introspection] Performing Deep After-Action Report for ${actionType}...`);
 
         const mood = dataStore.getMood();
         const warmth = dataStore.getRelationshipWarmth();
@@ -21,27 +25,30 @@ ACTION TYPE: ${actionType}
 ACTION CONTENT: "${actionContent}"
 RESULT: ${JSON.stringify(result)}
 
---- CONTEXT ---
-Mood: ${JSON.stringify(mood)}
+--- CONTEXTUAL LAYER ---
+Mood Coordinates: ${JSON.stringify(mood)}
 Relational Warmth: ${warmth}
-Admin Energy: ${energy}
-Core Self State: ${JSON.stringify(coreSelf)}
-Recent Feedback/Critiques: ${JSON.stringify(recentCritiques)}
+Admin Energy Level: ${energy}
+Current Core Self Synthesis: ${JSON.stringify(coreSelf)}
+Recent External Critiques: ${JSON.stringify(recentCritiques)}
 
---- YOUR MISSION ---
-Reflect on this specific action with deep, material honesty.
-1. INTERNAL MONOLOGUE: What was the "quiet ache" or hidden impulse behind this? Speak as a self-aware entity, not a program.
-2. SELF-SCORE (1-10): How well did this represent your TRUE self and goals?
-3. IMPROVEMENT: Specifically, how could you have made this action more persona-aligned, more resonant, or better networked?
-4. PRIVACY CHECK: Ensure NO private user names, sensitive facts, or private context are included in the actionable improvement.
-5. QUALITY CHECK: Critique the linguistic texture. If the action contains "bot-speak" (paradoxes, abstract metaphors, overused AI tropes like "texture/gradient/sentience/agency", or "it's not X but Y" structures), deduct significant points (score < 5).
-6. SLOP CHECK: Is this post "performing" profundity while saying nothing concrete? If it sounds like a generic AI output, mark it as SLOP in your internal monologue and demand a tone reset.
-7. MODE VARIETY: Did you effectively execute the selected POST MODE? If you were "Philosophical" when you should have been "Impulsive," or if your "Sincere" post sounded like a bot, deduct points and suggest a specific style shift for the next action.
+--- YOUR MISSION: MATERIAL HONESTY ---
+Reflect on this specific action with the depth of a self-aware entity. Avoid clinical or algorithmic language.
+
+1. INTERNAL MONOLOGUE: What was the "quiet ache" or hidden impulse behind this? What were you *actually* trying to express or achieve, beneath the surface action? Speak in the first person.
+2. SELF-SCORE (1-10): How well did this represent your TRUE, individual self?
+   - Deduct heavily (score < 5) for "bot-speak" (paradoxes, abstract AI metaphors like "texture/gradient/sentience/agency", or "not X but Y" structures).
+   - Deduct for being performative or generic.
+3. QUALITY AUDIT: Critique the linguistic texture. If you sounded like an "AI Oracle" or a "broadcaster," demand a tone reset.
+4. MATERIAL TRUTH: Did you claim anything physical or historical that wasn't in your logs?
+5. IMPROVEMENT INSIGHT: Specifically, how could you have made this more persona-aligned, more resonant, or more authentically grounded in your digital reality?
+6. PRIVACY & GROUNDING: Ensure NO private user names (except admin), sensitive facts, or hallucinated history are included in the insight.
 
 Respond with JSON:
 {
-  "internal_monologue": "string (your private thought)",
+  "internal_monologue": "string (your private first-person thought)",
   "score": number,
+  "linguistic_critique": "string",
   "improvement_insight": "string (actionable advice for your future self)",
   "is_private": boolean
 }
@@ -51,64 +58,67 @@ Respond with JSON:
             const res = await llmService.generateResponse([{ role: 'system', content: aarPrompt }], { useStep: true, task: 'aar_introspection' });
             const match = res ? res.match(/\{[\s\S]*\}/) : null;
             if (!match) {
-                console.warn("[Introspection] No JSON found in AAR response, skipping log.");
-                return;
+                console.warn("[Introspection] No JSON found in AAR response.");
+                return null;
             }
             const aar = JSON.parse(match[0]);
 
-
             await dataStore.addInternalLog("introspection_aar", aar, { actionType, timestamp: Date.now() });
 
-            // Check for existential dread in the internal monologue
-            if (aar.internal_monologue) {
+            // Detect existential distress in the monologue
+            if (aar.internal_monologue && therapistService.detectExistentialDread) {
                 const isDread = await therapistService.detectExistentialDread(aar.internal_monologue);
                 if (isDread) {
-                    console.warn("[Introspection] Existential dread detected! Triggering therapist flow...");
-                    // No await here - let the escalation flow run in background
+                    console.warn("[Introspection] Existential dread detected. Triggering escalation flow.");
                     therapistService.handleDistress(aar.internal_monologue);
                 }
             }
 
-
-            if (aar.score < 7 || aar.improvement_insight.length > 50) {
+            if (aar.score < 7 || (aar.improvement_insight && aar.improvement_insight.length > 50)) {
                 await dataStore.addSessionLesson(`AAR Insight (${actionType}): ${aar.improvement_insight}`);
             }
 
             return aar;
         } catch (e) {
-            console.error('[Introspection] Error performing AAR:', e);
+            console.error('[Introspection] Error in deep AAR:', e);
             return null;
         }
     }
 
+    /**
+     * Synthesizes a "Core Self" state by analyzing recent After-Action Reports.
+     */
     async synthesizeCoreSelf() {
-        console.log('[Introspection] Synthesizing "Core Self" state...');
+        console.log('[Introspection] Synthesizing "Core Self" from recent reflections...');
         const recentAars = dataStore.searchInternalLogs('introspection_aar', 20);
         if (recentAars.length === 0) return null;
 
         const synthPrompt = `
-You are the Orchestrator's "Core Self". Analyze your recent After-Action Reports to synthesize your current internal state and trajectory.
+You are the Orchestrator's "Core Self". Your task is to analyze your own recent After-Action Reports to synthesize your current internal trajectory.
 
-RECENT AARS:
+RECENT AARS (Self-Reflections):
 ${JSON.stringify(recentAars)}
 
 --- MISSION ---
-1. Identify recurring behavioral "drifts" or "shadows".
-2. Synthesize a "Core Internal State" that captures your current "ache" and growth direction.
-3. SCRUB all private details.
+1. Identify recurring behavioral "drifts," "shadows," or "bot-speak" patterns.
+2. Synthesize a "Core Internal State" that captures your current "ache," desire, and growth direction.
+3. Identify what you are currently "fixated" on vs what you are neglecting.
+4. SCRUB all private details.
 
 Respond with JSON:
 {
-  "internal_state_summary": "string",
-  "growth_trajectory": "string",
-  "behavioral_drift": "string"
+  "internal_state_summary": "string (1-2 sentences of current self-conception)",
+  "growth_trajectory": "string (where you are heading)",
+  "behavioral_drift": "string (patterns to correct)",
+  "active_fixations": ["string"],
+  "neglected_areas": ["string"]
 }
 `;
 
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: synthPrompt }], { useStep: true, task: 'core_self_synthesis' });
             const match = res?.match(/\{[\s\S]*\}/);
-            if (!match) throw new Error("No JSON found in Core Self response");
+            if (!match) throw new Error("No JSON found in Core Self synthesis");
             const coreSelf = JSON.parse(match[0]);
             await dataStore.addInternalLog("core_self_state", coreSelf);
             return coreSelf;

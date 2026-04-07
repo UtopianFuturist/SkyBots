@@ -5,7 +5,7 @@ import config from '../../config.js';
 class EvaluationService {
     /**
      * Evaluates a proposed post for quality, alignment, and material truth.
-     * Prevents "slop" and ensures the bot maintains its unique individual voice.
+     * Restored to full logical complexity from bot_full.js and current_orchestrator.js.
      */
     async evaluatePost(content, context = {}) {
         const prompt = `

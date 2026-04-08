@@ -47,7 +47,7 @@ export const handleCommand = async (bot, post, text) => {
   }
 
   if (lowerText === '!about') {
-    const userQuestion = "Tell me about yourself."; // Generic question
+    const userQuestion = "Tell me about yourself.";
     const messages = [
       { role: 'system', content: config.ABOUT_BOT_SYSTEM_PROMPT },
       { role: 'user', content: `My question is: "${userQuestion}"\n\nHere is your README.md to help you answer:\n\n${bot.readmeContent}` }
@@ -57,12 +57,10 @@ export const handleCommand = async (bot, post, text) => {
 
   if (lowerText.startsWith('!search') || lowerText.startsWith('!google')) {
     if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
-      return "I'm sorry, my Google Search API key is not currently configured, so I can't perform searches right now.";
+      return "I'm sorry, my Google Search API key is not currently configured.";
     }
     const query = lowerText.replace('!search', '').replace('!google', '').trim();
-    if (!query) {
-      return "Please provide a search term. Example: `!search Bluesky status`";
-    }
+    if (!query) return "Please provide a search term.";
 
     console.log(`[CommandHandler] Received !search command with query: "${query}"`);
     const results = await googleSearchService.search(query, { useTrustedSources: false });
@@ -70,15 +68,13 @@ export const handleCommand = async (bot, post, text) => {
     if (results && results.length > 0) {
       const validatedResults = [];
       for (const result of results.slice(0, 5)) {
-          if (await llmService.validateResultRelevance(query, result)) {
-              validatedResults.push(result);
-          }
+          if (await llmService.validateResultRelevance(query, result)) validatedResults.push(result);
           if (validatedResults.length >= 3) break;
       }
 
       if (validatedResults.length > 0) {
         const searchContext = validatedResults.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join('\n');
-        const summaryPrompt = `Based on the following search results for "${query}", write a concise summary of the findings.\n\n${searchContext}`;
+        const summaryPrompt = `Based on search results for "${query}", write a concise summary.\n\n${searchContext}`;
         const summary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }]);
 
         let lastPost = post;
@@ -101,13 +97,8 @@ export const handleCommand = async (bot, post, text) => {
   }
 
   if (lowerText.startsWith('!video') || lowerText.startsWith('!youtube')) {
-    if (!config.YOUTUBE_API_KEY) {
-      return "I'm sorry, my YouTube API key is not currently configured, so I can't find videos right now.";
-    }
     const query = lowerText.replace('!video', '').replace('!youtube', '').trim();
-    if (!query) {
-        return "Please provide a video search term. Example: `!video how to cook tofu`";
-    }
+    if (!query) return "Please provide a video search term.";
     const results = await youtubeService.search(query);
     const bestResult = await llmService.selectBestResult(query, results, 'youtube');
 
@@ -143,12 +134,8 @@ export const handleCommand = async (bot, post, text) => {
           imageAnalysis: imageAnalysis
       });
 
-      if (!personaCheck.aligned) {
-          console.warn(`[CommandHandler] Generated image failed persona check: ${personaCheck.feedback}`);
-          return `REJECTED: ${personaCheck.feedback}`;
-      }
+      if (!personaCheck.aligned) return `REJECTED: ${personaCheck.feedback}`;
 
-      console.log(`[CommandHandler] Image generation successful with prompt: "${finalPrompt}", uploading to Bluesky...`);
       const { data: uploadData } = await blueskyService.agent.uploadBlob(imageBuffer, { encoding: 'image/jpeg' });
       const embed = {
         $type: 'app.bsky.embed.images',
@@ -157,24 +144,18 @@ export const handleCommand = async (bot, post, text) => {
       await blueskyService.postReply(post, `Here's an image of "${finalPrompt}":`, { embed });
       return;
     }
-    return "I wasn't able to create an image for that. Please try another prompt.";
+    return "I wasn't able to create an image for that.";
   }
 
   if (lowerText.startsWith('!image-search')) {
-    if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
-      return "I'm sorry, my Google Search API key is not currently configured, so I can't search for images right now.";
-    }
     const imageQuery = lowerText.replace('!image-search', '').trim();
-    if (!imageQuery) {
-      return "Please provide a search term. Example: `!image-search cute cats`";
-    }
+    if (!imageQuery) return "Please provide a search term.";
     const imageResults = await googleSearchService.searchImages(imageQuery);
 
     if (imageResults && imageResults.length > 0) {
       const imagesToEmbed = imageResults.slice(0, 4);
-      const replyText = `Here are the top images I found for "${imageQuery}":`;
       const embed = await blueskyService.uploadImages(imagesToEmbed);
-      await blueskyService.postReply(post, replyText, { embed });
+      await blueskyService.postReply(post, `Here are the top images I found for "${imageQuery}":`, { embed });
       return;
     }
     return `I couldn't find any images for "${imageQuery}".`;

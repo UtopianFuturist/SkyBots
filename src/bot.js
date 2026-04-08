@@ -25,7 +25,6 @@ export class Bot {
     constructor() {
         this.paused = false;
         this.readmeContent = "";
-        this.adminDid = null;
         if (llmService.setDataStore) llmService.setDataStore(dataStore);
         if (llmService.setMemoryProvider) llmService.setMemoryProvider(memoryService);
         orchestratorService.setBotInstance(this);
@@ -44,9 +43,8 @@ export class Bot {
                 console.log(`[Bot] Resolving admin DID for @${config.ADMIN_BLUESKY_HANDLE}...`);
                 const adminProfile = await blueskyService.getProfile(config.ADMIN_BLUESKY_HANDLE);
                 if (adminProfile?.did) {
-                    this.adminDid = adminProfile.did;
-                    await dataStore.setAdminDid(this.adminDid);
-                    llmService.setIdentities(this.adminDid, blueskyService.did);
+                    await dataStore.setAdminDid(adminProfile.did);
+                    llmService.setIdentities(adminProfile.did, blueskyService.did);
                 }
             } catch (e) {}
         }
@@ -62,6 +60,16 @@ export class Bot {
         this.startNotificationPoll();
         this.startFirehose();
         console.log('[Bot] Initialization complete.');
+    }
+
+    async run() {
+        console.log("[Bot] Autonomous loop starting...");
+        this.heartbeat();
+        setInterval(() => this.heartbeat(), (config.HEARTBEAT_INTERVAL || 15) * 60000);
+    }
+
+    async heartbeat() {
+        await orchestratorService.heartbeat();
     }
 
     async executeAction(action, context = {}) {
@@ -171,14 +179,7 @@ export class Bot {
     }
 
     async performAutonomousPost() { return await orchestratorService.performAutonomousPost(); }
-    async run() {
-        console.log("[Bot] Autonomous loop starting...");
-        this.heartbeat();
-        setInterval(() => this.heartbeat(), (config.HEARTBEAT_INTERVAL || 15) * 60000);
-    }
 
-    async heartbeat() {
-        await orchestratorService.heartbeat();
     async cleanupOldPosts() {
         try {
             console.log("[Bot] Running manual cleanup...");
@@ -193,7 +194,6 @@ export class Bot {
                 }
             }
         } catch (e) { console.error("[Bot] Cleanup failed:", e); }
-    }
     }
 
     async performSpecialistResearchProject(topic) {
@@ -267,12 +267,12 @@ export class Bot {
     }
 
     async processNotification(notif) {
-        const isSelf = notif.author.did === blueskyService.agent?.session?.did;
         if (this._detectInfiniteLoop(notif.uri)) return;
         const history = await this._getThreadHistory(notif.uri);
         const text = notif.record.text || "";
         if (checkHardCodedBoundaries(text).blocked) { await dataStore.setBoundaryLockout(notif.author.did, 30); return; }
         if (dataStore.isUserLockedOut(notif.author.did)) return;
+        const isSelf = notif.author.did === blueskyService.agent?.session?.did;
         if (isSelf) {
             const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
             if (!["informational", "analytical", "critical_analysis"].includes(prePlan.intent)) return;

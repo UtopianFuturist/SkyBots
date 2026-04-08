@@ -171,6 +171,30 @@ export class Bot {
     }
 
     async performAutonomousPost() { return await orchestratorService.performAutonomousPost(); }
+    async run() {
+        console.log("[Bot] Autonomous loop starting...");
+        this.heartbeat();
+        setInterval(() => this.heartbeat(), (config.HEARTBEAT_INTERVAL || 15) * 60000);
+    }
+
+    async heartbeat() {
+        await orchestratorService.heartbeat();
+    async cleanupOldPosts() {
+        try {
+            console.log("[Bot] Running manual cleanup...");
+            const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
+            const feed = await blueskyService.agent.getAuthorFeed({ actor: profile.did, limit: 100 });
+            const now = Date.now();
+            const thirtyDays = 30 * 24 * 60 * 60 * 1000;
+            for (const item of feed.data.feed) {
+                const post = item.post;
+                if (now - new Date(post.indexedAt).getTime() > thirtyDays) {
+                    await blueskyService.agent.deletePost(post.uri);
+                }
+            }
+        } catch (e) { console.error("[Bot] Cleanup failed:", e); }
+    }
+    }
 
     async performSpecialistResearchProject(topic) {
         console.log(`[Bot] Starting Specialist Research: ${topic}`);

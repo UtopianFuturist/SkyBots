@@ -10,6 +10,50 @@ class RenderService {
 
   isEnabled() { return !!this.apiKey && !!this.serviceId; }
 
+  /**
+   * Attempt to discover the Render Service ID if not explicitly provided in config.
+   * This ensures the bot can fetch its own logs and perform self-diagnostics.
+   */
+  async discoverServiceId() {
+    if (!this.apiKey) return null;
+    if (this.serviceId) return this.serviceId;
+
+    console.log('[RenderService] Attempting to discover Service ID...');
+    try {
+      const response = await fetch(`${this.baseUrl}/services?limit=20`, {
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Accept': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+          console.error(`[RenderService] Discovery failed with status: ${response.status}`);
+          return null;
+      }
+
+      const data = await response.json();
+      // Render API returns an array of objects, each containing a 'service' object
+      const services = Array.isArray(data) ? data : (data.data || []);
+
+      const botService = services.find(s => {
+          const name = (s.service?.name || s.name || '').toLowerCase();
+          return name.includes('sydney') || name.includes('chat') || name.includes('bot') || name.includes('dearest-llama');
+      });
+
+      if (botService) {
+          this.serviceId = botService.service?.id || botService.id;
+          console.log(`[RenderService] Discovered Service ID: ${this.serviceId}`);
+          return this.serviceId;
+      }
+      console.warn('[RenderService] No matching service found in Render account.');
+      return null;
+    } catch (e) {
+      console.error('[RenderService] Error discovering Service ID:', e.message);
+      return null;
+    }
+  }
+
   async getLogs(limit = 100) {
     if (!this.isEnabled()) return "Render API not configured.";
     try {

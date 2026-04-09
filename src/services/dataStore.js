@@ -217,6 +217,7 @@ class DataStore {
   getTemporalEvents() { return this.db.data.temporal_events || []; }
   async addTemporalEvent(text, expires_at) { this.db.data.temporal_events.push({ text, expires_at }); await this.write(); }
   getDeadlines() { return this.db.data.deadlines || []; }
+  getHabits() { return this.db.data.habits || []; }
   async addDeadline(task, targetDate) { this.db.data.deadlines.push({ task, targetDate }); await this.write(); }
   async addHabit(pattern) {
       const existing = (this.db.data.habits || []).find(h => h.pattern === pattern);

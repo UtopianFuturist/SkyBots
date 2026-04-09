@@ -1,44 +1,34 @@
-import { AtpAgent, RichText } from '@atproto/api';
-import fetch from 'node-fetch';
+import { AtpAgent } from '@atproto/api';
 import config from '../../config.js';
-import { splitText } from '../utils/textUtils.js';
 
 class BlueskyService {
   constructor() {
-    this.agent = new AtpAgent({
-      service: 'https://bsky.social',
-      headers: [['User-Agent', 'Bot/1.0 (Render; +https://dearest-llama.onrender.com)']]
-    });
-  }
-
-  get did() {
-    return this.agent?.session?.did;
+    this.agent = new AtpAgent({ service: 'https://bsky.social' });
+    this.did = null;
+    this.handle = config.BLUESKY_IDENTIFIER;
+    this.password = config.BLUESKY_APP_PASSWORD;
   }
 
   async init() {
-    return await this.authenticate();
-  }
-
-  async authenticate() {
-    console.log(`[BlueskyService] Authenticating as ${config.BLUESKY_IDENTIFIER}...`);
+    if (!this.handle || !this.password) {
+      console.warn('[BlueskyService] Credentials missing. Bluesky integration disabled.');
+      return;
+    }
     try {
-      await this.agent.login({
-        identifier: config.BLUESKY_IDENTIFIER,
-        password: config.BLUESKY_APP_PASSWORD,
-      });
+      console.log(`[BlueskyService] Authenticating as ${this.handle}...`);
+      const response = await this.agent.login({ identifier: this.handle, password: this.password });
+      this.did = response.data.did;
       console.log('[BlueskyService] Authenticated successfully');
     } catch (error) {
       console.error('[BlueskyService] Authentication failed:', error.message);
-      throw error;
     }
   }
 
   async getNotifications(cursor) {
+    if (!this.did) return { notifications: [], cursor: null };
     try {
-      const params = { limit: 10 };
-      if (cursor) {
-        params.cursor = cursor;
-      }
+      const params = { limit: 50 };
+      if (cursor) params.cursor = cursor;
       const { data } = await this.agent.listNotifications(params);
       return data;
     } catch (error) {
@@ -49,40 +39,47 @@ class BlueskyService {
 
   async updateSeen(seenAt) {
     try {
-      if (seenAt && typeof seenAt !== 'string') {
-        seenAt = String(seenAt);
-      }
+      if (seenAt && typeof seenAt !== 'string') seenAt = String(seenAt);
       await this.agent.updateSeenNotifications(seenAt);
-      console.log(`[BlueskyService] Updated notification seen status${seenAt ? ` up to ${seenAt}` : ''}.`);
-    } catch (error) {
-      console.error('[BlueskyService] Error updating notification seen status:', error);
-    }
+    } catch (error) { console.error('[BlueskyService] Error updating seen status:', error); }
   }
 
-  async getDetailedThread(uri) {
+  async post(text, embed = null, options = {}) {
+    if (!this.did) return null;
     try {
-      const { data } = await this.agent.getPostThread({
-        uri,
-        depth: 100,
-        parentHeight: 100,
-      });
-      return data.thread;
+      const record = {
+        $type: 'app.bsky.feed.post',
+        text: text,
+        createdAt: new Date().toISOString(),
+      };
+      if (embed) record.embed = embed;
+      const response = await this.agent.post(record);
+      return response;
     } catch (error) {
-      if (error.name === 'NotFoundError' || error.message?.includes('Post not found')) {
-        console.warn(`[BlueskyService] Post not found: ${uri}`);
-      } else {
-        console.error('[BlueskyService] Error fetching detailed thread:', error);
-      }
+      console.error('[BlueskyService] Error creating post:', error);
       return null;
     }
   }
 
-  async hasBotRepliedTo(uri) {
-      try {
-          const thread = await this.getDetailedThread(uri);
-          if (!thread || !thread.replies) return false;
-          return thread.replies.some(r => r.post?.author?.did === this.did);
-      } catch (e) { return false; }
+  async postReply(parent, text, options = {}) {
+    if (!this.did) return null;
+    try {
+      const record = {
+        $type: 'app.bsky.feed.post',
+        text: text,
+        reply: {
+          root: parent.record?.reply?.root || { uri: parent.uri, cid: parent.cid },
+          parent: { uri: parent.uri, cid: parent.cid },
+        },
+        createdAt: new Date().toISOString(),
+      };
+      if (options.embed) record.embed = options.embed;
+      const response = await this.agent.post(record);
+      return response;
+    } catch (error) {
+      console.error('[BlueskyService] Error creating reply:', error);
+      return null;
+    }
   }
 
   async getProfile(actor) {
@@ -98,25 +95,36 @@ class BlueskyService {
   async getUserPosts(actor, limit = 20) {
     try {
       const { data } = await this.agent.getAuthorFeed({ actor, limit });
-      return data.feed.map(f => f.post);
+      return data.feed;
     } catch (error) {
       console.error(`[BlueskyService] Error fetching posts for ${actor}:`, error);
       return [];
     }
   }
 
-  async getTimeline(limit = 20) {
-      try {
-          return await this.agent.getTimeline({ limit });
-      } catch (e) {
-          console.error('[BlueskyService] Error fetching timeline:', e);
-          return { data: { feed: [] } };
-      }
+  async getTimeline(limit = 30) {
+    if (!this.did) return { data: { feed: [] } };
+    try {
+      return await this.agent.getTimeline({ limit });
+    } catch (e) {
+      console.error('[BlueskyService] Error fetching timeline:', e);
+      return { data: { feed: [] } };
+    }
   }
 
-  async searchPosts(query, options = {}) {
+  /**
+   * Enhanced searchPosts to handle both object options and legacy positional arguments.
+   */
+  async searchPosts(query, optionsOrSort = {}, limit = 20) {
       try {
-          const { data } = await this.agent.app.bsky.feed.searchPosts({ q: query, ...options });
+          let params = { q: query };
+          if (typeof optionsOrSort === 'string') {
+              params.sort = optionsOrSort;
+              params.limit = limit;
+          } else {
+              Object.assign(params, optionsOrSort);
+          }
+          const { data } = await this.agent.app.bsky.feed.searchPosts(params);
           return data.posts;
       } catch (e) {
           console.error('[BlueskyService] Error searching posts:', e);
@@ -124,74 +132,30 @@ class BlueskyService {
       }
   }
 
-  async resolveDid(actor) {
+  async uploadBlob(data, encoding) {
+      return await this.agent.uploadBlob(data, { encoding });
+  }
+
+  async getDetailedThread(uri) {
       try {
-          const profile = await this.getProfile(actor);
-          return profile?.handle || actor;
-      } catch (e) { return actor; }
+          const { data } = await this.agent.getPostThread({ uri });
+          if (!data.thread) return [];
+          const thread = [];
+          let curr = data.thread;
+          while (curr) {
+              thread.push(curr);
+              curr = curr.parent;
+          }
+          return thread.reverse();
+      } catch (e) { return []; }
   }
 
-  async uploadBlob(buffer, encoding) {
-      return await this.agent.uploadBlob(buffer, { encoding });
-  }
-
-  async postReply(parentPost, text, options = {}) {
-      const rt = new RichText({ text });
-      await rt.detectFacets(this.agent);
-      const postData = {
-          $type: 'app.bsky.feed.post',
-          text: rt.text,
-          facets: rt.facets,
-          reply: {
-              root: parentPost.record?.reply?.root || { uri: parentPost.uri, cid: parentPost.cid },
-              parent: { uri: parentPost.uri, cid: parentPost.cid }
-          },
-          createdAt: new Date().toISOString(),
-          ...options
-      };
-      return await this.agent.post(postData);
-  }
-
-  async post(text, embed = null, options = {}) {
-    console.log('[BlueskyService] Creating new post...');
-    try {
-      const rt = new RichText({ text });
-      await rt.detectFacets(this.agent);
-
-      const postData = {
-        $type: 'app.bsky.feed.post',
-        text: rt.text,
-        facets: rt.facets,
-        createdAt: new Date().toISOString(),
-      };
-
-      if (embed) postData.embed = embed;
-
-      return await this.agent.post(postData);
-    } catch (error) {
-      console.error('[BlueskyService] Error creating post:', error);
-      return null;
-    }
-  }
-
-  async getExternalEmbed(url) {
-    try {
-      const response = await fetch(url);
-      const html = await response.text();
-      const titleMatch = html.match(/<title>(.*?)<\/title>/i);
-      const title = titleMatch ? titleMatch[1] : url;
-      return {
-        $type: 'app.bsky.embed.external',
-        external: { uri: url, title: title, description: '' }
-      };
-    } catch (error) {
-      return null;
-    }
-  }
-
-  async deletePost(uri) {
-      const rkey = uri.split('/').pop();
-      return await this.agent.deletePost(uri);
+  async hasBotRepliedTo(uri) {
+      try {
+          const { data } = await this.agent.getPostThread({ uri });
+          const replies = data.thread.replies || [];
+          return replies.some(r => r.post.author.did === this.did);
+      } catch (e) { return false; }
   }
 }
 

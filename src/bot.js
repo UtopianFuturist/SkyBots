@@ -31,12 +31,28 @@ export class Bot {
     }
 
     async init() {
-        console.log('[Bot] Initializing services...');
-        await dataStore.init();
-        try { this.readmeContent = await fs.readFile("README.md", "utf-8"); } catch (e) {}
+        console.log('[Bot] Starting service initialization...');
 
-        await blueskyService.init();
-        if (config.DISCORD_BOT_TOKEN) await discordService.init(this);
+        try {
+            console.log('[Bot] Initializing DataStore...');
+            await dataStore.init();
+        } catch (e) { console.error('[Bot] DataStore init failed:', e); }
+
+        try {
+            this.readmeContent = await fs.readFileSync("README.md", "utf-8");
+        } catch (e) { console.warn('[Bot] README.md not found'); }
+
+        try {
+            console.log('[Bot] Initializing Bluesky Service...');
+            await blueskyService.init();
+        } catch (e) { console.error('[Bot] Bluesky init failed:', e); }
+
+        if (config.DISCORD_BOT_TOKEN) {
+            try {
+                console.log('[Bot] Initializing Discord Service...');
+                await discordService.init(this);
+            } catch (e) { console.error('[Bot] Discord init failed:', e); }
+        }
 
         if (config.ADMIN_BLUESKY_HANDLE) {
             try {
@@ -46,20 +62,22 @@ export class Bot {
                     await dataStore.setAdminDid(adminProfile.did);
                     llmService.setIdentities(adminProfile.did, blueskyService.did);
                 }
-            } catch (e) {}
+            } catch (e) { console.warn('[Bot] Admin DID resolution failed:', e.message); }
         }
 
-        await moltbookService.init();
-        await openClawService.init();
-        await toolService.init();
-        await nodeGatewayService.init();
-        await cronService.init();
+        try { await moltbookService.init(); } catch (e) { console.error('[Bot] Moltbook init failed:', e); }
+        try { await openClawService.init(); } catch (e) { console.error('[Bot] OpenClaw init failed:', e); }
+        try { await toolService.init(); } catch (e) { console.error('[Bot] ToolService init failed:', e); }
+        try { await nodeGatewayService.init(); } catch (e) { console.error('[Bot] NodeGateway init failed:', e); }
+        try { await cronService.init(); } catch (e) { console.error('[Bot] CronService init failed:', e); }
 
-        if (config.RENDER_API_KEY) await renderService.discoverServiceId();
+        if (config.RENDER_API_KEY) {
+            try { await renderService.discoverServiceId(); } catch (e) { console.warn('[Bot] Render service discovery failed'); }
+        }
 
         this.startNotificationPoll();
         this.startFirehose();
-        console.log('[Bot] Initialization complete.');
+        console.log('[Bot] Initialization sequence complete.');
     }
 
     async run() {
@@ -126,15 +144,9 @@ export class Bot {
                 await introspectionService.performAAR("tool_use", "set_goal", true, { goal: params.goal || query });
                 return { success: true };
             }
-
             if (action.tool === "update_persona") {
                 await dataStore.addPersonaBlurb(params.instruction || query);
                 return { success: true };
-            }
-            if (action.tool === "reassurance_tool") {
-                const memories = await memoryService.getRecentMemories(20);
-                const positive = memories.filter(m => !m.text.toLowerCase().includes('fail') && !m.text.toLowerCase().includes('error'));
-                return { success: true, data: positive.slice(0, 5) };
             }
             if (action.tool === "add_persona_blurb") { await dataStore.addPersonaBlurb(params.text || query); return { success: true }; }
             if (action.tool === "remove_persona_blurb") {
@@ -158,7 +170,6 @@ export class Bot {
                 const { temporalService } = await import("./services/temporalService.js");
                 return { success: true, data: await temporalService.getEnhancedTemporalContext() };
             }
-
             if (action.tool === "check_internal_state") {
                 const state = {
                     goal: dataStore.getCurrentGoal(),
@@ -169,8 +180,7 @@ export class Bot {
                 return { success: true, data: state };
             }
             if (action.tool === "list_persona_blurbs") {
-                const blurbs = dataStore.getPersonaBlurbs();
-                return { success: true, data: blurbs };
+                return { success: true, data: dataStore.getPersonaBlurbs() };
             }
             if (action.tool === "audit_persona_blurbs") {
                 await orchestratorService.performPersonaAudit();
@@ -194,7 +204,6 @@ export class Bot {
                 return { success: true, data: results };
             }
             if (action.tool === "moltbook_post") {
-                const { moltbookService } = await import("./services/moltbookService.js");
                 const result = await moltbookService.post(params.content || query, params.title, params.submolt);
                 return { success: !!result, data: result };
             }
@@ -232,12 +241,15 @@ export class Bot {
                 return { success: true, data: logs };
             }
             if (action.tool === "call_skill") {
-                const { openClawService } = await import("./services/openClawService.js");
                 const result = await openClawService.executeSkill(params.name, params.parameters);
                 return { success: true, data: result };
             }
+            if (action.tool === "reassurance_tool") {
+                const memories = await memoryService.getRecentMemories(20);
+                const positive = memories.filter(m => !m.text.toLowerCase().includes('fail') && !m.text.toLowerCase().includes('error'));
+                return { success: true, data: positive.slice(0, 5) };
+            }
             if (action.tool === "find_image") {
-                const { googleSearchService } = await import("./services/googleSearchService.js");
                 const res = await googleSearchService.findImage(query);
                 return { success: true, data: res };
             }
@@ -321,7 +333,7 @@ export class Bot {
             const keywords = dataStore.getDeepKeywords();
             const adminDid = dataStore.getAdminDid();
             let scriptPath = path.resolve(process.cwd(), 'firehose_monitor.py');
-            if (!require('fs').existsSync(scriptPath)) scriptPath = path.resolve(process.cwd(), '..', 'firehose_monitor.py');
+            if (!(await fs.access(scriptPath).then(() => true).catch(() => false))) scriptPath = path.resolve(process.cwd(), '..', 'firehose_monitor.py');
             const args = [scriptPath, '--keywords', keywords.join(','), '--did', blueskyService.agent?.session?.did || ''];
             if (adminDid) { args.push('--actors'); args.push(adminDid); }
             const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${args.join(' ')}`;

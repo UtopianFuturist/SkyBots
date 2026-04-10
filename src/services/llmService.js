@@ -12,17 +12,21 @@ export const persistentAgent = new https.Agent({ keepAlive: true });
 class LLMService {
   static lastRequestTime = 0;
 
-  async _throttle() {
+  async _throttle(priority = false) {
     const now = Date.now();
-    const timeSinceLast = now - LLMService.lastRequestTime;
-    const minDelay = 5000; // 5 seconds mandatory delay
+    const minDelay = priority ? 2000 : 5000;
 
-    if (timeSinceLast < minDelay) {
-      const waitTime = minDelay - timeSinceLast;
-      console.log(`[LLMService] Throttling request for ${waitTime}ms to space out calls...`);
+    // Calculate the earliest the next request can start
+    const targetStartTime = Math.max(now, LLMService.lastRequestTime + minDelay);
+
+    // Reserve this time slot immediately
+    LLMService.lastRequestTime = targetStartTime;
+
+    const waitTime = targetStartTime - now;
+    if (waitTime > 0) {
+      console.log(`[LLMService] Throttling (${priority ? 'priority' : 'background'}) - waiting ${waitTime}ms...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
-    LLMService.lastRequestTime = Date.now();
   }
 
   constructor() {

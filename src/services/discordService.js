@@ -45,6 +45,11 @@ class DiscordService {
             }
         });
 
+        // Perform login in the background to avoid blocking bot boot
+        this.loginLoop();
+    }
+
+    async loginLoop() {
         let attempts = 0;
         const maxAttempts = 5;
         while (attempts < maxAttempts) {
@@ -59,6 +64,7 @@ class DiscordService {
                 if (attempts < maxAttempts) await new Promise(r => setTimeout(r, 60000));
             }
         }
+        this.isInitializing = false;
     }
 
     async handleMessage(message) {

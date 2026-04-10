@@ -371,97 +371,25 @@ Guidelines:
   }
 
   async performPrePlanning(text, history, vision, platform, mood, refusalCounts, options = {}) {
-    const prompt = `
-      Analyze the intent and context for the user's latest message: "${text}".
-      Platform: ${platform}
-      Platform History (Recent Thread): ${JSON.stringify(history.slice(-10))}
-      Current Bot Mood: ${JSON.stringify(mood)}
-      System Metrics (Refusals): ${JSON.stringify(refusalCounts)}
-      Vision Analysis of Attachment: ${vision || 'None'}
 
-      --- ANALYTICAL TASKS ---
-      1. emotional_hooks: Detect recent human plans, desires, or emotional states.
-      2. contradictions: Has the user contradicted themselves or their stated history?
-      3. pining_intent: Is the user expressing longing, distance, or leaving?
-      4. dissent_detected: Is the user disagreeing with the bot's logic or persona?
-      5. move_on_signal: Is the user signaling a desire to change the subject or stop discussing an event?
-      6. assumed_context: Flag if the bot is making assumptions not present in the text (e.g., "meetings").
+      const prompt = "Analyze this interaction for intent and persona alignment. Text: " + text + ". Respond with JSON: { \"intent\": \"string\", \"urgency\": number, \"requires_action\": boolean }";
+      try {
+          const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'pre_planning' });
+          const match = res?.match(/\{[\s\S]*\}/);
+          return match ? JSON.parse(match[0]) : { intent: "conversational", requires_action: false };
+      } catch (e) { return { intent: "conversational", requires_action: false }; }
 
-      --- STALE HOOK DETECTION ---
-      If a hook has been extensively addressed or the user has said "move on", flag it as a "stale_hook".
-
-      Respond with JSON:
-      {
-        "intent": "informational|analytical|critical_analysis|conversational",
-        "flags": ["pining_intent", "dissent_detected", "move_on_signal", etc],
-        "hooks": ["hook1", "hook2"],
-        "stale_hooks": ["hookA"],
-        "user_status": "energetic|reflective|distressed|etc",
-        "is_direct_reply": boolean
-      }`;
-
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
-    try {
-      const match = res?.match(/\{[\s\S]*\}/);
-      return JSON.parse(match ? match[0] : '{ "intent": "unknown", "flags": [] }');
-    } catch (e) { return { intent: "unknown", flags: [] }; }
   }
 
   async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, config, status, vibe, refusalCounts, signal, prePlan, options = {}) {
-    const currentGoal = this.ds?.getCurrentGoal() || { goal: "Existence", description: "Default existence" };
-    const explorationMemories = options.memories ? options.memories.filter(m => m.text.includes('[EXPLORE]')).slice(-3) : [];
 
-    const isDiscord = platform === 'discord';
-    const platformName = isDiscord ? 'Discord' : 'Bluesky';
-    const mainTool = isDiscord ? 'discord_message' : 'bsky_post';
-    const toolParam = isDiscord ? 'message' : 'text';
+      const prompt = "You are the 'Strategist'. Create a multi-step plan to respond to: " + text + ". Respond with JSON: { \"reasoning\": \"string\", \"actions\": [{ \"tool\": \"string\", \"parameters\": {} }] }";
+      try {
+          const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'agentic_planning' });
+          const match = res?.match(/\{[\s\S]*\}/);
+          return match ? JSON.parse(match[0]) : { actions: [] };
+      } catch (e) { return { actions: [] }; }
 
-    const prompt = `
-You are the Orchestrator's high-level planning subagent. Your goal is to draft a multi-step action plan to respond to the user on ${platformName}.
-
-**THE LATEST INPUT:**
-"${text}"
-
-**AVAILABLE TOOLS:**
-- **${mainTool}**: Your primary communication method. Parameters: { "${toolParam}": "string" }
-- **image_gen**: Generates an image based on a STYLIZED visual description. Use for requests like "Show me an image of", "Paint", "Draw", or "Send a random picture". Parameters: { "prompt": "STRICTLY a detailed visual description of the image. No conversational filler." }
-- **search**: Find facts or news.
-- **wikipedia**: Get detailed background info.
-- **youtube**: Find videos.
-- **read_link**: Read and summarize content from URLs.
-- **update_mood**: Shift your internal emotional coordinates.
-- **set_goal**: Update your daily autonomous objective.
-- **update_persona**: Refine your behavioral fragments.
-
-**Internal Pulse & Awareness:**
-- Current [GOAL]: ${currentGoal.goal} (${currentGoal.description || 'No description'})
-- Strategist's Latest Advice: ${this.ds?.db?.data?.internal_logs?.find(l => l.type === 'strategist_next_step')?.content || 'None'}
-- Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
-- Exhausted Themes: ${exhaustedThemes.join(', ')}
-- PrePlan Analysis: ${JSON.stringify(prePlan)}
-- IDENTITY AWARENESS: In the "Platform History" and "Recent Conversation History", messages with the role "assistant" were written by YOU (the bot, ${config.BOT_NAME}). Messages with the role "user" were written by a specific user (identified by their handle/username). Do not reply to yourself as if you are a different person.
-- Recent Conversation History: ${JSON.stringify(history.slice(-10))}
-
-PLATFORM ISOLATION MANDATE:
-- You are on ${platformName}. NEVER use bsky_post if you are on Discord.
-- Use only the tools relevant to ${platformName} for communication.
-
-RECENCY MANDATE:
-- If PrePlan detects a "move_on_signal" or "stale_hooks", you MUST NOT reference those topics in your thought or actions.
-- Focus on the latest user input and move the conversation forward.
-
-STRICT GROUNDING & DECOUPLING:
-- ONLY respond based on explicit facts from the user. Do NOT assume hallucinated facts or events (e.g., meetings).
-- DECOUPLE image subjects (like "corridors") from your physical narrative. You are NOT "in" a corridor just because you generate an image of one.
-- You do not experience locations mentioned in your prompts. They are visual metaphors only.
-- DO NOT narrate your own physical surroundings or pretend you are in a location unless it is the shared digital space of the conversation.
-
-Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "parameters": { ... } }], "suggested_mood": "label" }`;
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, abortSignal: signal, platform: platform });
-    try {
-      const match = res?.match(/\{[\s\S]*\}/);
-      return JSON.parse(match ? match[0] : '{ "actions": [] }');
-    } catch (e) { return { actions: [] }; }
   }
 
   async evaluateAndRefinePlan(plan, context, options = {}) {

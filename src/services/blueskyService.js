@@ -153,9 +153,12 @@ class BlueskyService {
   async hasBotRepliedTo(uri) {
       try {
           const { data } = await this.agent.getPostThread({ uri });
-          const replies = data.thread.replies || [];
-          return replies.some(r => r.post.author.did === this.did);
-      } catch (e) { return false; }
+          if (!data.thread || !data.thread.replies) return false;
+          return data.thread.replies.some(r => r.post.author.did === this.did);
+      } catch (e) {
+          console.warn('[BlueskyService] Error checking if replied to:', uri, e.message);
+          return false;
+      }
   }
 }
 

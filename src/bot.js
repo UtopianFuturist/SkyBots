@@ -39,7 +39,7 @@ export class Bot {
         } catch (e) { console.error('[Bot] DataStore init failed:', e); }
 
         try {
-            this.readmeContent = await fs.readFileSync("README.md", "utf-8");
+            this.readmeContent = await fs.readFile("README.md", "utf-8");
         } catch (e) { console.warn('[Bot] README.md not found'); }
 
         try {

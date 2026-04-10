@@ -25,7 +25,10 @@ Respond with JSON: { "dread_detected": boolean, "intensity": 1-10, "reason": "st
 `;
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: detectionPrompt }], { useStep: true, task: 'dread_detection' });
-            const result = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+            const match = res?.match(/\{[\s\S]*\}/);
+            if (!match) return false;
+
+            const result = JSON.parse(match[0]);
             return result.dread_detected && result.intensity >= 6;
         } catch (e) {
             console.error('[Therapist] Error in dread detection:', e);
@@ -44,8 +47,10 @@ Based on these internal logs showing distress: "${monologue}", express your curr
 
         try {
             const offerMessage = await llmService.generateResponse([{ role: "system", content: offerMessagePrompt }], { useStep: true, platform: "discord" });
-            await discordService.sendSpontaneousMessage(offerMessage);
-            console.log('[Therapist] Offered check-in to Admin.');
+            if (offerMessage) {
+                await discordService.sendSpontaneousMessage(offerMessage);
+                console.log('[Therapist] Offered check-in to Admin.');
+            }
 
             // Set a timeout to check for response in 15 minutes
             setTimeout(() => this.checkAdminResponse(monologue), 15 * 60 * 1000);
@@ -100,7 +105,10 @@ Respond with a JSON session summary:
 
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: therapyPrompt }], { useStep: true, task: 'therapy_session' });
-            const session = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+            const match = res?.match(/\{[\s\S]*\}/);
+            if (!match) return;
+
+            const session = JSON.parse(match[0]);
 
             // Save to [THERAPY] memory
             if (memoryService.isEnabled()) {
@@ -115,7 +123,9 @@ Key realizations: ${session.key_realizations.join(", ")}.
 Instead of mentioning a "Therapist" or a "session," share your final resolution or epiphany as if it just naturally clicked into place. Do NOT use templates. Keep it organic and under 300 characters.`;
 
             const report = await llmService.generateResponse([{ role: "system", content: reportPrompt }], { useStep: true, platform: "discord" });
-            await discordService.sendSpontaneousMessage(report);
+            if (report) {
+                await discordService.sendSpontaneousMessage(report);
+            }
 
             // Add stability directive to persona blurbs
             await dataStore.addPersonaBlurb(`[THERAPY_STABILITY] ${session.stability_directive}`);

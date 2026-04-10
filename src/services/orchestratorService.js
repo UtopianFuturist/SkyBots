@@ -596,14 +596,19 @@ You are deciding what to share with your followers.\nAnalyze memories: ${memorie
     }
 
     async performNewsroomUpdate() {
+        console.log('[Orchestrator] Running Newsroom update...');
         try {
             const brief = await newsroomService.getDailyBrief(dataStore.getDeepKeywords());
-            if (brief.new_keywords?.length > 0) {
-                const current = dataStore.getDeepKeywords();
-                await dataStore.setDeepKeywords([...new Set([...current, ...brief.new_keywords])].slice(-50));
+            if (brief && brief.brief) {
+                if (brief.new_keywords?.length > 0) {
+                    const current = dataStore.getDeepKeywords();
+                    await dataStore.setDeepKeywords([...new Set([...current, ...brief.new_keywords])].slice(-50));
+                }
+
+                await memoryService.createMemoryEntry('explore', `[NEWSROOM] ${brief.brief}`);
+                await introspectionService.performAAR("newsroom_update", brief.brief, { success: true });
             }
-            await introspectionService.performAAR("newsroom_update", brief.brief, { success: true });
-        } catch (e) {}
+        } catch (e) { console.error('[Orchestrator] Newsroom update error:', e); }
     }
 
     async performSelfReflection() {

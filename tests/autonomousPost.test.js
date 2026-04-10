@@ -178,7 +178,7 @@ describe('Bot Autonomous Posting', () => {
     blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
 
     await bot.performAutonomousPost();
-    expect(blueskyService.post).toHaveBeenCalledWith('Deep thought about existence.', null, { maxChunks: 4 });
+    expect(blueskyService.post).toHaveBeenCalledWith('Deep thought about existence.');
   });
 
   it('should skip autonomous post if daily limits are reached', async () => {
@@ -213,7 +213,7 @@ describe('Bot Autonomous Posting', () => {
     await bot.performAutonomousPost();
 
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Daily image limit reached. Forcing choice to text.'));
-    expect(blueskyService.post).toHaveBeenCalledWith('Thought.', null, expect.any(Object));
+    expect(blueskyService.post).toHaveBeenCalledWith('Thought.');
     consoleSpy.mockRestore();
   });
 

@@ -161,7 +161,6 @@ class OrchestratorService {
         }
 
         try {
-            const profile = await blueskyService.getProfile(config.BLUESKY_IDENTIFIER);
             const currentMood = dataStore.getMood();
             const dConfig = dataStore.getConfig() || {};
             const postTopics = (dConfig.post_topics || []).filter(Boolean);
@@ -232,7 +231,7 @@ Generate a ${pollResult.mode} post about: "${topic}". Follow ANTI-SLOP MANDATE. 
                 if (coherence.score >= 5) {
                     if (await this._maybePivotToDiscord(content)) return;
 
-                    const result = await blueskyService.post(content, null, { maxChunks: 4 });
+                    const result = await blueskyService.post(content);
                     if (result) {
                         await dataStore.incrementDailyTextPosts();
                         await dataStore.incrementTextPostsSinceLastImage();

@@ -334,8 +334,7 @@ export class Bot {
             const adminDid = dataStore.getAdminDid();
             let scriptPath = path.resolve(process.cwd(), 'firehose_monitor.py');
             if (!(await fs.access(scriptPath).then(() => true).catch(() => false))) scriptPath = path.resolve(process.cwd(), '..', 'firehose_monitor.py');
-            const args = [scriptPath, '--keywords', keywords.join(','), '--did', blueskyService.agent?.session?.did || ''];
-            if (adminDid) { args.push('--actors'); args.push(adminDid); }
+            const firehoseActors = [blueskyService.agent?.session?.did, adminDid].filter(Boolean).join(','); const args = [scriptPath, '--keywords', keywords.join(','), '--actors', firehoseActors];
             const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${args.join(' ')}`;
             const child = spawn(command, { shell: true });
             child.stdout.on('data', async (data) => {

@@ -1,4 +1,4 @@
-import { Client, GatewayIntentBits, AttachmentBuilder } from 'discord.js';
+import { Client, GatewayIntentBits, Partials, AttachmentBuilder } from 'discord.js';
 import config from '../../config.js';
 import { llmService } from './llmService.js';
 import { dataStore } from './dataStore.js';
@@ -25,6 +25,7 @@ class DiscordService {
 
         console.log('[DiscordService] Starting initialization...');
         this.client = new Client({
+            partials: [Partials.Channel, Partials.Message, Partials.Reaction],
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
@@ -61,6 +62,8 @@ class DiscordService {
                 return;
             } catch (err) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
+                console.error(`[DiscordService] Error stack:`, err.stack);
+                console.error(`[DiscordService] Full Error:`, err);
                 if (attempts < maxAttempts) await new Promise(r => setTimeout(r, 60000));
             }
         }

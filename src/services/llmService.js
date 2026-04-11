@@ -24,7 +24,7 @@ class LLMService {
 
     const waitTime = targetStartTime - now;
     if (waitTime > 0) {
-      console.log(`[LLMService] Throttling (${priority ? 'priority' : 'background'}) - waiting ${waitTime}ms...`);
+      // console.log(`[LLMService] Throttling (${priority ? 'priority' : 'background'}) - waiting ${waitTime}ms...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
   }
@@ -264,7 +264,7 @@ Guidelines:
                   await new Promise(resolve => setTimeout(resolve, delay - timeSinceLast));
               }
               LLMService.lastRequestTime = Date.now();
-              console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
+              // console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
               const fullMessages = this._prepareMessages(messages, systemPrompt, options);
 
               // Per-model timeouts to prevent hanging on unresponsive endpoints
@@ -287,6 +287,7 @@ Guidelines:
                 timeout: modelTimeout
               });
               if (!response.ok) {
+                  console.error(`[LLMService] Model ${model} failed with status ${response.status}`);
                   const errorText = await response.text();
                   console.warn(`[LLMService] Model ${model} failed (HTTP ${response.status}): ${errorText.substring(0, 100)}`);
                   if (response.status === 429 || response.status >= 500) {

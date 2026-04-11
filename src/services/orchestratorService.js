@@ -276,10 +276,12 @@ Generate a ${pollResult.mode} post about: "${topic}". Follow ANTI-SLOP MANDATE. 
         if (res?.toLowerCase().includes("personal")) {
             console.log("[Orchestrator] Pivot: Personal post detected. Sending to Discord.");
             const admin = await discordService.getAdminUser();
-            if (admin) {
+            if (admin && discordService.status === "online") {
                 await discordService._send(admin, text);
                 await dataStore.saveDiscordInteraction(`dm-${admin.id}`, 'assistant', text);
                 return true;
+            } else {
+                console.warn("[Orchestrator] Pivot failed: Discord is offline or admin not found. Continuing as public post.");
             }
         }
         return false;

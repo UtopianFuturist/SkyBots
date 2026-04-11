@@ -36,12 +36,12 @@ async def main():
 
     keywords = []
     if args.keywords:
-        keywords = [k.strip().lower() for k in args.keywords.split('|') if k.strip()]
+        keywords = [k.strip().lower() for k in args.keywords.split(',') if k.strip()]
         print(f"Monitoring firehose for keywords: {keywords}", file=sys.stderr)
 
     negatives = []
     if args.negatives:
-        negatives = [k.strip().lower() for k in args.negatives.split('|') if k.strip()]
+        negatives = [k.strip().lower() for k in args.negatives.split(',') if k.strip()]
         print(f"Filtering out negative keywords: {negatives}", file=sys.stderr)
 
     actors = []

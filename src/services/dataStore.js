@@ -228,7 +228,7 @@ class DataStore {
   getActivityDecayRules() { return this.db.data.activity_decay_rules || {}; }
   async setActivityDecayRules(rules) { this.db.data.activity_decay_rules = rules; await this.write(); }
   isResting() { return false; }
-  getDeepKeywords() { return this.db.data.post_topics || []; }
+  getDeepKeywords() { const topics = this.db.data.post_topics || []; if (topics.length === 0) return (config.POST_TOPICS || '').split(',').filter(Boolean); return topics; }
   async setDeepKeywords(k) { this.db.data.post_topics = k; await this.write(); }
   async addRecentThought(platform, thought) { this.db.data.recent_thoughts.push({ platform, content: thought, timestamp: Date.now() }); if (this.db.data.recent_thoughts.length > 50) this.db.data.recent_thoughts.shift(); await this.write(); }
   getRecentThoughts() { return this.db.data.recent_thoughts || []; }

@@ -9,7 +9,7 @@ class DiscordService {
     constructor() {
         this.isEnabled = !!config.DISCORD_BOT_TOKEN;
         this.token = config.DISCORD_BOT_TOKEN;
-        this.adminName = config.ADMIN_DISCORD_NAME;
+        this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
         this.nickname = config.BOT_NAME || 'Sydney';
         this.isResponding = false;
@@ -56,19 +56,26 @@ class DiscordService {
         while (attempts < maxAttempts) {
             attempts++;
             try {
-                console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
-                const loginPromise = this.client.login(this.token); const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 45s")), 45000)); await Promise.race([loginPromise, timeoutPromise]);
-                console.log(`[DiscordService] Login successful! Client ready status: ${this.client.isReady()}`);
+                console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts} using token prefix: ${this.token ? this.token.substring(0, 10) : 'NONE'}...`);
+                const loginPromise = this.client.login(this.token);
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 90s")), 90000));
+
+                await Promise.race([loginPromise, timeoutPromise]);
+
+                console.log(`[DiscordService] SUCCESS: Login complete! Client status: ${this.client?.isReady() ? 'READY' : 'NOT READY'}`);
                 this.isInitializing = false;
                 return;
             } catch (err) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
-                console.error(`[DiscordService] Error stack:`, err.stack);
-                console.error(`[DiscordService] Full Error:`, err);
-                if (attempts < maxAttempts) await new Promise(r => setTimeout(r, 60000));
+                if (err.stack) console.error(`[DiscordService] Stack:`, err.stack);
+                if (attempts < maxAttempts) {
+                    console.log(`[DiscordService] Waiting 60s before retry...`);
+                    await new Promise(r => setTimeout(r, 60000));
+                }
             }
         }
         this.isInitializing = false;
+        console.error('[DiscordService] FATAL: All login attempts failed.');
     }
 
     async handleMessage(message) {

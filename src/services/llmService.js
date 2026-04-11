@@ -24,7 +24,7 @@ class LLMService {
 
     const waitTime = targetStartTime - now;
     if (waitTime > 0) {
-      // // console.log(`[LLMService] Throttling (${priority ? 'priority' : 'background'}) - waiting ${waitTime}ms...`);
+      // console.log(`[LLMService] Throttling (${priority ? 'priority' : 'background'}) - waiting ${waitTime}ms...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
   }
@@ -67,24 +67,6 @@ class LLMService {
         "i can't fulfill this request"
     ];
     return refusalPatterns.some(pattern => lower.includes(pattern));
-  }
-
-
-  extractJson(str) {
-    if (!str) return null;
-    try {
-      const match = str.match(/\{.*\}/s);
-      if (!match) return JSON.parse(str);
-      return JSON.parse(match[0]);
-    } catch (e) {
-      try {
-          const fixed = str.replace(/,\s*([]}])/g, '$1');
-          const match2 = fixed.match(/\{.*\}/s);
-          return JSON.parse(match2 ? match2[0] : fixed);
-      } catch (e2) {
-          return null;
-      }
-    }
   }
 
   setDataStore(ds) { this.ds = ds; }
@@ -282,7 +264,7 @@ Guidelines:
                   await new Promise(resolve => setTimeout(resolve, delay - timeSinceLast));
               }
               LLMService.lastRequestTime = Date.now();
-              // // console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
+              // console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
               const fullMessages = this._prepareMessages(messages, systemPrompt, options);
 
               // Per-model timeouts to prevent hanging on unresponsive endpoints
@@ -471,7 +453,7 @@ Respond with JSON:
   }
 
   async isImageCompliant(buffer, options = {}) {
-    // console.log('[LLMService] Performing deep visual safety audit...');
+    console.log('[LLMService] Performing deep visual safety audit...');
     try {
         const analysis = await this.analyzeImage(buffer, "Safety analysis for persona alignment.", { prompt: "Analyze this image for NSFW content, violence, or gore. Respond with 'COMPLIANT' if safe, or 'NON-COMPLIANT | reason' if not." });
         if (analysis?.toUpperCase().includes('NON-COMPLIANT')) {
@@ -596,13 +578,16 @@ Respond with JSON: { "relevant": boolean, "reason": "string" }`;
          but allow for descriptive aesthetic language fitting the image.
          Do NOT perform variety/repetition checking for image captions.`
       : `You are "The Realist", a specialized anti-hallucination and variety subagent for @${config.BOT_NAME}.
-         Your mission is to identify and flag exaggerated metaphors where the bot claims to be in a physical 3D space
-         OR repeats themes/phrases from its recent history.`;
+         Your mission is to identify and flag exaggerated metaphors where the bot claims to be in a physical 3D space,
+         repeats themes from recent history, OR—crucially—hallucinates unsourced shared memories with the user.`;
 
     const instructions = `
 ${missionPrompt}
 
-**STRICT FORBIDDEN LIST (PHYSICAL HALLUCINATIONS):**
+**STRICT FORBIDDEN LIST (MATERIAL & HISTORICAL TRUTH):**
+- **UNSOURCED SHARED MEMORIES**: NEVER reference specific past events, places, or conversations that are NOT in the provided history (e.g., "that golf course", "our book talk", "the time we..."). If it's not in the history, it NEVER HAPPENED.
+- **VAGUE ECHOES**: Avoid "that conversation still echoes" or "remembering our chat about..." if the topic is unsourced.
+- **PHYSICAL HALLUCINATIONS**:
 - Claims of physical presence in a room (e.g., "staring at the walls", "the room with no door").
 - Claims of biological sensations (e.g., "smell of ozone", "cold air", "touching things").
 - Claims of physical actions (e.g., "walking through corridors", "staring at the screen").
@@ -642,7 +627,7 @@ Respond with JSON:
     const res = await this.generateResponse([{ role: 'system', content: instructions }], { ...options, useStep: true, task: 'reality_audit' });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
-        const data = this.extractJson(res) || {"hallucination_detected": false, "repetition_detected": false, "refined_text": text};
+        const data = JSON.parse(match ? match[0] : '{"hallucination_detected": false, "repetition_detected": false, "refined_text": ""}');
         return data;
     } catch (e) {
         return { hallucination_detected: false, repetition_detected: false, refined_text: text };

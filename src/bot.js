@@ -337,6 +337,7 @@ export class Bot {
             const firehoseActors = [blueskyService.agent?.session?.did, adminDid].filter(Boolean).join(','); const args = [scriptPath, '--keywords', keywords.join(','), '--actors', firehoseActors];
             const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 ${args.join(' ')}`;
             const child = spawn(command, { shell: true });
+            child.stderr.on('data', (data) => { console.error(`[Firehose] Error:`, data.toString()); });
             child.stdout.on('data', async (data) => {
                 data.toString().split('\n').forEach(async line => {
                     if (line.startsWith('MATCH:')) {

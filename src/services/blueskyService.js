@@ -149,43 +149,77 @@ class BlueskyService {
   }
 
   async getUserPosts(actor, limit = 20) {
-    try {
-      const { data } = await this.agent.getAuthorFeed({ actor, limit });
-      return data.feed;
-    } catch (error) {
-      console.error(`[BlueskyService] Error fetching posts for ${actor}:`, error);
-      return [];
+    let attempts = 0;
+    const maxAttempts = 2;
+    while (attempts < maxAttempts) {
+        attempts++;
+        try {
+            const { data } = await this.agent.getAuthorFeed({ actor, limit });
+            return data.feed;
+        } catch (error) {
+            const isUpstream = error.status === 502 || error.status === 503;
+            if (isUpstream && attempts < maxAttempts) {
+                await new Promise(r => setTimeout(r, 1000 * attempts));
+                continue;
+            }
+            console.error(`[BlueskyService] Error fetching posts for ${actor}:`, error.message || error);
+            return [];
+        }
     }
+    return [];
   }
 
   async getTimeline(limit = 30) {
     if (!this.did) return { data: { feed: [] } };
-    try {
-      return await this.agent.getTimeline({ limit });
-    } catch (e) {
-      console.error('[BlueskyService] Error fetching timeline:', e);
-      return { data: { feed: [] } };
+    let attempts = 0;
+    const maxAttempts = 2;
+    while (attempts < maxAttempts) {
+        attempts++;
+        try {
+            return await this.agent.getTimeline({ limit });
+        } catch (e) {
+            const isUpstream = e.status === 502 || e.status === 503;
+            if (isUpstream && attempts < maxAttempts) {
+                await new Promise(r => setTimeout(r, 1000 * attempts));
+                continue;
+            }
+            console.error('[BlueskyService] Error fetching timeline:', e.message || e);
+            return { data: { feed: [] } };
+        }
     }
+    return { data: { feed: [] } };
   }
 
   /**
    * Enhanced searchPosts to handle both object options and legacy positional arguments.
    */
   async searchPosts(query, optionsOrSort = {}, limit = 20) {
-      try {
-          let params = { q: query };
-          if (typeof optionsOrSort === 'string') {
-              params.sort = optionsOrSort;
-              params.limit = limit;
-          } else {
-              Object.assign(params, optionsOrSort);
+      let attempts = 0;
+      const maxAttempts = 3;
+      while (attempts < maxAttempts) {
+          attempts++;
+          try {
+              let params = { q: query };
+              if (typeof optionsOrSort === 'string') {
+                  params.sort = optionsOrSort;
+                  params.limit = limit;
+              } else {
+                  Object.assign(params, optionsOrSort);
+              }
+              const { data } = await this.agent.app.bsky.feed.searchPosts(params);
+              return data.posts;
+          } catch (e) {
+              const isUpstreamError = e.status === 502 || e.status === 503 || e.message?.includes('Upstream');
+              if (isUpstreamError && attempts < maxAttempts) {
+                  console.warn(`[BlueskyService] Upstream error (502/503) searching posts. Retry ${attempts}/${maxAttempts}...`);
+                  await new Promise(r => setTimeout(r, 2000 * attempts));
+                  continue;
+              }
+              console.error('[BlueskyService] Error searching posts:', e.message || e);
+              return [];
           }
-          const { data } = await this.agent.app.bsky.feed.searchPosts(params);
-          return data.posts;
-      } catch (e) {
-          console.error('[BlueskyService] Error searching posts:', e);
-          return [];
       }
+      return [];
   }
 
   async uploadBlob(data, encoding) {

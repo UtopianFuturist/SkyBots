@@ -24,7 +24,7 @@ class LLMService {
 
     const waitTime = targetStartTime - now;
     if (waitTime > 0) {
-      // console.log(`[LLMService] Throttling (${priority ? 'priority' : 'background'}) - waiting ${waitTime}ms...`);
+      // // console.log(`[LLMService] Throttling (${priority ? 'priority' : 'background'}) - waiting ${waitTime}ms...`);
       await new Promise(resolve => setTimeout(resolve, waitTime));
     }
   }
@@ -69,6 +69,24 @@ class LLMService {
     return refusalPatterns.some(pattern => lower.includes(pattern));
   }
 
+
+  extractJson(str) {
+    if (!str) return null;
+    try {
+      const match = str.match(/\{.*\}/s);
+      if (!match) return JSON.parse(str);
+      return JSON.parse(match[0]);
+    } catch (e) {
+      try {
+          const fixed = str.replace(/,\s*([]}])/g, '$1');
+          const match2 = fixed.match(/\{.*\}/s);
+          return JSON.parse(match2 ? match2[0] : fixed);
+      } catch (e2) {
+          return null;
+      }
+    }
+  }
+
   setDataStore(ds) { this.ds = ds; }
   setMemoryProvider(mp) { this.memoryProvider = mp; }
   setIdentities(admin, bot) { this.adminDid = admin; this.botDid = bot; }
@@ -107,7 +125,7 @@ Respond with JSON: { "detected": boolean, "timezone": "string (e.g. America/New_
       const data = JSON.parse(match ? match[0] : '{ "detected": false }');
       if (data.detected && data.timezone && this.ds) {
         await this.ds.setAdminTimezone(data.timezone, data.offset_minutes || 0);
-        console.log(`[LLMService] Updated Admin timezone: ${data.timezone} (offset: ${data.offset_minutes})`);
+        // console.log(`[LLMService] Updated Admin timezone: ${data.timezone} (offset: ${data.offset_minutes})`);
       }
       return data;
     } catch (e) { return { detected: false }; }
@@ -241,7 +259,7 @@ Guidelines:
         const isHighLatencyModel = !isStepModel && (model.includes('qwen') || model.includes('llama') || model.includes('deepseek'));
 
         if (isHighLatencyModel && options.platform === 'discord') {
-            console.log(`[LLMService] Skipping high-latency fallback (${model}) for Discord priority request.`);
+            // console.log(`[LLMService] Skipping high-latency fallback (${model}) for Discord priority request.`);
             continue;
         }
 
@@ -264,7 +282,7 @@ Guidelines:
                   await new Promise(resolve => setTimeout(resolve, delay - timeSinceLast));
               }
               LLMService.lastRequestTime = Date.now();
-              // console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
+              // // console.log(`[LLMService] Requesting response from ${model} (Attempt ${attempts})...`);
               const fullMessages = this._prepareMessages(messages, systemPrompt, options);
 
               // Per-model timeouts to prevent hanging on unresponsive endpoints
@@ -453,7 +471,7 @@ Respond with JSON:
   }
 
   async isImageCompliant(buffer, options = {}) {
-    console.log('[LLMService] Performing deep visual safety audit...');
+    // console.log('[LLMService] Performing deep visual safety audit...');
     try {
         const analysis = await this.analyzeImage(buffer, "Safety analysis for persona alignment.", { prompt: "Analyze this image for NSFW content, violence, or gore. Respond with 'COMPLIANT' if safe, or 'NON-COMPLIANT | reason' if not." });
         if (analysis?.toUpperCase().includes('NON-COMPLIANT')) {
@@ -483,7 +501,7 @@ Respond with JSON:
   }
 
   async analyzeImage(bufferOrUrl, topic, options = {}) {
-      console.log(`[LLMService] Analyzing image for topic: ${topic}...`);
+      // console.log(`[LLMService] Analyzing image for topic: ${topic}...`);
       // Simulating a deep vision request
       const prompt = options.prompt || `Provide a detailed vision analysis of this image. What do you see? Match it against the context of: "${topic}". Identify styles, objects, and emotional resonance.`;
       return await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true, task: 'vision_analysis' });
@@ -624,7 +642,7 @@ Respond with JSON:
     const res = await this.generateResponse([{ role: 'system', content: instructions }], { ...options, useStep: true, task: 'reality_audit' });
     try {
         const match = res?.match(/\{[\s\S]*\}/);
-        const data = JSON.parse(match ? match[0] : '{"hallucination_detected": false, "repetition_detected": false, "refined_text": ""}');
+        const data = this.extractJson(res) || {"hallucination_detected": false, "repetition_detected": false, "refined_text": text};
         return data;
     } catch (e) {
         return { hallucination_detected: false, repetition_detected: false, refined_text: text };

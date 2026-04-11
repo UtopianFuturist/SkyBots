@@ -57,7 +57,8 @@ class DiscordService {
             attempts++;
             try {
                 console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
-                await this.client.login(this.token);
+                const loginPromise = this.client.login(this.token); const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 45s")), 45000)); await Promise.race([loginPromise, timeoutPromise]);
+                console.log(`[DiscordService] Login successful! Client ready status: ${this.client.isReady()}`);
                 this.isInitializing = false;
                 return;
             } catch (err) {

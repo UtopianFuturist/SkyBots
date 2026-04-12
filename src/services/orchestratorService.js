@@ -224,7 +224,7 @@ Respond with JSON: {"choice": "image"|"text", "mode": "string", "reason": "..."}
 Generate a ${pollResult.mode} post about: "${topic}". Follow ANTI-SLOP MANDATE. Respond with post content only.`;
                 let content = await llmService.generateResponse([{ role: "user", content: draftPrompt }], { platform: "bluesky", useStep: true });
 
-                const realityAudit = await llmService.performRealityAudit(content, {}, { platform: "bluesky", history: dataStore.getRecentInteractions("bluesky", 10) });
+                const realityAudit = await llmService.performRealityAudit(content, {}, { platform: "bluesky", history: dataStore.getRecentInteractions("bluesky", 25) });
                 if (realityAudit.hallucination_detected || realityAudit.repetition_detected) content = realityAudit.refined_text;
 
                 const coherence = await llmService.isAutonomousPostCoherent(topic, content, [], null);
@@ -304,7 +304,7 @@ Generate a ${pollResult.mode} post about: "${topic}". Follow ANTI-SLOP MANDATE. 
     }
 
     async getUnifiedContext() {
-        const history = await dataStore.getRecentInteractions("bluesky", 10);
+        const history = await dataStore.getRecentInteractions("bluesky", 25);
         const goals = dataStore.getCurrentGoal();
         const mood = dataStore.getMood();
         return { history, goals, mood };
@@ -667,7 +667,7 @@ Respond with JSON: {"approved": boolean, "final_shift": "string", "reasoning": "
 
         if (dataStore.isResting()) return;
         try {
-            const history = await dataStore.getRecentInteractions("bluesky", 10);
+            const history = await dataStore.getRecentInteractions("bluesky", 25);
             const impulse = await llmService.performImpulsePoll(history, { mood: dataStore.getMood() });
             if (impulse?.impulse_detected) this.addTaskToQueue(() => this.performAutonomousPost(), "autonomous_post_spontaneous");
         } catch (e) {}

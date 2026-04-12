@@ -226,10 +226,10 @@ Guidelines:
     // Step 3.5 Flash is now the primary model for everything except browser use (coder) tasks
     let models;
     if (options.useCoder) {
-        models = [...new Set([config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL].filter(Boolean))];
+        models = [...new Set([config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL, 'deepseek-ai/deepseek-v3'].filter(Boolean))];
     } else {
         // Try Flash first. Strictly avoid CODER_MODEL (Qwen) for conversational tasks as it is prone to persona refusals.
-        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL].filter(Boolean))];
+        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL, 'z-ai/glm-4-9b-chat', 'deepseek-ai/deepseek-v3'].filter(Boolean))];
     }
 
     let lastError = null;
@@ -238,7 +238,7 @@ Guidelines:
     for (const model of models) {
         // Circuit Breaker: Skip high-latency models if we've had recent timeouts and aren't forcing 'Deep' reasoning
         const isStepModel = model === config.STEP_MODEL;
-        const isHighLatencyModel = !isStepModel && (model.includes('qwen') || model.includes('llama') || model.includes('deepseek'));
+        const isHighLatencyModel = !isStepModel && (model.includes('qwen') || model.includes('llama') || model.includes('deepseek') || model.includes('glm'));
 
         if (isHighLatencyModel && options.platform === 'discord') {
             // console.log(`[LLMService] Skipping high-latency fallback (${model}) for Discord priority request.`);

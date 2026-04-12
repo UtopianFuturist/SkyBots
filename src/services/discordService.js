@@ -29,7 +29,7 @@ class DiscordService {
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
-                GatewayIntentBits.DirectMessages,
+                GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent
             ]
         });
@@ -58,7 +58,7 @@ class DiscordService {
             try {
                 console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts} using token prefix: ${this.token ? this.token.substring(0, 10) : 'NONE'}...`);
                 const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 90s")), 90000));
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 120s")), 120000));
 
                 await Promise.race([loginPromise, timeoutPromise]);
 
@@ -134,7 +134,7 @@ class DiscordService {
             }
         }
 
-        let history = await this.fetchAdminHistory(20);
+        let history = await this.fetchAdminHistory(30);
         await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
 
         const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
@@ -214,7 +214,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}
                 return;
             }
 
-            const history = await this.fetchAdminHistory(20);
+            const history = await this.fetchAdminHistory(30);
             const contextData = {
                 mood: dataStore.getMood().label,
                 goal: dataStore.getCurrentGoal().goal,

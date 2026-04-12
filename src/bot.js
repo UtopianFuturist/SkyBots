@@ -98,17 +98,6 @@ export class Bot {
         console.log(`[Bot] Executing tool: ${action.tool}`, params);
 
         try {
-            if (['bsky_post', 'discord_message'].includes(action.tool)) {
-                const textToEdit = params.text || params.message || query;
-                if (textToEdit) {
-                    const edit = await llmService.performEditorReview(textToEdit, context.platform || 'bluesky');
-                    if (edit.decision === 'retry') await dataStore.addSessionLesson(`Editor refinement: ${edit.criticism}`);
-                    query = edit.refined_text;
-                    if (params.text) params.text = query;
-                    if (params.message) params.message = query;
-                }
-            }
-
             if (action.tool === "bsky_post") {
                 if (context.platform === 'discord') return { success: false, reason: "Cross-platform posting blocked" };
                 let result = context.uri ? await blueskyService.postReply(context, params.text || query) : await blueskyService.post(params.text || query, params.reply_to, { maxChunks: params.maxChunks || 4 });
@@ -167,7 +156,6 @@ export class Bot {
                 return { success: false };
             }
             if (action.tool === "get_admin_time_context") {
-                const { temporalService } = await import("./services/temporalService.js");
                 return { success: true, data: await temporalService.getEnhancedTemporalContext() };
             }
             if (action.tool === "check_internal_state") {
@@ -179,64 +167,7 @@ export class Bot {
                 };
                 return { success: true, data: state };
             }
-            if (action.tool === "list_persona_blurbs") {
-                return { success: true, data: dataStore.getPersonaBlurbs() };
-            }
-            if (action.tool === "audit_persona_blurbs") {
-                await orchestratorService.performPersonaAudit();
-                return { success: true, message: "Persona audit triggered." };
-            }
-            if (action.tool === "internal_inquiry") {
-                const res = await llmService.generateResponse([{ role: 'system', content: `Internal inquiry: ${query}` }], { useStep: true });
-                return { success: true, data: res };
-            }
-            if (action.tool === "mutate_style") {
-                await dataStore.addLinguisticMutation(params.lens || query, "Manual style mutation");
-                return { success: true, lens: params.lens || query };
-            }
-            if (action.tool === "read_link") {
-                const { webReaderService } = await import("./services/webReaderService.js");
-                const urls = Array.isArray(params.urls) ? params.urls : [params.url || query];
-                const results = [];
-                for (const url of urls.filter(Boolean)) {
-                    results.push(await webReaderService.read(url));
-                }
-                return { success: true, data: results };
-            }
-            if (action.tool === "moltbook_post") {
-                const result = await moltbookService.post(params.content || query, params.title, params.submolt);
-                return { success: !!result, data: result };
-            }
-            if (action.tool === "get_social_history") {
-                const history = await socialHistoryService.getRecentSocialContext(params.limit || 15);
-                return { success: true, data: history };
-            }
-            if (action.tool === "update_mood") {
-                await dataStore.setMood({
-                    valence: params.valence,
-                    arousal: params.arousal,
-                    stability: params.stability,
-                    label: params.label || "Dynamic"
-                });
-                return { success: true };
-            }
-            if (action.tool === "anchor_stability") {
-                await dataStore.setMood({ valence: 0, arousal: 0, stability: 1, label: "Stable" });
-                return { success: true };
-            }
-            if (action.tool === "decompose_goal") {
-                const res = await llmService.generateResponse([{ role: 'system', content: `Decompose this goal into sub-tasks: ${params.goal || query}` }], { useStep: true });
-                return { success: true, data: res };
-            }
-            if (action.tool === "vision_model") {
-                const res = await llmService.analyzeImage(params.image_url, params.focus || "General analysis");
-                return { success: true, data: res };
-            }
-            if (action.tool === "search_firehose") {
-                const matches = dataStore.getFirehoseMatches(20).filter(m => m.text.toLowerCase().includes(query.toLowerCase()));
-                return { success: true, data: matches };
-            }
-            if (action.tool === "get_render_logs") {
+            if (action.tool === "read_logs") {
                 const logs = await renderService.getLogs(params.limit || 100);
                 return { success: true, data: logs };
             }
@@ -250,6 +181,7 @@ export class Bot {
                 return { success: true, data: positive.slice(0, 5) };
             }
             if (action.tool === "find_image") {
+                const { googleSearchService } = await import("./services/googleSearchService.js");
                 const res = await googleSearchService.findImage(query);
                 return { success: true, data: res };
             }
@@ -271,7 +203,7 @@ export class Bot {
         try {
             const topicPrompt = `Identify a visual subject for: "${topic}". JSON: {"topic": "label", "prompt": "stylized artistic prompt (max 270 chars)"}`;
             const res = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
-            const data = JSON.parse(res.match(/\{[\s\S]*\}/)[0]);
+            const data = llmService.extractJson(res);
             const result = await imageService.generateImage(data.prompt, options);
             if (!result) return null;
             const compliance = await llmService.isImageCompliant(result.buffer);
@@ -330,23 +262,48 @@ export class Bot {
     async startFirehose() {
         console.log('[Bot] Starting Firehose monitor...');
         try {
-            const keywords = dataStore.getDeepKeywords();
+            const rawKeywords = dataStore.getDeepKeywords();
+            const keywords = rawKeywords.map(k => k.replace(/[\\r\\n]/g, ' ').trim()).filter(Boolean);
             const adminDid = dataStore.getAdminDid();
             let scriptPath = path.resolve(process.cwd(), 'firehose_monitor.py');
             if (!(await fs.access(scriptPath).then(() => true).catch(() => false))) scriptPath = path.resolve(process.cwd(), '..', 'firehose_monitor.py');
             const firehoseActors = [blueskyService.agent?.session?.did, adminDid].filter(Boolean).join(',');
-            const keywordsStr = keywords.join(',').replace(/"/g, '\\"');
-            const command = `python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv && python3 "${scriptPath}" --keywords "${keywordsStr}" --actors "${firehoseActors}"`;
-            const child = spawn(command, { shell: true });
+            const keywordsStr = keywords.join(',');
+
+            // Run pip install pre-step as separate process
+            await new Promise((resolve) => {
+                exec('python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv', () => resolve());
+            });
+
+            // Use array-based spawn (NO shell: true) to prevent shell interpretation of keywords
+            const child = spawn('python3', [scriptPath, '--keywords', keywordsStr, '--actors', firehoseActors]);
+
+            child.stderr.on('data', (data) => {
+                const msg = data.toString();
+                if (msg.includes('Error') || msg.includes('unrecognized arguments') || msg.includes('not found')) {
+                    console.error('[Firehose] Error:', msg);
+                }
+            });
+
             child.stdout.on('data', async (data) => {
                 data.toString().split('\n').forEach(async line => {
-                    if (line.startsWith('MATCH:')) {
-                        try { const match = JSON.parse(line.substring(6)); await dataStore.addInternalLog("firehose_match", match); } catch (e) {}
+                    if (line.startsWith('MATCH:') || line.trim().startsWith('{')) {
+                        try {
+                            const jsonStr = line.startsWith('MATCH:') ? line.substring(6) : line;
+                            const match = JSON.parse(jsonStr);
+                            await dataStore.addInternalLog("firehose_match", match);
+                        } catch (e) {}
                     }
                 });
             });
-            child.on('close', (code) => { console.log(`[Firehose] Exited (${code}). Restarting...`); setTimeout(() => this.startFirehose(), 30000); });
-        } catch (e) {}
+
+            child.on('close', (code) => {
+                console.log(`[Firehose] Exited (${code}). Restarting in 30s...`);
+                setTimeout(() => this.startFirehose(), 30000);
+            });
+        } catch (e) {
+            console.error('[Bot] startFirehose failed:', e);
+        }
     }
 
     async restartFirehose() { this.startFirehose(); }

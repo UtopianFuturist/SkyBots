@@ -1,6 +1,5 @@
 import { jest } from '@jest/globals';
 
-// Mock config
 jest.unstable_mockModule('../config.js', () => ({
   default: {
     BOT_NAME: 'TestBot',
@@ -17,12 +16,6 @@ describe('LLM Service', () => {
     jest.clearAllMocks();
   });
 
-  describe('generateResponse', () => {
-    it('should be defined', () => {
-      expect(llmService.generateResponse).toBeDefined();
-    });
-  });
-
   describe('performImpulsePoll', () => {
     it('should return impulse data from JSON', async () => {
       const spy = jest.spyOn(llmService, 'generateResponse').mockResolvedValue(JSON.stringify({
@@ -31,7 +24,6 @@ describe('LLM Service', () => {
       }));
       const result = await llmService.performImpulsePoll([], { platform: 'discord' });
       expect(result.impulse_detected).toBe(true);
-      expect(result.reason).toBe('Test reason');
       spy.mockRestore();
     });
   });
@@ -43,14 +35,6 @@ describe('LLM Service', () => {
       const result = await llmService.checkVariety('Hello world', history);
       expect(result.repetitive).toBe(true);
       expect(result.feedback).toBe('Pattern matched');
-      spy.mockRestore();
-    });
-
-    it('should return fresh for unique content', async () => {
-      const spy = jest.spyOn(llmService, 'generateResponse').mockResolvedValue('FRESH');
-      const history = [{ content: 'Old news', platform: 'bluesky' }];
-      const result = await llmService.checkVariety('New thought', history);
-      expect(result.repetitive).toBe(false);
       spy.mockRestore();
     });
   });

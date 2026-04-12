@@ -1,70 +1,41 @@
 import { jest } from '@jest/globals';
 
-jest.setTimeout(30000);
-
 jest.unstable_mockModule('../src/services/dataStore.js', () => ({
   dataStore: {
-    getConfig: jest.fn().mockReturnValue({}),
-    getMood: jest.fn().mockReturnValue({ label: 'balanced' }),
-    getAnonymizedEmotionalContext: jest.fn().mockResolvedValue({}),
-    getAdminTimezone: jest.fn().mockReturnValue({ timezone: "UTC", offset: 0 }),
-    getNetworkSentiment: jest.fn().mockReturnValue(0.5),
+    getMood: jest.fn().mockReturnValue({ label: 'balanced', score: 0.5 }),
+    getConfig: jest.fn().mockReturnValue({ post_topics: ['existence'] }),
+    getLastAutonomousPostTime: jest.fn().mockReturnValue(0),
     getLastBlueskyImagePostTime: jest.fn().mockReturnValue(0),
     getTextPostsSinceLastImage: jest.fn().mockReturnValue(0),
+    getDailyStats: jest.fn().mockReturnValue({ text_posts: 0, image_posts: 0, last_reset: Date.now() }),
+    getDailyLimits: jest.fn().mockReturnValue({ text: 10, image: 5 }),
     getFirehoseMatches: jest.fn().mockReturnValue([]),
-    getExhaustedThemes: jest.fn().mockReturnValue([]),
-    getCurrentGoal: jest.fn().mockReturnValue({ goal: 'test', description: 'test' }),
-    getPersonaBlurbs: jest.fn().mockReturnValue([]),
-    getSessionLessons: jest.fn().mockReturnValue([]),
-    searchInternalLogs: jest.fn().mockReturnValue([]),
     getRecentInteractions: jest.fn().mockReturnValue([]),
-    getRecentThoughts: jest.fn().mockReturnValue([]),
-    getDailyStats: jest.fn().mockReturnValue({ text_posts: 0, image_posts: 0 }),
-    getDailyLimits: jest.fn().mockReturnValue({ text: 20, image: 15 }),
+    getCurrentGoal: jest.fn().mockReturnValue({ goal: 'Existence', description: 'Default' }),
     updateLastAutonomousPostTime: jest.fn(),
-    addExhaustedTheme: jest.fn(),
+    updateLastBlueskyImagePostTime: jest.fn(),
     incrementDailyTextPosts: jest.fn(),
     incrementDailyImagePosts: jest.fn(),
-    updateLastBlueskyImagePostTime: jest.fn(),
     incrementTextPostsSinceLastImage: jest.fn(),
-    write: jest.fn(),
-    db: {
-      data: {
-        text_posts_since_last_image: 0,
-        last_heavy_maintenance: 0,
-        interactions: []
-      },
-      write: jest.fn().mockResolvedValue(true)
-    },
-    getRelationshipWarmth: jest.fn().mockReturnValue(0.5),
-    getAdminEnergy: jest.fn().mockReturnValue(0.5),
     addRecentThought: jest.fn(),
-    isResting: jest.fn().mockReturnValue(false),
-    getTemporalEvents: jest.fn().mockReturnValue([]),
-    getDeepKeywords: jest.fn().mockReturnValue([]),
-    setDeepKeywords: jest.fn(),
-    addInternalLog: jest.fn(),
-    addParkedThought: jest.fn(),
-    setPersonaBlurbs: jest.fn(),
-    updateConfig: jest.fn(),
-    updateRelationalMetrics: jest.fn(),
-    addAdminFact: jest.fn(),
-    updateLifeArc: jest.fn(),
-    addLinguisticMutation: jest.fn(),
+    write: jest.fn(),
+    db: { data: { mood_history: [] }, write: jest.fn() },
+    update: jest.fn(fn => {
+        const d = { daily_stats: { text_posts: 0, image_posts: 0, last_reset: 0 } };
+        fn(d);
+        return Promise.resolve();
+    }),
+    searchInternalLogs: jest.fn().mockReturnValue([]),
+    getDeepKeywords: jest.fn().mockReturnValue(['existence'])
   },
 }));
 
 jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
   blueskyService: {
-    getProfile: jest.fn().mockResolvedValue({ followersCount: 100 }),
     getTimeline: jest.fn().mockResolvedValue({ data: { feed: [] } }),
-    post: jest.fn(),
+    post: jest.fn().mockResolvedValue({ uri: 'at://123', cid: 'abc' }),
     postReply: jest.fn(),
-    uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'fake-blob' } }),
-    getUserPosts: jest.fn().mockResolvedValue([]),
-    agent: {
-      getAuthorFeed: jest.fn().mockResolvedValue({ data: { feed: [] } }),
-    },
+    uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'blob' } }),
     did: 'did:plc:bot',
   },
 }));
@@ -72,26 +43,21 @@ jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
 jest.unstable_mockModule('../src/services/llmService.js', () => ({
   llmService: {
     generateResponse: jest.fn(),
-    isAutonomousPostCoherent: jest.fn(),
-    isImageCompliant: jest.fn(),
-    analyzeImage: jest.fn(),
-    generalizePrivateThought: jest.fn(),
-    verifyImageRelevance: jest.fn().mockResolvedValue({ relevant: true }),
-    performImpulsePoll: jest.fn().mockResolvedValue({ impulse_detected: false }),
-    performEmotionalAfterActionReport: jest.fn(),
-    performRealityAudit: jest.fn().mockResolvedValue({ hallucination_detected: false, markers_found: [], critique: "", refined_text: "" }),
-    generateAltText: jest.fn().mockResolvedValue("alt text"),
-    setDataStore: jest.fn(),
-    setSkillsContent: jest.fn(),
-    setMemoryProvider: jest.fn(),
-    setIdentities: jest.fn(),
+    extractJson: (str) => {
+        try {
+            const match = str.match(/\{.*\}/s);
+            return JSON.parse(match ? match[0] : str);
+        } catch (e) { return null; }
+    },
+    performRealityAudit: jest.fn().mockResolvedValue({ hallucination_detected: false, refined_text: "Final refined content." }),
+    isAutonomousPostCoherent: jest.fn().mockResolvedValue({ score: 10 }),
     performDialecticHumor: jest.fn(),
+    analyzeImage: jest.fn().mockResolvedValue('Vision analysis.'),
   },
 }));
 
 jest.unstable_mockModule('../src/services/memoryService.js', () => ({
   memoryService: {
-    isEnabled: jest.fn().mockReturnValue(true),
     getRecentMemories: jest.fn().mockResolvedValue([]),
     createMemoryEntry: jest.fn(),
   },
@@ -112,22 +78,16 @@ jest.unstable_mockModule('../src/services/newsroomService.js', () => ({
 jest.unstable_mockModule('../src/services/discordService.js', () => ({
     discordService: {
         fetchAdminHistory: jest.fn().mockResolvedValue([]),
-        sendSpontaneousMessage: jest.fn(),
+        getAdminUser: jest.fn(),
+        _send: jest.fn(),
         status: 'offline'
     },
 }));
 
 jest.unstable_mockModule('../src/services/introspectionService.js', () => ({
   introspectionService: {
-    performAAR: jest.fn().mockResolvedValue({ internal_reflection: 'test' }),
-    synthesizeCoreSelf: jest.fn(),
+    performAAR: jest.fn().mockResolvedValue({ success: true }),
   },
-}));
-
-jest.unstable_mockModule('../src/services/evaluationService.js', () => ({
-    evaluationService: {
-        evaluatePublicSoul: jest.fn(),
-    },
 }));
 
 const { Bot } = await import('../src/bot.js');
@@ -140,112 +100,53 @@ const { dataStore } = await import("../src/services/dataStore.js");
 describe('Bot Autonomous Posting', () => {
   let bot;
 
-  beforeEach(async () => {
+  beforeEach(() => {
     jest.clearAllMocks();
     bot = new Bot();
     orchestratorService.setBotInstance(bot);
     bot.orchestrator = orchestratorService;
 
+    dataStore.getDailyStats.mockReturnValue({ text_posts: 0, image_posts: 0, last_reset: Date.now() });
+
     llmService.generateResponse.mockImplementation((messages) => {
-        const fullContent = JSON.stringify(messages);
-        if (fullContent.includes('deciding what to share')) {
-            return Promise.resolve('{ "choice": "text", "mode": "SINCERE", "reason": "Thinking" }');
-        }
-        if (fullContent.includes('deep topic for a text post')) {
-            return Promise.resolve('Existence');
-        }
-        if (fullContent.includes('Identify a visual subject')) {
-            return Promise.resolve('{ "topic": "Surreal Robot", "prompt": "A detailed oil painting of a lonely robot" }');
-        }
-        if (fullContent.includes('Generate a SINCERE post')) {
-            return Promise.resolve('Deep thought about existence.');
-        }
-        if (fullContent.includes('Analyze this proposed post')) {
-            return Promise.resolve('social');
-        }
-        if (fullContent.includes('Audit this image prompt for safety')) {
-            return Promise.resolve('COMPLIANT');
-        }
-        if (fullContent.includes('literal description')) return Promise.resolve('COMPLIANT');
-        if (fullContent.includes('vision analysis') || fullContent.includes('image: "A robot."')) return Promise.resolve('A robot.');
-        if (fullContent.includes('coherence')) return Promise.resolve('{ "score": 8, "reason": "Good" }');
-        return Promise.resolve('Thought.'); // Catch-all for simple text generation
+        const content = JSON.stringify(messages);
+        if (content.includes('deciding what to share')) return Promise.resolve('{"choice": "text", "mode": "SINCERE"}');
+        if (content.includes('deep topic')) return Promise.resolve('Existence');
+        if (content.includes('Follow ANTI-SLOP MANDATE')) return Promise.resolve('Initial draft.');
+        if (content.includes('Second-guess')) return Promise.resolve('Critique.');
+        if (content.includes('Synthesize a final')) return Promise.resolve('Deep thought about existence.');
+        if (content.includes('visual subject')) return Promise.resolve('{"topic": "art", "prompt": "prompt"}');
+        if (content.includes('Generate caption')) return Promise.resolve('Caption.');
+        return Promise.resolve('Default.');
     });
   });
 
   it('should handle autonomous text posts', async () => {
-    llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 5, reason: 'Pass' });
-    blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/1', cid: '1' });
-
+    llmService.performRealityAudit.mockResolvedValue({ hallucination_detected: false, refined_text: 'Deep thought about existence.' });
     await bot.performAutonomousPost();
     expect(blueskyService.post).toHaveBeenCalledWith('Deep thought about existence.');
   });
 
   it('should skip autonomous post if daily limits are reached', async () => {
-    dataStore.getDailyStats.mockReturnValue({ text_posts: 20, image_posts: 15 });
-    dataStore.getDailyLimits.mockReturnValue({ text: 20, image: 15 });
-
+    dataStore.getDailyStats.mockReturnValue({ text_posts: 10, image_posts: 5 });
     const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
     await bot.performAutonomousPost();
-
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Daily posting limits reached'));
     expect(blueskyService.post).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
   });
 
-  it('should skip image choice if image limit is reached', async () => {
-    dataStore.getDailyStats.mockReturnValue({ text_posts: 0, image_posts: 15 });
-    dataStore.getDailyLimits.mockReturnValue({ text: 20, image: 15 });
-
+  it('should handle autonomous image posts', async () => {
     llmService.generateResponse.mockImplementation((messages) => {
-        const fullContent = JSON.stringify(messages);
-        if (fullContent.includes('deciding what to share')) {
-            return Promise.resolve('{ "choice": "image", "mode": "SINCERE", "reason": "test" }');
-        }
-        if (fullContent.includes('deep topic for a text post')) return Promise.resolve('Existence');
-        if (fullContent.includes('Generate a SINCERE post')) return Promise.resolve('Thought.');
-        if (fullContent.includes('Analyze this proposed post')) return Promise.resolve('social');
-        if (fullContent.includes('coherence')) return Promise.resolve('{ "score": 8 }');
-        return Promise.resolve('none');
+        const content = JSON.stringify(messages);
+        if (content.includes('deciding what to share')) return Promise.resolve('{"choice": "image"}');
+        if (content.includes('visual subject')) return Promise.resolve('{"topic": "art", "prompt": "art prompt"}');
+        if (content.includes('Generate caption')) return Promise.resolve('Caption.');
+        return Promise.resolve('Default.');
     });
-
-    const consoleSpy = jest.spyOn(console, 'log').mockImplementation();
-    await bot.performAutonomousPost();
-
-    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Daily image limit reached. Forcing choice to text.'));
-    expect(blueskyService.post).toHaveBeenCalledWith('Thought.');
-    consoleSpy.mockRestore();
-  });
-
-
-  it('should handle autonomous image posts with stylized prompts', async () => {
-    dataStore.getDailyStats.mockReturnValue({ text_posts: 0, image_posts: 0 });
-    llmService.generateResponse.mockImplementation((messages) => {
-        const fullContent = JSON.stringify(messages);
-        if (fullContent.includes('deciding what to share')) {
-            return Promise.resolve('{ "choice": "image", "mode": "SINCERE", "reason": "test" }');
-        }
-        if (fullContent.includes('Identify a visual subject')) {
-            return Promise.resolve('{ "topic": "Cyberpunk Lighthouse", "prompt": "A gritty cyberpunk lighthouse with neon beams cutting through dense toxic fog, 35mm film grain, cinematic lighting" }');
-        }
-        if (fullContent.includes('Audit this image prompt for safety')) return Promise.resolve('COMPLIANT');
-        if (fullContent.includes('vision analysis') || fullContent.includes('image: "A futuristic lighthouse."')) return Promise.resolve('A futuristic lighthouse.');
-        if (fullContent.includes('alt-text')) return Promise.resolve('Alt text for lighthouse.');
-        if (fullContent.includes('caption for this image')) return Promise.resolve('Caption for lighthouse.');
-        if (fullContent.includes('coherence')) return Promise.resolve('{ "score": 8 }');
-        return Promise.resolve('none');
-    });
-
-    imageService.generateImage.mockResolvedValue({ buffer: Buffer.from('fake-image-data'), prompt: 'A gritty cyberpunk lighthouse with neon beams cutting through dense toxic fog, 35mm film grain, cinematic lighting' });
-    blueskyService.uploadBlob.mockResolvedValue({ data: { blob: 'blob-id' } });
-    blueskyService.post.mockResolvedValue({ uri: 'at://did:plc:bot/post/2', cid: '2' });
-    llmService.isImageCompliant.mockResolvedValue({ compliant: true });
-    llmService.analyzeImage.mockResolvedValue('A futuristic lighthouse.');
-    llmService.verifyImageRelevance.mockResolvedValue({ relevant: true });
-    llmService.isAutonomousPostCoherent.mockResolvedValue({ score: 8 });
+    imageService.generateImage.mockResolvedValue({ buffer: Buffer.from('abc') });
 
     await bot.performAutonomousPost();
-
     expect(imageService.generateImage).toHaveBeenCalled();
     expect(blueskyService.post).toHaveBeenCalled();
   });

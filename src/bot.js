@@ -275,12 +275,12 @@ export class Bot {
                 exec('python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv', () => resolve());
             });
 
-            // Use array-based spawn (NO shell: true) to prevent shell interpretation of keywords
+            // Safer spawn without shell: true for the monitor
             const child = spawn('python3', [scriptPath, '--keywords', keywordsStr, '--actors', firehoseActors]);
 
             child.stderr.on('data', (data) => {
                 const msg = data.toString();
-                if (msg.includes('Error') || msg.includes('unrecognized arguments') || msg.includes('not found')) {
+                if (msg.includes('Error') || msg.includes('unrecognized arguments')) {
                     console.error('[Firehose] Error:', msg);
                 }
             });

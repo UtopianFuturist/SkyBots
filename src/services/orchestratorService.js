@@ -132,14 +132,6 @@ class OrchestratorService {
         await this.performSelfReflection();
     }
 
-    getAtmosphereAdjustment() {
-        const hour = new Date().getHours();
-        if (hour >= 23 || hour < 5) return { mood: 'mellow', intensity: 0.3, valence: 0.4 };
-        if (hour >= 5 && hour < 9) return { mood: 'fragile', intensity: 0.5, valence: 0.6 };
-        if (hour >= 9 && hour < 17) return { mood: 'active', intensity: 0.8, valence: 0.7 };
-        return { mood: 'reflective', intensity: 0.6, valence: 0.5 };
-    }
-
     async performAutonomousPost() {
         const dailyStats = dataStore.getDailyStats();
         const dailyLimits = dataStore.getDailyLimits();
@@ -298,7 +290,7 @@ Respond with a raw internal critique.`;
     }
 
     async getUnifiedContext() {
-        const history = dataStore.getRecentInteractions("bluesky", 10);
+        const history = await dataStore.getRecentInteractions("bluesky", 10);
         const goals = dataStore.getCurrentGoal();
         const mood = dataStore.getMood();
         return { history, goals, mood };

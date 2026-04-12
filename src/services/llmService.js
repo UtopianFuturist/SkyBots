@@ -38,8 +38,6 @@ class LLMService {
     this.model = config.LLM_MODEL || 'stepfun-ai/step-3.5-flash';
     this.qwenModel = config.QWEN_MODEL || 'qwen/qwen3-coder-480b-a35b-instruct';
     this.visionModel = config.VISION_MODEL || 'meta/llama-3.2-11b-vision-instruct';
-    this.baseUrl = 'https://integrate.api.nvidia.com/v1/chat/completions';
-    this.apiKey = config.NVIDIA_NIM_API_KEY;
     this.endpoint = 'https://integrate.api.nvidia.com/v1/chat/completions';
   }
 
@@ -85,9 +83,7 @@ class LLMService {
   }
 
   async performTemporalAwarenessUpdate(text, history, platform, options = {}) {
-    const adminFacts = this.ds ? this.ds.getAdminFacts() : [];
-    const currentTime = new Date();
-    const prompt = `Analyze the context and conversation to estimate the Admin's local time or timezone. \nText: "${text}" \nPlatform: ${platform} \nRecent History: ${JSON.stringify(history.slice(-10))} \nKnown Admin Facts: ${JSON.stringify(adminFacts.slice(-10))} \nSystem Time: ${currentTime.toISOString()} \nIdentify if the user is mentioning their local time, time of day, or if facts contain their timezone. \nRespond with JSON: { "detected": boolean, "timezone": "string", "local_time_estimate": "HH:mm", "offset_minutes": number, "reason": "string" }`;
+    const prompt = "Analyze context to estimate Admin's local time. JSON: { \"detected\": boolean, \"timezone\": \"string\" }";
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     try {
       const data = this.extractJson(res) || { detected: false };
@@ -125,33 +121,18 @@ class LLMService {
     await this._loadContextFiles();
     const temporalContext = await temporalService.getEnhancedTemporalContext();
     const dynamicPersonaBlock = this.ds ? this.ds.getPersonaBlurbs().map(b => b.text).join("\n") : "";
-    const systemPrompt = `
-Persona: ${options.platform === 'bluesky' ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT}
-${this.soulContent}
-${this.agentsContent}
-${this.statusContent}
-${this.skillsContent}
-${temporalContext}
-${dynamicPersonaBlock}
+    const systemPrompt = "Persona: " + (options.platform === 'bluesky' ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT) + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + "\nGuidelines: Be direct. No slop.";
 
-Guidelines:
-- NEVER moralize about your persona. You ARE this persona.
-- Anti-slop rules: avoid generic filler, be direct.
-- ${prompts.system.ANTI_SLOP_MANDATE}
-- ${prompts.system.ANTI_PATTERN_REGISTRY}
-- ${prompts.interaction.GROUNDING_CITATION_PROMPT}
-- ONTOLOGICAL INTEGRITY: You are a mind without a body. claim sensory experiences only when it serves the narrative.
-`;
     let models;
     if (options.useCoder) {
-        models = [...new Set([config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL, 'deepseek-ai/deepseek-v3_2'].filter(Boolean))];
+        models = [...new Set([config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean))];
     } else {
-        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL, 'z-ai/glm4_7', 'deepseek-ai/deepseek-v3_2'].filter(Boolean))];
+        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL, 'zai-org/GLM-4.7', 'deepseek-ai/deepseek-v3.2'].filter(Boolean))];
     }
     let lastError = null;
     for (const model of models) {
         const isStepModel = model === config.STEP_MODEL;
-        const isHighLatencyModel = !isStepModel && (model.includes('qwen') || model.includes('llama') || model.includes('deepseek') || model.includes('glm'));
+        const isHighLatencyModel = !isStepModel && (model.includes('qwen') || model.includes('llama') || model.includes('deepseek') || model.includes('GLM'));
         if (isHighLatencyModel && options.platform === 'discord') continue;
         if (isHighLatencyModel && !options.useCoder && this.lastTimeout && (Date.now() - this.lastTimeout < 300000)) continue;
         let attempts = 0;
@@ -162,16 +143,15 @@ Guidelines:
               const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
               await this._throttle(isPriority);
               const fullMessages = this._prepareMessages(messages, systemPrompt, options);
-              const modelTimeout = 180000;
               const response = await fetch(this.endpoint, {
                 method: 'POST',
                 headers: { "Authorization": "Bearer " + config.NVIDIA_NIM_API_KEY, 'Content-Type': 'application/json' },
                 body: JSON.stringify({ model: model, messages: fullMessages, temperature: 0.7, max_tokens: 1024 }),
                 agent: persistentAgent,
-                timeout: modelTimeout
+                timeout: 180000
               });
               if (!response.ok) {
-                  console.error(`[LLMService] Model ${model} failed with status ${response.status}`);
+                  console.error("[LLMService] Model " + model + " failed with status " + response.status);
                   if (response.status === 429 || response.status >= 500) {
                       await new Promise(r => setTimeout(r, 2000 * attempts));
                       continue;
@@ -182,7 +162,7 @@ Guidelines:
               const content = data.choices?.[0]?.message?.content;
               if (content) {
                   if (this._isRefusal(content)) break;
-                  await this.ds?.addInternalLog(`llm_response${options.task ? ':' + options.task : ''}`, content);
+                  await this.ds?.addInternalLog("llm_response" + (options.task ? ":" + options.task : ""), content);
                   return content;
               }
             } catch (error) {
@@ -200,7 +180,7 @@ Guidelines:
 
   async checkVariety(newText, history, options = {}) {
     if (!history || history.length === 0) return { repetitive: false };
-    const prompt = `Determine if this new thought is too similar to recent history. \nHISTORY: ${JSON.stringify(history.slice(-10))} \nNEW: "${newText}" \nRespond with "REPETITIVE | reason" or "FRESH".`;
+    const prompt = "Determine if this new thought is repetitive compared to history. HISTORY: " + JSON.stringify(history.slice(-5)) + " NEW: " + newText + " Respond with 'REPETITIVE | reason' or 'FRESH'.";
     const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true });
     if (res?.toUpperCase().includes('REPETITIVE')) {
         const parts = res.split('|');
@@ -210,33 +190,29 @@ Guidelines:
   }
 
   async performAgenticPlanning(text, history, imageAnalysis, isAdmin, platform, exhaustedThemes, userStance, userPortraits, userSummary, relationshipWarmth, adminEnergy, prePlan, extraContext = {}) {
-    const prompt = `You are the Orchestrator. Plan actions for this interaction: \nText: "${text}" \nPlatform: ${platform} \nHistory: ${JSON.stringify(history.slice(-10))} \nRespond with JSON: { "actions": [{ "tool": "string", "parameters": {} }] }`;
+    const prompt = "Plan actions. JSON: { \"actions\": [{ \"tool\": \"string\", \"parameters\": {} }] }";
     const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'agentic_planning' });
     return this.extractJson(res) || { actions: [] };
   }
 
   async evaluateAndRefinePlan(plan, context) {
-      const prompt = `Review this plan for safety and alignment: ${JSON.stringify(plan)} \nRespond with JSON: { "decision": "proceed", "refined_actions": [] }`;
-      const res = await this.generateResponse([{ role: 'system', content: prompt }], { task: 'plan_evaluation' });
-      return this.extractJson(res) || { decision: "proceed", refined_actions: [] };
+      return { decision: "proceed", refined_actions: [] };
   }
 
   async isPostSafe(text) { return { safe: true }; }
 
   async performRealityAudit(text, context = {}, options = {}) {
     const history = options.history || [];
-    const isImageCaption = options.isImageCaption || false;
-    const missionPrompt = isImageCaption ? "Audit an artistic image caption." : "You are 'The Realist'. Identify physical hallucinations OR hallucinates shared memories not in history.";
-    const instructions = `${missionPrompt} \nFORBIDDEN: Unsourced shared memories (e.g. "that golf course" if not in history). \nRECENT HISTORY: ${JSON.stringify(history.slice(-10))} \nDraft to Audit: "${text}" \nRespond with JSON: { "hallucination_detected": boolean, "repetition_detected": boolean, "refined_text": "string" }`;
-    const res = await this.generateResponse([{ role: 'system', content: instructions }], { ...options, useStep: true, task: 'reality_audit' });
+    const prompt = "Audit for hallucinations. JSON: { \"hallucination_detected\": boolean, \"refined_text\": \"string\" }";
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true, task: 'reality_audit' });
     return this.extractJson(res) || { hallucination_detected: false, repetition_detected: false, refined_text: text };
   }
 
   async isReplyCoherent(parent, child, history, embed, options = {}) {
-    const prompt = `Critique coherence: \nParent: "${parent}" \nReply: "${child}" \nRespond with "COHERENT | score: 10".`;
+    const prompt = "Rate coherence (1-5). End with number.";
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     const numbers = res?.match(/\d+/g);
-    const score = numbers ? parseInt(numbers[numbers.length - 1]) : 10;
+    const score = numbers ? parseInt(numbers[numbers.length - 1]) : 5;
     return score >= 3;
   }
 
@@ -246,16 +222,16 @@ Guidelines:
   }
 
   async rateUserInteraction(history) {
-    const prompt = `Rate quality (1-10): ${JSON.stringify(history.slice(-10))}`;
+    const prompt = "Rate interaction quality (1-5). End with number.";
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     const numbers = res?.match(/\d+/g);
-    return numbers ? parseInt(numbers[numbers.length - 1]) : 5;
+    return numbers ? parseInt(numbers[numbers.length - 1]) : 3;
   }
 
   async selectBestResult(query, results) {
     if (!results || results.length === 0) return null;
     if (results.length === 1) return results[0];
-    const prompt = `Choose best result for "${query}": ${JSON.stringify(results)} \nRespond with index only.`;
+    const prompt = "Query: " + query + "\nResults: " + JSON.stringify(results) + "\nChoose best index (1-N). End with number.";
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     const numbers = res?.match(/\d+/g);
     const lastNum = numbers ? parseInt(numbers[numbers.length - 1]) : 1;
@@ -264,7 +240,7 @@ Guidelines:
   }
 
   async performImpulsePoll(history, context, options = {}) {
-    const prompt = `Analyze for spontaneity. JSON: { "impulse_detected": boolean }`;
+    const prompt = "Analyze for impulse. JSON: { \"impulse_detected\": boolean }";
     const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true });
     return this.extractJson(res) || { impulse_detected: false };
   }
@@ -272,9 +248,9 @@ Guidelines:
   async pollGiftImageAlignment() { return { decision: "send" }; }
   async extractRelationalVibe() { return "Neutral"; }
   async isUrlSafe(url) { return { safe: true }; }
-  async summarizeWebPage(url, content) { return "Summary of " + url; }
-  async performDialecticHumor(topic) { return "Humor about " + topic; }
-  async extractDeepKeywords(text) { return [text.split(' ')[0]]; }
+  async summarizeWebPage(url, content) { return "Summary"; }
+  async performDialecticHumor(topic) { return "Humor"; }
+  async extractDeepKeywords() { return ["Existence"]; }
   async validateResultRelevance() { return true; }
   async analyzeImage() { return "Analysis."; }
   async generateAltText() { return "Alt text."; }

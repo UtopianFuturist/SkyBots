@@ -20,7 +20,11 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
     addRecentThought: jest.fn(),
     write: jest.fn(),
     db: { data: { mood_history: [] }, write: jest.fn() },
-    update: jest.fn(fn => { const d = { daily_stats: { text_posts: 0, image_posts: 0, last_reset: 0 } }; fn(d); return Promise.resolve(); }),
+    update: jest.fn(fn => {
+        const d = { daily_stats: { text_posts: 0, image_posts: 0, last_reset: 0 } };
+        fn(d);
+        return Promise.resolve();
+    }),
     searchInternalLogs: jest.fn().mockReturnValue([]),
     getDeepKeywords: jest.fn().mockReturnValue(['existence'])
   },

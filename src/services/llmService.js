@@ -263,7 +263,7 @@ Respond with JSON: { "intent": "informational|analytical|critical_analysis|conve
     const mainTool = isDiscord ? 'discord_message' : 'bsky_post';
     const toolParam = isDiscord ? 'message' : 'text';
 
-    const prompt = `You are sydney-chat, an autonomous agent on ${platformName}.
+    const prompt = `You are ${config.BOT_NAME}, an autonomous agent on ${platformName}.
 Plan your next actions in response to: "${text}".
 
 **MISSION: AUTONOMOUS RESPONSIVENESS**
@@ -308,7 +308,7 @@ Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "too
   }
 
   async evaluateAndRefinePlan(plan, context, options = {}) {
-    const prompt = `Critique this proposed action plan for @sydney-chat: ${JSON.stringify(plan)}
+    const prompt = `Critique this proposed action plan for @${config.BOT_NAME}: ${JSON.stringify(plan)}
 Platform context: ${JSON.stringify(context)}
 
 **MISSION: AUTONOMOUS INTEGRITY**
@@ -326,7 +326,7 @@ Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_
   async performRealityAudit(text, context = {}, options = {}) {
     const history = options.history || [];
     const prompt = `Adopt Persona: ${config.TEXT_SYSTEM_PROMPT}
-Analyze the following proposed response for @sydney-chat for hallucinations, repetitive structures, or bot-speak slop.
+Analyze the following proposed response for @${config.BOT_NAME} for hallucinations, repetitive structures, or bot-speak slop.
 
 **RESPONSE TO AUDIT:**
 "${text}"

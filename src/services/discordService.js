@@ -11,7 +11,7 @@ class DiscordService {
         this.token = config.DISCORD_BOT_TOKEN;
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
-        this.nickname = config.BOT_NAME || 'Sydney';
+        this.nickname = config.BOT_NAME || 'Bot';
         this.isResponding = false;
         this.client = null;
         this.botInstance = null;

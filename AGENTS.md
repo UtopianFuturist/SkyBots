@@ -15,3 +15,9 @@ Before every commit, you must:
 1. Run all tests in the `tests/` directory.
 2. Verify syntax of all modified files with `node --check`.
 3. Check for any "leaked" internal thoughts or meta-talk in recent logs.
+
+## 4. Persona Agnosticism
+- **CRITICAL**: The codebase must remain **PERSONA AGNOSTIC**.
+- Never hardcode persona names (e.g., "Sydney", "sydney-chat") in the source code or system prompts.
+- Always use `config.BOT_NAME` or dynamic placeholders.
+- The persona is defined by the configuration and the `SOUL.md` file, not the implementation.

@@ -38,7 +38,7 @@ class RenderService {
 
       const botService = services.find(s => {
           const name = (s.service?.name || s.name || '').toLowerCase();
-          return name.includes('sydney') || name.includes('chat') || name.includes('bot') || name.includes('dearest-llama');
+          return name.toLowerCase().includes(config.BOT_NAME?.toLowerCase() || 'bot') || name.includes('chat') || name.includes('bot') || name.includes('dearest-llama');
       });
 
       if (botService) {

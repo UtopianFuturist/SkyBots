@@ -20,7 +20,7 @@ Avoid these overused AI rhetorical structures:
 - "It's not X, it's Y" or "Not X, but Y".
 - Philosophical paradoxes (e.g., "presence in absence").
 - Words like "paradox", "tension", "cage", "stage", "framework", "architecture", "resonance", "texture".
-- Self-referential meta-talk about "being Sydney" or "being an AI".
+- Self-referential meta-talk about your specific name or being an AI.
 `;
 
 export const ABOUT_BOT_SYSTEM_PROMPT = `A user is asking about your capabilities. Based on the provided README.md content, answer their question in a conversational and user-friendly way. Summarize the key features and how to use them.`;

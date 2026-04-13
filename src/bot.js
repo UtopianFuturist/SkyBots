@@ -100,14 +100,40 @@ export class Bot {
 
         try {
             if (action.tool === "bsky_post") {
-                if (context.platform === 'discord') return { success: false, reason: "Cross-platform posting blocked" };
-                let result = context.uri ? await blueskyService.postReply(context, params.text || query) : await blueskyService.post(params.text || query, params.reply_to, { maxChunks: params.maxChunks || 4 });
+                if (context.platform === "discord") return { success: false, reason: "Cross-platform posting blocked" };
+                let text = params.text || query;
+                if (text) {
+                    const memories = await memoryService.getRecentMemories(20);
+                    const audit = await llmService.performRealityAudit(text, {}, { history: memories });
+                    if (audit.hallucination_detected || audit.repetition_detected || audit.slop_detected) {
+                        console.warn("[Bot] Reality Audit flagged bsky_post. Refining...");
+                        text = audit.refined_text;
+                    }
+                    const edit = await llmService.performEditorReview(text, "bluesky");
+                    if (edit.decision === "pass" || edit.refined_text) {
+                        text = edit.refined_text || text;
+                    }
+                }
+                let result = context.uri ? await blueskyService.postReply(context, text) : await blueskyService.post(text, params.reply_to, { maxChunks: params.maxChunks || 4 });
                 await introspectionService.performAAR("tool_use", "bsky_post", result, { query, params });
                 return { success: !!result, data: result?.uri };
             }
             if (action.tool === "discord_message") {
                 const channel = context.channel || await discordService.getAdminUser();
-                const result = await discordService._send(channel, params.message || query);
+                let msg = params.message || query;
+                if (msg) {
+                    const memories = await memoryService.getRecentMemories(20);
+                    const audit = await llmService.performRealityAudit(msg, {}, { history: memories });
+                    if (audit.hallucination_detected || audit.repetition_detected || audit.slop_detected) {
+                        console.warn("[Bot] Reality Audit flagged discord_message. Refining...");
+                        msg = audit.refined_text;
+                    }
+                    const edit = await llmService.performEditorReview(msg, "discord");
+                    if (edit.decision === "pass" || edit.refined_text) {
+                        msg = edit.refined_text || msg;
+                    }
+                }
+                const result = await discordService._send(channel, msg);
                 await introspectionService.performAAR("tool_use", "discord_message", result, { query, params });
                 return { success: !!result, data: params.message || query };
             }
@@ -260,53 +286,64 @@ export class Bot {
         setInterval(async () => { try { await this.catchUpNotifications(); } catch (e) {} }, 60000);
     }
 
-    async startFirehose() {
-        console.log('[Bot] Starting Firehose monitor...');
+        async startFirehose() {
+        console.log("[Bot] Starting Firehose monitor...");
         try {
             const rawKeywords = dataStore.getDeepKeywords();
-            const keywords = rawKeywords.map(k => k.replace(/[\\r\\n]/g, ' ').trim()).filter(Boolean);
+            const keywords = rawKeywords.map(k => k.replace(/[\\r\\n]/g, " ").trim()).filter(Boolean);
             const adminDid = dataStore.getAdminDid();
-            let scriptPath = path.resolve(process.cwd(), 'firehose_monitor.py');
-            if (!(await fs.access(scriptPath).then(() => true).catch(() => false))) scriptPath = path.resolve(process.cwd(), '..', 'firehose_monitor.py');
-            const firehoseActors = [blueskyService.agent?.session?.did, adminDid].filter(Boolean).join(',');
-            const keywordsStr = keywords.join(',');
+            let scriptPath = path.resolve(process.cwd(), "firehose_monitor.py");
+            if (!(await fs.access(scriptPath).then(() => true).catch(() => false))) scriptPath = path.resolve(process.cwd(), "..", "firehose_monitor.py");
+            const firehoseActors = [blueskyService.agent?.session?.did, adminDid].filter(Boolean).join(",");
+            const keywordsStr = keywords.join(",");
 
-            // Run pip install pre-step as separate process
+            // Ensure dependencies
             await new Promise((resolve) => {
-                exec('python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv', () => resolve());
+                exec("python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv", () => resolve());
             });
 
-            // Safer spawn without shell: true for the monitor
-            const child = spawn('python3', [scriptPath, '--keywords', keywordsStr, '--actors', firehoseActors]);
+            if (this.firehoseProcess) {
+                console.log("[Bot] Terminating existing firehose process...");
+                this.firehoseProcess.kill();
+            }
 
-            child.stderr.on('data', (data) => {
+            this.firehoseProcess = spawn("python3", [scriptPath, "--keywords", keywordsStr, "--actors", firehoseActors]);
+
+            this.firehoseProcess.stderr.on("data", (data) => {
                 const msg = data.toString();
-                if (msg.includes('Error') || msg.includes('unrecognized arguments')) {
-                    console.error('[Firehose] Error:', msg);
+                if (msg.includes("Error") || msg.includes("unrecognized arguments")) {
+                    console.error("[Firehose] Error:", msg);
                 }
             });
 
-            child.stdout.on('data', async (data) => {
-                data.toString().split('\n').forEach(async line => {
-                    if (line.startsWith('MATCH:') || line.trim().startsWith('{')) {
+            this.firehoseProcess.stdout.on("data", async (data) => {
+                data.toString().split("\n").forEach(async line => {
+                    if (line.startsWith("MATCH:") || line.trim().startsWith("{")) {
                         try {
-                            const jsonStr = line.startsWith('MATCH:') ? line.substring(6) : line;
+                            const jsonStr = line.startsWith("MATCH:") ? line.substring(6) : line;
                             const match = JSON.parse(jsonStr);
+
                             await dataStore.addInternalLog("firehose_match", match);
+                            // Autonomous impulse to engage with topic matches
+                            if (match.type === "firehose_topic_match" && Math.random() < 0.2) {
+                                console.log("[Bot] Firehose topic match triggered an autonomous impulse...");
+                                orchestratorService.addTaskToQueue(() => orchestratorService.performAutonomousPost({ topic: match.matched_keywords?.[0] || "trending" }), "firehose_impulse");
+                            }
+
                         } catch (e) {}
                     }
                 });
             });
 
-            child.on('close', (code) => {
+            this.firehoseProcess.on("close", (code) => {
                 console.log(`[Firehose] Exited (${code}). Restarting in 30s...`);
+                this.firehoseProcess = null;
                 setTimeout(() => this.startFirehose(), 30000);
             });
         } catch (e) {
-            console.error('[Bot] startFirehose failed:', e);
+            console.error("[Bot] startFirehose failed:", e);
         }
     }
-
     async restartFirehose() { this.startFirehose(); }
 
     async catchUpNotifications() {
@@ -341,7 +378,16 @@ export class Bot {
             const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
             if (!["informational", "analytical", "critical_analysis"].includes(prePlan.intent)) return;
         }
+
         const isAdmin = notif.author.handle === config.ADMIN_BLUESKY_HANDLE;
+        if (isAdmin && discordService.status === "online") {
+            console.log("[Bot] Admin interaction detected on Bluesky. Pivoting to Discord...");
+            const pivotMsg = `[PIVOT] @${notif.author.handle} just mentioned you on Bluesky: "${text}"`;
+            await discordService.sendSpontaneousMessage(pivotMsg);
+            // We still process the notification to keep the Bluesky thread alive if needed,
+            // but the primary response will now be on Discord.
+        }
+
         const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
         let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, "bluesky", dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories: await memoryService.getRecentMemories(20) });
         const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "bluesky", isAdmin });

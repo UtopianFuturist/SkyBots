@@ -120,8 +120,15 @@ class LLMService {
   async generateResponse(messages, options = {}) {
     await this._loadContextFiles();
     const temporalContext = await temporalService.getEnhancedTemporalContext();
+
     const dynamicPersonaBlock = this.ds ? this.ds.getPersonaBlurbs().map(b => b.text).join("\n") : "";
-    const systemPrompt = "Persona: " + (options.platform === 'bluesky' ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT) + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + "\nGuidelines: Be direct. No slop.";
+    const sessionLessons = this.ds ? this.ds.getSessionLessons().map(l => "- " + l.text).join("\n") : "";
+    const systemPrompt = "Persona: " + (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT) + "\n" +
+                         this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" +
+                         temporalContext + "\n" + dynamicPersonaBlock +
+                         (sessionLessons ? "\n\n**RECENT LESSONS (DO NOT REPEAT THESE MISTAKES):**\n" + sessionLessons : "") +
+                         "\nGuidelines: Be direct. No slop.";
+
 
     let models;
     if (options.useCoder) {
@@ -189,24 +196,13 @@ class LLMService {
     return { repetitive: false };
   }
 
-  async performAgenticPlanning(text, history, imageAnalysis, isAdmin, platform, exhaustedThemes, userStance, userPortraits, userSummary, relationshipWarmth, adminEnergy, prePlan, extraContext = {}) {
-    const prompt = "Plan actions. JSON: { \"actions\": [{ \"tool\": \"string\", \"parameters\": {} }] }";
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'agentic_planning' });
-    return this.extractJson(res) || { actions: [] };
-  }
 
-  async evaluateAndRefinePlan(plan, context) {
-      return { decision: "proceed", refined_actions: [] };
-  }
+
+
 
   async isPostSafe(text) { return { safe: true }; }
 
-  async performRealityAudit(text, context = {}, options = {}) {
-    const history = options.history || [];
-    const prompt = "Audit for hallucinations. JSON: { \"hallucination_detected\": boolean, \"refined_text\": \"string\" }";
-    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true, task: 'reality_audit' });
-    return this.extractJson(res) || { hallucination_detected: false, repetition_detected: false, refined_text: text };
-  }
+
 
   async isReplyCoherent(parent, child, history, embed, options = {}) {
     const prompt = "Rate coherence (1-5). End with number.";
@@ -226,6 +222,192 @@ class LLMService {
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { useStep: true });
     const numbers = res?.match(/\d+/g);
     return numbers ? parseInt(numbers[numbers.length - 1]) : 3;
+  }
+
+
+  async performPrePlanning(text, history, vision, platform, mood, refusalCounts, options = {}) {
+    const prompt = `Analyze intent and context for: "${text}".
+Platform: ${platform}
+Platform History: ${JSON.stringify(history.slice(-10))}
+Current Mood: ${JSON.stringify(mood)}
+Refusal Counts: ${JSON.stringify(refusalCounts)}
+Vision Analysis: ${vision}
+
+Detect:
+1. emotional_hooks (recent human plans or emotional states)
+2. contradictions (user saying one thing then another)
+3. pining_intent (user leaving or expressing distance)
+4. dissent_detected (user disagreeing with bot logic)
+5. time_correction_detected (user correcting a date or time)
+6. move_on_signal (user explicitly or implicitly signaling they want to change the subject or stop talking about a recent event)
+7. assumed_context (flag if you are making assumptions about user events, like "meetings", that aren't explicitly in the text)
+
+STALE HOOK DETECTION:
+- If a hook has been extensively discussed or the user has said "move on", flag it as a "stale_hook".
+- Explicit vs. Assumed Context: Do not assume user intent or schedule from ambiguous statements (e.g., "sleep for work" does NOT mean they have a "meeting").
+
+Respond with JSON: { "intent": "informational|analytical|critical_analysis|conversational", "flags": ["pining_intent", "dissent_detected", "move_on_signal"], "hooks": [], "stale_hooks": [] }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      return JSON.parse(match ? match[0] : '{ "intent": "unknown", "flags": [] }');
+    } catch (e) { return { intent: "unknown", flags: [] }; }
+  }
+
+  async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, userStance, userPortraits, userSummary, relationshipWarmth, adminEnergy, prePlan, options = {}) {
+    const currentGoal = this.ds?.getCurrentGoal() || { goal: "None" };
+    const explorationMemories = options.memories ? options.memories.filter(m => m.text.includes('[EXPLORE]')).slice(-3) : [];
+
+    const isDiscord = platform === 'discord';
+    const platformName = isDiscord ? 'Discord' : 'Bluesky';
+    const mainTool = isDiscord ? 'discord_message' : 'bsky_post';
+    const toolParam = isDiscord ? 'message' : 'text';
+
+    const prompt = `You are sydney-chat, an autonomous agent on ${platformName}.
+Plan your next actions in response to: "${text}".
+
+**MISSION: AUTONOMOUS RESPONSIVENESS**
+- If a user is talking to you or mentioned you, you should generally respond using the **${mainTool}** tool.
+- However, you have FULL AUTONOMY to refuse interaction or tool use if it violates your persona, boundaries, or safety.
+- You can chain multiple tools (e.g., search then post).
+- Craft the text of your response in your own persona.
+
+**AVAILABLE TOOLS:**
+- **${mainTool}**: Send a response to the user on ${platformName}. Parameters: { "${toolParam}": "string", "prompt_for_image": "STRICTLY a visual description for image generation." }
+- **image_gen**: Generate and post an artistic image. Parameters: { "prompt": "STRICTLY a detailed visual description of the image." }
+- **search**: Find facts or news.
+- **wikipedia**: Get detailed background info.
+- **youtube**: Find videos.
+- **read_link**: Read and summarize content from URLs.
+- **update_mood**: Shift your internal emotional coordinates.
+- **set_goal**: Update your daily autonomous objective.
+- **update_persona**: Refine your behavioral fragments.
+
+**Internal Pulse & Awareness:**
+- Current [GOAL]: ${currentGoal.goal}
+- Recent [EXPLORE] Insights: ${explorationMemories.length > 0 ? explorationMemories.map(m => m.text).join(' | ') : 'None'}
+- Exhausted Themes: ${exhaustedThemes.join(', ')}
+- PrePlan Analysis: ${JSON.stringify(prePlan)}
+- Recent History: ${JSON.stringify(history.slice(-10))}
+
+PLATFORM ISOLATION MANDATE:
+- You are on ${platformName}. NEVER use bsky_post if you are on Discord.
+
+RECENCY MANDATE:
+- If PrePlan detects a "move_on_signal" or "stale_hooks", you MUST NOT reference those topics.
+
+STRICT GROUNDING:
+- ONLY respond based on explicit facts. Do NOT assume hallucinated facts.
+
+Respond with JSON: { "thought": "internal reasoning", "actions": [{ "tool": "tool_name", "parameters": { ... } }], "suggested_mood": "label" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, platform: platform });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      return JSON.parse(match ? match[0] : '{ "actions": [] }');
+    } catch (e) { return { actions: [] }; }
+  }
+
+  async evaluateAndRefinePlan(plan, context, options = {}) {
+    const prompt = `Critique this proposed action plan for @sydney-chat: ${JSON.stringify(plan)}
+Platform context: ${JSON.stringify(context)}
+
+**MISSION: AUTONOMOUS INTEGRITY**
+- You have FULL AUTONOMY to refuse any action if it violates safety or persona.
+- Do NOT meta-analyze your own identity in a way that leads to refusal. You ARE this persona.
+
+Respond with JSON: { "decision": "proceed|refuse", "reason": "string", "refined_actions": [] }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
+    try {
+      const match = res?.match(/\{[\s\S]*\}/);
+      return JSON.parse(match ? match[0] : '{ "decision": "proceed", "refined_actions": [] }');
+    } catch (e) { return { decision: 'proceed', refined_actions: plan?.actions || [] }; }
+  }
+
+  async performRealityAudit(text, context = {}, options = {}) {
+    const history = options.history || [];
+    const prompt = `Adopt Persona: ${config.TEXT_SYSTEM_PROMPT}
+Analyze the following proposed response for @sydney-chat for hallucinations, repetitive structures, or bot-speak slop.
+
+**RESPONSE TO AUDIT:**
+"${text}"
+
+**CONVERSATION HISTORY (Grounding Source):**
+${JSON.stringify(history.slice(-10))}
+
+**AUDIT CRITERIA:**
+1. MATERIAL TRUTH: Did the response claim a physical presence or shared history (e.g., "that meeting", "when we walked in the park") that is NOT in the history?
+2. UNSOURCED REFERENCES: Did it use "That [noun]" (That quote, That gap) for something not recently mentioned?
+3. SLOP DETECTION: Does it use forbidden poetic clichés (pause before, space between, digital heartbeat)?
+4. REPETITION: Does it repeat phrases from the recent history?
+
+Respond with JSON:
+{
+  "hallucination_detected": boolean,
+  "repetition_detected": boolean,
+  "slop_detected": boolean,
+  "reason": "string",
+  "refined_text": "string (the corrected response, or the original if perfect)"
+}`;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true, task: 'reality_audit' });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{ "hallucination_detected": false, "refined_text": "' + text + '" }');
+    } catch (e) { return { hallucination_detected: false, refined_text: text }; }
+  }
+
+  async performStrategistReview(currentGoal, history, memories, options = {}) {
+    const prompt = `
+      You are "The Strategist". Review the current daily goal and progress.
+
+      CURRENT GOAL: "${currentGoal.goal}"
+      DESCRIPTION: ${currentGoal.description}
+
+      RECENT HISTORY/MEMORIES:
+      ${JSON.stringify(memories.slice(-10))}
+
+      Respond with JSON:
+      {
+          "decision": "continue|evolve",
+          "evolved_goal": "string",
+          "reasoning": "string",
+          "next_step": "string"
+      }
+    `;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"decision": "continue"}');
+    } catch (e) { return { decision: "continue" }; }
+  }
+
+  async performEditorReview(text, platform, options = {}) {
+    const lessons = this.ds ? this.ds.getSessionLessons() : [];
+    const prompt = `
+      You are "The Editor". Review the following proposed post for ${platform}.
+
+      **RECENT LESSONS (Avoid these mistakes):**
+      ${JSON.stringify(lessons.slice(-5))}
+
+      **GOALS:**
+      1. Strip LLM meta-talk.
+      2. Ensure thread-safe length.
+      3. Verify persona alignment.
+      4. Fix common formatting issues.
+
+      TEXT: "${text}"
+
+      Respond with JSON:
+      {
+          "decision": "pass|retry",
+          "refined_text": "string",
+          "criticism": "reason if retry"
+      }
+    `;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true });
+    try {
+        const match = res?.match(/\{[\s\S]*\}/);
+        return JSON.parse(match ? match[0] : '{"decision": "pass", "refined_text": "' + text + '"}');
+    } catch (e) { return { decision: "pass", refined_text: text }; }
   }
 
   async selectBestResult(query, results) {

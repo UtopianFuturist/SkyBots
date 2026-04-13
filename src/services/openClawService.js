@@ -47,7 +47,7 @@ class OpenClawService {
 
         if (!match) return null;
 
-        const frontmatter = match[1];
+        const frontmatter = match[1] || '';
         const instructions = match[2].trim();
 
         const data = {};
@@ -68,7 +68,7 @@ class OpenClawService {
             }
         }
 
-        if (!data.name) return null;
+        if (!data.name) { console.warn(`[OpenClawService] Skill at ${baseDir} is missing a name.`); return null; }
 
         return {
             name: data.name,
@@ -111,22 +111,35 @@ class OpenClawService {
 
     runCommand(command, params, cwd) {
         return new Promise((resolve, reject) => {
-            const process = spawn('bash', [command, JSON.stringify(params)], {
+            const timeout = 60000; // 60s timeout
+            const child = spawn("bash", [command, JSON.stringify(params)], {
                 cwd,
                 env: { ...process.env, SKILL_PARAMS: JSON.stringify(params) }
             });
 
-            let stdout = '';
-            let stderr = '';
+            let stdout = "";
+            let stderr = "";
 
-            process.stdout.on('data', (data) => { stdout += data.toString(); });
-            process.stderr.on('data', (data) => { stderr += data.toString(); });
+            const timer = setTimeout(() => {
+                child.kill();
+                reject(new Error("Skill timed out after " + (timeout / 1000) + "s"));
+            }, timeout);
 
-            process.on('close', (code) => {
+            child.stdout.on("data", (data) => {
+                stdout += data.toString();
+                if (stdout.length > 100000) { // 100KB limit
+                    child.kill();
+                    reject(new Error("Skill output exceeded 100KB limit"));
+                }
+            });
+            child.stderr.on("data", (data) => { stderr += data.toString(); });
+
+            child.on("close", (code) => {
+                clearTimeout(timer);
                 if (code === 0) {
                     resolve(stdout.trim());
                 } else {
-                    reject(new Error(`Skill failed with code ${code}. Stderr: ${stderr}`));
+                    reject(new Error("Skill failed with code " + code + ". Stderr: " + stderr));
                 }
             });
         });

@@ -22,6 +22,7 @@ class OrchestratorService {
         this.lastLogPruning = 0;
         this.lastScoutMission = 0;
         this.lastImageFrequencyAudit = 0;
+        this.lastSkillSynthesis = 0;
         this.lastPersonaEvolution = 0;
         this.lastEnergyPoll = 0;
         this.lastLurkerMode = 0;
@@ -50,6 +51,44 @@ class OrchestratorService {
             try { await task.fn(); } catch (e) { console.error(`[Orchestrator] Task failed: ${task.name}`, e); }
         }
         this.isProcessingQueue = false;
+    }
+
+
+    async performSkillSynthesis() {
+        console.log("[Orchestrator] Starting Skill Synthesis mission...");
+        try {
+            const lessons = dataStore.getSessionLessons();
+            const failures = lessons.filter(l => l.text.toLowerCase().includes("fail") || l.text.toLowerCase().includes("missing"));
+            if (failures.length < 3) return;
+
+            const prompt = `As an autonomous systems architect, analyze these bot failures and identify a NEW system-level skill that could prevent them.
+FAILURES: ${JSON.stringify(failures.slice(-10))}
+
+If a new skill is needed, generate the metadata, SKILL.md content, and a robust run.sh (bash) script.
+The script should be highly resilient and handle JSON parameters from the environment variable SKILL_PARAMS.
+
+Respond with JSON:
+{
+  "skill_name": "kebab-case-name",
+  "skill_description": "...",
+  "skill_md": "--- frontmatter --- instructions",
+  "run_sh": "#!/bin/bash..."
+}`;
+
+            const res = await llmService.generateResponse([{ role: "system", content: prompt }], { useStep: true, task: "skill_synthesis" });
+            const data = llmService.extractJson(res);
+
+            if (data?.skill_name && data.run_sh && data.skill_md) {
+                const skillDir = path.join(process.cwd(), "skills", data.skill_name);
+                await fs.promises.mkdir(skillDir, { recursive: true });
+                await fs.promises.writeFile(path.join(skillDir, "SKILL.md"), data.skill_md);
+                await fs.promises.writeFile(path.join(skillDir, "run.sh"), data.run_sh, { mode: 0o755 });
+
+                await openClawService.discoverSkills();
+                await introspectionService.performAAR("skill_synthesis", data.skill_name, { success: true });
+                await memoryService.createMemoryEntry("evolution", `[CAPABILITY] Synthesized new skill: ${data.skill_name}`);
+            }
+        } catch (e) { console.error("[Orchestrator] Skill Synthesis failed:", e); }
     }
 
     async heartbeat() {
@@ -135,6 +174,10 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
             await this.evolveGoalRecursively();
             this.lastGoalEvolution = now;
         }
+        if (now - this.lastSkillSynthesis >= 48 * 3600000) {
+            await this.performSkillSynthesis();
+            this.lastSkillSynthesis = now;
+        }
         if (now - this.lastPersonaEvolution >= 24 * 3600000) {
             await this.performPersonaEvolution();
             this.lastPersonaEvolution = now;
@@ -200,7 +243,11 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
             const unifiedContext = await this.getUnifiedContext();
             const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nYou are deciding what to share with your followers.\nMood: ${JSON.stringify(currentMood)}\nUnified Context: ${JSON.stringify(unifiedContext)}\nHours since last image: ${hoursSinceImage.toFixed(1)}\nText posts since last image: ${textPostsSinceImage}\n\nWould you like to share a visual expression (image) or a direct thought (text)?\nIf text, select a POST MODE: IMPULSIVE, SINCERE, PHILOSOPHICAL, OBSERVATIONAL, HUMOROUS.\nRespond with JSON: {"choice": "image"|"text", "mode": "string", "reason": "..."}`;
             const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true , task: 'autonomous_decision' });
-            let pollResult = llmService.extractJson(decisionRes) || { choice: "text", mode: "SINCERE" };
+            let pollResult = llmService.extractJson(decisionRes);
+            if (!pollResult || !pollResult.choice) {
+                console.warn("[Orchestrator] Invalid decision JSON from LLM:", decisionRes);
+                pollResult = { choice: "text", mode: "SINCERE" };
+            }
             let choice = pollResult.choice;
             if (choice === "image" && dailyStats.image_posts >= dailyLimits.image) {
                 console.log("[Orchestrator] Daily image limit reached. Forcing choice to text.");

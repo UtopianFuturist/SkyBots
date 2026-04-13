@@ -111,7 +111,7 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
   DISCORD_HEARTBEAT_ADDENDUM: process.env.DISCORD_HEARTBEAT_ADDENDUM || '',
 
   // Memory Thread
-  MEMORY_THREAD_HASHTAG: process.env.MEMORY_THREAD_HASHTAG || null,
+  MEMORY_THREAD_HASHTAG: process.env.MEMORY_THREAD_HASHTAG || "#BotDiary",
 
   // Firehose Filters
   FIREHOSE_NEGATIVE_KEYWORDS: (process.env.FIREHOSE_NEGATIVE_KEYWORDS || 'crypto,nft,airdrop,giveaway,memecoin,solana,eth ,bitcoin,trading signal,pump and dump').split(','),

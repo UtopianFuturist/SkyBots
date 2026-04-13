@@ -1,3 +1,4 @@
+import { openClawService } from './openClawService.js';
 import * as prompts from "../prompts/index.js";
 import fetch from 'node-fetch';
 import { checkExactRepetition, getSimilarityInfo, hasPrefixOverlap, isSlop } from "../utils/textUtils.js";
@@ -42,19 +43,28 @@ class LLMService {
   }
 
   extractJson(str) {
-    if (!str) return null;
+    if (!str || typeof str !== "string") return null;
+    const cleanStr = str.trim();
+    if (cleanStr === "null" || cleanStr === "undefined") return null;
+
     try {
-      const match = str.match(/\{[\s\S]*\}/);
-      if (!match) return JSON.parse(str);
-      return JSON.parse(match[0]);
-    } catch (e) {
-      try {
-          const fixed = str.replace(/,\s*([\]}])/g, '$1');
-          const match2 = fixed.match(/\{[\s\S]*\}/);
-          return JSON.parse(match2 ? match2[0] : fixed);
-      } catch (e2) {
-          return null;
+      // 1. Try standard match for first complete JSON object
+      const match = cleanStr.match(/\{[\s\S]*\}/);
+      if (match) {
+        try {
+            return JSON.parse(match[0]);
+        } catch (e) {
+            // 2. Try to fix common trailing comma errors
+            const fixed = match[0].replace(/,\s*([\]}])/g, "$1");
+            return JSON.parse(fixed);
+        }
       }
+
+      // 3. Fallback to direct parse if no brackets found (unlikely for objects)
+      return JSON.parse(cleanStr);
+    } catch (e) {
+      console.warn("[LLMService] JSON Extraction failed for string:", str.substring(0, 100) + "...");
+      return null;
     }
   }
 
@@ -158,7 +168,7 @@ class LLMService {
                 timeout: 180000
               });
               if (!response.ok) {
-                  console.error("[LLMService] Model " + model + " failed with status " + response.status);
+                  console.error("[LLMService] Model " + model + " failed with status " + response.status + (response.status === 404 ? " (Not Found/Disabled)" : ""));
                   if (response.status === 429 || response.status >= 500) {
                       await new Promise(r => setTimeout(r, 2000 * attempts));
                       continue;
@@ -263,6 +273,7 @@ Respond with JSON: { "intent": "informational|analytical|critical_analysis|conve
     const mainTool = isDiscord ? 'discord_message' : 'bsky_post';
     const toolParam = isDiscord ? 'message' : 'text';
 
+    const availableSkills = openClawService.getSkillsForPrompt();
     const prompt = `You are ${config.BOT_NAME}, an autonomous agent on ${platformName}.
 Plan your next actions in response to: "${text}".
 
@@ -282,6 +293,9 @@ Plan your next actions in response to: "${text}".
 - **update_mood**: Shift your internal emotional coordinates.
 - **set_goal**: Update your daily autonomous objective.
 - **update_persona**: Refine your behavioral fragments.
+- **call_skill**: Execute a specialized system-level skill. Parameters: { "name": "string", "parameters": {} }.
+Available skills:
+${availableSkills}
 
 **Internal Pulse & Awareness:**
 - Current [GOAL]: ${currentGoal.goal}

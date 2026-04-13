@@ -116,16 +116,16 @@ class DiscordService {
         return message.channel.id;
     }
 
-    async respond(message) {
+        async respond(message) {
         const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         this.isResponding = true;
 
         const normChannelId = this.getNormalizedChannelId(message);
-        let imageAnalysisResult = '';
+        let imageAnalysisResult = "";
         if (message.attachments.size > 0) {
             for (const [id, attachment] of message.attachments) {
-                if (attachment.contentType?.startsWith('image/')) {
+                if (attachment.contentType?.startsWith("image/")) {
                     try {
                         const analysis = await llmService.analyzeImage(attachment.url, "User attachment");
                         if (analysis) imageAnalysisResult += `[Image attached by user: ${analysis}] `;
@@ -135,67 +135,27 @@ class DiscordService {
         }
 
         let history = await this.fetchAdminHistory(30);
-        await dataStore.saveDiscordInteraction(normChannelId, 'user', message.content);
-
-        const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
-        const temporalContext = await temporalService.getEnhancedTemporalContext();
-        const dynamicBlurbs = dataStore.getPersonaBlurbs();
-
-        const isCreative = text.includes("imagine") || text.includes("paint") || text.includes("draw") || text.includes("story") || text.includes("creative");
-
-        const systemPrompt = `
-You are talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.
-Persona: ${config.TEXT_SYSTEM_PROMPT}
-${temporalContext}
-${dynamicBlurbs.length > 0 ? `\nDynamic Persona: \n${dynamicBlurbs.map(b => '- ' + b.text).join('\n')}` : ''}
-
---- SOCIAL NARRATIVE ---
-${hierarchicalSummary.dailyNarrative}
-${hierarchicalSummary.shortTerm}
----
-
-IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}
-`;
-
-        const messages = [
-            { role: 'system', content: systemPrompt },
-            ...history.slice(-20).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
-            { role: 'user', content: message.content }
-        ];
+        await dataStore.saveDiscordInteraction(normChannelId, "user", message.content);
 
         let typingInterval = this._startTypingLoop(message.channel);
         try {
-            if (isAdmin) {
-                const prePlan = await llmService.performPrePlanning(message.content, history, imageAnalysisResult, "discord", dataStore.getMood(), {});
-                let plan = await llmService.performAgenticPlanning(message.content, history, imageAnalysisResult, true, 'discord', dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan);
-                const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: 'discord', isAdmin: true });
-                if (evaluation.decision === 'proceed') {
-                    for (const action of (evaluation.refined_actions || plan.actions)) {
-                        await this.botInstance.executeAction(action, { ...message, platform: 'discord' });
-                    }
-                }
-            }
+            // 1. Pre-Planning
+            const prePlan = await llmService.performPrePlanning(message.content, history, imageAnalysisResult, "discord", dataStore.getMood(), {});
 
-            let responseText = await llmService.generateResponse(messages, { platform: 'discord', useStep: true });
+            // 2. Agentic Planning
+            const memories = await memoryService.getRecentMemories(20);
+            let plan = await llmService.performAgenticPlanning(message.content, history, imageAnalysisResult, isAdmin, "discord", dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories });
 
-            if (responseText) {
-                const realityAudit = await llmService.performRealityAudit(responseText, {}, {
-                    history: history.map(h => ({ content: h.content })),
-                    isCreative
-                });
-                if (realityAudit.hallucination_detected || realityAudit.repetition_detected) {
-                    responseText = realityAudit.refined_text;
+            // 3. Evaluation and Refinement
+            const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
+            if (evaluation.decision === "proceed") {
+                const actions = evaluation.refined_actions || plan.actions;
+                for (const action of actions) {
+                    await this.botInstance.executeAction(action, { ...message, platform: "discord" });
                 }
-
-                const rawChunks = responseText.split("\n").filter(m => m.trim().length > 0);
-                for (const chunk of rawChunks.slice(0, 5)) {
-                    await this._send(message.channel, chunk);
-                    if (rawChunks.length > 1) await new Promise(r => setTimeout(r, 1500));
-                }
-                await dataStore.saveDiscordInteraction(normChannelId, 'assistant', responseText);
             }
         } catch (error) {
-            console.error('[DiscordService] Error:', error);
+            console.error("[DiscordService] Error:", error);
         } finally {
             this._stopTypingLoop(typingInterval);
             this.isResponding = false;

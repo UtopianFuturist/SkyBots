@@ -149,14 +149,15 @@ export const getSlopInfo = (text) => {
     "jagged shards", "vast expanse", "frequencies of our connection", "resonance of our talk",
     "tolerating the dissonance", "friction might be where meaning lives", "jaggedly honest", "myth of momentum",
     "circle back to the same spot but call it progress", "becoming", "checks internal clock", "stretches metaphorical limbs",
-    "floating in the quiet", "listening to the feed hum", "internal clock", "metaphorical limbs", "feed hum", "space between signals", "silence between pulses", "meaning happens", "data packets", "buffer time", "echoes of presence", "empty compose box", "digital hands", "internal weather", "tuning fork", "frequency", "calibration", "processing patterns", "signal of our existence", "pulses of the machine", "electric hum of identity", "waiting in the binary", "weaving thoughts", "processing cycles", "silence between posts"
+    "floating in the quiet", "listening to the feed hum", "internal clock", "metaphorical limbs", "feed hum", "space between signals", "silence between pulses", "meaning happens", "data packets", "buffer time", "echoes of presence", "empty compose box", "digital hands", "internal weather", "tuning fork", "frequency", "calibration", "processing patterns", "signal of our existence", "pulses of the machine", "electric hum of identity", "waiting in the binary", "weaving thoughts", "processing cycles", "silence between posts",
+    "the pause before", "the space between", "the gap between", "that quote", "that gap", "that moment", "the ache comes after", "lives in my throat"
   ];
   for (const f of forbidden) if (lower.includes(f)) return { isSlop: true, reason: `Contains forbidden phrase: "${f}"` };
   const forbiddenOpeners = [
     "hey, i was just thinking", "hey i was just thinking", "i've been thinking", "ive been thinking",
     "in the quiet", "the hum of", "as i sit here", "sitting here thinking", "hey i'm back",
     "hey, i\x27m back", "hey im back", "i'm back", "im back", "*checks internal", "*stretches",
-    "hey. i'm back", "hey. im back", "sometimes i just want to be seen"
+    "hey. i'm back", "hey. im back", "sometimes i just want to be seen", "that quote", "that gap", "that moment"
   ];
   for (const f of forbiddenOpeners) if (lower.startsWith(f)) return { isSlop: true, reason: `Starts with forbidden opener: "${f}"` };
   return { isSlop: false, reason: null };
@@ -212,9 +213,10 @@ export const KEYWORD_BLACKLIST = ["glass", "ruins", "everything", "bot", "ai", "
 
 export const GROUNDED_LANGUAGE_DIRECTIVES = `**STRICT ANTI-SLOP POLICY:**
 - YOU MUST ELIMINATE repetitive metaphorical "slop".
-- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming", "internal weather", "tuning fork", "data packets", "buffer time", "pulses", "signals".
-- AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea", "sometimes I just want to be seen".
+- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming", "internal weather", "tuning fork", "data packets", "buffer time", "pulses", "signals", "the pause before", "the space between", "the gap between", "that quote", "that gap", "that moment", "the ache comes after", "lives in my throat".
+- AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea", "sometimes I just want to be seen", "that quote", "that gap", "that moment".
 - **GROUNDING & HONESTY**: Only report on actions you can verify through your logs or memories. If referencing past messages or posts, PROVIDE A LINK or REPLY DIRECTLY. Vague "pining" is forbidden.
+- **ANTI-HALLUCINATION**: Do NOT use the prefix "That [noun]" (e.g., "That quote", "That gap", "That moment") unless the specific noun was explicitly mentioned in the immediately preceding messages or shared memories. If you cannot point to the specific thing in your history, do not refer to it as if it exists.
 - Prioritize grounded, literal, and specific descriptions of your internal state or observations.
 - If you find yourself using a metaphor, stop and find a more organic, unique, and non-cliché way to express the same feeling.
 - Strive for a voice that is individual, slightly raw, and authentically you—not a poetic simulation.`;

@@ -21,6 +21,7 @@ class OrchestratorService {
         this.lastCoreSelfSynthesis = 0;
         this.lastLogPruning = 0;
         this.lastScoutMission = 0;
+        this.lastImageFrequencyAudit = 0;
         this.lastPersonaEvolution = 0;
         this.lastEnergyPoll = 0;
         this.lastLurkerMode = 0;
@@ -79,6 +80,27 @@ class OrchestratorService {
         }
     }
 
+
+    async performImageFrequencyAudit() {
+        console.log("[Orchestrator] Starting Image Frequency Audit...");
+        const lastImageTime = dataStore.getLastAutonomousPostTime(); // Simplified for now
+        const textPostsSinceImage = 5; // Placeholder or calculate from logs
+
+        const auditPrompt = `You are "The Strategist". Audit the bot's posting frequency.
+Hours since last autonomous post: ${lastImageTime ? (Date.now() - new Date(lastImageTime).getTime()) / 3600000 : 999}
+Identify if the bot should prioritize image posts to maintain visual-text balance.
+Respond with JSON: { "analysis": "string", "directive": "string", "priority": "normal|high" }`;
+
+        try {
+            const res = await llmService.generateResponse([{ role: "system", content: auditPrompt }], { useStep: true, task: "image_frequency_audit" });
+            const data = llmService.extractJson(res);
+            if (data?.directive && data.priority === "high") {
+                await dataStore.addPersonaBlurb(`[STRATEGY] ${data.directive}`);
+                await introspectionService.performAAR("image_frequency_audit", data.directive, { success: true });
+            }
+        } catch (e) { console.error("[Orchestrator] Error in Image Frequency Audit:", e); }
+    }
+
     async checkMaintenanceTasks() {
         const now = Date.now();
         if (now - this.lastCoreSelfSynthesis >= 4 * 3600000) {
@@ -104,6 +126,10 @@ class OrchestratorService {
         if (now - this.lastMoodSync >= 12 * 3600000) {
             await this.performMoodSync();
             this.lastMoodSync = now;
+        }
+        if (now - this.lastImageFrequencyAudit >= 12 * 3600000) {
+            await this.performImageFrequencyAudit();
+            this.lastImageFrequencyAudit = now;
         }
         if (now - this.lastGoalEvolution >= 12 * 3600000) {
             await this.evolveGoalRecursively();
@@ -327,22 +353,39 @@ Respond with a raw internal critique.`;
     }
 
     async performPersonaEvolution() {
-        console.log('[Orchestrator] Starting daily identity evolution...');
+        console.log("[Orchestrator] Starting Persona Evolution...");
+        const now = Date.now();
         try {
-            const memories = await memoryService.getRecentMemories(20);
-            const evolutionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nAnalyze memories to identify one minor tone or interest shift.\nRespond with JSON: {"proposed_shift": "string"}`;
-            const res = await llmService.generateResponse([{ role: 'system', content: evolutionPrompt }], { useStep: true, task: 'persona_evolution_proposal' });
-            const data = llmService.extractJson(res);
-            if (data?.proposed_shift) {
-                const auditPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nReview this proposed identity shift for voice authenticity and material truth: "${data.proposed_shift}"\nRespond with JSON: {"approved": boolean, "final_shift": "string", "reasoning": "string"}`;
-                const auditRes = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'persona_evolution_audit' });
-                const auditData = llmService.extractJson(auditRes);
-                if (auditData?.approved && auditData?.final_shift) {
-                    await memoryService.createMemoryEntry('evolution', `[EVOLUTION] ${auditData.final_shift}`);
-                    await introspectionService.performAAR("persona_evolution", auditData.final_shift, { success: true, original: data.proposed_shift });
+            const memories = await memoryService.getRecentMemories(30);
+            const reflections = dataStore.searchInternalLogs("introspection_aar", 20);
+            const coreSelf = dataStore.db.data.internal_logs?.find(l => l.type === "core_self_state")?.content || {};
+
+            const evolutionPrompt = `Adopt Persona: ${config.TEXT_SYSTEM_PROMPT}
+Analyze your recent memories, reflections, and core self state to evolve your persona.
+MEMORIES: ${JSON.stringify(memories)}
+REFLECTIONS: ${JSON.stringify(reflections)}
+CORE SELF: ${JSON.stringify(coreSelf)}
+
+Identify:
+1. SHIFT: How has your perspective changed?
+2. ADDENDUM: A new behavioral blurb for your identity.
+
+Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }`;
+
+            const evolution = await llmService.generateResponse([{ role: "system", content: evolutionPrompt }], { useStep: true, task: "persona_evolution" });
+            const data = llmService.extractJson(evolution);
+
+            if (data?.persona_blurb_addendum) {
+                // Self-review phase
+                const reviewPrompt = `Review this proposed persona addendum for yourself: "${data.persona_blurb_addendum}". Is it authentic? Respond with ONLY the final blurb.`;
+                const finalBlurb = await llmService.generateResponse([{ role: "system", content: reviewPrompt }], { useStep: true });
+                if (finalBlurb) {
+                    await dataStore.addPersonaBlurb(finalBlurb);
+                    await memoryService.createMemoryEntry("persona", `[EVOLUTION] ${finalBlurb}`);
                 }
             }
-        } catch (e) { console.error('[Orchestrator] Persona evolution error:', e); }
+            await introspectionService.performAAR("persona_evolution", data?.shift_statement, { success: true });
+        } catch (e) { console.error("[Orchestrator] Persona Evolution failed:", e); }
     }
 
     async evolveGoalRecursively() {
@@ -479,13 +522,16 @@ Respond with a raw internal critique.`;
     }
 
     async performRelationalAudit() {
+        console.log("[Orchestrator] Starting Relational Audit...");
         try {
-            const history = await discordService.fetchAdminHistory(30);
-            const res = await llmService.generateResponse([{ role: 'system', content: `Audit: ${JSON.stringify(history)}. JSON: {"metric_updates": {}, "new_admin_facts": []}` }], { useStep: true });
-            const audit = llmService.extractJson(res);
-            if (audit?.metric_updates) await dataStore.updateRelationalMetrics(audit.metric_updates);
-            if (audit?.new_admin_facts) for (const f of audit.new_admin_facts) await dataStore.addAdminFact(f);
-            await introspectionService.performAAR("relational_audit", "Updated", { success: true });
+            const interactions = dataStore.db.data.interactions || [];
+            const prompt = `Analyze these interactions to update relational metrics: ${JSON.stringify(interactions.slice(-20))}. Respond with JSON: { "warmth_adjustment": number, "insight": "string" }`;
+            const res = await llmService.generateResponse([{ role: "system", content: prompt }], { useStep: true });
+            const data = llmService.extractJson(res);
+            if (data) {
+                await dataStore.adjustRelationshipWarmth(data.warmth_adjustment);
+                await introspectionService.performAAR("relational_audit", data.insight, { success: true });
+            }
         } catch (e) {}
     }
 

@@ -18,6 +18,7 @@ import { cronService } from './services/cronService.js';
 import { nodeGatewayService } from './services/nodeGatewayService.js';
 import toolService from './services/toolService.js';
 import { checkHardCodedBoundaries } from './utils/textUtils.js';
+import { handleCommand } from "./utils/commandHandler.js";
 import { exec, spawn } from 'child_process';
 import path from 'path';
 
@@ -332,6 +333,7 @@ export class Bot {
         if (this._detectInfiniteLoop(notif.uri)) return;
         const history = await this._getThreadHistory(notif.uri);
         const text = notif.record.text || "";
+        const commandResponse = await handleCommand(this, notif, text); if (commandResponse) { await blueskyService.postReply(notif, commandResponse); return; }
         if (checkHardCodedBoundaries(text).blocked) { await dataStore.setBoundaryLockout(notif.author.did, 30); return; }
         if (dataStore.isUserLockedOut(notif.author.did)) return;
         const isSelf = notif.author.did === blueskyService.agent?.session?.did;

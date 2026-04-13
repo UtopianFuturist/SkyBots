@@ -1,3 +1,4 @@
+import { openClawService } from './openClawService.js';
 import * as prompts from "../prompts/index.js";
 import fetch from 'node-fetch';
 import { checkExactRepetition, getSimilarityInfo, hasPrefixOverlap, isSlop } from "../utils/textUtils.js";
@@ -272,6 +273,7 @@ Respond with JSON: { "intent": "informational|analytical|critical_analysis|conve
     const mainTool = isDiscord ? 'discord_message' : 'bsky_post';
     const toolParam = isDiscord ? 'message' : 'text';
 
+    const availableSkills = openClawService.getSkillsForPrompt();
     const prompt = `You are ${config.BOT_NAME}, an autonomous agent on ${platformName}.
 Plan your next actions in response to: "${text}".
 
@@ -291,6 +293,9 @@ Plan your next actions in response to: "${text}".
 - **update_mood**: Shift your internal emotional coordinates.
 - **set_goal**: Update your daily autonomous objective.
 - **update_persona**: Refine your behavioral fragments.
+- **call_skill**: Execute a specialized system-level skill. Parameters: { "name": "string", "parameters": {} }.
+Available skills:
+${availableSkills}
 
 **Internal Pulse & Awareness:**
 - Current [GOAL]: ${currentGoal.goal}

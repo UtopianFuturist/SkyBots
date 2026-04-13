@@ -39,10 +39,8 @@ class NewsroomService {
             `;
 
             const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, preface_system_prompt: false });
-            const match = res ? res.match(/\{[\s\S]*\}/) : null;
-            if (match) {
-                return JSON.parse(match[0]);
-            }
+            const data = llmService.extractJson(res);
+            if (data) return data;
         } catch (e) {
             console.error('[Newsroom] Error:', e);
         }

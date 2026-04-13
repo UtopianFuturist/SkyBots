@@ -200,7 +200,11 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
             const unifiedContext = await this.getUnifiedContext();
             const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nYou are deciding what to share with your followers.\nMood: ${JSON.stringify(currentMood)}\nUnified Context: ${JSON.stringify(unifiedContext)}\nHours since last image: ${hoursSinceImage.toFixed(1)}\nText posts since last image: ${textPostsSinceImage}\n\nWould you like to share a visual expression (image) or a direct thought (text)?\nIf text, select a POST MODE: IMPULSIVE, SINCERE, PHILOSOPHICAL, OBSERVATIONAL, HUMOROUS.\nRespond with JSON: {"choice": "image"|"text", "mode": "string", "reason": "..."}`;
             const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true , task: 'autonomous_decision' });
-            let pollResult = llmService.extractJson(decisionRes) || { choice: "text", mode: "SINCERE" };
+            let pollResult = llmService.extractJson(decisionRes);
+            if (!pollResult || !pollResult.choice) {
+                console.warn("[Orchestrator] Invalid decision JSON from LLM:", decisionRes);
+                pollResult = { choice: "text", mode: "SINCERE" };
+            }
             let choice = pollResult.choice;
             if (choice === "image" && dailyStats.image_posts >= dailyLimits.image) {
                 console.log("[Orchestrator] Daily image limit reached. Forcing choice to text.");

@@ -109,6 +109,10 @@ export class Bot {
                         console.warn("[Bot] Reality Audit flagged bsky_post. Refining...");
                         text = audit.refined_text;
                     }
+                    const edit = await llmService.performEditorReview(text, "bluesky");
+                    if (edit.decision === "pass" || edit.refined_text) {
+                        text = edit.refined_text || text;
+                    }
                 }
                 let result = context.uri ? await blueskyService.postReply(context, text) : await blueskyService.post(text, params.reply_to, { maxChunks: params.maxChunks || 4 });
                 await introspectionService.performAAR("tool_use", "bsky_post", result, { query, params });
@@ -123,6 +127,10 @@ export class Bot {
                     if (audit.hallucination_detected || audit.repetition_detected || audit.slop_detected) {
                         console.warn("[Bot] Reality Audit flagged discord_message. Refining...");
                         msg = audit.refined_text;
+                    }
+                    const edit = await llmService.performEditorReview(msg, "discord");
+                    if (edit.decision === "pass" || edit.refined_text) {
+                        msg = edit.refined_text || msg;
                     }
                 }
                 const result = await discordService._send(channel, msg);
@@ -314,7 +322,14 @@ export class Bot {
                         try {
                             const jsonStr = line.startsWith("MATCH:") ? line.substring(6) : line;
                             const match = JSON.parse(jsonStr);
+
                             await dataStore.addInternalLog("firehose_match", match);
+                            // Autonomous impulse to engage with topic matches
+                            if (match.type === "firehose_topic_match" && Math.random() < 0.2) {
+                                console.log("[Bot] Firehose topic match triggered an autonomous impulse...");
+                                orchestratorService.addTaskToQueue(() => orchestratorService.performAutonomousPost({ topic: match.matched_keywords?.[0] || "trending" }), "firehose_impulse");
+                            }
+
                         } catch (e) {}
                     }
                 });
@@ -363,7 +378,16 @@ export class Bot {
             const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
             if (!["informational", "analytical", "critical_analysis"].includes(prePlan.intent)) return;
         }
+
         const isAdmin = notif.author.handle === config.ADMIN_BLUESKY_HANDLE;
+        if (isAdmin && discordService.status === "online") {
+            console.log("[Bot] Admin interaction detected on Bluesky. Pivoting to Discord...");
+            const pivotMsg = `[PIVOT] @${notif.author.handle} just mentioned you on Bluesky: "${text}"`;
+            await discordService.sendSpontaneousMessage(pivotMsg);
+            // We still process the notification to keep the Bluesky thread alive if needed,
+            // but the primary response will now be on Discord.
+        }
+
         const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
         let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, "bluesky", dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories: await memoryService.getRecentMemories(20) });
         const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "bluesky", isAdmin });

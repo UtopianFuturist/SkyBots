@@ -218,7 +218,9 @@ Generate ${messageCount} separate messages/thoughts, each on a new line. Keep ea
 
             if (messages.length > 0) {
                 for (const msg of messages) {
-                    await this._send(dmChannel, msg);
+                    const edit = await llmService.performEditorReview(msg, "discord");
+                    const finalMsg = edit.refined_text || msg;
+                    await this._send(dmChannel, finalMsg);
                     await dataStore.saveDiscordInteraction(`dm-${admin.id}`, 'assistant', msg);
                     if (messages.length > 1) await new Promise(r => setTimeout(r, 2000));
                 }

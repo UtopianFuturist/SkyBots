@@ -120,8 +120,15 @@ class LLMService {
   async generateResponse(messages, options = {}) {
     await this._loadContextFiles();
     const temporalContext = await temporalService.getEnhancedTemporalContext();
+
     const dynamicPersonaBlock = this.ds ? this.ds.getPersonaBlurbs().map(b => b.text).join("\n") : "";
-    const systemPrompt = "Persona: " + (options.platform === 'bluesky' ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT) + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + "\nGuidelines: Be direct. No slop.";
+    const sessionLessons = this.ds ? this.ds.getSessionLessons().map(l => "- " + l.text).join("\n") : "";
+    const systemPrompt = "Persona: " + (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT) + "\n" +
+                         this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" +
+                         temporalContext + "\n" + dynamicPersonaBlock +
+                         (sessionLessons ? "\n\n**RECENT LESSONS (DO NOT REPEAT THESE MISTAKES):**\n" + sessionLessons : "") +
+                         "\nGuidelines: Be direct. No slop.";
+
 
     let models;
     if (options.useCoder) {

@@ -230,7 +230,8 @@ export class Bot {
         try {
             const topicPrompt = `Identify a visual subject for: "${topic}". JSON: {"topic": "label", "prompt": "stylized artistic prompt (max 270 chars)"}`;
             const res = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
-            const data = llmService.extractJson(res);
+            const data = llmService.extractJson(res) || {};
+            if (!data.prompt) return null;
             const result = await imageService.generateImage(data.prompt, options);
             if (!result) return null;
             const compliance = await llmService.isImageCompliant(result.buffer);

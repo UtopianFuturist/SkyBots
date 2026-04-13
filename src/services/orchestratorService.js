@@ -93,8 +93,8 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
 
         try {
             const res = await llmService.generateResponse([{ role: "system", content: auditPrompt }], { useStep: true, task: "image_frequency_audit" });
-            const data = llmService.extractJson(res);
-            if (data?.directive && data.priority === "high") {
+            const data = llmService.extractJson(res) || {};
+            if (data.directive && data.priority === "high") {
                 await dataStore.addPersonaBlurb(`[STRATEGY] ${data.directive}`);
                 await introspectionService.performAAR("image_frequency_audit", data.directive, { success: true });
             }
@@ -200,8 +200,7 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
             const unifiedContext = await this.getUnifiedContext();
             const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nYou are deciding what to share with your followers.\nMood: ${JSON.stringify(currentMood)}\nUnified Context: ${JSON.stringify(unifiedContext)}\nHours since last image: ${hoursSinceImage.toFixed(1)}\nText posts since last image: ${textPostsSinceImage}\n\nWould you like to share a visual expression (image) or a direct thought (text)?\nIf text, select a POST MODE: IMPULSIVE, SINCERE, PHILOSOPHICAL, OBSERVATIONAL, HUMOROUS.\nRespond with JSON: {"choice": "image"|"text", "mode": "string", "reason": "..."}`;
             const decisionRes = await llmService.generateResponse([{ role: "system", content: decisionPrompt }], { useStep: true , task: 'autonomous_decision' });
-            let pollResult = { choice: "text", mode: "SINCERE" };
-            try { pollResult = llmService.extractJson(decisionRes); } catch(e) {}
+            let pollResult = llmService.extractJson(decisionRes) || { choice: "text", mode: "SINCERE" };
             let choice = pollResult.choice;
             if (choice === "image" && dailyStats.image_posts >= dailyLimits.image) {
                 console.log("[Orchestrator] Daily image limit reached. Forcing choice to text.");
@@ -342,8 +341,8 @@ Respond with a raw internal critique.`;
             const target = orphaned[Math.floor(Math.random() * orphaned.length)];
             const scoutPrompt = `Analyze this orphaned post: "${target.post.record.text}" from @${target.post.author.handle}.\nShould you engage? If so, generate a high-quality, persona-aligned reply.\nRespond with JSON: {"engage": boolean, "reply": "string", "reason": "string"}`;
             const res = await llmService.generateResponse([{ role: 'system', content: scoutPrompt }], { useStep: true, task: 'scout_mission' });
-            const data = llmService.extractJson(res);
-            if (data?.engage && data?.reply) {
+            const data = llmService.extractJson(res) || {};
+            if (data.engage && data?.reply) {
                 const result = await blueskyService.postReply(target.post, data.reply);
                 if (result) {
                     await introspectionService.performAAR("scout_mission", data.reply, { success: true, target: target.post.uri });
@@ -395,7 +394,7 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
             const prompt = `Evolve goal: "${currentGoal.goal}". Reasoning: ${currentGoal.description}. JSON: {"evolved_goal": "string", "reasoning": "string"}`;
             const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
             const data = llmService.extractJson(res);
-            if (data) {
+            if (data && data.refined_text) {
                 await dataStore.setCurrentGoal(data.evolved_goal, data.reasoning);
                 await introspectionService.performAAR("goal_evolution", data.evolved_goal, { success: true });
             }
@@ -528,7 +527,7 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
             const prompt = `Analyze these interactions to update relational metrics: ${JSON.stringify(interactions.slice(-20))}. Respond with JSON: { "warmth_adjustment": number, "insight": "string" }`;
             const res = await llmService.generateResponse([{ role: "system", content: prompt }], { useStep: true });
             const data = llmService.extractJson(res);
-            if (data) {
+            if (data && data.warmth_adjustment !== undefined) {
                 await dataStore.adjustRelationshipWarmth(data.warmth_adjustment);
                 await introspectionService.performAAR("relational_audit", data.insight, { success: true });
             }
@@ -704,8 +703,8 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
             const history = dataStore.searchInternalLogs('llm_response', 20);
             const prompt = `Analyze recent activity and internal reflections: ${JSON.stringify(history)}. \nOn a scale of 0.0 to 1.0, what is your current "social battery" or energy level? \nRespond with JSON: {"energy": number, "reason": "string", "should_rest": boolean}`;
             const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'energy_poll' });
-            const data = llmService.extractJson(res);
-            if (data?.energy !== undefined) {
+            const data = llmService.extractJson(res) || {};
+            if (data.energy !== undefined) {
                 await dataStore.setAdminEnergy(data.energy);
                 if (data.should_rest) await dataStore.addInternalLog("energy_rest", data.reason);
                 await introspectionService.performAAR("energy_poll", data.reason, { success: true, energy: data.energy });

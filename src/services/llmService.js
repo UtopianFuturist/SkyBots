@@ -44,19 +44,48 @@ class LLMService {
 
   extractJson(str) {
     if (!str || typeof str !== "string") return null;
-    const cleanStr = str.trim();
+    let cleanStr = str.trim();
     if (cleanStr === "null" || cleanStr === "undefined") return null;
 
     try {
       // 1. Try standard match for first complete JSON object
+      // Using a non-greedy match to find the FIRST complete JSON object if multiple exist
       const match = cleanStr.match(/\{[\s\S]*\}/);
       if (match) {
+        let jsonCandidate = match[0];
+
+        // Handle nested structures by finding the matching closing brace
+        let openBraces = 0;
+        let lastBraceIndex = -1;
+        let firstBraceIndex = cleanStr.indexOf('{');
+        for (let i = firstBraceIndex; i < cleanStr.length; i++) {
+            if (cleanStr[i] === '{') openBraces++;
+            else if (cleanStr[i] === '}') {
+                openBraces--;
+                if (openBraces === 0) {
+                    lastBraceIndex = i;
+                    break;
+                }
+            }
+        }
+        if (lastBraceIndex !== -1) {
+            jsonCandidate = cleanStr.substring(firstBraceIndex, lastBraceIndex + 1);
+        }
+
         try {
-            return JSON.parse(match[0]);
+            return JSON.parse(jsonCandidate);
         } catch (e) {
-            // 2. Try to fix common trailing comma errors
-            const fixed = match[0].replace(/,\s*([\]}])/g, "$1");
-            return JSON.parse(fixed);
+            // 2. Try to fix common trailing comma errors or unescaped quotes
+            let fixed = jsonCandidate.replace(/,\s*([\]}])/g, "$1");
+            // Fix malformed keys like " "reason":
+            fixed = fixed.replace(/"\s+"([^"]+)":/g, "\"$1\":");
+            try {
+                return JSON.parse(fixed);
+            } catch (e2) {
+                // If still failing, try to fix unescaped newlines in strings
+                const fixedNewlines = fixed.replace(/(?<=: ")([\s\S]*?)(?=",|"\s*})/g, (match) => match.replace(/\n/g, "\\n"));
+                return JSON.parse(fixedNewlines);
+            }
         }
       }
 
@@ -122,7 +151,11 @@ class LLMService {
     prepared.push(...nonSystemMessages);
     const hasUser = prepared.some(m => m.role === 'user');
     if (!hasUser) {
-      prepared.push({ role: 'user', content: options.platform === 'bluesky' ? '(Continue your internal narrative...)' : '(Continue your narrative flow...)' });
+      const hasAssistant = prepared.some(m => m.role === 'assistant');
+      const instruction = hasAssistant
+        ? (options.platform === 'bluesky' ? '(Continue your internal narrative...)' : '(Continue your narrative flow...)')
+        : '(Proceed based on the system instructions above.)';
+      prepared.push({ role: 'user', content: instruction });
     }
     return prepared;
   }
@@ -144,7 +177,7 @@ class LLMService {
     if (options.useCoder) {
         models = [...new Set([config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean))];
     } else {
-        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL, 'zai-org/GLM-4.7', 'deepseek-ai/deepseek-v3.2'].filter(Boolean))];
+        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean))];
     }
     let lastError = null;
     for (const model of models) {

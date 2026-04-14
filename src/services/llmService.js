@@ -49,7 +49,6 @@ class LLMService {
 
     try {
       // 1. Try standard match for first complete JSON object
-      // Using a non-greedy match to find the FIRST complete JSON object if multiple exist
       const match = cleanStr.match(/\{[\s\S]*\}/);
       if (match) {
         let jsonCandidate = match[0];
@@ -75,21 +74,34 @@ class LLMService {
         try {
             return JSON.parse(jsonCandidate);
         } catch (e) {
-            // 2. Try to fix common trailing comma errors or unescaped quotes
-            let fixed = jsonCandidate.replace(/,\s*([\]}])/g, "$1");
-            // Fix malformed keys like " "reason":
-            fixed = fixed.replace(/"\s+"([^"]+)":/g, "\"$1\":");
+            // 2. Try to fix common errors
+            let fixed = jsonCandidate.replace(/,\s*([\]}])/g, "$1"); // trailing commas
+            fixed = fixed.replace(/"\s+"([^"]+)":/g, "\"$1\":"); // extra spaces in keys
+            fixed = fixed.replace(/([{,]\s*)([a-zA-Z_]\w*):/g, '$1"$2":'); // unquoted keys
             try {
                 return JSON.parse(fixed);
             } catch (e2) {
                 // If still failing, try to fix unescaped newlines in strings
-                const fixedNewlines = fixed.replace(/(?<=: ")([\s\S]*?)(?=",|"\s*})/g, (match) => match.replace(/\n/g, "\\n"));
-                return JSON.parse(fixedNewlines);
+                try {
+                    const fixedNewlines = fixed.replace(/(?<=: ")([\s\S]*?)(?=",|"\s*})/g, (m) => m.replace(/\n/g, "\\n"));
+                    return JSON.parse(fixedNewlines);
+                } catch (e3) { return null; }
             }
         }
       }
 
-      // 3. Fallback to direct parse if no brackets found (unlikely for objects)
+      // Handle "key: value" without braces
+      if (cleanStr.includes(':') && !cleanStr.startsWith('{')) {
+          const simpleMatch = cleanStr.match(/^([a-zA-Z_]\w*):\s*([\s\S]*)$/);
+          if (simpleMatch) {
+              const key = simpleMatch[1];
+              let val = simpleMatch[2].trim();
+              if (val.startsWith('"') && val.endsWith('"')) {
+                  try { return JSON.parse(`{"${key}": ${val}}`); } catch (e) {}
+              }
+          }
+      }
+
       return JSON.parse(cleanStr);
     } catch (e) {
       console.warn("[LLMService] JSON Extraction failed for string:", str.substring(0, 100) + "...");
@@ -166,11 +178,15 @@ class LLMService {
 
     const dynamicPersonaBlock = this.ds ? this.ds.getPersonaBlurbs().map(b => b.text).join("\n") : "";
     const sessionLessons = this.ds ? this.ds.getSessionLessons().map(l => "- " + l.text).join("\n") : "";
-    const systemPrompt = "Persona: " + (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT) + "\n" +
+    let basePersona = (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT);
+    if (options.useStep || options.task) {
+        basePersona = "You are a technical sub-agent of " + config.BOT_NAME + ". Your goal is to provide structured data (JSON) to the orchestrator. Maintain the core essence of the persona but remain strictly operational.";
+    }
+    const systemPrompt = "Persona: " + basePersona + "\n" +
                          this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" +
                          temporalContext + "\n" + dynamicPersonaBlock +
                          (sessionLessons ? "\n\n**RECENT LESSONS (DO NOT REPEAT THESE MISTAKES):**\n" + sessionLessons : "") +
-                         "\nGuidelines: Be direct. No slop.";
+                         "\nGuidelines: Be direct. No slop. If JSON is requested, output ONLY the JSON object.";
 
 
     let models;

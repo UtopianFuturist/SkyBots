@@ -24,7 +24,6 @@ class DiscordService {
         this.botInstance = botInstance;
 
         console.log('[DiscordService] Starting initialization...');
-        const { persistentAgent } = await import("./llmService.js");
         this.client = new Client({
             partials: [Partials.Channel, Partials.Message, Partials.Reaction],
             intents: [
@@ -32,8 +31,7 @@ class DiscordService {
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.DirectMessages, GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent
-            ],
-            rest: { agent: persistentAgent }
+            ]
         });
 
         this.client.on('ready', () => {

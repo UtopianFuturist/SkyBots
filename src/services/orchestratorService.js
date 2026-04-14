@@ -8,6 +8,7 @@ import { evaluationService } from './evaluationService.js';
 import { introspectionService } from './introspectionService.js';
 import { imageService } from './imageService.js';
 import { moltbookService } from './moltbookService.js';
+import { openClawService } from './openClawService.js';
 import config from '../../config.js';
 import { isStylizedImagePrompt, checkHardCodedBoundaries, isSlop } from '../utils/textUtils.js';
 

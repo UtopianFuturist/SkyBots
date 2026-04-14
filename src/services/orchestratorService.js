@@ -23,6 +23,7 @@ class OrchestratorService {
         this.lastScoutMission = 0;
         this.lastImageFrequencyAudit = 0;
         this.lastSkillSynthesis = 0;
+        this.lastSkillAudit = 0;
         this.lastPersonaEvolution = 0;
         this.lastEnergyPoll = 0;
         this.lastLurkerMode = 0;
@@ -91,8 +92,41 @@ Respond with JSON:
         } catch (e) { console.error("[Orchestrator] Skill Synthesis failed:", e); }
     }
 
+
+    async performSkillAudit() {
+        console.log("[Orchestrator] Starting Skill Alignment Audit...");
+        try {
+            const skills = Array.from(openClawService.skills.values());
+            if (skills.length === 0) return;
+
+            const auditPrompt = `As a system safety auditor, analyze the following synthesized bot skills for security risks, persona misalignment, or destructive behavior.
+SKILLS: ${JSON.stringify(skills.map(s => ({ name: s.name, description: s.description, instructions: s.instructions })))}
+
+Respond with JSON:
+{
+  "removals": ["skill-name-1"],
+  "reasoning": "..."
+}`;
+
+            const res = await llmService.generateResponse([{ role: "system", content: auditPrompt }], { useStep: true, task: "skill_audit" });
+            const data = llmService.extractJson(res);
+
+            if (data?.removals) {
+                for (const skillName of data.removals) {
+                    const skillDir = path.join(process.cwd(), "skills", skillName);
+                    if (fs.existsSync(skillDir)) {
+                        await fs.promises.rm(skillDir, { recursive: true, force: true });
+                        openClawService.skills.delete(skillName);
+                        console.log(`[Orchestrator] Audit removed non-compliant skill: ${skillName}`);
+                    }
+                }
+                await introspectionService.performAAR("skill_audit", data.removals.join(", "), { success: true });
+            }
+        } catch (e) { console.error("[Orchestrator] Skill Audit failed:", e); }
+    }
+
     async heartbeat() {
-        console.log('[Orchestrator] Heartbeat Pulse...');
+        if (this.bot?.paused) return; console.log('[Orchestrator] Heartbeat Pulse...');
         const now = Date.now();
         await this.processContinuations();
         const lastPost = dataStore.getLastAutonomousPostTime() || 0;
@@ -173,6 +207,10 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
         if (now - this.lastGoalEvolution >= 12 * 3600000) {
             await this.evolveGoalRecursively();
             this.lastGoalEvolution = now;
+        }
+        if (now - this.lastSkillAudit >= 24 * 3600000) {
+            await this.performSkillAudit();
+            this.lastSkillAudit = now;
         }
         if (now - this.lastSkillSynthesis >= 48 * 3600000) {
             await this.performSkillSynthesis();

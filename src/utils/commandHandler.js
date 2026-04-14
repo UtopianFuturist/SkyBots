@@ -21,14 +21,38 @@ export const handleCommand = async (bot, post, text) => {
     return "Welcome back! You've been removed from my blocklist.";
   }
 
+
   // Admin-only commands
   if (handle === config.ADMIN_BLUESKY_HANDLE) {
-    if (lowerText === '!resume') {
+    if (lowerText === "!resume") {
       bot.paused = false;
-      console.log('[Bot] Bot has been resumed by admin.');
-      return 'Bot operations have been resumed.';
+      console.log("[Bot] Bot has been resumed by admin.");
+      return "Bot operations have been resumed.";
+    }
+    if (lowerText === "!pause") {
+      bot.paused = true;
+      console.log("[Bot] Bot has been paused by admin.");
+      return "Bot operations (autonomous loop) have been paused.";
+    }
+    if (lowerText === "!skills") {
+      const { openClawService } = require("../services/openClawService.js");
+      const skills = Array.from(openClawService.skills.keys());
+      return `Active Skills: ${skills.join(", ") || "None"}`;
+    }
+    if (lowerText.startsWith("!skill-delete ")) {
+      const skillName = lowerText.replace("!skill-delete ", "").trim();
+      const path = require("path");
+      const skillDir = path.join(process.cwd(), "skills", skillName);
+      if (fs.existsSync(skillDir)) {
+          fs.rmSync(skillDir, { recursive: true, force: true });
+          const { openClawService } = require("../services/openClawService.js");
+          openClawService.skills.delete(skillName);
+          return `Skill "${skillName}" has been deleted.`;
+      }
+      return `Skill "${skillName}" not found.`;
     }
   }
+
 
   if (lowerText.includes('!mute')) {
     await dataStore.muteThread(threadRootUri);

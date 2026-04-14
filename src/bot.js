@@ -25,6 +25,7 @@ import path from 'path';
 export class Bot {
     constructor() {
         this.paused = false;
+        orchestratorService.setBotInstance(this);
         this.readmeContent = "";
         if (llmService.setDataStore) llmService.setDataStore(dataStore);
         if (llmService.setMemoryProvider) llmService.setMemoryProvider(memoryService);
@@ -88,6 +89,10 @@ export class Bot {
     }
 
     async heartbeat() {
+        if (this.paused) {
+            console.log("[Bot] Pulse skipped. Bot is paused by Admin.");
+            return;
+        }
         await orchestratorService.heartbeat();
     }
 

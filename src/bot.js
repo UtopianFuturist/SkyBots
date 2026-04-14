@@ -25,6 +25,7 @@ import path from 'path';
 export class Bot {
     constructor() {
         this.paused = false;
+        orchestratorService.setBotInstance(this);
         this.readmeContent = "";
         if (llmService.setDataStore) llmService.setDataStore(dataStore);
         if (llmService.setMemoryProvider) llmService.setMemoryProvider(memoryService);
@@ -88,6 +89,10 @@ export class Bot {
     }
 
     async heartbeat() {
+        if (this.paused) {
+            console.log("[Bot] Pulse skipped. Bot is paused by Admin.");
+            return;
+        }
         await orchestratorService.heartbeat();
     }
 
@@ -139,21 +144,20 @@ export class Bot {
             }
             if (action.tool === "image_gen") {
                 const prompt = params.prompt || query;
-                const result = await this._generateVerifiedImagePost(prompt, { platform: context.platform || 'bluesky' });
-                if (result) {
-                    if (context.platform === 'discord') {
+                if (context.platform === "discord") {
+                    const result = await this._generateVerifiedImagePost(prompt, { platform: "discord" });
+                    if (result) {
                         const channel = context.channel || await discordService.getAdminUser();
-                        const { AttachmentBuilder } = await import('discord.js');
-                        await discordService._send(channel, `${result.caption}\n\n[PROMPT]: ${result.finalPrompt}`, { files: [new AttachmentBuilder(result.buffer, { name: 'generated.jpg' })] });
-                    } else {
-                        const blob = await blueskyService.uploadBlob(result.buffer, 'image/jpeg');
-                        const embed = { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: result.altText }] };
-                        if (context.uri) await blueskyService.postReply(context, result.caption, { embed });
-                        else await blueskyService.post(result.caption, embed);
+                        const { AttachmentBuilder } = await import("discord.js");
+                        await discordService._send(channel, `${result.caption}\n\n[PROMPT]: ${result.finalPrompt}`, { files: [new AttachmentBuilder(result.buffer, { name: "generated.jpg" })] });
+                        return { success: true };
                     }
-                    return { success: true, data: result.finalPrompt };
+                } else {
+                    // Bluesky use verified autonomous flow
+                    await orchestratorService._performHighQualityImagePost(prompt);
+                    return { success: true };
                 }
-                return { success: false, reason: "Image generation or verification failed" };
+                return { success: false, reason: "Image generation failed" };
             }
             if (action.tool === "set_goal") {
                 await dataStore.setCurrentGoal(params.goal || query, params.description || "");

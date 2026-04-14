@@ -81,6 +81,21 @@ class DiscordService {
     async handleMessage(message) {
         if (message.author.bot) return;
         const isDM = !message.guild;
+        const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
+        const text = message.content.trim();
+
+        // Admin-only command handler
+        if (text.startsWith("!")) {
+            if (!isAdmin) {
+                console.warn(`[DiscordService] Non-admin user ${message.author.username} tried to use command: ${text}`);
+                return;
+            }
+            const { handleCommand } = await import("../utils/commandHandler.js");
+            const response = await handleCommand(this.botInstance, { author: { handle: message.author.username }, platform: "discord" }, text);
+            if (response) await this._send(message.channel, response);
+            return;
+        }
+
         const isMentioned = message.mentions.has(this.client.user) || message.content.toLowerCase().includes(this.nickname.toLowerCase());
         const isReplyToMe = message.reference && (await message.channel.messages.fetch(message.reference.messageId)).author.id === this.client.user.id;
 

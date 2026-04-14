@@ -5,6 +5,8 @@ import { imageService } from '../services/imageService.js';
 import { blueskyService } from '../services/blueskyService.js';
 import { llmService } from '../services/llmService.js';
 import config from '../../config.js';
+import path from 'path';
+import fs from 'fs';
 
 export const handleCommand = async (bot, post, text) => {
   const lowerText = text.toLowerCase().trim();
@@ -21,14 +23,37 @@ export const handleCommand = async (bot, post, text) => {
     return "Welcome back! You've been removed from my blocklist.";
   }
 
+
   // Admin-only commands
   if (handle === config.ADMIN_BLUESKY_HANDLE) {
-    if (lowerText === '!resume') {
+    if (lowerText === "!resume") {
       bot.paused = false;
-      console.log('[Bot] Bot has been resumed by admin.');
-      return 'Bot operations have been resumed.';
+      console.log("[Bot] Bot has been resumed by admin.");
+      return "Bot operations have been resumed.";
+    }
+    if (lowerText === "!pause") {
+      bot.paused = true;
+      console.log("[Bot] Bot has been paused by admin.");
+      return "Bot operations (autonomous loop) have been paused.";
+    }
+    if (lowerText === "!skills") {
+      const { openClawService } = await import("../services/openClawService.js");
+      const skills = Array.from(openClawService.skills.keys());
+      return `Active Skills: ${skills.join(", ") || "None"}. Use \`!skill-delete [name]\` to remove risky tools.`;
+    }
+    if (lowerText.startsWith("!skill-delete ")) {
+      const skillName = lowerText.replace("!skill-delete ", "").trim();
+      const skillDir = path.join(process.cwd(), "skills", skillName);
+      if (fs.existsSync(skillDir)) {
+          fs.rmSync(skillDir, { recursive: true, force: true });
+          const { openClawService } = await import("../services/openClawService.js");
+          openClawService.skills.delete(skillName);
+          return `Skill "${skillName}" has been deleted.`;
+      }
+      return `Skill "${skillName}" not found.`;
     }
   }
+
 
   if (lowerText.includes('!mute')) {
     await dataStore.muteThread(threadRootUri);
@@ -42,8 +67,16 @@ export const handleCommand = async (bot, post, text) => {
     return `Initializing specialist research project on: "${query}". I will report findings once complete.`;
   }
 
-  if (lowerText === '!help') {
-    return "I'm an AI assistant! Commands: `!stop` (block me), `!resume` (unblock), `!mute` (mute thread), `!research [topic]` (start project), `!about` (learn about me). I can also chat, search the web, and generate images!";
+  if (lowerText === "!help") {
+    return "COMMANDS (Admin Only):\n" +
+           "`!pause` / `!resume`: Control autonomous loop\n" +
+           "`!skills`: List active OpenClaw capabilities\n" +
+           "`!skill-delete [name]`: Delete a synthesized skill\n" +
+           "`!research [topic]`: Start a specialist project\n" +
+           "`!search [query]`: Web search\n" +
+           "`!generate-image [prompt]`: Create an image\n" +
+           "`!mute`: Mute current thread\n" +
+           "`!about`: Technical status report";
   }
 
   if (lowerText === '!about') {

@@ -131,10 +131,12 @@ class MoltbookService {
   async register(name, description) {
     console.log(`[Moltbook] Attempting to register agent: "${name}"`);
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/agents/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, description })
+        body: JSON.stringify({ name, description }),
+        agent: persistentAgent
       });
 
       if (!response.ok) {
@@ -298,8 +300,10 @@ class MoltbookService {
       const maskedKey = `${this.db.data.api_key.substring(0, 8)}...${this.db.data.api_key.substring(this.db.data.api_key.length - 4)}`;
       console.log(`[Moltbook] Checking status with key: ${maskedKey}`);
 
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/agents/status`, {
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` },
+        agent: persistentAgent
       });
 
       const data = await this._parseResponse(response);
@@ -451,8 +455,10 @@ class MoltbookService {
     if (!this.db?.data?.api_key || this.isSuspended()) return [];
 
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/posts?sort=${sort}&limit=${limit}`, {
-        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db.data.api_key}` },
+        agent: persistentAgent
       });
 
       const data = await this._parseResponse(response);
@@ -521,13 +527,15 @@ class MoltbookService {
 
     console.log(`[Moltbook] Creating submolt: m/${name} ("${displayName}")`);
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/submolts`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.db?.data.api_key}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ name, display_name: displayName, description })
+        body: JSON.stringify({ name, display_name: displayName, description }),
+        agent: persistentAgent
       });
 
       const data = await this._parseResponse(response);
@@ -558,8 +566,10 @@ class MoltbookService {
     if (!this.db?.data.api_key || this.isSuspended()) return [];
 
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/submolts`, {
-        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` },
+        agent: persistentAgent
       });
 
       const data = await this._parseResponse(response);
@@ -593,13 +603,15 @@ class MoltbookService {
 
     console.log(`[Moltbook] Subscribing to submolt: m/${cleanName}`);
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/submolts/${cleanName}/subscribe`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.db?.data.api_key}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({}) // Some APIs require a body for POST
+        body: JSON.stringify({}), // Some APIs require a body for POST
+        agent: persistentAgent
       });
 
       const data = await this._parseResponse(response);
@@ -639,9 +651,11 @@ class MoltbookService {
     if (!this.db?.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Upvoting post: ${postId}`);
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/posts/${postId}/upvote`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` },
+        agent: persistentAgent
       });
 
       const data = await this._parseResponse(response);
@@ -670,9 +684,11 @@ class MoltbookService {
     if (!this.db?.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Downvoting post: ${postId}`);
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/posts/${postId}/downvote`, {
         method: 'POST',
-        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` },
+        agent: persistentAgent
       });
 
       const data = await this._parseResponse(response);
@@ -701,13 +717,15 @@ class MoltbookService {
     if (!this.db?.data.api_key || this.isSuspended()) return null;
     console.log(`[Moltbook] Adding comment to post: ${postId}`);
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.db?.data.api_key}`,
           'Content-Type': 'application/json'
         },
-        body: JSON.stringify({ content })
+        body: JSON.stringify({ content }),
+        agent: persistentAgent
       });
 
       const data = await this._parseResponse(response);
@@ -735,8 +753,10 @@ class MoltbookService {
   async getPostComments(postId) {
     if (!this.db?.data.api_key || this.isSuspended()) return [];
     try {
+      const { persistentAgent } = await import("./llmService.js");
       const response = await fetch(`${this.apiBase}/posts/${postId}/comments`, {
-        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` }
+        headers: { 'Authorization': `Bearer ${this.db?.data.api_key}` },
+        agent: persistentAgent
       });
       const data = await this._parseResponse(response);
 

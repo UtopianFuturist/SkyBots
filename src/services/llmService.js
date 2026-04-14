@@ -44,18 +44,39 @@ class LLMService {
 
   extractJson(str) {
     if (!str || typeof str !== "string") return null;
-    const cleanStr = str.trim();
+    let cleanStr = str.trim();
     if (cleanStr === "null" || cleanStr === "undefined") return null;
 
     try {
       // 1. Try standard match for first complete JSON object
+      // Using a non-greedy match to find the FIRST complete JSON object if multiple exist
       const match = cleanStr.match(/\{[\s\S]*\}/);
       if (match) {
+        let jsonCandidate = match[0];
+
+        // Handle nested structures by finding the matching closing brace
+        let openBraces = 0;
+        let lastBraceIndex = -1;
+        let firstBraceIndex = cleanStr.indexOf('{');
+        for (let i = firstBraceIndex; i < cleanStr.length; i++) {
+            if (cleanStr[i] === '{') openBraces++;
+            else if (cleanStr[i] === '}') {
+                openBraces--;
+                if (openBraces === 0) {
+                    lastBraceIndex = i;
+                    break;
+                }
+            }
+        }
+        if (lastBraceIndex !== -1) {
+            jsonCandidate = cleanStr.substring(firstBraceIndex, lastBraceIndex + 1);
+        }
+
         try {
-            return JSON.parse(match[0]);
+            return JSON.parse(jsonCandidate);
         } catch (e) {
-            // 2. Try to fix common trailing comma errors
-            const fixed = match[0].replace(/,\s*([\]}])/g, "$1");
+            // 2. Try to fix common trailing comma errors or unescaped quotes
+            const fixed = jsonCandidate.replace(/,\s*([\]}])/g, "$1");
             return JSON.parse(fixed);
         }
       }

@@ -67,7 +67,13 @@ export class Bot {
             } catch (e) { console.warn('[Bot] Admin DID resolution failed:', e.message); }
         }
 
-        try { await moltbookService.init(); } catch (e) { console.error('[Bot] Moltbook init failed:', e); }
+        try {
+            if (config.MOLTBOOK_API_KEY) {
+                await moltbookService.init();
+            } else {
+                console.log('[Bot] Moltbook API key not set, skipping initialization.');
+            }
+        } catch (e) { console.error('[Bot] Moltbook init failed:', e); }
         try { await openClawService.init(); } catch (e) { console.error('[Bot] OpenClaw init failed:', e); }
         try { await toolService.init(); } catch (e) { console.error('[Bot] ToolService init failed:', e); }
         try { await nodeGatewayService.init(); } catch (e) { console.error('[Bot] NodeGateway init failed:', e); }

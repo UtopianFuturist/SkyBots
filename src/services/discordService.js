@@ -71,8 +71,8 @@ class DiscordService {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
                 if (err.stack) console.error(`[DiscordService] Stack:`, err.stack);
                 if (attempts < maxAttempts) {
-                    console.log(`[DiscordService] Waiting 60s before retry...`);
-                    await new Promise(r => setTimeout(r, 60000));
+                    console.log(`[DiscordService] Waiting 300s before retry...`);
+                    await new Promise(r => setTimeout(r, 300000));
                 }
             }
         }

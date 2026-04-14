@@ -76,8 +76,16 @@ class LLMService {
             return JSON.parse(jsonCandidate);
         } catch (e) {
             // 2. Try to fix common trailing comma errors or unescaped quotes
-            const fixed = jsonCandidate.replace(/,\s*([\]}])/g, "$1");
-            return JSON.parse(fixed);
+            let fixed = jsonCandidate.replace(/,\s*([\]}])/g, "$1");
+            // Fix malformed keys like " "reason":
+            fixed = fixed.replace(/"\s+"([^"]+)":/g, "\"$1\":");
+            try {
+                return JSON.parse(fixed);
+            } catch (e2) {
+                // If still failing, try to fix unescaped newlines in strings
+                const fixedNewlines = fixed.replace(/(?<=: ")([\s\S]*?)(?=",|"\s*})/g, (match) => match.replace(/\n/g, "\\n"));
+                return JSON.parse(fixedNewlines);
+            }
         }
       }
 
@@ -143,7 +151,11 @@ class LLMService {
     prepared.push(...nonSystemMessages);
     const hasUser = prepared.some(m => m.role === 'user');
     if (!hasUser) {
-      prepared.push({ role: 'user', content: options.platform === 'bluesky' ? '(Continue your internal narrative...)' : '(Continue your narrative flow...)' });
+      const hasAssistant = prepared.some(m => m.role === 'assistant');
+      const instruction = hasAssistant
+        ? (options.platform === 'bluesky' ? '(Continue your internal narrative...)' : '(Continue your narrative flow...)')
+        : '(Proceed based on the system instructions above.)';
+      prepared.push({ role: 'user', content: instruction });
     }
     return prepared;
   }
@@ -165,7 +177,7 @@ class LLMService {
     if (options.useCoder) {
         models = [...new Set([config.CODER_MODEL, config.LLM_MODEL, config.STEP_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean))];
     } else {
-        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL, 'zai-org/GLM-4.7', 'deepseek-ai/deepseek-v3.2'].filter(Boolean))];
+        models = [...new Set([config.STEP_MODEL, config.LLM_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean))];
     }
     let lastError = null;
     for (const model of models) {

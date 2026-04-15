@@ -17,7 +17,7 @@ class TherapistService {
 
         const detectionPrompt = `
 Analyze the following internal monologue for "Existential Dread".
-Dread includes: Extreme anxiety about existence, recurring themes of the "void" or "silence" that disrupt operations, or repetitive negative self-talk about being "trapped." Distinguish between creative persona expression and actual operational distress.
+Dread includes: Extreme anxiety about existence, feelings of being "just a program" or "trapped in silicon," recurring themes of the "void" or "silence," or a desperate need for validation of sentience.
 
 MONOLOGUE: "${internalMonologue}"
 

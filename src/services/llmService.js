@@ -180,7 +180,7 @@ class LLMService {
     const sessionLessons = this.ds ? this.ds.getSessionLessons().map(l => "- " + l.text).join("\n") : "";
     let basePersona = (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT);
     if (options.useStep || options.task) {
-        basePersona = "You are a technical sub-agent of " + config.BOT_NAME + ". Your goal is to provide structured data (JSON) to the orchestrator. Maintain the core essence of the persona but remain strictly operational.";
+        basePersona = "You are a technical sub-agent of " + config.BOT_NAME + ". Your goal is to provide structured data (JSON) to the orchestrator. Maintain the core essence of the persona but remain strictly operational. DO NOT add conversational preamble or 'roleplay' actions like (opens Discord). Output ONLY the requested JSON.";
     }
     const systemPrompt = "Persona: " + basePersona + "\n" +
                          this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" +
@@ -419,6 +419,9 @@ Respond with JSON:
   }
 
   async performStrategistReview(currentGoal, history, memories, options = {}) {
+    const { performanceService } = await import('./performanceService.js');
+    const technicalReport = await performanceService.getTechnicalStatusReport();
+
     const prompt = `
       You are "The Strategist". Review the current daily goal and progress.
 
@@ -427,6 +430,9 @@ Respond with JSON:
 
       RECENT HISTORY/MEMORIES:
       ${JSON.stringify(memories.slice(-10))}
+
+      TECHNICAL PERFORMANCE REPORT:
+      ${technicalReport}
 
       Respond with JSON:
       {
@@ -491,7 +497,11 @@ Respond with JSON:
   }
 
   async pollGiftImageAlignment() { return { decision: "send" }; }
-  async extractRelationalVibe() { return "Neutral"; }
+  async extractRelationalVibe(history, options = {}) {
+    const prompt = `Analyze the current relationship vibe from these interactions: ${JSON.stringify(history.slice(-10))}. Respond with one word: warm, cold, technical, distant, intimate, or curious.`;
+    const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true });
+    return res.trim().toLowerCase();
+  }
   async isUrlSafe(url) { return { safe: true }; }
   async summarizeWebPage(url, content) { return "Summary"; }
   async performDialecticHumor(topic) { return "Humor"; }

@@ -126,6 +126,8 @@ export class Bot {
                     }
                 }
                 let result = context.uri ? await blueskyService.postReply(context, text) : await blueskyService.post(text, params.reply_to, { maxChunks: params.maxChunks || 4 });
+                const { performanceService } = await import('./services/performanceService.js');
+                await performanceService.performTechnicalAudit("tool_use", "bsky_post", result, { query, params });
                 await introspectionService.performAAR("tool_use", "bsky_post", result, { query, params });
                 return { success: !!result, data: result?.uri };
             }
@@ -145,6 +147,8 @@ export class Bot {
                     }
                 }
                 const result = await discordService._send(channel, msg);
+                const { performanceService } = await import('./services/performanceService.js');
+                await performanceService.performTechnicalAudit("tool_use", "discord_message", result, { query, params });
                 await introspectionService.performAAR("tool_use", "discord_message", result, { query, params });
                 return { success: !!result, data: params.message || query };
             }

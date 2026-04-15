@@ -318,6 +318,8 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
                         await dataStore.incrementDailyTextPosts();
                         await dataStore.incrementTextPostsSinceLastImage();
                         await dataStore.addRecentThought("bluesky", content);
+                        const { performanceService } = await import('./performanceService.js');
+                        await performanceService.performTechnicalAudit("autonomous_text_post", content, { success: true, platform: "bluesky" }, { topic });
                         await introspectionService.performAAR("autonomous_text_post", content, { success: true, platform: "bluesky" }, { topic });
                     }
                     await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
@@ -361,6 +363,8 @@ Respond with a raw internal critique.`;
             if (postResult) {
                 await dataStore.incrementDailyImagePosts();
                 await dataStore.updateLastBlueskyImagePostTime(new Date().toISOString());
+                const { performanceService } = await import('./performanceService.js');
+                await performanceService.performTechnicalAudit("autonomous_image_post", caption, { success: true, platform: "bluesky", topic }, { finalPrompt: data.prompt, visionAnalysis: analysis });
                 await introspectionService.performAAR("autonomous_image_post", caption, { success: true, platform: "bluesky", topic }, { finalPrompt: data.prompt, visionAnalysis: analysis });
             }
         } catch (e) { console.error("[Orchestrator] Image post failed:", e); }

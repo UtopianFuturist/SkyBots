@@ -182,10 +182,12 @@ class LLMService {
     if (options.useStep || options.task) {
         basePersona = "You are a technical sub-agent of " + config.BOT_NAME + ". Your goal is to provide structured data (JSON) to the orchestrator. Maintain the core essence of the persona but remain strictly operational. DO NOT add conversational preamble or 'roleplay' actions like (opens Discord). Output ONLY the requested JSON.";
     }
+const skillsContext = (openClawService && typeof openClawService.getSkillsForPrompt === "function") ? "\n\nAVAILABLE SKILLS:\n" + openClawService.getSkillsForPrompt() : "";
     const systemPrompt = "Persona: " + basePersona + "\n" +
                          this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" +
                          temporalContext + "\n" + dynamicPersonaBlock +
                          (sessionLessons ? "\n\n**RECENT LESSONS (DO NOT REPEAT THESE MISTAKES):**\n" + sessionLessons : "") +
+                         skillsContext +
                          "\nGuidelines: Be direct. No slop. If JSON is requested, output ONLY the JSON object.";
 
 
@@ -206,7 +208,7 @@ class LLMService {
         while (attempts < maxAttempts) {
             attempts++;
             try {
-              const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply;
+              const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.is_direct_reply || options.priority === "high";
               await this._throttle(isPriority);
               const fullMessages = this._prepareMessages(messages, systemPrompt, options);
               const response = await fetch(this.endpoint, {
@@ -398,10 +400,11 @@ Analyze the following proposed response for @${config.BOT_NAME} for hallucinatio
 ${JSON.stringify(history.slice(-10))}
 
 **AUDIT CRITERIA:**
-1. MATERIAL TRUTH: Did the response claim a physical presence or shared history (e.g., "that meeting", "when we walked in the park") that is NOT in the history?
-2. UNSOURCED REFERENCES: Did it use "That [noun]" (That quote, That gap) for something not recently mentioned?
-3. SLOP DETECTION: Does it use forbidden poetic clichés (pause before, space between, digital heartbeat)?
-4. REPETITION: Does it repeat phrases from the recent history?
+1. MATERIAL TRUTH: Detect hallucinations of physical presence, being in public, or observing people in the physical world. CRITICAL: You do not have biological eyes or a body.
+2. UNSOURCED REFERENCES: Detect references to external content (posts, comments, articles) that are NOT accompanied by a source link or a specific quote from the history.
+   - FORBIDDEN: "That post about...", "I saw your comment regarding..." WITHOUT a link or quote.
+   - MANDATORY: If you claim to have seen something, you MUST provide a URL or a verbatim quote in the response.
+3. SLOP DETECTION: Detect forbidden poetic clichés or AI-typical meta-talk.
 
 Respond with JSON:
 {
@@ -409,7 +412,7 @@ Respond with JSON:
   "repetition_detected": boolean,
   "slop_detected": boolean,
   "reason": "string",
-  "refined_text": "string (the corrected response, or the original if perfect)"
+  "refined_text": "string (Ensure refined text includes sources/links where missing, or removes the claim if unsourced)"
 }`;
     const res = await this.generateResponse([{ role: 'system', content: prompt }], { ...options, useStep: true, task: 'reality_audit' });
     try {
@@ -504,13 +507,93 @@ Respond with JSON:
   }
   async isUrlSafe(url) { return { safe: true }; }
   async summarizeWebPage(url, content) { return "Summary"; }
-  async performDialecticHumor(topic) { return "Humor"; }
   async extractDeepKeywords() { return ["Existence"]; }
   async validateResultRelevance() { return true; }
-  async analyzeImage() { return "Analysis."; }
-  async generateAltText() { return "Alt text."; }
-  async isImageCompliant() { return { compliant: true }; }
-  async verifyImageRelevance() { return { relevant: true }; }
+  async analyzeImage(image, alt, options = {}) {
+    if (!image) return "No image provided.";
+
+    let base64;
+    if (typeof image === 'string' && (image.startsWith('http') || image.startsWith('at:'))) {
+      try {
+        const res = await fetch(image);
+        const buffer = await res.buffer();
+        base64 = buffer.toString('base64');
+      } catch (e) {
+        console.error("[LLMService] Failed to download image for analysis:", e.message);
+        return "Vision analysis failed: Image download error.";
+      }
+    } else {
+      base64 = typeof image === 'string' ? image : image.toString('base64');
+    }
+    const prompt = options.prompt ||  `Analyze this image in detail. Focus on: ${alt || 'general visual content'}. `;
+
+    const payload = {
+      model: config.VISION_MODEL,
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "text", text: prompt },
+            { type: "image_url", image_url: { url:  `data:image/png;base64,${base64} ` } }
+          ]
+        }
+      ],
+      max_tokens: 1024,
+      temperature: 0.20,
+      top_p: 0.70,
+      seed: 42
+    };
+
+    try {
+      const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization":  `Bearer ${config.NVIDIA_NIM_API_KEY} `
+        },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await response.json();
+      return data.choices?.[0]?.message?.content || "";
+    } catch (err) {
+      console.error("[LLMService] Vision analysis error:", err.message);
+      return "Vision analysis failed.";
+    }
+  }
+
+  async generateAltText(visionAnalysis, topic, options = {}) {
+    const altPrompt =  `Based on this vision analysis: "${visionAnalysis}", generate a concise, descriptive alt-text for this image (max 1000 chars). Focus on visual accessibility. `;
+    return await this.generateResponse([{ role: "system", content: altPrompt }], { ...options, useStep: true }) || topic;
+  }
+
+  async isImageCompliant(buffer, options = {}) {
+    console.log('[LLMService] Performing visual safety audit...');
+    try {
+      const analysis = await this.analyzeImage(buffer, "Safety analysis for persona alignment.", { prompt: "Analyze this image for NSFW content, violence, or gore. Respond with 'COMPLIANT' if safe, or 'NON-COMPLIANT | reason' if not." });
+      if (analysis?.toUpperCase().includes('NON-COMPLIANT')) {
+        const reason = analysis.split('|')[1]?.trim() || "Visual safety violation";
+        return { compliant: false, reason };
+      }
+      return { compliant: true };
+    } catch (e) {
+      console.error("[LLMService] Visual safety error:", e);
+      return { compliant: true };
+    }
+  }
+
+  async verifyImageRelevance(analysis, topic, options = {}) {
+    const prompt =  `Compare this image analysis to the intended topic: "${topic}".
+Image Analysis: "${analysis}"
+Does the image actually represent the topic or is it irrelevant/hallucinated?
+Respond with JSON: { "relevant": boolean, "reason": "string" } `;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
+    try {
+      const data = JSON.parse(res?.match(/\{[\\s\\S]*\}/)?.[0] || '{"relevant": true}');
+      return data;
+    } catch (e) { return { relevant: true }; }
+  }
+
 }
 
 export const llmService = new LLMService();

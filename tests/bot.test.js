@@ -57,6 +57,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     setSkillsContent: jest.fn(),
     isReplyCoherent: jest.fn().mockResolvedValue(true),
     rateUserInteraction: jest.fn().mockResolvedValue(5),
+    extractJson: (str) => { try { const m = str.match(/\{[\s\S]*\}/); return JSON.parse(m ? m[0] : str); } catch (e) { return null; } },
     selectBestResult: jest.fn().mockImplementation((q, r) => r[0]),
   },
 }));

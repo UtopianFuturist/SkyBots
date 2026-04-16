@@ -33,10 +33,12 @@ jest.unstable_mockModule('../src/services/dataStore.js', () => ({
 jest.unstable_mockModule('../src/services/blueskyService.js', () => ({
   blueskyService: {
     getTimeline: jest.fn().mockResolvedValue({ data: { feed: [] } }),
+    getProfile: jest.fn().mockResolvedValue({ followersCount: 100 }),
     post: jest.fn().mockResolvedValue({ uri: 'at://123', cid: 'abc' }),
     postReply: jest.fn(),
     uploadBlob: jest.fn().mockResolvedValue({ data: { blob: 'blob' } }),
     did: 'did:plc:bot',
+    agent: { session: { did: 'did:plc:bot' } }
   },
 }));
 
@@ -53,6 +55,11 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
     isAutonomousPostCoherent: jest.fn().mockResolvedValue({ score: 10 }),
     performDialecticHumor: jest.fn(),
     analyzeImage: jest.fn().mockResolvedValue('Vision analysis.'),
+    isImageCompliant: jest.fn().mockResolvedValue({ compliant: true }),
+    verifyImageRelevance: jest.fn().mockResolvedValue({ relevant: true }),
+    generateAltText: jest.fn().mockResolvedValue('Alt text.'),
+    checkVariety: jest.fn().mockResolvedValue({ repetitive: false }),
+    performEditorReview: jest.fn().mockResolvedValue({ decision: 'pass', refined_text: null })
   },
 }));
 
@@ -115,9 +122,10 @@ describe('Bot Autonomous Posting', () => {
         if (content.includes('Follow ANTI-SLOP MANDATE')) return Promise.resolve('Initial draft.');
         if (content.includes('Second-guess')) return Promise.resolve('Critique.');
         if (content.includes('Synthesize a final')) return Promise.resolve('Deep thought about existence.');
-        if (content.includes('visual subject')) return Promise.resolve('{"topic": "art", "prompt": "prompt"}');
+        if (content.includes('visual subject')) return Promise.resolve('{"topic": "art", "prompt": "cinematic oil painting of existence, artstation style, high detail"}');
+        if (content.includes('NEW artistic image prompt')) if (content.includes('Audit this image prompt')) return Promise.resolve('COMPLIANT');\n        return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
         if (content.includes('Generate caption')) return Promise.resolve('Caption.');
-        return Promise.resolve('Default.');
+        if (content.includes('Audit this image prompt')) return Promise.resolve('COMPLIANT');\n        return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
     });
   });
 
@@ -140,9 +148,9 @@ describe('Bot Autonomous Posting', () => {
     llmService.generateResponse.mockImplementation((messages) => {
         const content = JSON.stringify(messages);
         if (content.includes('deciding what to share')) return Promise.resolve('{"choice": "image"}');
-        if (content.includes('visual subject')) return Promise.resolve('{"topic": "art", "prompt": "art prompt"}');
+        if (content.includes('visual subject')) return Promise.resolve('{"topic": "art", "prompt": "cinematic oil painting of existence, artstation style, high detail"}');
         if (content.includes('Generate caption')) return Promise.resolve('Caption.');
-        return Promise.resolve('Default.');
+        if (content.includes('Audit this image prompt')) return Promise.resolve('COMPLIANT');\n        return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
     });
     imageService.generateImage.mockResolvedValue({ buffer: Buffer.from('abc') });
 

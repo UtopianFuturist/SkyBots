@@ -10,7 +10,6 @@ import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
 import { imageService } from './imageService.js';
 import { blueskyService } from './blueskyService.js';
-import { moltbookService } from './moltbookService.js';
 import { memoryService } from './memoryService.js';
 import { socialHistoryService } from './socialHistoryService.js';
 import { temporalService } from './temporalService.js';
@@ -30,6 +29,29 @@ class DiscordService {
         this.isInitializing = false;
         this._lastHeavyAdminSearch = 0;
     }
+    async performStartupCatchup() {
+        if (!this.isEnabled || !this.client?.isReady()) return;
+        console.log('[DiscordService] Starting catch-up for unread messages...');
+        try {
+            const admin = await this.getAdminUser();
+            if (!admin) return;
+            const dmChannel = admin.dmChannel || await admin.createDM();
+            const messages = await dmChannel.messages.fetch({ limit: 50 });
+            const botLastSeen = dataStore.db.data.discord_last_interaction || 0;
+            const unread = messages.filter(m => m.author.id !== this.client.user.id && m.createdTimestamp > botLastSeen).reverse();
+
+            if (unread.size > 0) {
+                console.log(`[DiscordService] Found ${unread.size} unread messages. Resuming conversation...`);
+                for (const [id, msg] of unread) {
+                    await this.respond(msg);
+                }
+            } else {
+                console.log('[DiscordService] No unread messages found.');
+            }
+        } catch (e) {
+            console.error('[DiscordService] Catch-up error:', e);
+        }
+    }
 
     async init(botInstance) {
         if (!this.isEnabled || this.isInitializing) return;
@@ -42,6 +64,7 @@ class DiscordService {
             try { this.client.destroy(); } catch (e) {}
         }
 
+        const { Client, GatewayIntentBits, Partials } = await import("discord.js");
         this.client = new Client({
             partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
             intents: [
@@ -50,23 +73,18 @@ class DiscordService {
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent
-            ],
-            rest: {
-                timeout: 60000,
-                retries: 5
-            }
+            ]
         });
 
-        this.client.on('ready', () => {
+        this.client.on("ready", () => {
             console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}`);
-            this.client.user.setActivity('the currents', { type: 'LISTENING' });
         });
 
-        this.client.on('messageCreate', async (message) => {
+        this.client.on("messageCreate", async (message) => {
             try {
                 await this.handleMessage(message);
             } catch (err) {
-                console.error('[DiscordService] Error in messageCreate listener:', err);
+                console.error("[DiscordService] Error in messageCreate listener:", err);
             }
         });
 
@@ -80,24 +98,18 @@ class DiscordService {
             attempts++;
             try {
                 console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
-                const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 120s")), 120000));
-
-                await Promise.race([loginPromise, timeoutPromise]);
-
+                await this.client.login(this.token);
                 console.log(`[DiscordService] SUCCESS: Login complete!`);
                 this.isInitializing = false;
                 return;
             } catch (err) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
                 if (attempts < maxAttempts) {
-                    console.log(`[DiscordService] Waiting 300s before retry...`);
-                    await new Promise(r => setTimeout(r, 300000));
+                    await new Promise(r => setTimeout(r, 10000));
                 }
             }
         }
         this.isInitializing = false;
-        console.error('[DiscordService] FATAL: All login attempts failed.');
     }
 
     async handleMessage(message) {
@@ -169,6 +181,17 @@ class DiscordService {
         }
 
         let history = await this.fetchAdminHistory(30);
+        let historyImageContext = "";
+        const recentMsgsWithImages = (await message.channel.messages.fetch({ limit: 10 })).filter(m => m.attachments.size > 0);
+        for (const [id, m] of recentMsgsWithImages) {
+            for (const [aid, attachment] of m.attachments) {
+                if (attachment.contentType?.startsWith("image/")) {
+                    const analysis = await llmService.analyzeImage(attachment.url, "Past attachment");
+                    historyImageContext += `[Previously seen image in history: ${analysis}] `;
+                }
+            }
+        }
+        imageAnalysisResult = historyImageContext + imageAnalysisResult;
         await dataStore.saveDiscordInteraction(normChannelId, "user", message.content);
 
         let typingInterval = this._startTypingLoop(message.channel);

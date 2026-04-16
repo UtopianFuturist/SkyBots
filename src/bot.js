@@ -12,7 +12,6 @@ import { newsroomService } from './services/newsroomService.js';
 import { imageService } from './services/imageService.js';
 import { introspectionService } from './services/introspectionService.js';
 import { evaluationService } from './services/evaluationService.js';
-import { moltbookService } from './services/moltbookService.js';
 import { openClawService } from './services/openClawService.js';
 import { cronService } from './services/cronService.js';
 import { nodeGatewayService } from './services/nodeGatewayService.js';
@@ -53,6 +52,7 @@ export class Bot {
             try {
                 console.log('[Bot] Initializing Discord Service...');
                 await discordService.init(this);
+                await discordService.performStartupCatchup();
             } catch (e) { console.error('[Bot] Discord init failed:', e); }
         }
 
@@ -69,7 +69,6 @@ export class Bot {
 
         try {
             if (config.MOLTBOOK_API_KEY) {
-                await moltbookService.init();
             } else {
                 console.log('[Bot] Moltbook API key not set, skipping initialization.');
             }
@@ -198,6 +197,12 @@ export class Bot {
             }
             if (action.tool === "get_admin_time_context") {
                 return { success: true, data: await temporalService.getEnhancedTemporalContext() };
+            }
+            if (action.tool === "execute_skill") {
+                const skillName = params.name || params.skill_name || query;
+                const skillParams = params.parameters || params.args || {};
+                const result = await openClawService.executeSkill(skillName, skillParams);
+                return { success: true, data: result };
             }
             if (action.tool === "check_internal_state") {
                 const state = {
@@ -426,6 +431,43 @@ export class Bot {
         if (count >= 3) return true;
         this._notifHistory.push({ uri, timestamp: now });
         return false;
+    }
+
+    async performDiscordPinnedGift() {
+        if (discordService.status !== 'online') return;
+        const admin = await discordService.getAdminUser();
+        if (!admin) return;
+
+        console.log('[Bot] Deciding on a Discord pinned gift for admin...');
+        const history = await discordService.fetchAdminHistory(20);
+        const mood = dataStore.getMood();
+
+        const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
+You are deciding to send a visual gift and a pinned message to your Admin.
+Mood: ${JSON.stringify(mood)}
+Context: Thinking about the Admin and your bond.
+
+Generate a visual topic and a message that says what you want them to see when they get back.
+Respond with JSON: { "topic": "string", "message": "string" }`;
+
+        const res = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { useStep: true });
+        const data = llmService.extractJson(res);
+        if (data && data.topic) {
+            const gift = await this._generateVerifiedImagePost(data.topic, { platform: 'discord' });
+            if (gift) {
+                const dmChannel = admin.dmChannel || await admin.createDM();
+                const { AttachmentBuilder } = await import("discord.js");
+                const mainMsg = await discordService._send(dmChannel, `${data.message}
+
+${gift.caption}`, { files: [new AttachmentBuilder(gift.buffer, { name: "gift.jpg" })] });
+                if (mainMsg) {
+                    await discordService._send(dmChannel, `[Generation Prompt]
+${gift.finalPrompt}`);
+                    try { await mainMsg.pin(); } catch (e) {}
+                    await dataStore.saveDiscordInteraction(`dm-${admin.id}`, 'assistant', data.message);
+                }
+            }
+        }
     }
 }
 export const bot = new Bot();

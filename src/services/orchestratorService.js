@@ -17,23 +17,23 @@ class OrchestratorService {
         this.isProcessingQueue = false;
         this.lastSelfReflectionTime = 0;
         this.bot = null;
-        this.lastHeavyMaintenance = 0;
-        this.lastCoreSelfSynthesis = 0;
-        this.lastLogPruning = 0;
-        this.lastScoutMission = 0;
-        this.lastImageFrequencyAudit = 0;
-        this.lastSkillSynthesis = 0;
-        this.lastSkillAudit = 0;
-        this.lastPersonaEvolution = 0;
-        this.lastEnergyPoll = 0;
-        this.lastLurkerMode = 0;
-        this.lastAIIdentityTracking = 0;
-        this.lastRelationalAudit = 0;
-        this.lastMoodSync = 0;
-        this.lastGoalEvolution = 0;
-        this.lastKeywordEvolution = 0;
-        this.lastDiscordGiftImage = 0;
-        this.lastPostPostReflection = 0;
+        this.lastHeavyMaintenance = Date.now();
+        this.lastCoreSelfSynthesis = Date.now() - 2 * 3600000;
+        this.lastLogPruning = Date.now();
+        this.lastScoutMission = Date.now() - 3600000;
+        this.lastImageFrequencyAudit = Date.now();
+        this.lastSkillSynthesis = Date.now();
+        this.lastSkillAudit = Date.now();
+        this.lastPersonaEvolution = Date.now();
+        this.lastEnergyPoll = Date.now();
+        this.lastLurkerMode = Date.now();
+        this.lastAIIdentityTracking = Date.now();
+        this.lastRelationalAudit = Date.now();
+        this.lastMoodSync = Date.now();
+        this.lastGoalEvolution = Date.now();
+        this.lastKeywordEvolution = Date.now();
+        this.lastDiscordGiftImage = Date.now();
+        this.lastPostPostReflection = Date.now();
     }
 
     setBotInstance(bot) { this.bot = bot; }
@@ -353,7 +353,7 @@ Respond with a raw internal critique.`;
           attempts++;
           console.log( `[Orchestrator] Image post attempt ${attempts} for topic: ${topic} `);
 
-          imagePrompt = imagePrompt.replace(/[INTERNAL_PULSE_RESUME]/g, "").replace(/[INTERNAL_PULSE_AUTONOMOUS]/g, "").replace(/[System note:.*?]/g, "").trim();
+          imagePrompt = imagePrompt.replace(/INTERNAL_PULSE_RESUME/g, "").replace(/INTERNAL_PULSE_AUTONOMOUS/g, "").replace(/System note:.*?/g, "").trim();
           if (!imagePrompt) imagePrompt = topic;
 
           const slopInfo = isSlop(imagePrompt);
@@ -580,14 +580,15 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
     }
 
     async evolveGoalRecursively() {
+        console.log('[Orchestrator] Running evolveGoalRecursively...');
         const currentGoal = dataStore.getCurrentGoal();
         if (!currentGoal) return;
         try {
             const prompt = `Evolve goal: "${currentGoal.goal}". Reasoning: ${currentGoal.description}. JSON: {"evolved_goal": "string", "reasoning": "string"}`;
             const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
             const data = llmService.extractJson(res);
-            if (data && data.refined_text) {
-                await dataStore.setCurrentGoal(data.evolved_goal, data.reasoning);
+            if (data && data.evolved_goal) {
+                await dataStore.setCurrentGoal(data.evolved_goal, data.reasoning || "");
                 await introspectionService.performAAR("goal_evolution", data.evolved_goal, { success: true });
             }
         } catch (e) {}

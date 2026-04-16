@@ -151,6 +151,10 @@ export class Bot {
                 await introspectionService.performAAR("tool_use", "discord_message", result, { query, params });
                 return { success: !!result, data: params.message || query };
             }
+            if (action.tool === "discord_gift") {
+                await this.performDiscordPinnedGift();
+                return { success: true };
+            }
             if (action.tool === "image_gen") {
                 const prompt = params.prompt || query;
                 if (context.platform === "discord") {

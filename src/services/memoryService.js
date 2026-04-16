@@ -31,6 +31,11 @@ class MemoryService {
     });
   }
 
+    async findLatestMemoryPost() {
+      const memories = await this.fetchRecentMemories(this.hashtag, 1);
+      return memories.length > 0 ? memories[0].originalPost : null;
+  }
+
   constructor() {
     this.hashtag = config.MEMORY_THREAD_HASHTAG;
     this.recentMemories = [];
@@ -44,21 +49,29 @@ class MemoryService {
   async fetchRecentMemories(hashtag, limit = 15) {
     if (!this.isEnabled()) return [];
     try {
-      const query = `from:${blueskyService.did} ${hashtag}`;
-      const posts = await blueskyService.searchPosts(query, 'latest', limit);
-      this.recentMemories = posts.map(p => ({
-        uri: p.uri, cid: p.cid, text: p.record.text.replace(hashtag, '').trim(),
-        category: this._extractCategory(p.record.text),
-        timestamp: new Date(p.record.createdAt).getTime(),
-        indexedAt: p.record.createdAt,
-        originalPost: p
-      }));
+      console.log(`[MemoryService] Fetching memories for ${hashtag}...`);
+      // Use getAuthorFeed (Reliable) instead of search (Unreliable/403)
+      const posts = await blueskyService.getUserPosts(blueskyService.did, limit * 3);
+
+      this.recentMemories = posts
+        .filter(p => p.post.record.text.includes(hashtag))
+        .map(p => ({
+            uri: p.post.uri, cid: p.post.cid, text: p.post.record.text.replace(hashtag, '').trim(),
+            category: this._extractCategory(p.post.record.text),
+            timestamp: new Date(p.post.record.createdAt).getTime(),
+            indexedAt: p.post.record.createdAt,
+            originalPost: p.post
+        })).slice(0, limit);
+
       if (this.recentMemories.length > 0) {
-        const root = this.recentMemories[this.recentMemories.length - 1].originalPost;
-        this.rootPost = root.record.reply?.root || root;
+        const first = this.recentMemories[0].originalPost;
+        this.rootPost = first.record.reply?.root || first;
       }
       return this.recentMemories;
-    } catch (error) { return []; }
+    } catch (error) {
+        console.error('[MemoryService] Error fetching memories:', error.message);
+        return [];
+    }
   }
 
   _extractCategory(text) {

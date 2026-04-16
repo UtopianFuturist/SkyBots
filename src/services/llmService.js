@@ -124,7 +124,7 @@ class LLMService {
             const data = await response.json();
             let content = data.choices?.[0]?.message?.content || "";
             if (this._isRefusal(content)) continue;
-            content = sanitizeThinkingTags(content);
+            // content = sanitizeThinkingTags(content); // Moved to display layer
             if (this.ds) await this.ds.addInternalLog("llm_response" + (options.task ? ":" + options.task : ""), content);
             return content;
         } catch (e) { continue; }

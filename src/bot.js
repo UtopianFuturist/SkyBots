@@ -52,11 +52,6 @@ export class Bot {
             try {
                 console.log('[Bot] Initializing Discord Service...');
                 await discordService.init(this);
-                // The catchup will now be triggered by the discordService itself when ready,
-                // or we call it here if we are sure it's exported
-                if (typeof discordService.performStartupCatchup === 'function') {
-                    await discordService.performStartupCatchup();
-                }
             } catch (e) { console.error('[Bot] Discord init failed:', e); }
         }
 
@@ -428,7 +423,7 @@ export class Bot {
     async _getThreadHistory(uri) {
         try {
             const thread = await blueskyService.getDetailedThread(uri);
-            return (thread || []).map(p => ({ author: p.post.author.handle, role: p.post.author.did === blueskyService.agent?.session?.did ? "assistant" : "user", content: p.post.record.text, uri: p.post.uri }));
+            return (thread || []).map(p => ({ author: p.post.author.handle, role: p.post.author.did === blueskyService.did ? "assistant" : "user", content: p.post.record.text, uri: p.post.uri }));
         } catch (e) { return []; }
     }
 

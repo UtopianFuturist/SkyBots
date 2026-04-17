@@ -15,6 +15,7 @@ export const sanitizeThinkingTags = (text) => {
       return match;
   });
 
+  // Remove raw JSON objects if they appear as the primary content
   const trimmed = result.trim();
   if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
       try {

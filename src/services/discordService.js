@@ -72,11 +72,13 @@ class DiscordService {
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.GuildMembers,
-                GatewayIntentBits.MessageContent
+                GatewayIntentBits.MessageContent,
+                GatewayIntentBits.GuildPresences
             ]
         });
 
         this.client.on("ready", () => {
+            this.isInitializing = false;
             console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}`);
         });
 
@@ -99,6 +101,7 @@ class DiscordService {
             try {
                 console.log(`[DiscordService] Login attempt ${attempts}...`);
 
+                console.log("[DiscordService] Triggering client.login...");
                 const loginPromise = this.client.login(this.token);
                 const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
                 await Promise.race([loginPromise, timeoutPromise]);

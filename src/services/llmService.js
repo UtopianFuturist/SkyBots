@@ -134,7 +134,7 @@ class LLMService {
             if (this._isRefusal(content)) continue;
             // content = sanitizeThinkingTags(content); // Moved to display layer
             if (this.ds) await this.ds.addInternalLog("llm_response" + (options.task ? ":" + options.task : ""), content);
-            if (options.platform === "discord" || options.platform === "bluesky") content = sanitizeThinkingTags(content);
+            if ((options.platform === "discord" || options.platform === "bluesky") && !options.useStep && !options.task) content = sanitizeThinkingTags(content);
             return content;
         } catch (e) { continue; }
     }

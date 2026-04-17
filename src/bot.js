@@ -351,7 +351,9 @@ export class Bot {
                             await dataStore.addInternalLog("firehose_match", match);
                             // Autonomous impulse to engage with topic matches
                             const now = Date.now();
-                            if (match.type === "firehose_topic_match" && Math.random() < 0.2 && (now - this.lastFirehoseImpulse > (config.BACKOFF_DELAY || 60000))) {
+                            const lastPost = dataStore.getLastAutonomousPostTime() || 0;
+                            const lastPostMs = typeof lastPost === "string" ? new Date(lastPost).getTime() : lastPost;
+                            if (match.type === "firehose_topic_match" && Math.random() < 0.2 && (now - lastPostMs > (config.BACKOFF_DELAY || 60000))) {
                                 this.lastFirehoseImpulse = now;
                                 console.log("[Bot] Firehose topic match triggered an autonomous impulse...");
                                 orchestratorService.addTaskToQueue(() => orchestratorService.performAutonomousPost({ topic: match.matched_keywords?.[0] || "trending" }), "firehose_impulse");

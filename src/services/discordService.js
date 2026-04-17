@@ -6,7 +6,7 @@ if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
 import { dataStore } from './dataStore.js';
-import { llmService, persistentAgent } from './llmService.js';
+import { llmService } from './llmService.js';
 import { imageService } from './imageService.js';
 import { blueskyService } from './blueskyService.js';
 import { memoryService } from './memoryService.js';
@@ -41,7 +41,7 @@ class DiscordService {
 
         const { Client, GatewayIntentBits, Partials } = await import("discord.js");
         this.client = new Client({
-            partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User, Partials.GuildMember],
+            partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
@@ -69,14 +69,14 @@ class DiscordService {
             attempts++;
             try {
                 if (!this.token || this.token.length < 50) {
-                    console.error("[DiscordService] DISCORD_BOT_TOKEN is missing or too short.");
+                    console.error("[DiscordService] DISCORD_BOT_TOKEN is missing or invalid.");
                     this.isInitializing = false;
                     return;
                 }
                 console.log("[DiscordService] Login attempt " + attempts + "...");
 
                 const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 120s")), 120000));
 
                 await Promise.race([loginPromise, timeoutPromise]);
                 return;

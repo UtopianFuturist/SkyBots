@@ -15,7 +15,6 @@ export const sanitizeThinkingTags = (text) => {
       return match;
   });
 
-  // Remove raw JSON if it's the only thing left
   const trimmed = result.trim();
   if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
       try {
@@ -78,11 +77,20 @@ export const isLiteralVisualPrompt = (text) => {
 
 export const checkExactRepetition = (newText, history, lastN = 50) => {
   if (!newText || !history || history.length === 0) return false;
-  const normalize = (str) => typeof str !== 'string' ? '' : str.toLowerCase().trim().replace(/[^\w\s]/g, '').replace(/\s+/g, '');
+  const normalize = (str) => {
+      if (typeof str !== 'string') return '';
+      return str.toLowerCase().trim().replace(/[^\w\s]/g, '').replace(/\s+/g, '');
+  };
   const normalizedNew = normalize(newText);
   if (!normalizedNew) return false;
-  const botMessages = history.filter(h => (h.role === 'assistant' || h.author === 'assistant' || h.author === 'You')).slice(-lastN);
-  for (const old of botMessages) if (normalize(old.text || old.content || '') === normalizedNew) return true;
+
+  const relevantHistory = history.slice(-lastN);
+  for (const item of relevantHistory) {
+      const role = item.role || item.author;
+      if (role && !['assistant', 'Assistant (Self)', 'You'].includes(role)) continue;
+      const content = typeof item === 'string' ? item : (item.text || item.content || '');
+      if (normalize(content) === normalizedNew) return true;
+  }
   return false;
 };
 

@@ -274,6 +274,7 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
                     const resonancePrompt = `Identify 5 topics from this text AND from these recent observations that resonate with your persona. \nText: ${allContent.substring(0, 3000)} \nObservations: ${lurkerMemories} \nRespond with ONLY the comma-separated topics.`;
                     const res = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true , task: 'social_resonance' });
                     if (res) resonanceTopics = res.split(",").map(t => t.trim()).filter(t => t.length > 2);
+                    console.log("[Orchestrator] Resonance topics found:", resonanceTopics.join(", "));
                 }
             } catch (e) { console.warn("[Orchestrator] Context sourcing error:", e.message); }
             const unifiedContext = await this.getUnifiedContext();
@@ -293,12 +294,14 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
                 await this._performHighQualityImagePost(resonanceTopics[0] || "existence");
             } else {
                 const topicPrompt = `Identify a deep topic for a ${pollResult.mode} post. RESONANCE: ${resonanceTopics.join(", ")}. CORE: ${(dConfig.post_topics || []).join(", ")}. Respond with ONLY the topic.`;
-                const topic = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true, task: 'autonomous_topic' });
+                const topic = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true, task: "autonomous_topic" });
+                console.log("[Orchestrator] Selected topic:", topic);
                 if (!topic || topic.length < 3) return;
 
                 console.log("[Orchestrator] Drafting content...");
                 const draftPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a ${pollResult.mode} post about: "${topic}". Follow ANTI-SLOP MANDATE. Respond with post content only.`;
                 let content = await llmService.generateResponse([{ role: "user", content: draftPrompt }], { platform: "bluesky" });
+                console.log("[Orchestrator] Generated draft:", content?.substring(0, 50) + "...");
                 if (!content || content.length < 5) return;
 
                 console.log("[Orchestrator] Multi-angle critique...");

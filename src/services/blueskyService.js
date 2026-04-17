@@ -46,6 +46,14 @@ class BlueskyService {
 
   async post(text, embed = null, options = {}) {
     if (!text || !text.trim()) {
+      if (text.trim() === "...") {
+        console.warn("[BlueskyService] Attempted to post only ellipses reply. Aborting.");
+        return null;
+      }
+      if (text.trim() === "...") {
+        console.warn("[BlueskyService] Attempted to post only ellipses. Aborting.");
+        return null;
+      }
       console.warn("[BlueskyService] Attempted to post blank text. Aborting.");
       return null;
     }
@@ -121,6 +129,14 @@ class BlueskyService {
 
   async postReply(parent, text, options = {}) {
     if (!text || !text.trim()) {
+      if (text.trim() === "...") {
+        console.warn("[BlueskyService] Attempted to post only ellipses reply. Aborting.");
+        return null;
+      }
+      if (text.trim() === "...") {
+        console.warn("[BlueskyService] Attempted to post only ellipses. Aborting.");
+        return null;
+      }
       console.warn("[BlueskyService] Attempted to post blank reply. Aborting.");
       return null;
     }

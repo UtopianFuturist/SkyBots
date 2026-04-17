@@ -6,7 +6,7 @@ if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
 import { dataStore } from './dataStore.js';
-import { llmService } from './llmService.js';
+import { llmService, persistentAgent } from './llmService.js';
 import { imageService } from './imageService.js';
 import { blueskyService } from './blueskyService.js';
 import { memoryService } from './memoryService.js';
@@ -40,7 +40,7 @@ class DiscordService {
             const unread = messages.filter(m => m.author.id !== this.client.user.id && m.createdTimestamp > botLastSeen).reverse();
 
             if (unread.size > 0) {
-                console.log(`[DiscordService] Found ${unread.size} unread messages. Resuming conversation...`);
+                console.log("[DiscordService] Found " + unread.size + " unread messages. Resuming conversation...");
                 for (const [id, msg] of unread) {
                     await this.respond(msg);
                 }
@@ -72,7 +72,11 @@ class DiscordService {
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent
-            ]
+            ],
+            rest: {
+                timeout: 60000,
+                agent: persistentAgent
+            }
         });
 
         this.client.on("ready", () => {
@@ -98,9 +102,10 @@ class DiscordService {
                     return;
                 }
                 console.log("[DiscordService] Login attempt " + attempts + "...");
+                console.log("[DiscordService] Triggering client.login...");
 
                 const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 120s")), 120000));
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
 
                 await Promise.race([loginPromise, timeoutPromise]);
                 return;

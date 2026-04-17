@@ -15,7 +15,7 @@ class LLMService {
 
   async _throttle(priority = false) {
     const now = Date.now();
-    const minDelay = priority ? 2000 : 5000;
+    const minDelay = priority ? 1000 : 3000;
     const targetStartTime = Math.max(now, LLMService.lastRequestTime + minDelay);
     LLMService.lastRequestTime = targetStartTime;
     const waitTime = targetStartTime - now;
@@ -39,25 +39,11 @@ class LLMService {
       const lastBrace = cleanStr.lastIndexOf('}');
       if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
         let jsonCandidate = cleanStr.substring(firstBrace, lastBrace + 1);
-        let openBraces = 0, foundClosing = -1;
-        for (let i = 0; i < jsonCandidate.length; i++) {
-          if (jsonCandidate[i] === '{') openBraces++;
-          else if (jsonCandidate[i] === '}') {
-            openBraces--;
-            if (openBraces === 0) { foundClosing = i; break; }
-          }
-        }
-        if (foundClosing !== -1) jsonCandidate = jsonCandidate.substring(0, foundClosing + 1);
         try {
           return JSON.parse(jsonCandidate);
         } catch (e) {
           let fixed = jsonCandidate.replace(/,\s*([]}])/g, "$1").replace(/([{,]\s*)([a-zA-Z_]\w*):/g, '$1"$2":');
-          try { return JSON.parse(fixed); } catch (e2) {
-            try {
-              const fixedNewlines = fixed.replace(/(?<=: ")([\s\S]*?)(?=",|"\s*})/g, (m) => m.replace(/\n/g, "\\n"));
-              return JSON.parse(fixedNewlines);
-            } catch (e3) { return null; }
-          }
+          try { return JSON.parse(fixed); } catch (e2) { return null; }
         }
       }
       return JSON.parse(cleanStr);
@@ -99,8 +85,8 @@ class LLMService {
     const temporalContext = await temporalService.getEnhancedTemporalContext();
     const dynamicPersonaBlock = this.ds ? this.ds.getPersonaBlurbs().map(b => b.text).join("\n") : "";
     const sessionLessons = this.ds ? this.ds.getSessionLessons().map(l => "- " + l.text).join("\n") : "";
-
     const isTechnical = !!(options.useStep || options.task);
+    const skillsContext = (openClawService && typeof openClawService.getSkillsForPrompt === "function") ? "\n\nAVAILABLE SKILLS:\n" + openClawService.getSkillsForPrompt() : "";
 
     let memoriesBlock = "";
     if (this.mp) {
@@ -111,11 +97,12 @@ class LLMService {
     }
 
     let basePersona = (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT);
-    const technicalInstruction = isTechnical ? "\n\n**TECHNICAL INSTRUCTION:** You are acting as a technical sub-agent. You must produce the requested format (JSON or plain text) as specified in the prompt. Do not add conversational filler." : "";
-
-    const skillsContext = (openClawService && typeof openClawService.getSkillsForPrompt === "function") ? "\n\nAVAILABLE SKILLS:\n" + openClawService.getSkillsForPrompt() : "";
-
-    const systemPrompt = "Persona: " + basePersona + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + memoriesBlock + (sessionLessons ? "\n\n**RECENT LESSONS:**\n" + sessionLessons : "") + skillsContext + technicalInstruction + "\nGuidelines: Be direct. No slop. Output ONLY requested format.";
+    let systemPrompt = "";
+    if (isTechnical) {
+        systemPrompt = "Persona: " + basePersona + "\n" + this.soulContent + "\n" + this.statusContent + "\n\n**TASK:** You are acting as a technical sub-agent. Respond ONLY with the requested format (JSON or plain text). No conversational filler.";
+    } else {
+        systemPrompt = "Persona: " + basePersona + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + memoriesBlock + (sessionLessons ? "\n\n**RECENT LESSONS:**\n" + sessionLessons : "") + skillsContext + "\nGuidelines: Be direct. No slop.";
+    }
 
     let models = [config.STEP_MODEL, config.LLM_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean);
     for (const model of models) {
@@ -134,13 +121,15 @@ class LLMService {
                 agent: persistentAgent,
                 timeout: 180000
             });
+
             if (!response.ok) {
-                console.error("[LLMService] API error:", response.status, response.statusText);
+                console.warn("[LLMService] API error: " + response.status + " for " + model);
                 continue;
             }
+
             const data = await response.json();
             let content = data.choices?.[0]?.message?.content || "";
-            if (this._isRefusal(content)) continue;
+            if (!content || this._isRefusal(content)) continue;
 
             if (this.ds) await this.ds.addInternalLog("llm_response" + (options.task ? ":" + options.task : ""), content);
 
@@ -148,14 +137,13 @@ class LLMService {
                 const original = content;
                 content = sanitizeThinkingTags(content);
                 if (!content.trim() && original.trim()) {
-                    console.warn("[LLMService] Sanitization removed all content. Falling back to original without tags.");
                     content = original.replace(/<(thinking|think)>[\s\S]*?<\/(thinking|think)>/gi, '').trim();
                     if (!content.trim()) content = original;
                 }
             }
             return content;
         } catch (e) {
-            console.error("[LLMService] Request error:", e.message);
+            console.error("[LLMService] Request error (" + model + "):", e.message);
             continue;
         }
     }

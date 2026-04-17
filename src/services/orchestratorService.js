@@ -295,12 +295,12 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
 
                 console.log("[Orchestrator] Drafting content...");
                 const draftPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a ${pollResult.mode} post about: "${topic}". Follow ANTI-SLOP MANDATE. Respond with post content only.`;
-                let content = await llmService.generateResponse([{ role: "user", content: draftPrompt }], { platform: "bluesky", useStep: true });
+                let content = await llmService.generateResponse([{ role: "user", content: draftPrompt }], { platform: "bluesky" });
 
                 console.log("[Orchestrator] Multi-angle critique...");
                 const critiques = await this.getCounterArgs(topic, content);
                 const refinedPrompt = `Synthesize a final, more nuanced and stable response based on these critiques of your draft. Avoid hallucinations and slop. DRAFT: ${content}. CRITIQUES: ${critiques}. Respond with finalized content only.`;
-                content = await llmService.generateResponse([{ role: "user", content: refinedPrompt }], { platform: "bluesky", useStep: true });
+                content = await llmService.generateResponse([{ role: "user", content: refinedPrompt }], { platform: "bluesky" });
 
                 const realityAudit = await llmService.performRealityAudit(content, {}, { platform: "bluesky", history: dataStore.getRecentInteractions("bluesky", 25) });
                 if (realityAudit.hallucination_detected || realityAudit.repetition_detected) content = realityAudit.refined_text;

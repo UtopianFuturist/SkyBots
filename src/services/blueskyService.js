@@ -45,6 +45,10 @@ class BlueskyService {
   }
 
   async post(text, embed = null, options = {}) {
+    if (!text || !text.trim()) {
+      console.warn("[BlueskyService] Attempted to post blank text. Aborting.");
+      return null;
+    }
     if (!this.did) return null;
     try {
       const maxGraphemes = 280; // Standard limit
@@ -112,6 +116,10 @@ class BlueskyService {
   }
 
   async postReply(parent, text, options = {}) {
+    if (!text || !text.trim()) {
+      console.warn("[BlueskyService] Attempted to post blank reply. Aborting.");
+      return null;
+    }
     if (!this.did) return null;
     try {
       const maxGraphemes = 280;

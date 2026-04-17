@@ -140,20 +140,26 @@ class BlueskyService {
 
   async getProfile(actor) {
     try {
-      const { data } = await this.agent.getProfile({ actor });
+      const { data } = await this.agent.getProfile({ actor }).catch(e => {
+          if (e.message && e.message.includes('Forbidden')) return { data: { handle: actor, did: null } };
+          throw e;
+      });
       return data;
     } catch (error) {
-      console.error(`[BlueskyService] Error fetching profile for ${actor}:`, error);
+      console.error("[BlueskyService] Error fetching profile for " + actor + ":", error.message);
       return null;
     }
   }
 
   async getUserPosts(actor, limit = 20) {
     try {
-      const { data } = await this.agent.getAuthorFeed({ actor, limit });
-      return data.feed;
+      const { data } = await this.agent.getAuthorFeed({ actor, limit }).catch(e => {
+          if (e.message && e.message.includes('Forbidden')) return { data: { feed: [] } };
+          throw e;
+      });
+      return data.feed || [];
     } catch (error) {
-      console.error(`[BlueskyService] Error fetching posts for ${actor}:`, error);
+      console.error("[BlueskyService] Error fetching posts for " + actor + ":", error.message);
       return [];
     }
   }
@@ -161,7 +167,7 @@ class BlueskyService {
   async getTimeline(limit = 30) {
     if (!this.did) return { data: { feed: [] } };
     try {
-      return await this.agent.getTimeline({ limit });
+      return await this.agent.getTimeline({ limit }).catch(e => { console.warn("[BlueskyService] Timeline 403 fallback"); return { data: { feed: [] } }; });
     } catch (e) {
       console.error('[BlueskyService] Error fetching timeline:', e);
       return { data: { feed: [] } };
@@ -194,8 +200,11 @@ class BlueskyService {
 
   async getDetailedThread(uri) {
       try {
-          const { data } = await this.agent.getPostThread({ uri });
-          if (!data.thread) return [];
+          const { data } = await this.agent.app.bsky.feed.getPostThread({ uri }).catch(e => {
+              if (e.message && e.message.includes('Forbidden')) return { data: {} };
+              throw e;
+          });
+          if (!data || !data.thread) return [];
           const thread = [];
           let curr = data.thread;
           while (curr) {
@@ -208,14 +217,18 @@ class BlueskyService {
 
   async hasBotRepliedTo(uri) {
       try {
-          const { data } = await this.agent.getPostThread({ uri });
-          if (!data.thread || !data.thread.replies) return false;
-          return data.thread.replies.some(r => r.post.author.did === this.did);
+          const { data } = await this.agent.app.bsky.feed.getPostThread({ uri }).catch(e => {
+              if (e.message && e.message.includes('Forbidden')) return { data: {} };
+              throw e;
+          });
+          if (!data || !data.thread || !data.thread.replies) return false;
+          return data.thread.replies.some(r => r.post && r.post.author && r.post.author.did === this.did);
       } catch (e) {
           console.warn('[BlueskyService] Error checking if replied to:', uri, e.message);
           return false;
       }
   }
 }
+
 
 export const blueskyService = new BlueskyService();

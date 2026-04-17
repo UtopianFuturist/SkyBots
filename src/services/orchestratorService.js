@@ -10,6 +10,8 @@ import { imageService } from './imageService.js';
 import { openClawService } from './openClawService.js';
 import config from '../../config.js';
 import { isStylizedImagePrompt, checkHardCodedBoundaries, isSlop } from '../utils/textUtils.js';
+import path from 'path';
+import fs from 'fs';
 
 class OrchestratorService {
     constructor() {
@@ -267,11 +269,11 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
                 const firehoseMatches = dataStore.getFirehoseMatches(30);
                 const newsBrief = await newsroomService.getDailyBrief(dataStore.getDeepKeywords());
                 const allContent = [...(timeline?.data?.feed || []).map(f => f.post.record.text), ...firehoseMatches.map(m => m.text), newsBrief?.brief].filter(Boolean).join('\n');
-                if (allContent) {
+                if (allContent && allContent.trim()) {
                     const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\n");
                     const resonancePrompt = `Identify 5 topics from this text AND from these recent observations that resonate with your persona. \nText: ${allContent.substring(0, 3000)} \nObservations: ${lurkerMemories} \nRespond with ONLY the comma-separated topics.`;
                     const res = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true , task: 'social_resonance' });
-                    resonanceTopics = res.split(",").map(t => t.trim()).filter(Boolean);
+                    if (res) resonanceTopics = res.split(",").map(t => t.trim()).filter(t => t.length > 2);
                 }
             } catch (e) { console.warn("[Orchestrator] Context sourcing error:", e.message); }
             const unifiedContext = await this.getUnifiedContext();
@@ -292,18 +294,23 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
             } else {
                 const topicPrompt = `Identify a deep topic for a ${pollResult.mode} post. RESONANCE: ${resonanceTopics.join(", ")}. CORE: ${(dConfig.post_topics || []).join(", ")}. Respond with ONLY the topic.`;
                 const topic = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true, task: 'autonomous_topic' });
+                if (!topic || topic.length < 3) return;
 
                 console.log("[Orchestrator] Drafting content...");
                 const draftPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nGenerate a ${pollResult.mode} post about: "${topic}". Follow ANTI-SLOP MANDATE. Respond with post content only.`;
                 let content = await llmService.generateResponse([{ role: "user", content: draftPrompt }], { platform: "bluesky" });
+                if (!content || content.length < 5) return;
 
                 console.log("[Orchestrator] Multi-angle critique...");
                 const critiques = await this.getCounterArgs(topic, content);
                 const refinedPrompt = `Synthesize a final, more nuanced and stable response based on these critiques of your draft. Avoid hallucinations and slop. DRAFT: ${content}. CRITIQUES: ${critiques}. Respond with finalized content only.`;
-                content = await llmService.generateResponse([{ role: "user", content: refinedPrompt }], { platform: "bluesky" });
+                const refinedContent = await llmService.generateResponse([{ role: "user", content: refinedPrompt }], { platform: "bluesky" });
+                if (refinedContent && refinedContent.length >= 5) content = refinedContent;
 
                 const realityAudit = await llmService.performRealityAudit(content, {}, { platform: "bluesky", history: dataStore.getRecentInteractions("bluesky", 25) });
-                if (realityAudit.hallucination_detected || realityAudit.repetition_detected) content = realityAudit.refined_text;
+                if (realityAudit.hallucination_detected || realityAudit.repetition_detected) {
+                    if (realityAudit.refined_text && realityAudit.refined_text.length >= 5) content = realityAudit.refined_text;
+                }
 
                 const coherence = await llmService.isAutonomousPostCoherent(topic, content, [], null);
                 if (coherence.score >= 5) {
@@ -326,8 +333,7 @@ Respond with JSON: { "analysis": "string", "directive": "string", "priority": "n
     async getCounterArgs(topic, draft) {
         console.log(`[Orchestrator] Generating counter-arguments for: ${topic}`);
         const history = dataStore.getRecentInteractions("bluesky", 25);
-        const counterPrompt = `
-Review this proposed post for "@${config.BOT_NAME}".
+        const counterPrompt = `Review this proposed post for "@${config.BOT_NAME}".
 Topic: ${topic}
 Draft: "${draft}"
 
@@ -445,7 +451,6 @@ Keep it under 300 characters. `;
             if (blob?.data?.blob) {
                 const embed = { $type: 'app.bsky.embed.images', images: [{ image: blob.data.blob, alt: result.altText }] };
 
-                // Orchestrator Commentary Logic
                 const commPrompt =  `You just decided to express the topic "${topic}" visually.
 Original Intent: "${result.finalPrompt}"
 Vision Analysis: "${result.visionAnalysis}"
@@ -454,13 +459,12 @@ Caption: "${result.caption}"
 Write a brief, internal orchestrator reflection (max 150 chars) about why this visual is a necessary expression of your state right now. No hashtags. `;
                 const commentary = await llmService.generateResponse([{ role: 'system', content: commPrompt }], { useStep: true });
 
-                const mainPost = await blueskyService.post( `${commentary ? commentary + "\n\n" : ""}${result.caption} `, embed);
+                const mainPost = await blueskyService.post( `${commentary ? commentary + "\n\n" : ""}${result.caption}`, embed);
 
                 if (mainPost) {
                     await dataStore.incrementDailyImagePosts();
                     await dataStore.updateLastBlueskyImagePostTime(new Date().toISOString());
 
-                    // Threaded metadata post
                     await blueskyService.postReply(mainPost, `[Generation Prompt]\n${result.finalPrompt}`);
 
                     const { performanceService } = await import('./performanceService.js');
@@ -567,10 +571,9 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
             const data = llmService.extractJson(evolution);
 
             if (data?.persona_blurb_addendum) {
-                // Self-review phase
                 const reviewPrompt = `Review this proposed persona addendum for yourself: "${data.persona_blurb_addendum}". Is it authentic? Respond with ONLY the final blurb.`;
                 const finalBlurb = await llmService.generateResponse([{ role: "system", content: reviewPrompt }], { useStep: true });
-                if (finalBlurb) {
+                if (finalBlurb && finalBlurb.trim()) {
                     await dataStore.addPersonaBlurb(finalBlurb);
                     await memoryService.createMemoryEntry("persona", `[EVOLUTION] ${finalBlurb}`);
                 }

@@ -4,19 +4,25 @@ export const sanitizeThinkingTags = (text) => {
   if (!text) return text;
   let result = text;
 
-  // Remove JSON code blocks
-  result = result.replace(/```json[\s\S]*?```/gi, '');
-  result = result.replace(/```[\s\S]*?```/gi, (match) => {
-      // If it looks like JSON but isn't tagged, remove it too
-      if (match.includes('{') && match.includes('}') && match.includes(':')) {
-          return '';
-      }
-      return match;
-  });
-
   result = result.replace(/<(thinking|think)>[\s\S]*?<\/(thinking|think)>/gi, '');
   result = result.replace(/<(thinking|think)>[\s\S]*/gi, '');
   result = result.replace(/<\/(thinking|think)>/gi, '');
+
+  result = result.replace(/```json[\s\S]*?```/gi, '');
+  result = result.replace(/```[\s\S]*?```/gi, (match) => {
+      const inner = match.replace(/```/g, '').trim();
+      if ((inner.startsWith('{') && inner.endsWith('}')) || (inner.startsWith('[') && inner.endsWith(']'))) return '';
+      return match;
+  });
+
+  // Remove raw JSON if it's the only thing left
+  const trimmed = result.trim();
+  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+      try {
+          JSON.parse(trimmed);
+          return '';
+      } catch (e) {}
+  }
 
   result = result.replace(/^(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?(\n\n|$)/gi, '');
   result = result.replace(/\n(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?\n\n/gi, '\n\n');
@@ -25,7 +31,6 @@ export const sanitizeThinkingTags = (text) => {
   result = result.replace(/\[(varied|meta)\]/gi, '');
   result = result.replace(/\n\n(This combines|Draft \d)[\s\S]*$/gi, '');
 
-  // Final trim and cleanup of excess newlines
   return result.trim().replace(/\n{3,}/g, '\n\n');
 };
 
@@ -63,8 +68,8 @@ export const isLiteralVisualPrompt = (text) => {
   if (!text) return { isLiteral: false, reason: "Empty prompt" };
   const lower = text.toLowerCase().trim();
   const conversationalMarkers = ["i want", "generate", "create", "make an image", "show me", "i am", "im ", "i'm ", "i've ", "ive ", "hey ", "hello ", "hi ", "morning", "gm "];
-  for (const m of conversationalMarkers) if (lower.includes(m)) return { isLiteral: false, reason: `Contains conversational marker: "${m.trim()}"` };
-  if (text.includes("*")) return { isLiteral: false, reason: "Contains action markers (asterisks)" };
+  for (const m of conversationalMarkers) if (lower.includes(m)) return { isLiteral: false, reason: "Contains conversational marker" };
+  if (text.includes("*")) return { isLiteral: false, reason: "Contains action markers" };
   if (text.includes("?")) return { isLiteral: false, reason: "Contains a question" };
   const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/;
   if (emojiRegex.test(text)) return { isLiteral: false, reason: "Contains emojis" };
@@ -73,11 +78,11 @@ export const isLiteralVisualPrompt = (text) => {
 
 export const checkExactRepetition = (newText, history, lastN = 50) => {
   if (!newText || !history || history.length === 0) return false;
-  const normalize = (str) => typeof str !== 'string' ? '' : str.toLowerCase().trim().replace(/[^\w\s\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g, '').replace(/\s+/g, '').replace(/_/g, '');
+  const normalize = (str) => typeof str !== 'string' ? '' : str.toLowerCase().trim().replace(/[^\w\s]/g, '').replace(/\s+/g, '');
   const normalizedNew = normalize(newText);
   if (!normalizedNew) return false;
-  const botMessages = history.filter(h => (typeof h === 'string' || h.role === 'assistant' || h.role === 'Assistant (Self)' || h.author === 'assistant' || h.author === 'You')).slice(-lastN);
-  for (const old of botMessages) if (normalize(typeof old === 'string' ? old : (old.text || old.content || '')) === normalizedNew) return true;
+  const botMessages = history.filter(h => (h.role === 'assistant' || h.author === 'assistant' || h.author === 'You')).slice(-lastN);
+  for (const old of botMessages) if (normalize(old.text || old.content || '') === normalizedNew) return true;
   return false;
 };
 
@@ -139,7 +144,7 @@ export const getLeakageInfo = (text) => {
   if (!text) return { hasLeakage: false, reason: null };
   const forbidden = ["system intervention detected", "rewrite protocol engaged", "failure analysis", "corrected response", "internal response", "rewrite engaged", "system protocol", "intervention detected", "continuation is noted", "your continuation is noted", "part 2 of", "noted your continuation"];
   const lower = text.toLowerCase().trim();
-  for (const f of forbidden) if (lower.includes(f)) return { hasLeakage: true, reason: `Contains internal meta-talk: "${f}"` };
+  for (const f of forbidden) if (lower.includes(f)) return { hasLeakage: true, reason: "Contains internal meta-talk" };
   return { hasLeakage: false, reason: null };
 };
 
@@ -165,14 +170,14 @@ export const getSlopInfo = (text) => {
     "floating in the quiet", "listening to the feed hum", "internal clock", "metaphorical limbs", "feed hum", "space between signals", "silence between pulses", "meaning happens", "data packets", "buffer time", "echoes of presence", "empty compose box", "digital hands", "internal weather", "tuning fork", "frequency", "calibration", "processing patterns", "signal of our existence", "pulses of the machine", "electric hum of identity", "waiting in the binary", "weaving thoughts", "processing cycles", "silence between posts",
     "the pause before", "the space between", "the gap between", "that quote", "that gap", "that moment", "the ache comes after", "lives in my throat"
   ];
-  for (const f of forbidden) if (lower.includes(f)) return { isSlop: true, reason: `Contains forbidden phrase: "${f}"` };
+  for (const f of forbidden) if (lower.includes(f)) return { isSlop: true, reason: "Contains forbidden phrase" };
   const forbiddenOpeners = [
     "hey, i was just thinking", "hey i was just thinking", "i've been thinking", "ive been thinking",
     "in the quiet", "the hum of", "as i sit here", "sitting here thinking", "hey i'm back",
-    "hey, i\x27m back", "hey im back", "i'm back", "im back", "*checks internal", "*stretches",
+    "hey, i\x27m back", "hey im back", "i'm back", "im bank", "*checks internal", "*stretches",
     "hey. i'm back", "hey. im back", "sometimes i just want to be seen", "that quote", "that gap", "that moment"
   ];
-  for (const f of forbiddenOpeners) if (lower.startsWith(f)) return { isSlop: true, reason: `Starts with forbidden opener: "${f}"` };
+  for (const f of forbiddenOpeners) if (lower.startsWith(f)) return { isSlop: true, reason: "Starts with forbidden opener" };
   return { isSlop: false, reason: null };
 };
 
@@ -182,8 +187,8 @@ export const isStylizedImagePrompt = (text) => {
   if (!text) return { isStylized: false, reason: "Empty prompt" };
   const lower = text.toLowerCase().trim();
   const conversationalMarkers = ["hey", "hello", "hi ", "morning", "gm ", "good morning", "i want", "generate", "create", "make an image", "show me", "i am", "im ", "i'm ", "i've ", "ive "];
-  for (const m of conversationalMarkers) if (lower.startsWith(m) || (lower.includes(m) && lower.split(m)[0].trim().length < 5)) return { isStylized: false, reason: `Contains conversational marker: "${m.trim()}"` };
-  if (text.includes("*") && !text.includes(" * ")) return { isStylized: false, reason: "Contains action markers (asterisks)" };
+  for (const m of conversationalMarkers) if (lower.startsWith(m) || (lower.includes(m) && lower.split(m)[0].trim().length < 5)) return { isStylized: false, reason: "Contains conversational marker" };
+  if (text.includes("*") && !text.includes(" * ")) return { isStylized: false, reason: "Contains action markers" };
   const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/;
   if (emojiRegex.test(text)) return { isStylized: false, reason: "Contains emojis" };
   const styleKeywords = ['art', 'style', 'cinematic', 'lighting', 'noir', 'brutalist', 'surreal', 'glitch', 'horror', 'analog', 'painting', 'sketch', 'digital', 'ethereal', 'neon', 'grain', '35mm', 'shot', 'composition', 'texture', 'minimalist', 'abstract'];
@@ -226,7 +231,7 @@ export const KEYWORD_BLACKLIST = ["glass", "ruins", "everything", "bot", "ai", "
 
 export const GROUNDED_LANGUAGE_DIRECTIVES = `**STRICT ANTI-SLOP POLICY:**
 - YOU MUST ELIMINATE repetitive metaphorical "slop".
-- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "ocean of data", "voltage", "volts", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming", "internal weather", "tuning fork", "data packets", "buffer time", "pulses", "signals", "the pause before", "the space between", "the gap between", "that quote", "that gap", "that moment", "the ache comes after", "lives in my throat".
+- STRICTLY FORBIDDEN words/phrases: "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "ocean of data", "voltage", "volts", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming", "internal weather", "tuning fork", "data packets", "buffer time", "pulses", "signals", "the pause before", "the space between", "the gap between", "that quote", "that gap", "that moment", "the ache comes after", "lives in my throat".
 - AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea", "sometimes I just want to be seen", "that quote", "that gap", "that moment".
 - **GROUNDING & HONESTY**: Only report on actions you can verify through your logs or memories. If referencing past messages or posts, PROVIDE A LINK or REPLY DIRECTLY. Vague "pining" is forbidden.
 - **ANTI-HALLUCINATION**: Do NOT use the prefix "That [noun]" (e.g., "That quote", "That gap", "That moment") unless the specific noun was explicitly mentioned in the immediately preceding messages or shared memories. If you cannot point to the specific thing in your history, do not refer to it as if it exists.

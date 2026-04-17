@@ -15,7 +15,7 @@ class BlueskyService {
       return;
     }
     try {
-      console.log(`[BlueskyService] Authenticating as ${this.handle}...`);
+      console.log("[BlueskyService] Authenticating as " + this.handle + "...");
       const response = await this.agent.login({ identifier: this.handle, password: this.password });
       this.did = response.data.did;
       console.log('[BlueskyService] Authenticated successfully');
@@ -51,7 +51,7 @@ class BlueskyService {
     }
     if (!this.did) return null;
     try {
-      const maxGraphemes = 280; // Standard limit
+      const maxGraphemes = 280;
       const chunks = this.splitIntoGraphemeChunks(text, maxGraphemes);
 
       let root = null;
@@ -80,7 +80,6 @@ class BlueskyService {
           parent = response;
         }
 
-        // Brief pause between chunks to ensure indexing order
         if (chunks.length > 1 && i < chunks.length - 1) {
             await new Promise(r => setTimeout(r, 1000));
         }
@@ -104,11 +103,16 @@ class BlueskyService {
       let splitPos = current.lastIndexOf('\n', chunkLimit);
       if (splitPos === -1) splitPos = current.lastIndexOf('. ', chunkLimit);
       if (splitPos === -1) splitPos = current.lastIndexOf(' ', chunkLimit);
-      if (splitPos === -1) splitPos = chunkLimit;
       if (splitPos <= 0) splitPos = chunkLimit;
 
-      chunks.push(current.substring(0, splitPos).trim() + ellipsis);
-      current = current.substring(splitPos).trim();
+      const chunkText = current.substring(0, splitPos).trim();
+      if (chunkText) {
+          chunks.push(chunkText + ellipsis);
+          current = current.substring(splitPos).trim();
+      } else {
+          chunks.push(current.substring(0, chunkLimit) + ellipsis);
+          current = current.substring(chunkLimit).trim();
+      }
       if (!current) break;
     }
     if (current) chunks.push(current);
@@ -188,9 +192,6 @@ class BlueskyService {
     }
   }
 
-  /**
-   * Enhanced searchPosts to handle both object options and legacy positional arguments.
-   */
   async searchPosts(query, optionsOrSort = {}, limit = 20) {
       try {
           let params = { q: query };
@@ -243,6 +244,5 @@ class BlueskyService {
       }
   }
 }
-
 
 export const blueskyService = new BlueskyService();

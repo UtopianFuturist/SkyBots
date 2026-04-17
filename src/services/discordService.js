@@ -28,6 +28,30 @@ class DiscordService {
         this.isInitializing = false;
     }
 
+    async performStartupCatchup() {
+        if (!this.isEnabled || !this.client?.isReady()) return;
+        console.log('[DiscordService] Starting catch-up for unread messages...');
+        try {
+            const admin = await this.getAdminUser();
+            if (!admin) return;
+            const dmChannel = admin.dmChannel || await admin.createDM();
+            const messages = await dmChannel.messages.fetch({ limit: 50 });
+            const botLastSeen = dataStore.db.data.discord_last_interaction || 0;
+            const unread = messages.filter(m => m.author.id !== this.client.user.id && m.createdTimestamp > botLastSeen).reverse();
+
+            if (unread.size > 0) {
+                console.log(`[DiscordService] Found ${unread.size} unread messages. Resuming conversation...`);
+                for (const [id, msg] of unread) {
+                    await this.respond(msg);
+                }
+            } else {
+                console.log('[DiscordService] No unread messages found.');
+            }
+        } catch (e) {
+            console.error('[DiscordService] Catch-up error:', e);
+        }
+    }
+
     async init(botInstance) {
         if (!this.isEnabled || this.isInitializing) return;
         this.isInitializing = true;

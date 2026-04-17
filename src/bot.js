@@ -24,9 +24,8 @@ import path from 'path';
 export class Bot {
     constructor() {
         this.paused = false;
-        orchestratorService.setBotInstance(this);
-        this.readmeContent = "";
         this.lastFirehoseImpulse = 0;
+        this.readmeContent = "";
         if (llmService.setDataStore) llmService.setDataStore(dataStore);
         if (llmService.setMemoryProvider) llmService.setMemoryProvider(memoryService);
         orchestratorService.setBotInstance(this);
@@ -53,27 +52,25 @@ export class Bot {
             try {
                 console.log('[Bot] Initializing Discord Service...');
                 await discordService.init(this);
-                await discordService.performStartupCatchup();
+                // The catchup will now be triggered by the discordService itself when ready,
+                // or we call it here if we are sure it's exported
+                if (typeof discordService.performStartupCatchup === 'function') {
+                    await discordService.performStartupCatchup();
+                }
             } catch (e) { console.error('[Bot] Discord init failed:', e); }
         }
 
         if (config.ADMIN_BLUESKY_HANDLE) {
             try {
-                console.log(`[Bot] Resolving admin DID for @${config.ADMIN_BLUESKY_HANDLE}...`);
+                console.log("Resolving admin DID for @" + config.ADMIN_BLUESKY_HANDLE + "...");
                 const adminProfile = await blueskyService.getProfile(config.ADMIN_BLUESKY_HANDLE);
-                if (adminProfile?.did) {
+                if (adminProfile && adminProfile.did) {
                     await dataStore.setAdminDid(adminProfile.did);
                     llmService.setIdentities(adminProfile.did, blueskyService.did);
                 }
             } catch (e) { console.warn('[Bot] Admin DID resolution failed:', e.message); }
         }
 
-        try {
-            if (config.MOLTBOOK_API_KEY) {
-            } else {
-                console.log('[Bot] Moltbook API key not set, skipping initialization.');
-            }
-        } catch (e) { console.error('[Bot] Moltbook init failed:', e); }
         try { await openClawService.init(); } catch (e) { console.error('[Bot] OpenClaw init failed:', e); }
         try { await toolService.init(); } catch (e) { console.error('[Bot] ToolService init failed:', e); }
         try { await nodeGatewayService.init(); } catch (e) { console.error('[Bot] NodeGateway init failed:', e); }
@@ -107,7 +104,7 @@ export class Bot {
         const params = action.parameters || action.arguments || (typeof action.query === 'object' ? action.query : {});
         let query = typeof action.query === 'string' ? action.query : (params.query || params.text || params.message || params.instruction);
 
-        console.log(`[Bot] Executing tool: ${action.tool}`, params);
+        console.log("Executing tool: " + action.tool, params);
 
         try {
             if (action.tool === "bsky_post") {
@@ -163,11 +160,10 @@ export class Bot {
                     if (result) {
                         const channel = context.channel || await discordService.getAdminUser();
                         const { AttachmentBuilder } = await import("discord.js");
-                        await discordService._send(channel, `${result.caption}\n\n[PROMPT]: ${result.finalPrompt}`, { files: [new AttachmentBuilder(result.buffer, { name: "generated.jpg" })] });
+                        await discordService._send(channel, result.caption + "\n\n[PROMPT]: " + result.finalPrompt, { files: [new AttachmentBuilder(result.buffer, { name: "generated.jpg" })] });
                         return { success: true };
                     }
                 } else {
-                    // Bluesky use verified autonomous flow
                     await orchestratorService._performHighQualityImagePost(prompt);
                     return { success: true };
                 }
@@ -201,6 +197,7 @@ export class Bot {
                 return { success: false };
             }
             if (action.tool === "get_admin_time_context") {
+                const { temporalService } = await import('./services/temporalService.js');
                 return { success: true, data: await temporalService.getEnhancedTemporalContext() };
             }
             if (action.tool === "execute_skill") {
@@ -238,21 +235,21 @@ export class Bot {
             }
             if (["search", "wikipedia", "youtube"].includes(action.tool)) {
                 const serviceMap = { search: "googleSearchService", wikipedia: "wikipediaService", youtube: "youtubeService" };
-                const service = await import(`./services/${serviceMap[action.tool]}.js`).then(m => m[serviceMap[action.tool]]);
+                const service = await import("./services/" + serviceMap[action.tool] + ".js").then(m => m[serviceMap[action.tool]]);
                 return { success: true, data: await service.search(query) };
             }
-            return { success: false, reason: `Unknown tool: ${action.tool}` };
+            return { success: false, reason: "Unknown tool: " + action.tool };
         } catch (e) {
             console.error("[Bot] executeAction error:", e);
-            await dataStore.addSessionLesson(`Tool ${action.tool} failed: ${e.message}`);
+            await dataStore.addSessionLesson("Tool " + action.tool + " failed: " + e.message);
             return { success: false, error: e.message };
         }
     }
 
     async _generateVerifiedImagePost(topic, options = {}) {
-        console.log(`[Bot] Generating verified image post for: ${topic}`);
+        console.log("Generating verified image post for: " + topic);
         try {
-            const topicPrompt = `Identify a visual subject for: "${topic}". JSON: {"topic": "label", "prompt": "stylized artistic prompt (max 270 chars)"}`;
+            const topicPrompt = "Identify a visual subject for: \"" + topic + "\". JSON: {\"topic\": \"label\", \"prompt\": \"stylized artistic prompt (max 270 chars)\"}";
             const res = await llmService.generateResponse([{ role: "system", content: topicPrompt }], { useStep: true });
             const data = llmService.extractJson(res) || {};
             if (!data.prompt) return null;
@@ -263,7 +260,14 @@ export class Bot {
             const analysis = await llmService.analyzeImage(result.buffer, data.topic);
             const relevance = await llmService.verifyImageRelevance(analysis, data.topic);
             if (!relevance.relevant) return null;
-            return { buffer: result.buffer, finalPrompt: data.prompt, analysis, altText: await llmService.generateAltText(analysis), caption: await llmService.generateResponse([{ role: "user", content: `Generate caption for: "${analysis}". Tone: ${dataStore.getMood().label}.` }], { useStep: true }), topic: data.topic };
+            return {
+                buffer: result.buffer,
+                finalPrompt: data.prompt,
+                analysis,
+                altText: await llmService.generateAltText(analysis),
+                caption: await llmService.generateResponse([{ role: "user", content: "Generate caption for: \"" + analysis + "\". Tone: " + dataStore.getMood().label + "." }], { useStep: true }),
+                topic: data.topic
+            };
         } catch (e) { return null; }
     }
 
@@ -286,22 +290,22 @@ export class Bot {
     }
 
     async performSpecialistResearchProject(topic) {
-        console.log(`[Bot] Starting Specialist Research: ${topic}`);
+        console.log("Starting Specialist Research: " + topic);
         try {
-            const researcher = await llmService.generateResponse([{ role: "system", content: `Deep research on: ${topic}. Identify facts.` }], { useStep: true, task: "researcher" });
-            const report = `[RESEARCH] Topic: ${topic}\nFindings: ${researcher}`;
+            const researcher = await llmService.generateResponse([{ role: "system", content: "Deep research on: " + topic + ". Identify facts." }], { useStep: true, task: "researcher" });
+            const report = "[RESEARCH] Topic: " + topic + "\nFindings: " + researcher;
             if (discordService.status === "online") await discordService.sendSpontaneousMessage(report);
         } catch (e) {}
     }
 
     async _handleError(error, contextInfo) {
-        console.error(`[Bot] CRITICAL ERROR in ${contextInfo}:`, error);
+        console.error("CRITICAL ERROR in " + contextInfo + ":", error);
         if (renderService.isEnabled()) {
             try {
-                const alertMsg = await llmService.generateResponse([{ role: 'system', content: `Critical error in ${contextInfo}: ${error.message}. Generate alert.` }], { useStep: true });
+                const alertMsg = await llmService.generateResponse([{ role: 'system', content: "Critical error in " + contextInfo + ": " + error.message + ". Generate alert." }], { useStep: true });
                 if (alertMsg) {
                     if (discordService.status === 'online') await discordService.sendSpontaneousMessage(alertMsg);
-                    await blueskyService.post(`@${config.ADMIN_BLUESKY_HANDLE} ${alertMsg}`);
+                    await blueskyService.post("@" + config.ADMIN_BLUESKY_HANDLE + " " + alertMsg);
                 }
             } catch (e) {}
         }
@@ -311,7 +315,7 @@ export class Bot {
         setInterval(async () => { try { await this.catchUpNotifications(); } catch (e) {} }, 60000);
     }
 
-        async startFirehose() {
+    async startFirehose() {
         console.log("[Bot] Starting Firehose monitor...");
         try {
             const rawKeywords = dataStore.getDeepKeywords();
@@ -322,7 +326,6 @@ export class Bot {
             const firehoseActors = [blueskyService.agent?.session?.did, adminDid].filter(Boolean).join(",");
             const keywordsStr = keywords.join(",");
 
-            // Ensure dependencies
             await new Promise((resolve) => {
                 exec("python3 -m pip install --no-warn-script-location --break-system-packages atproto python-dotenv", () => resolve());
             });
@@ -349,12 +352,11 @@ export class Bot {
                             const match = JSON.parse(jsonStr);
 
                             await dataStore.addInternalLog("firehose_match", match);
-                            // Autonomous impulse to engage with topic matches
                             const now = Date.now();
                             const lastPost = dataStore.getLastAutonomousPostTime() || 0;
-                            const lastPostMs = typeof lastPost === "string" ? new Date(lastPost).getTime() : lastPost;
+                            const lastPostMs = typeof lastPost === 'string' ? new Date(lastPost).getTime() : lastPost;
+
                             if (match.type === "firehose_topic_match" && Math.random() < 0.2 && (now - lastPostMs > (config.BACKOFF_DELAY || 60000))) {
-                                this.lastFirehoseImpulse = now;
                                 console.log("[Bot] Firehose topic match triggered an autonomous impulse...");
                                 orchestratorService.addTaskToQueue(() => orchestratorService.performAutonomousPost({ topic: match.matched_keywords?.[0] || "trending" }), "firehose_impulse");
                             }
@@ -365,7 +367,7 @@ export class Bot {
             });
 
             this.firehoseProcess.on("close", (code) => {
-                console.log(`[Firehose] Exited (${code}). Restarting in 30s...`);
+                console.log("Firehose Exited (" + code + "). Restarting in 30s...");
                 this.firehoseProcess = null;
                 setTimeout(() => this.startFirehose(), 30000);
             });
@@ -411,10 +413,8 @@ export class Bot {
         const isAdmin = notif.author.handle === config.ADMIN_BLUESKY_HANDLE;
         if (isAdmin && discordService.status === "online") {
             console.log("[Bot] Admin interaction detected on Bluesky. Pivoting to Discord...");
-            const pivotMsg = `[PIVOT] @${notif.author.handle} just mentioned you on Bluesky: "${text}"`;
+            const pivotMsg = "[PIVOT] @" + notif.author.handle + " just mentioned you on Bluesky: \"" + text + "\"";
             await discordService.sendSpontaneousMessage(pivotMsg);
-            // We still process the notification to keep the Bluesky thread alive if needed,
-            // but the primary response will now be on Discord.
         }
 
         const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
@@ -448,16 +448,9 @@ export class Bot {
         if (!admin) return;
 
         console.log('[Bot] Deciding on a Discord pinned gift for admin...');
-        const history = await discordService.fetchAdminHistory(20);
         const mood = dataStore.getMood();
 
-        const decisionPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}
-You are deciding to send a visual gift and a pinned message to your Admin.
-Mood: ${JSON.stringify(mood)}
-Context: Thinking about the Admin and your bond.
-
-Generate a visual topic and a message that says what you want them to see when they get back.
-Respond with JSON: { "topic": "string", "message": "string" }`;
+        const decisionPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\nYou are deciding to send a visual gift and a pinned message to your Admin.\nMood: " + JSON.stringify(mood) + "\nContext: Thinking about the Admin and your bond.\n\nGenerate a visual topic and a message that says what you want them to see when they get back.\nRespond with JSON: { \"topic\": \"string\", \"message\": \"string\" }";
 
         const res = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { useStep: true });
         const data = llmService.extractJson(res);
@@ -466,14 +459,11 @@ Respond with JSON: { "topic": "string", "message": "string" }`;
             if (gift) {
                 const dmChannel = admin.dmChannel || await admin.createDM();
                 const { AttachmentBuilder } = await import("discord.js");
-                const mainMsg = await discordService._send(dmChannel, `${data.message}
-
-${gift.caption}`, { files: [new AttachmentBuilder(gift.buffer, { name: "gift.jpg" })] });
+                const mainMsg = await discordService._send(dmChannel, data.message + "\n\n" + gift.caption, { files: [new AttachmentBuilder(gift.buffer, { name: "gift.jpg" })] });
                 if (mainMsg) {
-                    await discordService._send(dmChannel, `[Generation Prompt]
-${gift.finalPrompt}`);
+                    await discordService._send(dmChannel, "[Generation Prompt]\n" + gift.finalPrompt);
                     try { await mainMsg.pin(); } catch (e) {}
-                    await dataStore.saveDiscordInteraction(`dm-${admin.id}`, 'assistant', data.message);
+                    await dataStore.saveDiscordInteraction("dm-" + admin.id, 'assistant', data.message);
                 }
             }
         }

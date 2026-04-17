@@ -26,6 +26,7 @@ export class Bot {
         this.paused = false;
         orchestratorService.setBotInstance(this);
         this.readmeContent = "";
+        this.lastFirehoseImpulse = 0;
         if (llmService.setDataStore) llmService.setDataStore(dataStore);
         if (llmService.setMemoryProvider) llmService.setMemoryProvider(memoryService);
         orchestratorService.setBotInstance(this);
@@ -349,7 +350,9 @@ export class Bot {
 
                             await dataStore.addInternalLog("firehose_match", match);
                             // Autonomous impulse to engage with topic matches
-                            if (match.type === "firehose_topic_match" && Math.random() < 0.2) {
+                            const now = Date.now();
+                            if (match.type === "firehose_topic_match" && Math.random() < 0.2 && (now - this.lastFirehoseImpulse > (config.BACKOFF_DELAY || 60000))) {
+                                this.lastFirehoseImpulse = now;
                                 console.log("[Bot] Firehose topic match triggered an autonomous impulse...");
                                 orchestratorService.addTaskToQueue(() => orchestratorService.performAutonomousPost({ topic: match.matched_keywords?.[0] || "trending" }), "firehose_impulse");
                             }

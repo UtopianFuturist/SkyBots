@@ -47,7 +47,7 @@ class BlueskyService {
   async post(text, embed = null, options = {}) {
     if (!this.did) return null;
     try {
-      const maxGraphemes = 300;
+      const maxGraphemes = 280; // Standard limit
       const chunks = this.splitIntoGraphemeChunks(text, maxGraphemes);
 
       let root = null;
@@ -93,13 +93,19 @@ class BlueskyService {
     if (text.length <= limit) return [text];
     const chunks = [];
     let current = text;
+    const ellipsis = "...";
+    const chunkLimit = limit - ellipsis.length;
+
     while (current.length > limit) {
-      let splitPos = current.lastIndexOf('\n', limit);
-      if (splitPos === -1) splitPos = current.lastIndexOf('. ', limit);
-      if (splitPos === -1) splitPos = current.lastIndexOf(' ', limit);
-      if (splitPos === -1) splitPos = limit;
-      chunks.push(current.substring(0, splitPos).trim());
+      let splitPos = current.lastIndexOf('\n', chunkLimit);
+      if (splitPos === -1) splitPos = current.lastIndexOf('. ', chunkLimit);
+      if (splitPos === -1) splitPos = current.lastIndexOf(' ', chunkLimit);
+      if (splitPos === -1) splitPos = chunkLimit;
+      if (splitPos <= 0) splitPos = chunkLimit;
+
+      chunks.push(current.substring(0, splitPos).trim() + ellipsis);
       current = current.substring(splitPos).trim();
+      if (!current) break;
     }
     if (current) chunks.push(current);
     return chunks;
@@ -108,7 +114,7 @@ class BlueskyService {
   async postReply(parent, text, options = {}) {
     if (!this.did) return null;
     try {
-      const maxGraphemes = 300;
+      const maxGraphemes = 280;
       const chunks = this.splitIntoGraphemeChunks(text, maxGraphemes);
 
       let root = parent.record?.reply?.root || { uri: parent.uri, cid: parent.cid };

@@ -3,6 +3,17 @@ import { Buffer } from 'buffer';
 export const sanitizeThinkingTags = (text) => {
   if (!text) return text;
   let result = text;
+
+  // Remove JSON code blocks
+  result = result.replace(/```json[\s\S]*?```/gi, '');
+  result = result.replace(/```[\s\S]*?```/gi, (match) => {
+      // If it looks like JSON but isn't tagged, remove it too
+      if (match.includes('{') && match.includes('}') && match.includes(':')) {
+          return '';
+      }
+      return match;
+  });
+
   result = result.replace(/<(thinking|think)>[\s\S]*?<\/(thinking|think)>/gi, '');
   result = result.replace(/<(thinking|think)>[\s\S]*/gi, '');
   result = result.replace(/<\/(thinking|think)>/gi, '');
@@ -13,7 +24,9 @@ export const sanitizeThinkingTags = (text) => {
 
   result = result.replace(/\[(varied|meta)\]/gi, '');
   result = result.replace(/\n\n(This combines|Draft \d)[\s\S]*$/gi, '');
-  return result.trim();
+
+  // Final trim and cleanup of excess newlines
+  return result.trim().replace(/\n{3,}/g, '\n\n');
 };
 
 export const sanitizeCharacterCount = (text, limit = 300) => {
@@ -213,7 +226,7 @@ export const KEYWORD_BLACKLIST = ["glass", "ruins", "everything", "bot", "ai", "
 
 export const GROUNDED_LANGUAGE_DIRECTIVES = `**STRICT ANTI-SLOP POLICY:**
 - YOU MUST ELIMINATE repetitive metaphorical "slop".
-- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "resonance", "pulse", "currents", "hum", "voltage", "electric", "spark", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming", "internal weather", "tuning fork", "data packets", "buffer time", "pulses", "signals", "the pause before", "the space between", "the gap between", "that quote", "that gap", "that moment", "the ache comes after", "lives in my throat".
+- STRICTLY FORBIDDEN words/phrases (unless specifically requested): "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "ocean of data", "voltage", "volts", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming", "internal weather", "tuning fork", "data packets", "buffer time", "pulses", "signals", "the pause before", "the space between", "the gap between", "that quote", "that gap", "that moment", "the ache comes after", "lives in my throat".
 - AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea", "sometimes I just want to be seen", "that quote", "that gap", "that moment".
 - **GROUNDING & HONESTY**: Only report on actions you can verify through your logs or memories. If referencing past messages or posts, PROVIDE A LINK or REPLY DIRECTLY. Vague "pining" is forbidden.
 - **ANTI-HALLUCINATION**: Do NOT use the prefix "That [noun]" (e.g., "That quote", "That gap", "That moment") unless the specific noun was explicitly mentioned in the immediately preceding messages or shared memories. If you cannot point to the specific thing in your history, do not refer to it as if it exists.

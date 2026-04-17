@@ -71,6 +71,7 @@ class LLMService {
   }
 
   setDataStore(ds) { this.ds = ds; }
+  setMemoryProvider(mp) { this.mp = mp; }
   setIdentities(admin, bot) { this.adminDid = admin; this.botDid = bot; }
 
   async _loadContextFiles() {
@@ -98,10 +99,17 @@ class LLMService {
     const temporalContext = await temporalService.getEnhancedTemporalContext();
     const dynamicPersonaBlock = this.ds ? this.ds.getPersonaBlurbs().map(b => b.text).join("\n") : "";
     const sessionLessons = this.ds ? this.ds.getSessionLessons().map(l => "- " + l.text).join("\n") : "";
+    let memoriesBlock = "";
+    if (this.mp && !options.useStep && !options.task) {
+        try {
+            const memories = await this.mp.getRecentMemories(15);
+            if (memories && memories.length > 0) memoriesBlock = "\n\n**RECENT MEMORIES:**\n" + memories.map(m => "- " + m.text).join("\n");
+        } catch (e) {}
+    }
     let basePersona = (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT);
     if (options.useStep || options.task) basePersona = "You are a technical sub-agent. Output ONLY requested JSON.";
     const skillsContext = (openClawService && typeof openClawService.getSkillsForPrompt === "function") ? "\n\nAVAILABLE SKILLS:\n" + openClawService.getSkillsForPrompt() : "";
-    const systemPrompt = "Persona: " + basePersona + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + (sessionLessons ? "\n\n**RECENT LESSONS:**\n" + sessionLessons : "") + skillsContext + "\nGuidelines: Be direct. No slop. Output ONLY requested format.";
+    const systemPrompt = "Persona: " + basePersona + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + memoriesBlock + (sessionLessons ? "\n\n**RECENT LESSONS:**\n" + sessionLessons : "") + skillsContext + "\nGuidelines: Be direct. No slop. Output ONLY requested format.";
 
     let models = [config.STEP_MODEL, config.LLM_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean);
     for (const model of models) {
@@ -126,6 +134,7 @@ class LLMService {
             if (this._isRefusal(content)) continue;
             // content = sanitizeThinkingTags(content); // Moved to display layer
             if (this.ds) await this.ds.addInternalLog("llm_response" + (options.task ? ":" + options.task : ""), content);
+            if (options.platform === "discord" || options.platform === "bluesky") content = sanitizeThinkingTags(content);
             return content;
         } catch (e) { continue; }
     }

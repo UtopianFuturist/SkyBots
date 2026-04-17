@@ -94,13 +94,13 @@ class DiscordService {
     async loginLoop() {
         let attempts = 0;
         const maxAttempts = 5;
-        while (attempts < maxAttempts) {
+        while (true) {
             attempts++;
             try {
-                console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
+                console.log(`[DiscordService] Login attempt ${attempts}...`);
 
                 const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 60s")), 60000));
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
                 await Promise.race([loginPromise, timeoutPromise]);
 
                 console.log(`[DiscordService] SUCCESS: Login complete!`);
@@ -108,8 +108,8 @@ class DiscordService {
                 return;
             } catch (err) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
-                if (attempts < maxAttempts) {
-                    await new Promise(r => setTimeout(r, 10000));
+                if (true) {
+                    await new Promise(r => setTimeout(r, 300000));
                 }
             }
         }

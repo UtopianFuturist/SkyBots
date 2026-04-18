@@ -64,6 +64,7 @@ class DiscordService {
         }
 
         // Use the Client class imported at the top of the file
+        // Removing custom rest.agent as it causes 'this.dispatch is not a function' in discord.js v14
         this.client = new Client({
             partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
             intents: [
@@ -72,11 +73,7 @@ class DiscordService {
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent
-            ],
-            rest: {
-                timeout: 60000,
-                agent: persistentAgent
-            }
+            ]
         });
 
         this.client.on("ready", () => {

@@ -63,7 +63,7 @@ class DiscordService {
             try { await this.client.destroy(); } catch (e) {}
         }
 
-        const { Client, GatewayIntentBits, Partials } = await import("discord.js");
+        // Use standard constructor with pre-imported classes to avoid 'this.dispatch' issues
         this.client = new Client({
             partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
             intents: [

@@ -63,7 +63,7 @@ class DiscordService {
             try { await this.client.destroy(); } catch (e) {}
         }
 
-        // Use standard constructor with pre-imported classes to avoid 'this.dispatch' issues
+        // Use the Client class imported at the top of the file
         this.client = new Client({
             partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
             intents: [

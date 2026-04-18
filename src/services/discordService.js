@@ -127,8 +127,15 @@ class DiscordService {
                     return;
                 }
                 console.log(`[DiscordService] Login attempt ${attempts}...`);
-                await this.client.login(this.token);
-                console.log("[DiscordService] client.login() call completed.");
+                
+                // Add a 30-second timeout to the login call to prevent it from hanging indefinitely
+                const loginPromise = this.client.login(this.token);
+                const timeoutPromise = new Promise((_, reject) => 
+                    setTimeout(() => reject(new Error("Login timeout (30s)")), 30000)
+                );
+
+                await Promise.race([loginPromise, timeoutPromise]);
+                console.log("[DiscordService] client.login() call completed successfully.");
                 return;
             } catch (err) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed: ${err.message}`);

@@ -50,6 +50,7 @@ jest.unstable_mockModule('../src/services/llmService.js', () => ({
   llmService: {
     generateResponse: jest.fn(),
     extractJson: (str) => {
+        if (!str) return null;
         try {
             const match = str.match(/\{.*\}/s);
             return JSON.parse(match ? match[0] : str);
@@ -132,23 +133,16 @@ describe('Bot Autonomous Posting', () => {
     dataStore.getDailyStats.mockReturnValue({ text_posts: 0, image_posts: 0, last_reset: Date.now() });
 
     llmService.generateResponse.mockImplementation((messages) => {
-        const content = JSON.stringify(messages);
-        if (content.includes('deciding what to share')) return Promise.resolve('{"choice": "text", "mode": "SINCERE"}');
-        if (content.includes('deep topic')) return Promise.resolve('Existence');
-        if (content.includes('Follow ANTI-SLOP MANDATE')) return Promise.resolve('Initial draft.');
-        if (content.includes('Second-guess')) return Promise.resolve('Critique.');
-        if (content.includes('Synthesize a final')) return Promise.resolve('Deep thought about existence.');
-        if (content.includes('visual subject')) return Promise.resolve('{"topic": "art", "prompt": "cinematic oil painting of existence, artstation style, high detail"}');
-        if (content.includes('NEW artistic image prompt')) if (content.includes('Audit this image prompt')) return Promise.resolve('COMPLIANT');
-        return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
-        if (content.includes('Generate caption')) return Promise.resolve('Caption.');
-        if (content.includes('Audit this image prompt')) return Promise.resolve('COMPLIANT');
-        return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
+        const content = JSON.stringify(messages).toLowerCase();
+        if (content.includes('decide')) return Promise.resolve('{"choice": "text", "mode": "SINCERE"}');
+        if (content.includes('identify 3 topics')) return Promise.resolve('Existence');
+        if (content.includes('write a post about')) return Promise.resolve('Initial draft.');
+        if (content.includes('artistic visual description')) return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
+        return Promise.resolve('Default response');
     });
   });
 
   it('should handle autonomous text posts', async () => {
-    llmService.performRealityAudit.mockResolvedValue({ hallucination_detected: false, refined_text: 'Deep thought about existence.' });
     await bot.performAutonomousPost();
     expect(blueskyService.post).toHaveBeenCalled();
   });
@@ -164,13 +158,10 @@ describe('Bot Autonomous Posting', () => {
 
   it('should handle autonomous image posts', async () => {
     llmService.generateResponse.mockImplementation((messages) => {
-        const content = JSON.stringify(messages);
-        if (content.includes('deciding what to share')) return Promise.resolve('{"choice": "image"}');
-        if (content.includes('visual subject')) return Promise.resolve('{"topic": "art", "prompt": "cinematic oil painting of existence, artstation style, high detail"}');
-        if (content.includes('NEW artistic image prompt')) return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
-        if (content.includes('Generate caption')) return Promise.resolve('Caption.');
-        if (content.includes('Audit this image prompt')) return Promise.resolve('COMPLIANT');
-        return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
+        const content = JSON.stringify(messages).toLowerCase();
+        if (content.includes('decide')) return Promise.resolve('{"choice": "image"}');
+        if (content.includes('artistic visual description')) return Promise.resolve('cinematic oil painting of existence, artstation style, high detail');
+        return Promise.resolve('Default response');
     });
     imageService.generateImage.mockResolvedValue({ buffer: Buffer.from('abc') });
 

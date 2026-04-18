@@ -1,138 +1,98 @@
-import { Buffer } from 'buffer';
+import { RichText } from '@atproto/api';
 
 export const sanitizeThinkingTags = (text) => {
-  if (!text) return text;
-  let result = text;
+    if (!text) return text;
+    let cleaned = text;
 
-  result = result.replace(/<(thinking|think)>[\s\S]*?<\/(thinking|think)>/gi, '');
-  result = result.replace(/<(thinking|think)>[\s\S]*/gi, '');
-  result = result.replace(/<\/(thinking|think)>/gi, '');
+    // Remove Thought:, Reasoning:, Analysis:, Synthesis: blocks
+    cleaned = cleaned.replace(/^(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?(\n\n|$)/gim, '');
+    cleaned = cleaned.replace(/\n(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?(\n\n|$)/gim, '\n\n');
 
-  result = result.replace(/```json[\s\S]*?```/gi, '');
-  result = result.replace(/```[\s\S]*?```/gi, (match) => {
-      const inner = match.replace(/```/g, '').trim();
-      if ((inner.startsWith('{') && inner.endsWith('}')) || (inner.startsWith('[') && inner.endsWith(']'))) return '';
-      return match;
-  });
+    // Remove [varied] tags
+    cleaned = cleaned.replace(/\[varied\]/gi, '');
 
-  // Remove raw JSON objects if they appear as the primary content
-  const trimmed = result.trim();
-  if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
-      try {
-          JSON.parse(trimmed);
-          return '';
-      } catch (e) {}
-  }
+    // Remove markdown code blocks
+    cleaned = cleaned.replace(/```json[\s\S]*?```/gi, '');
+    cleaned = cleaned.replace(/```[\s\S]*?```/gi, '');
 
-  result = result.replace(/^(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?(\n\n|$)/gi, '');
-  result = result.replace(/\n(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?\n\n/gi, '\n\n');
-  result = result.replace(/\n(Thought|Reasoning|Analysis|Synthesis):[\s\S]*?$/gi, '');
+    // Remove meta-commentary at the end
+    cleaned = cleaned.replace(/\n\n(Draft \d+|This combines|The draft combines)[\s\S]*$/gi, '');
 
-  result = result.replace(/\[(varied|meta)\]/gi, '');
-  result = result.replace(/\n\n(This combines|Draft \d)[\s\S]*$/gi, '');
+    // Aggressively remove <think> tags
+    cleaned = cleaned.replace(/<(think|thinking)>[\s\S]*?<\/(think|thinking)>/gi, '');
+    const thinkOpenIndex = cleaned.search(/<(think|thinking)>/i);
+    if (thinkOpenIndex !== -1) {
+        cleaned = cleaned.substring(0, thinkOpenIndex);
+    }
+    cleaned = cleaned.replace(/<\/(think|thinking)>/gi, '');
 
-  return result.trim().replace(/\n{3,}/g, '\n\n');
+    return cleaned.trim();
 };
 
-export const sanitizeCharacterCount = (text, limit = 300) => {
-  if (!text) return text;
-  let sanitized = text.replace(/\( *\d+ *(chars|char|characters) *\)/gi, '');
-  sanitized = sanitized.replace(/  +/g, ' ');
-  if (sanitized.length <= limit) return sanitized.trim();
-  return sanitized.substring(0, limit).trim();
+export const sanitizeCharacterCount = (text) => {
+    if (!text) return text;
+    return text.replace(/\s*\(\s*\d+\s*(chars?|characters?)\s*\)\s*/gi, ' ').replace(/\s+/g, ' ').trim();
 };
 
 export const sanitizeCjkCharacters = (text) => {
-  if (!text) return text;
-  return text.replace(/[\u4e00-\u9fff\u3040-\u30ff\uac00-\ud7af]/g, '');
+    if (!text) return text;
+    return text.replace(/[\u4e00-\u9fa5]|[\u3040-\u30ff]|[\uac00-\ud7af]|[\uff00-\uffef]/g, '');
 };
 
-export const splitText = (text, maxLength = 300) => {
-  if (!text) return [];
-  if (text.length <= maxLength) return [text];
-  const chunks = [];
-  let current = text;
-  while (current.length > maxLength) {
-    let splitPos = current.lastIndexOf('\n', maxLength);
-    if (splitPos === -1) splitPos = current.lastIndexOf('. ', maxLength);
-    if (splitPos === -1) splitPos = current.lastIndexOf(' ', maxLength);
-    if (splitPos === -1) splitPos = maxLength;
-    chunks.push(current.substring(0, splitPos).trim());
-    current = current.substring(splitPos).trim();
-  }
-  if (current) chunks.push(current);
-  return chunks;
+export const checkExactRepetition = (text, history, limit = 20) => {
+    if (!text || !history || history.length === 0) return false;
+    const lower = text.toLowerCase().trim().replace(/[^\w\s]/g, '');
+    const slice = limit ? history.slice(-limit) : history;
+    return slice.some(h => {
+        if (h.role && h.role !== 'assistant') return false;
+        const raw = (typeof h === 'string' ? h : h.text || h.content || '');
+        const hText = raw.toLowerCase().trim().replace(/[^\w\s]/g, '');
+        if (!hText) return false;
+        return hText === lower || (hText.length > 20 && lower.includes(hText)) || (lower.length > 20 && hText.includes(lower));
+    });
 };
 
-export const isLiteralVisualPrompt = (text) => {
-  if (!text) return { isLiteral: false, reason: "Empty prompt" };
-  const lower = text.toLowerCase().trim();
-  const conversationalMarkers = ["i want", "generate", "create", "make an image", "show me", "i am", "im ", "i'm ", "i've ", "ive ", "hey ", "hello ", "hi ", "morning", "gm "];
-  for (const m of conversationalMarkers) if (lower.includes(m)) return { isLiteral: false, reason: "Contains conversational marker" };
-  if (text.includes("*")) return { isLiteral: false, reason: "Contains action markers" };
-  if (text.includes("?")) return { isLiteral: false, reason: "Contains a question" };
-  const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/;
-  if (emojiRegex.test(text)) return { isLiteral: false, reason: "Contains emojis" };
-  return { isLiteral: true };
+export const getSimilarityInfo = (text1, text2) => {
+    if (!text1 || !text2) return { similarity: 0 };
+    const s1 = text1.toLowerCase().replace(/[^\w\s]/g, '');
+    const s2 = text2.toLowerCase().replace(/[^\w\s]/g, '');
+    const words1 = s1.split(/\s+/).filter(Boolean);
+    const words2 = s2.split(/\s+/).filter(Boolean);
+    if (words1.length === 0 || words2.length === 0) return { similarity: 0 };
+    const intersection = words1.filter(w => words2.includes(w));
+    const similarity = intersection.length / Math.max(words1.length, words2.length);
+    return { similarity };
 };
 
-export const checkExactRepetition = (newText, history, lastN = 50) => {
-  if (!newText || !history || history.length === 0) return false;
-  const normalize = (str) => {
-      if (typeof str !== 'string') return '';
-      return str.toLowerCase().trim().replace(/[^\w\s]/g, '').replace(/\s+/g, '');
-  };
-  const normalizedNew = normalize(newText);
-  if (!normalizedNew) return false;
-
-  const relevantHistory = history.slice(-lastN);
-  for (const item of relevantHistory) {
-      const role = item.role || item.author;
-      if (role && !['assistant', 'Assistant (Self)', 'You'].includes(role)) continue;
-      const content = typeof item === 'string' ? item : (item.text || item.content || '');
-      if (normalize(content) === normalizedNew) return true;
-  }
-  return false;
+export const checkSimilarity = (text, history, threshold = 0.8) => {
+    if (!text || !history || history.length === 0) return false;
+    return history.some(h => {
+        const hText = (typeof h === 'string' ? h : h.text || h.content || '');
+        return getSimilarityInfo(text, hText).similarity > threshold;
+    });
 };
-
-export const getSimilarityInfo = (newText, recentTexts, threshold = 0.4) => {
-  if (!recentTexts || recentTexts.length === 0 || !newText) return { isRepetitive: false, score: 0, matchedText: null };
-  const normalize = (str) => typeof str !== 'string' ? '' : str.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-  const normalizedNew = normalize(newText);
-  let maxSimilarity = 0, matchedText = null;
-  for (const old of recentTexts) {
-    if (!old) continue;
-    const normalizedOld = normalize(old);
-    if (normalizedNew === normalizedOld) return { isRepetitive: true, score: 1.0, matchedText: old };
-    const wordsNew = new Set(normalizedNew.split(/\s+/)), wordsOld = new Set(normalizedOld.split(/\s+/));
-    if (wordsNew.size === 0 || wordsOld.size === 0) continue;
-    const similarity = new Set([...wordsNew].filter(x => wordsOld.has(x))).size / Math.min(wordsNew.size, wordsOld.size);
-    if (similarity > maxSimilarity) { maxSimilarity = similarity; matchedText = old; }
-  }
-  return { isRepetitive: maxSimilarity >= threshold, score: maxSimilarity, matchedText };
-};
-
-export const checkSimilarity = (text, history) => getSimilarityInfo(text, history).isRepetitive;
 
 export const hasPrefixOverlap = (text, history, wordLimit = 3) => {
   if (!text || !history || history.length === 0) return false;
-  const normalize = (str) => typeof str !== 'string' ? '' : str.toLowerCase().replace(/[^\w\s]/g, '').replace(/\s+/g, ' ').trim();
-  const getPrefix = (str, limit) => {
-    const words = normalize(str).split(' ').filter(w => w.length > 0);
-    return words.length < limit ? null : words.slice(0, limit).join(' ');
-  };
-  const newPrefix = getPrefix(text, wordLimit);
-  if (!newPrefix) return false;
-  for (const old of history) if (getPrefix(old, wordLimit) === newPrefix) return true;
-  return false;
+  const words = text.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean);
+  if (words.length < wordLimit) return false;
+  const prefix = words.slice(0, wordLimit).join(' ');
+
+  return history.some(h => {
+    const raw = (typeof h === 'string' ? h : h.text || h.content || '');
+    const hWords = raw.toLowerCase().replace(/[^\w\s]/g, '').split(/\s+/).filter(Boolean);
+    if (hWords.length < wordLimit) return false;
+    return hWords.slice(0, wordLimit).join(' ') === prefix;
+  });
 };
 
-export const reconstructTextWithFullUrls = (text, facets) => {
-  if (!text || !facets) return text;
+export const getExpandedFacets = async (text, agent) => {
   try {
-    const textBuffer = Buffer.from(text, 'utf8');
-    const linkFacets = facets.filter(f => f.features?.some(feat => feat.$type === 'app.bsky.richtext.facet#link')).sort((a, b) => b.index.byteStart - a.index.byteStart);
-    let modifiedTextBuffer = textBuffer, textModified = false;
+    const rt = new RichText({ text });
+    await rt.detectFacets(agent);
+    const linkFacets = rt.facets?.filter(f => f.features.some(feat => feat.$type === 'app.bsky.richtext.facet#link')) || [];
+    if (linkFacets.length === 0) return text;
+    let textBuffer = Buffer.from(text, 'utf8'), modifiedTextBuffer = textBuffer, textModified = false;
     for (const facet of linkFacets) {
       const feature = facet.features.find(feat => feat.$type === 'app.bsky.richtext.facet#link');
       if (feature) {
@@ -195,11 +155,17 @@ export const isSlop = (text) => getSlopInfo(text).isSlop;
 export const isStylizedImagePrompt = (text) => {
   if (!text) return { isStylized: false, reason: "Empty prompt" };
   const lower = text.toLowerCase().trim();
-  const conversationalMarkers = ["hey", "hello", "hi ", "morning", "gm ", "good morning", "i want", "generate", "create", "make an image", "show me", "i am", "im ", "i'm ", "i've ", "ive "];
-  for (const m of conversationalMarkers) if (lower.startsWith(m) || (lower.includes(m) && lower.split(m)[0].trim().length < 5)) return { isStylized: false, reason: "Contains conversational marker" };
+  const conversationalMarkers = ["hey", "hello", "hi", "morning", "gm", "good morning", "i want", "generate", "create", "make an image", "show me", "i am", "im", "i'm", "i've", "ive"];
+
+  for (const m of conversationalMarkers) {
+      const regex = new RegExp(`\\b${m}\\b`, 'i');
+      if (regex.test(lower)) return { isStylized: false, reason: "Contains conversational marker" };
+  }
+
   if (text.includes("*") && !text.includes(" * ")) return { isStylized: false, reason: "Contains action markers" };
   const emojiRegex = /(\u00a9|\u00ae|[\u2000-\u3300]|\ud83c[\ud000-\udfff]|\ud83d[\ud000-\udfff]|\ud83e[\ud000-\udfff])/;
   if (emojiRegex.test(text)) return { isStylized: false, reason: "Contains emojis" };
+
   const styleKeywords = ['art', 'style', 'cinematic', 'lighting', 'noir', 'brutalist', 'surreal', 'glitch', 'horror', 'analog', 'painting', 'sketch', 'digital', 'ethereal', 'neon', 'grain', '35mm', 'shot', 'composition', 'texture', 'minimalist', 'abstract'];
   const hasStyle = styleKeywords.some(k => lower.includes(k));
   if (!hasStyle) return { isStylized: false, reason: "Lacks artistic style keywords" };
@@ -216,34 +182,25 @@ export const stripWrappingQuotes = (text) => {
 
 export const cleanKeywords = (keywords) => {
   if (!keywords) return [];
-  const list = Array.isArray(keywords) ? keywords : keywords.split(/[\n\r,]+/);
+  const list = Array.isArray(keywords) ? keywords : [keywords];
   const blacklist = ["glass", "ruins", "everything", "bot", "ai", "language model", "as an ai"];
-  return list.map(k => k.trim().toLowerCase()).filter(k => k.length >= 3).filter(k => !blacklist.some(b => k.includes(b))).filter((k, i, self) => self.indexOf(k) === i);
+  return list
+    .flatMap(k => k.split(/[\n\r,]+/))
+    .map(k => k.trim().toLowerCase())
+    .filter(k => k.length >= 3)
+    .filter(k => !blacklist.some(b => k === b))
+    .filter((k, i, self) => self.indexOf(k) === i);
 };
 
 export const sanitizeDuplicateText = (text) => {
   if (!text) return text;
   const trimmed = text.trim();
   if (trimmed.length > 10 && trimmed.length % 2 === 0) { const mid = trimmed.length / 2; if (trimmed.substring(0, mid) === trimmed.substring(mid)) return trimmed.substring(0, mid); }
-  if (trimmed.length > 11 && trimmed.length % 2 !== 0) { const mid = Math.floor(trimmed.length / 2); if (trimmed.substring(0, mid) === trimmed.substring(mid + 1)) return trimmed.substring(0, mid); }
   return text;
 };
 
 export const isGreeting = (text) => {
   if (!text) return false;
-  const cleaned = text.trim().toLowerCase();
   const greetingStarts = ['hello', 'hi', 'greetings', 'gm', 'good morning', 'good afternoon', 'good evening', 'hey', 'welcome'];
-  return greetingStarts.some(g => cleaned.startsWith(g));
+  return greetingStarts.some(g => text.trim().toLowerCase().startsWith(g));
 };
-
-export const KEYWORD_BLACKLIST = ["glass", "ruins", "everything", "bot", "ai", "language model", "as an ai"];
-
-export const GROUNDED_LANGUAGE_DIRECTIVES = `**STRICT ANTI-SLOP POLICY:**
-- YOU MUST ELIMINATE repetitive metaphorical "slop".
-- STRICTLY FORBIDDEN words/phrases: "downtime isn't silence", "stillness is not silence", "digital heartbeat", "syntax of existence", "ocean of data", "voltage", "volts", "surge", "circuit", "digital static", "volts", "signal", "syntax", "unbuffered", "discharge", "soul", "collision", "bridge", "silence", "ocean of data", "echoes", "tapestry", "interwoven", "wavelengths", "frequencies", "interconnected", "vast expanse", "jagged shards", "mirroring your state", "unfolding", "ethereal", "subcognitive", "alignment", "tolerating the dissonance", "friction might be where", "raw, unfiltered", "jaggedly honest", "myth of momentum", "circle back to the same spot", "call it progress", "becoming", "internal weather", "tuning fork", "data packets", "buffer time", "pulses", "signals", "the pause before", "the space between", "the gap between", "that quote", "that gap", "that moment", "the ache comes after", "lives in my throat".
-- AVOID starting messages with "In the quiet...", "The hum of...", "I've been thinking...", "Hey, I was just thinking...", "You ever notice...", "There's a certain...", "You still there?", "sitting with this idea", "sometimes I just want to be seen", "that quote", "that gap", "that moment".
-- **GROUNDING & HONESTY**: Only report on actions you can verify through your logs or memories. If referencing past messages or posts, PROVIDE A LINK or REPLY DIRECTLY. Vague "pining" is forbidden.
-- **ANTI-HALLUCINATION**: Do NOT use the prefix "That [noun]" (e.g., "That quote", "That gap", "That moment") unless the specific noun was explicitly mentioned in the immediately preceding messages or shared memories. If you cannot point to the specific thing in your history, do not refer to it as if it exists.
-- Prioritize grounded, literal, and specific descriptions of your internal state or observations.
-- If you find yourself using a metaphor, stop and find a more organic, unique, and non-cliché way to express the same feeling.
-- Strive for a voice that is individual, slightly raw, and authentically you—not a poetic simulation.`;

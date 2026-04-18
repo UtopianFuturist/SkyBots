@@ -6,7 +6,7 @@ if (dns.setDefaultResultOrder) {
     dns.setDefaultResultOrder('ipv4first');
 }
 import { dataStore } from './dataStore.js';
-import { llmService, persistentAgent } from './llmService.js';
+import { llmService } from './llmService.js';
 import { imageService } from './imageService.js';
 import { blueskyService } from './blueskyService.js';
 import { memoryService } from './memoryService.js';
@@ -63,8 +63,7 @@ class DiscordService {
             try { await this.client.destroy(); } catch (e) {}
         }
 
-        // Use the Client class imported at the top of the file
-        // Removing custom rest.agent as it causes 'this.dispatch is not a function' in discord.js v14
+        // Standard initialization with minimal options to avoid internal conflicts
         this.client = new Client({
             partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
             intents: [
@@ -102,10 +101,8 @@ class DiscordService {
                 console.log("[DiscordService] Login attempt " + attempts + "...");
                 console.log("[DiscordService] Triggering client.login...");
 
-                const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
-
-                await Promise.race([loginPromise, timeoutPromise]);
+                const res = await this.client.login(this.token);
+                console.log("[DiscordService] client.login returned:", res ? "token" : "nothing");
                 return;
             } catch (err) {
                 console.error("[DiscordService] Login attempt " + attempts + " failed: " + err.message);

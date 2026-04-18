@@ -46,15 +46,11 @@ class BlueskyService {
 
   async post(text, embed = null, options = {}) {
     if (!text || !text.trim()) {
-      if (text.trim() === "...") {
-        console.warn("[BlueskyService] Attempted to post only ellipses reply. Aborting.");
-        return null;
-      }
-      if (text.trim() === "...") {
-        console.warn("[BlueskyService] Attempted to post only ellipses. Aborting.");
-        return null;
-      }
       console.warn("[BlueskyService] Attempted to post blank text. Aborting.");
+      return null;
+    }
+    if (text.trim() === "...") {
+      console.warn("[BlueskyService] Attempted to post only ellipses. Aborting.");
       return null;
     }
     if (!this.did) return null;

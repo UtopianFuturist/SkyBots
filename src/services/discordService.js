@@ -5,6 +5,7 @@ import { dataStore } from './dataStore.js';
 import { socialHistoryService } from './socialHistoryService.js';
 import { temporalService } from './temporalService.js';
 import { introspectionService } from './introspectionService.js';
+import { isSlop, checkSimilarity } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -12,35 +13,12 @@ class DiscordService {
         this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '');
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
-        this.nickname = config.DISCORD_NICKNAME || config.BOT_NAME || 'Bot';
+        this.nickname = config.BOT_NAME || 'Bot';
         this.isResponding = false;
         this.client = null;
         this.botInstance = null;
         this.isInitializing = false;
-    }
-
-    async performStartupCatchup() {
-        if (!this.isEnabled || !this.client?.isReady()) return;
-        console.log('[DiscordService] Starting catch-up for unread messages...');
-        try {
-            const admin = await this.getAdminUser();
-            if (!admin) return;
-            const dmChannel = admin.dmChannel || await admin.createDM();
-            const messages = await dmChannel.messages.fetch({ limit: 50 });
-            const botLastSeen = dataStore.db.data.discord_last_interaction || 0;
-            const unread = messages.filter(m => m.author.id !== this.client.user.id && m.createdTimestamp > botLastSeen).reverse();
-
-            if (unread.size > 0) {
-                console.log("[DiscordService] Found " + unread.size + " unread messages. Resuming conversation...");
-                for (const [id, msg] of unread) {
-                    await this.respond(msg);
-                }
-            } else {
-                console.log('[DiscordService] No unread messages found.');
-            }
-        } catch (e) {
-            console.error('[DiscordService] Catch-up error:', e);
-        }
+        this._lastHeavyAdminSearch = 0;
     }
 
     async init(botInstance) {
@@ -51,7 +29,7 @@ class DiscordService {
         console.log('[DiscordService] Starting initialization...');
 
         if (this.client) {
-            try { await this.client.destroy(); } catch (e) {}
+            try { this.client.destroy(); } catch (e) {}
         }
 
         this.client = new Client({
@@ -59,14 +37,19 @@ class DiscordService {
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
-                GatewayIntentBits.DirectMessages, 
+                GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent
-            ]
+            ],
+            rest: {
+                timeout: 60000,
+                retries: 5
+            }
         });
 
         this.client.on('ready', () => {
-            console.log(`[DiscordService] Logged in as ${this.client.user.tag}`);
+            console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}`);
+            this.client.user.setActivity('the currents', { type: 'LISTENING' });
         });
 
         this.client.on('messageCreate', async (message) => {
@@ -77,8 +60,7 @@ class DiscordService {
             }
         });
 
-        // Perform login in the background to avoid blocking bot boot
-        this.loginLoop().catch(err => console.error("[DiscordService] Fatal loginLoop error:", err));
+        this.loginLoop();
     }
 
     async loginLoop() {
@@ -87,20 +69,18 @@ class DiscordService {
         while (attempts < maxAttempts) {
             attempts++;
             try {
-                console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts} using token prefix: ${this.token ? this.token.substring(0, 10) : 'NONE'}...`);
-                
-                // Use a standard login call without complex timeouts or agent overrides
-                await this.client.login(this.token);
-                
-                console.log(`[DiscordService] SUCCESS: Login complete! Client status: ${this.client?.isReady() ? 'READY' : 'NOT READY'}`);
+                console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
+                const loginPromise = this.client.login(this.token);
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 120s")), 120000));
+                await Promise.race([loginPromise, timeoutPromise]);
+                console.log(`[DiscordService] SUCCESS: Login complete!`);
                 this.isInitializing = false;
                 return;
             } catch (err) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
                 if (attempts < maxAttempts) {
-                    const delay = 60000 * attempts; // Exponential-ish backoff
-                    console.log(`[DiscordService] Waiting ${delay/1000}s before retry...`);
-                    await new Promise(r => setTimeout(r, delay));
+                    console.log(`[DiscordService] Waiting 300s before retry...`);
+                    await new Promise(r => setTimeout(r, 300000));
                 }
             }
         }
@@ -110,6 +90,7 @@ class DiscordService {
 
     async handleMessage(message) {
         if (message.author.bot) return;
+        const isDM = !message.guild;
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         const text = message.content.trim();
 
@@ -122,7 +103,6 @@ class DiscordService {
             return;
         }
 
-        const isDM = !message.guild;
         const isMentioned = message.mentions.has(this.client.user) || message.content.toLowerCase().includes(this.nickname.toLowerCase());
         const isReplyToMe = message.reference && (await message.channel.messages.fetch(message.reference.messageId)).author.id === this.client.user.id;
 
@@ -159,6 +139,7 @@ class DiscordService {
     }
 
     async respond(message) {
+        const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         this.isResponding = true;
         const normChannelId = this.getNormalizedChannelId(message);
@@ -191,18 +172,14 @@ class DiscordService {
                 { role: 'user', content: message.content }
             ];
 
-            let responseText = await llmService.generateResponse(messages, { platform: 'discord' });
-
-            if (responseText) {
-                const realityAudit = await llmService.performRealityAudit(responseText, {}, { history: history.map(h => ({ content: h.content })) });
-                responseText = realityAudit.refined_text;
-
-                const rawChunks = responseText.split("\n").filter(m => m.trim().length > 0);
-                for (const chunk of rawChunks.slice(0, 5)) {
-                    await this._send(message.channel, chunk);
-                    if (rawChunks.length > 1) await new Promise(r => setTimeout(r, 1500));
+            const plan = await llmService.performPrePlanning(messages, { platform: "discord", isAdmin });
+            
+            const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
+            if (evaluation.decision === "proceed") {
+                const actions = evaluation.refined_actions || plan.actions;
+                for (const action of actions) {
+                    await this.botInstance.executeAction(action, { ...message, platform: "discord" });
                 }
-                await dataStore.saveDiscordInteraction(normChannelId, 'assistant', responseText);
             }
         } catch (error) {
             console.error("[DiscordService] Error:", error);
@@ -224,7 +201,7 @@ class DiscordService {
                 return;
             }
 
-            const history = await this.fetchAdminHistory(30);
+            const history = await this.fetchAdminHistory(50);
             const contextData = {
                 mood: dataStore.getMood().label,
                 goal: dataStore.getCurrentGoal().goal,
@@ -240,7 +217,7 @@ class DiscordService {
             let attempts = 0;
             while (attempts < 3) {
                 attempts++;
-                let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { platform: "discord" });
+                let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { useStep: true, platform: "discord" });
                 if (!rawResponse) break;
 
                 let candidateMessages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
@@ -268,6 +245,11 @@ class DiscordService {
 
                     await this._send(dmChannel, finalMsg);
                     await dataStore.saveDiscordInteraction("dm-" + admin.id, 'assistant', finalMsg);
+                    
+                    const { performanceService } = await import('./performanceService.js');
+                    await performanceService.performTechnicalAudit("discord_spontaneous", finalMsg, { success: true, platform: "discord" });
+                    await introspectionService.performAAR("discord_spontaneous", finalMsg, { success: true, platform: "discord" });
+                    
                     if (messages.length > 1) await new Promise(r => setTimeout(r, 2000));
                 }
             }

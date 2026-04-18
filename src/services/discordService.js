@@ -64,53 +64,67 @@ class DiscordService {
         }
 
         // Standard initialization with minimal options to avoid internal conflicts
-        this.client = new Client({
-            partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
-            intents: [
-                GatewayIntentBits.Guilds,
-                GatewayIntentBits.GuildMessages,
-                GatewayIntentBits.DirectMessages,
-                GatewayIntentBits.GuildMembers,
-                GatewayIntentBits.MessageContent
-            ]
-        });
+        try {
+            this.client = new Client({
+                partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
+                intents: [
+                    GatewayIntentBits.Guilds,
+                    GatewayIntentBits.GuildMessages,
+                    GatewayIntentBits.DirectMessages,
+                    GatewayIntentBits.GuildMembers,
+                    GatewayIntentBits.MessageContent
+                ]
+            });
 
-        this.client.on("ready", () => {
+            this.client.on("ready", () => {
+                this.isInitializing = false;
+                console.log("[DiscordService] SUCCESS: Logged in as " + this.client.user.tag);
+                // Re-attach message listener on every ready event
+                this.client.on("messageCreate", (msg) => {
+                    console.log(`[DiscordService] Received message from ${msg.author.tag}: ${msg.content.substring(0, 50)}...`);
+                    this.handleMessage(msg).catch(err => console.error("[DiscordService] handleMessage error:", err));
+                });
+            });
+
+            this.client.on("error", (err) => {
+                console.error("[DiscordService] Client error:", err.message);
+            });
+
+            this.client.on("shardError", (err) => {
+                console.error("[DiscordService] Shard error:", err.message);
+            });
+
+            await this.loginLoop();
+        } catch (err) {
+            console.error("[DiscordService] Critical init error:", err);
             this.isInitializing = false;
-            console.log("[DiscordService] SUCCESS: Logged in as " + this.client.user.tag);
-            this.client.on("messageCreate", this.handleMessage.bind(this));
-        });
-
-        this.client.on("error", (err) => {
-            console.error("[DiscordService] Client error:", err.message);
-        });
-
-        this.loginLoop();
+        }
     }
 
     async loginLoop() {
         let attempts = 0;
-        while (true) {
+        while (attempts < 5) {
             attempts++;
             try {
                 if (!this.token || this.token.length < 50) {
                     console.error("[DiscordService] DISCORD_BOT_TOKEN is missing or invalid.");
-                    this.isInitializing = false;
                     return;
                 }
-                console.log("[DiscordService] Login attempt " + attempts + "...");
-                console.log("[DiscordService] Triggering client.login...");
-
-                const res = await this.client.login(this.token);
-                console.log("[DiscordService] client.login returned:", res ? "token" : "nothing");
+                console.log(`[DiscordService] Login attempt ${attempts}...`);
+                await this.client.login(this.token);
+                console.log("[DiscordService] client.login() call completed.");
                 return;
             } catch (err) {
-                console.error("[DiscordService] Login attempt " + attempts + " failed: " + err.message);
-                const delay = 300000;
-                console.log("[DiscordService] Retrying in " + (delay/1000) + "s...");
+                console.error(`[DiscordService] Login attempt ${attempts} failed: ${err.message}`);
+                if (err.message.includes("Used disallowed intents")) {
+                    console.error("[DiscordService] FATAL: Privileged intents (GuildMembers/MessageContent) are not enabled in Discord Developer Portal.");
+                    return;
+                }
+                const delay = 10000 * attempts; // Incremental backoff
                 await new Promise(r => setTimeout(r, delay));
             }
         }
+        console.error("[DiscordService] Failed to login after 5 attempts.");
     }
 
     async handleMessage(message) {
@@ -217,7 +231,8 @@ class DiscordService {
                 }
 
                 if (!toolSentMessage) {
-                    const systemPrompt = "You are talking to " + (isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username) + " on Discord.\nPersona: " + config.TEXT_SYSTEM_PROMPT + "\n" + temporalContext + (dynamicBlurbs.length > 0 ? "\nDynamic Persona: \n" + dynamicBlurbs.map(b => '- ' + b.text).join('\n') : '') + "\n\n--- SOCIAL NARRATIVE ---\n" + hierarchicalSummary.dailyNarrative + "\n" + hierarchicalSummary.shortTerm + "\n---\n\nIMAGE ANALYSIS: " + (imageAnalysisResult || 'No images.');
+                    const { ADMIN_DIRECTIVE_SYSTEM_PROMPT } = await import("../prompts/instruction_following.js");
+                    const systemPrompt = "You are talking to " + (isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username) + " on Discord.\nPersona: " + config.TEXT_SYSTEM_PROMPT + "\n" + (isAdmin ? ADMIN_DIRECTIVE_SYSTEM_PROMPT : "") + "\n" + temporalContext + (dynamicBlurbs.length > 0 ? "\nDynamic Persona: \n" + dynamicBlurbs.map(b => '- ' + b.text).join('\n') : '') + "\n\n--- SOCIAL NARRATIVE ---\n" + hierarchicalSummary.dailyNarrative + "\n" + hierarchicalSummary.shortTerm + "\n---\n\nIMAGE ANALYSIS: " + (imageAnalysisResult || 'No images.');
                     const messages = [
                         { role: 'system', content: systemPrompt },
                         ...history.slice(-15).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),

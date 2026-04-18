@@ -96,7 +96,7 @@ class LLMService {
         } catch (e) {}
     }
 
-    let basePersona = (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : config.DISCORD_SYSTEM_PROMPT);
+    let basePersona = (options.platform === "bluesky" ? config.TEXT_SYSTEM_PROMPT : (config.DISCORD_SYSTEM_PROMPT || config.TEXT_SYSTEM_PROMPT));
     let systemPrompt = "";
     if (isTechnical) {
         systemPrompt = "Persona: " + basePersona + "\n" + this.soulContent + "\n" + this.statusContent + "\n\n**TASK:** You are acting as a technical sub-agent. Respond ONLY with the requested format (JSON or plain text). No conversational filler.";

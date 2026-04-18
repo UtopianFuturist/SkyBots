@@ -17,6 +17,9 @@ importers:
       discord.js:
         specifier: ^14.25.1
         version: 14.26.0
+      dotenv:
+        specifier: ^16.6.1
+        version: 16.6.1
       express:
         specifier: ^4.22.1
         version: 4.22.1
@@ -29,6 +32,9 @@ importers:
       lowdb:
         specifier: ^7.0.1
         version: 7.0.1
+      node-fetch:
+        specifier: 2.7.0
+        version: 2.7.0
       sentiment:
         specifier: ^5.0.2
         version: 5.0.2
@@ -36,15 +42,9 @@ importers:
         specifier: ^0.33.5
         version: 0.33.5
     devDependencies:
-      dotenv:
-        specifier: ^16.6.1
-        version: 16.6.1
       jest:
         specifier: ^30.2.0
         version: 30.3.0(@types/node@25.5.2)
-      node-fetch:
-        specifier: 2.7.0
-        version: 2.7.0
 
 packages:
 

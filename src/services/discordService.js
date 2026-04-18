@@ -21,7 +21,7 @@ class DiscordService {
         this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '');
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
-        this.nickname = config.BOT_NAME || 'Bot';
+        this.nickname = config.DISCORD_NICKNAME || config.BOT_NAME || 'Bot';
         this.isResponding = false;
         this.client = null;
         this.botInstance = null;
@@ -82,6 +82,7 @@ class DiscordService {
         this.client.on("ready", () => {
             this.isInitializing = false;
             console.log("[DiscordService] SUCCESS: Logged in as " + this.client.user.tag);
+            this.client.on("messageCreate", this.handleMessage.bind(this));
         });
 
         this.client.on("error", (err) => {
@@ -323,16 +324,32 @@ class DiscordService {
         if (!this.client?.isReady()) return null;
         if (this.adminId) return await this.client.users.fetch(this.adminId);
 
-        const guilds = this.client.guilds.cache;
-        for (const [id, guild] of guilds) {
-            try {
-                const members = await guild.members.fetch({ query: this.adminName, limit: 1 });
-                const admin = members.first();
-                if (admin && admin.user.username === this.adminName) {
-                    this.adminId = admin.user.id;
-                    return admin.user;
-                }
-            } catch (e) {}
+        if (this.adminName) {
+            if (config.DISCORD_GUILD_ID) {
+                try {
+                    const guild = await this.client.guilds.fetch(config.DISCORD_GUILD_ID);
+                    const members = await guild.members.fetch({ query: this.adminName, limit: 1 });
+                    const admin = members.first();
+                    if (admin && admin.user.username === this.adminName) {
+                        this.adminId = admin.user.id;
+                        console.log(`[DiscordService] Admin user ${this.adminName} found with ID ${this.adminId} in configured guild ${guild.name}`);
+                        return admin.user;
+                    }
+                } catch (e) { console.warn('[DiscordService] Admin user discovery failed in configured guild', config.DISCORD_GUILD_ID, e.message); }
+            }
+
+            const guilds = this.client.guilds.cache;
+            for (const [id, guild] of guilds) {
+                try {
+                    const members = await guild.members.fetch({ query: this.adminName, limit: 1 });
+                    const admin = members.first();
+                    if (admin && admin.user.username === this.adminName) {
+                        this.adminId = admin.user.id;
+                        console.log(`[DiscordService] Admin user ${this.adminName} found with ID ${this.adminId} in guild ${guild.name}`);
+                        return admin.user;
+                    }
+                } catch (e) {}
+            }
         }
         return null;
     }

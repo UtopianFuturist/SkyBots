@@ -32,7 +32,9 @@
     "lodash-es": "^4.17.22",
     "lowdb": "^7.0.1",
     "sentiment": "^5.0.2",
-    "sharp": "^0.33.5"
+    "sharp": "^0.33.5",
+    "dotenv": "^16.6.1",
+    "node-fetch": "2.7.0"
   },
   "repository": {
     "type": "git",
@@ -43,8 +45,6 @@
   },
   "homepage": "https://github.com/UtopianFuturist/skybots#readme",
   "devDependencies": {
-    "dotenv": "^16.6.1",
-    "jest": "^30.2.0",
-    "node-fetch": "2.7.0"
+    "jest": "^30.2.0"
   }
 }

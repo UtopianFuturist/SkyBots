@@ -52,7 +52,9 @@ export class Bot {
             try {
                 console.log('[Bot] Initializing Discord Service...');
                 await discordService.init(this);
-            } catch (e) { console.error('[Bot] Discord init failed:', e); }
+                // Restore delayed startup catch-up for Discord
+                setTimeout(() => discordService.performStartupCatchup(), 5000);
+            } catch (e) { console.error("[Bot] Discord init failed:", e); }
         }
 
         if (config.ADMIN_BLUESKY_HANDLE) {

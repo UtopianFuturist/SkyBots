@@ -1,0 +1,601 @@
+ WARN  Unsupported engine: wanted: {"node":"20.x"} (current: {"node":"v22.13.0","pnpm":"10.33.0"})
+
+> skybots@1.0.0 test /home/ubuntu/work/SkyBots
+> NODE_OPTIONS=--experimental-vm-modules jest
+
+(node:3594) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3593) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3593) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+PASS tests/llmService.test.js
+(node:3592) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3592) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+PASS tests/scoreExtraction.test.js
+  ● Console
+
+    console.log
+      [Config] Loaded NVIDIA_NIM_API_KEY: Exists
+
+      at log (config.js:133:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: Exists
+
+      at log (config.js:134:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: Exists
+
+      at log (config.js:135:9)
+
+    console.log
+      [Config] Loaded YOUTUBE_API_KEY: Exists
+
+      at log (config.js:136:9)
+
+    console.log
+      [Config] Loaded MANUAL_CLEANUP_TOKEN: Exists
+
+      at log (config.js:137:9)
+
+    console.log
+      [Config] Loaded POST_TOPICS: Optional (not set)
+
+      at log (config.js:138:9)
+
+    console.log
+      [Config] Loaded IMAGE_SUBJECTS: Optional (not set)
+
+      at log (config.js:139:9)
+
+    console.log
+      [Config] Loaded LLM_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:140:9)
+
+    console.log
+      [Config] Loaded QWEN_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:141:9)
+
+    console.log
+      [Config] Loaded CODER_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:142:9)
+
+    console.log
+      [Config] Loaded STEP_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:143:9)
+
+    console.log
+      [Config] Loaded MOLTBOOK_API_KEY: Optional (will register on startup if missing)
+
+      at log (config.js:144:9)
+
+    console.log
+      [Config] Loaded DISCORD_BOT_TOKEN: Optional
+
+      at log (config.js:145:9)
+
+    console.log
+      [Config] Loaded DISCORD_GUILD_ID: Not set
+
+      at log (config.js:146:9)
+
+    console.log
+      [Config] Loaded DISCORD_HEARTBEAT_ADDENDUM: Not set
+
+      at log (config.js:147:9)
+
+    console.log
+      [Config] Loaded MEMORY_THREAD_HASHTAG: #BotDiary
+
+      at log (config.js:148:9)
+
+    console.log
+      [Config] Loaded RENDER_API_KEY: Optional
+
+      at log (config.js:149:9)
+
+    console.log
+      [Config] Loaded RENDER_SERVICE_ID: Not set (will attempt discovery if key exists)
+
+      at log (config.js:150:9)
+
+    console.log
+      [Config] Loaded BOT_NAME: TestBot
+
+      at log (config.js:151:9)
+
+(node:3595) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3595) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+PASS tests/bot.test.js
+  ● Console
+
+    console.log
+      [Config] Loaded NVIDIA_NIM_API_KEY: Exists
+
+      at log (config.js:133:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: Exists
+
+      at log (config.js:134:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: Exists
+
+      at log (config.js:135:9)
+
+    console.log
+      [Config] Loaded YOUTUBE_API_KEY: Exists
+
+      at log (config.js:136:9)
+
+    console.log
+      [Config] Loaded MANUAL_CLEANUP_TOKEN: Exists
+
+      at log (config.js:137:9)
+
+    console.log
+      [Config] Loaded POST_TOPICS: Optional (not set)
+
+      at log (config.js:138:9)
+
+    console.log
+      [Config] Loaded IMAGE_SUBJECTS: Optional (not set)
+
+      at log (config.js:139:9)
+
+    console.log
+      [Config] Loaded LLM_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:140:9)
+
+    console.log
+      [Config] Loaded QWEN_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:141:9)
+
+    console.log
+      [Config] Loaded CODER_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:142:9)
+
+    console.log
+      [Config] Loaded STEP_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:143:9)
+
+    console.log
+      [Config] Loaded MOLTBOOK_API_KEY: Optional (will register on startup if missing)
+
+      at log (config.js:144:9)
+
+    console.log
+      [Config] Loaded DISCORD_BOT_TOKEN: Optional
+
+      at log (config.js:145:9)
+
+    console.log
+      [Config] Loaded DISCORD_GUILD_ID: Not set
+
+      at log (config.js:146:9)
+
+    console.log
+      [Config] Loaded DISCORD_HEARTBEAT_ADDENDUM: Not set
+
+      at log (config.js:147:9)
+
+    console.log
+      [Config] Loaded MEMORY_THREAD_HASHTAG: #BotDiary
+
+      at log (config.js:148:9)
+
+    console.log
+      [Config] Loaded RENDER_API_KEY: Optional
+
+      at log (config.js:149:9)
+
+    console.log
+      [Config] Loaded RENDER_SERVICE_ID: Not set (will attempt discovery if key exists)
+
+      at log (config.js:150:9)
+
+    console.log
+      [Config] Loaded BOT_NAME: TestBot
+
+      at log (config.js:151:9)
+
+    console.log
+      Executing tool: bsky_post { text: 'Test response' }
+
+      at Bot.log [as executeAction] (src/bot.js:104:17)
+
+    console.log
+      [Performance] Performing Technical Audit for tool_use...
+
+      at PerformanceService.log [as performTechnicalAudit] (src/services/performanceService.js:10:17)
+
+    console.log
+      Executing tool: bsky_post { text: 'Test response' }
+
+      at Bot.log [as executeAction] (src/bot.js:104:17)
+
+    console.log
+      [Performance] Performing Technical Audit for tool_use...
+
+      at PerformanceService.log [as performTechnicalAudit] (src/services/performanceService.js:10:17)
+
+(node:3620) ExperimentalWarning: VM Modules is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3620) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+PASS tests/autonomousPost.test.js
+  ● Console
+
+    console.log
+      [Config] Loaded NVIDIA_NIM_API_KEY: Exists
+
+      at log (config.js:133:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: Exists
+
+      at log (config.js:134:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: Exists
+
+      at log (config.js:135:9)
+
+    console.log
+      [Config] Loaded YOUTUBE_API_KEY: Exists
+
+      at log (config.js:136:9)
+
+    console.log
+      [Config] Loaded MANUAL_CLEANUP_TOKEN: Exists
+
+      at log (config.js:137:9)
+
+    console.log
+      [Config] Loaded POST_TOPICS: Optional (not set)
+
+      at log (config.js:138:9)
+
+    console.log
+      [Config] Loaded IMAGE_SUBJECTS: Optional (not set)
+
+      at log (config.js:139:9)
+
+    console.log
+      [Config] Loaded LLM_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:140:9)
+
+    console.log
+      [Config] Loaded QWEN_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:141:9)
+
+    console.log
+      [Config] Loaded CODER_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:142:9)
+
+    console.log
+      [Config] Loaded STEP_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:143:9)
+
+    console.log
+      [Config] Loaded MOLTBOOK_API_KEY: Optional (will register on startup if missing)
+
+      at log (config.js:144:9)
+
+    console.log
+      [Config] Loaded DISCORD_BOT_TOKEN: Optional
+
+      at log (config.js:145:9)
+
+    console.log
+      [Config] Loaded DISCORD_GUILD_ID: Not set
+
+      at log (config.js:146:9)
+
+    console.log
+      [Config] Loaded DISCORD_HEARTBEAT_ADDENDUM: Not set
+
+      at log (config.js:147:9)
+
+    console.log
+      [Config] Loaded MEMORY_THREAD_HASHTAG: #BotDiary
+
+      at log (config.js:148:9)
+
+    console.log
+      [Config] Loaded RENDER_API_KEY: Optional
+
+      at log (config.js:149:9)
+
+    console.log
+      [Config] Loaded RENDER_SERVICE_ID: Not set (will attempt discovery if key exists)
+
+      at log (config.js:150:9)
+
+    console.log
+      [Config] Loaded BOT_NAME: TestBot
+
+      at log (config.js:151:9)
+
+    console.log
+      [Orchestrator] Resonance topics found: cinematic oil painting of existence, artstation style, high detail
+
+      at OrchestratorService.log [as performAutonomousPost] (src/services/orchestratorService.js:251:33)
+
+    console.log
+      [Orchestrator] Selected topic: Existence
+
+      at OrchestratorService.log [as performAutonomousPost] (src/services/orchestratorService.js:279:25)
+
+    console.log
+      [Orchestrator] Drafting content...
+
+      at OrchestratorService.log [as performAutonomousPost] (src/services/orchestratorService.js:282:25)
+
+    console.log
+      [Orchestrator] Generated draft: Initial draft....
+
+      at OrchestratorService.log [as performAutonomousPost] (src/services/orchestratorService.js:289:25)
+
+    console.log
+      [Orchestrator] Multi-angle critique...
+
+      at OrchestratorService.log [as performAutonomousPost] (src/services/orchestratorService.js:291:25)
+
+    console.log
+      [Orchestrator] Resonance topics found: cinematic oil painting of existence, artstation style, high detail
+
+      at OrchestratorService.log [as performAutonomousPost] (src/services/orchestratorService.js:251:33)
+
+    console.log
+      [Orchestrator] Starting high-quality image post flow for: cinematic oil painting of existence
+
+      at OrchestratorService.log [as _performHighQualityImagePost] (src/services/orchestratorService.js:405:17)
+
+    console.log
+      [Orchestrator] Image post attempt 1 for topic: cinematic oil painting of existence
+
+      at OrchestratorService.log [as _generateVerifiedImagePost] (src/services/orchestratorService.js:335:19)
+
+    console.log
+      [Orchestrator] Performing vision analysis on generated image...
+
+      at OrchestratorService.log [as _generateVerifiedImagePost] (src/services/orchestratorService.js:368:23)
+
+PASS tests/textUtils.test.js
+PASS tests/memoryService.test.js
+  ● Console
+
+    console.log
+      [Config] Loaded NVIDIA_NIM_API_KEY: Exists
+
+      at log (config.js:133:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: Exists
+
+      at log (config.js:134:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: Exists
+
+      at log (config.js:135:9)
+
+    console.log
+      [Config] Loaded YOUTUBE_API_KEY: Exists
+
+      at log (config.js:136:9)
+
+    console.log
+      [Config] Loaded MANUAL_CLEANUP_TOKEN: Exists
+
+      at log (config.js:137:9)
+
+    console.log
+      [Config] Loaded POST_TOPICS: Optional (not set)
+
+      at log (config.js:138:9)
+
+    console.log
+      [Config] Loaded IMAGE_SUBJECTS: Optional (not set)
+
+      at log (config.js:139:9)
+
+    console.log
+      [Config] Loaded LLM_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:140:9)
+
+    console.log
+      [Config] Loaded QWEN_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:141:9)
+
+    console.log
+      [Config] Loaded CODER_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:142:9)
+
+    console.log
+      [Config] Loaded STEP_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:143:9)
+
+    console.log
+      [Config] Loaded MOLTBOOK_API_KEY: Optional (will register on startup if missing)
+
+      at log (config.js:144:9)
+
+    console.log
+      [Config] Loaded DISCORD_BOT_TOKEN: Optional
+
+      at log (config.js:145:9)
+
+    console.log
+      [Config] Loaded DISCORD_GUILD_ID: Not set
+
+      at log (config.js:146:9)
+
+    console.log
+      [Config] Loaded DISCORD_HEARTBEAT_ADDENDUM: Not set
+
+      at log (config.js:147:9)
+
+    console.log
+      [Config] Loaded MEMORY_THREAD_HASHTAG: #BotDiary
+
+      at log (config.js:148:9)
+
+    console.log
+      [Config] Loaded RENDER_API_KEY: Optional
+
+      at log (config.js:149:9)
+
+    console.log
+      [Config] Loaded RENDER_SERVICE_ID: Not set (will attempt discovery if key exists)
+
+      at log (config.js:150:9)
+
+    console.log
+      [Config] Loaded BOT_NAME: TestBot
+
+      at log (config.js:151:9)
+
+PASS tests/renderService.test.js
+PASS tests/introspectionService.test.js
+  ● Console
+
+    console.log
+      [Introspection] Performing Deep After-Action Report for test_action...
+
+      at IntrospectionService.log [as performAAR] (src/services/introspectionService.js:12:17)
+
+PASS tests/commandHandler.test.js
+  ● Console
+
+    console.log
+      [Config] Loaded NVIDIA_NIM_API_KEY: Exists
+
+      at log (config.js:133:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_API_KEY: Exists
+
+      at log (config.js:134:9)
+
+    console.log
+      [Config] Loaded GOOGLE_CUSTOM_SEARCH_CX_ID: Exists
+
+      at log (config.js:135:9)
+
+    console.log
+      [Config] Loaded YOUTUBE_API_KEY: Exists
+
+      at log (config.js:136:9)
+
+    console.log
+      [Config] Loaded MANUAL_CLEANUP_TOKEN: Exists
+
+      at log (config.js:137:9)
+
+    console.log
+      [Config] Loaded POST_TOPICS: Optional (not set)
+
+      at log (config.js:138:9)
+
+    console.log
+      [Config] Loaded IMAGE_SUBJECTS: Optional (not set)
+
+      at log (config.js:139:9)
+
+    console.log
+      [Config] Loaded LLM_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:140:9)
+
+    console.log
+      [Config] Loaded QWEN_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:141:9)
+
+    console.log
+      [Config] Loaded CODER_MODEL: qwen/qwen3-coder-480b-a35b-instruct
+
+      at log (config.js:142:9)
+
+    console.log
+      [Config] Loaded STEP_MODEL: stepfun-ai/step-3.5-flash
+
+      at log (config.js:143:9)
+
+    console.log
+      [Config] Loaded MOLTBOOK_API_KEY: Optional (will register on startup if missing)
+
+      at log (config.js:144:9)
+
+    console.log
+      [Config] Loaded DISCORD_BOT_TOKEN: Optional
+
+      at log (config.js:145:9)
+
+    console.log
+      [Config] Loaded DISCORD_GUILD_ID: Not set
+
+      at log (config.js:146:9)
+
+    console.log
+      [Config] Loaded DISCORD_HEARTBEAT_ADDENDUM: Not set
+
+      at log (config.js:147:9)
+
+    console.log
+      [Config] Loaded MEMORY_THREAD_HASHTAG: #BotDiary
+
+      at log (config.js:148:9)
+
+    console.log
+      [Config] Loaded RENDER_API_KEY: Optional
+
+      at log (config.js:149:9)
+
+    console.log
+      [Config] Loaded RENDER_SERVICE_ID: Not set (will attempt discovery if key exists)
+
+      at log (config.js:150:9)
+
+    console.log
+      [Config] Loaded BOT_NAME: TestBot
+
+      at log (config.js:151:9)
+
+    console.log
+      [CommandHandler] Received !search command with query: "test query"
+
+      at log (src/utils/commandHandler.js:98:13)
+
+    console.log
+      [CommandHandler] Received !generate-image command with prompt: "a cat"
+
+      at log (src/utils/commandHandler.js:159:13)
+
+
+Test Suites: 9 passed, 9 total
+Tests:       75 passed, 75 total
+Snapshots:   0 total
+Time:        4.746 s, estimated 5 s
+Ran all test suites.

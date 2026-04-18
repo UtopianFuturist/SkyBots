@@ -5,7 +5,7 @@ import config from '../../config.js';
 class DataStore {
   constructor() {
     this.db = null;
-    this.dbPath = path.resolve(process.cwd(), 'src/data/db.json');
+    this.dbPath = process.env.DATA_PATH || path.resolve(process.cwd(), 'src/data/db.json');
   }
 
   async init() {

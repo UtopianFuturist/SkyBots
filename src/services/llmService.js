@@ -228,15 +228,66 @@ class LLMService {
   }
 
   async isAutonomousPostCoherent() { return { score: 10 }; }
-  async rateUserInteraction() { return 5; }
-  async selectBestResult(q, r) { return r?.[0]; }
   async extractRelationalVibe() { return "neutral"; }
   async isUrlSafe() { return { safe: true }; }
   async summarizeWebPage() { return "Summary"; }
   async extractDeepKeywords() { return ["Existence"]; }
   async validateResultRelevance() { return true; }
   async isPostSafe() { return { safe: true }; }
-  async isReplyCoherent() { return { score: 10 }; }
+
+  async checkVariety(newText, history, options = {}) {
+    if (!newText || !history || history.length === 0) return { repetitive: false };
+
+    const historyText = history.map((t, i) => `${i + 1}. [${t.platform?.toUpperCase() || 'UNKNOWN'}] ${t.content}`).join('\n');
+    const systemPrompt = `
+      You are a variety and coherence analyst for an AI agent. Your task is to determine if a newly proposed message is too similar in structure, template, or specific phrasing to the agent's recent history.
+      RECENT HISTORY:
+      ${historyText}
+
+      PROPOSED NEW MESSAGE:
+      "${newText}"
+
+      Analyze the PROPOSED NEW MESSAGE in the context of RECENT HISTORY. Respond with "REPETITIVE | [reason]" if it's too similar, or "UNIQUE | [reason]" if it's sufficiently different. The reason should be concise.
+      `;
+    const res = await this.generateResponse([{ role: 'user', content: systemPrompt }], { ...options, useStep: true });
+    const repetitive = res?.toUpperCase().includes('REPETITIVE');
+    const feedbackMatch = res?.match(/\|\s*(.*)/);
+    const feedback = feedbackMatch ? feedbackMatch[1].trim() : (repetitive ? 'Repetitive content' : 'Unique content');
+    return { repetitive, feedback };
+  }
+
+  async rateUserInteraction(history, options = {}) {
+    const prompt = `Rate the quality of this interaction on a scale of 1-10:\n${JSON.stringify(history)}\n\nRespond with ONLY the number.`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
+    const numbers = res?.match(/\d+/g);
+    return numbers ? parseInt(numbers[numbers.length - 1]) : 5;
+  }
+
+  async selectBestResult(query, results, type = 'general', options = {}) {
+    const prompt = `As an information evaluator, choose the most relevant and high-quality result for this query: "${query}"\nType: ${type}\n\nResults:\n${JSON.stringify(results)}\n\nRespond with JSON: { "best_index": number, "reason": "string" }`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
+    try {
+        const jsonMatch = res?.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const data = JSON.parse(jsonMatch[0]);
+            return results[data.best_index] || results[0];
+        }
+        const lastNumMatch = res?.match(/\d+/g);
+        if (lastNumMatch) {
+            const idx = parseInt(lastNumMatch[lastNumMatch.length - 1]) - 1;
+            return results[idx] || results[0];
+        }
+        return results[0];
+    } catch (e) { return results[0]; }
+  }
+
+  async isReplyCoherent(parent, child, history, embed, options = {}) {
+    const prompt = `Critique the coherence of this proposed reply:\nParent: "${parent}"\nReply: "${child}"\n\nRespond with "COHERENT | score: 10" or "INCOHERENT | score: 0".`;
+    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
+    const numbers = res?.match(/\d+/g);
+    const score = numbers ? parseInt(numbers[numbers.length - 1]) : (res?.toUpperCase().includes('COHERENT') && !res?.toUpperCase().includes('INCOHERENT') ? 10 : 0);
+    return score >= 3;
+  }
 
   async performInternalInquiry(query, role = "RESEARCHER") {
     const prompt = "You are the internal " + role + " sub-agent. \nQuery: " + query + "\nConduct a deep logical analysis and provide findings. Be concise.";

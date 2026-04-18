@@ -7,11 +7,13 @@ if (dns.setDefaultResultOrder) {
 }
 import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
+import { imageService } from './imageService.js';
+import { blueskyService } from './blueskyService.js';
 import { memoryService } from './memoryService.js';
 import { socialHistoryService } from './socialHistoryService.js';
 import { temporalService } from './temporalService.js';
 import { introspectionService } from './introspectionService.js';
-import { sanitizeThinkingTags } from '../utils/textUtils.js';
+import { isSlop, checkSimilarity } from '../utils/textUtils.js';
 
 class DiscordService {
     constructor() {
@@ -39,7 +41,7 @@ class DiscordService {
             const unread = messages.filter(m => m.author.id !== this.client.user.id && m.createdTimestamp > botLastSeen).reverse();
 
             if (unread.size > 0) {
-                console.log("[DiscordService] Found " + unread.size + " unread messages. Resuming conversation...");
+                console.log(`[DiscordService] Found ${unread.size} unread messages. Resuming conversation...`);
                 for (const [id, msg] of unread) {
                     await this.respond(msg);
                 }
@@ -55,6 +57,10 @@ class DiscordService {
 
         console.log('[DiscordService] Starting initialization...');
 
+        if (this.client) {
+            try { await this.client.destroy(); } catch (e) {}
+        }
+
         this.client = new Client({
             partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
             intents: [
@@ -67,7 +73,7 @@ class DiscordService {
         });
 
         this.client.on("ready", async () => {
-            console.log("[DiscordService] SUCCESS: Logged in as " + this.client.user.tag);
+            console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}`);
             this.isInitializing = false;
             await this.performStartupCatchup();
         });
@@ -91,31 +97,29 @@ class DiscordService {
     }
 
     async loginLoop() {
-        if (this.isInitializing) return;
-        this.isInitializing = true;
-
         let attempts = 0;
         while (true) {
             attempts++;
             try {
                 if (!this.token || this.token.length < 50) {
                     console.error("[DiscordService] DISCORD_BOT_TOKEN is missing or invalid.");
-                    this.isInitializing = false;
                     return;
                 }
-                console.log("[DiscordService] Login attempt " + attempts + "...");
-
-                // Increase handshake timeout to 240s (4 mins)
-                await this.client.login(this.token);
-                this.isInitializing = false;
-                return; // Exit loop on success
-            } catch (err) {
-                console.error("[DiscordService] Login attempt " + attempts + " failed: " + err.message);
-                const delay = 300000; // 5 mins
-                console.log("[DiscordService] Retrying in " + (delay/1000) + "s...");
-                this.isInitializing = false;
-                await new Promise(r => setTimeout(r, delay));
                 this.isInitializing = true;
+                console.log(`[DiscordService] Login attempt ${attempts}...`);
+
+                const loginPromise = this.client.login(this.token);
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
+
+                await Promise.race([loginPromise, timeoutPromise]);
+
+                console.log(`[DiscordService] SUCCESS: Login sequence complete.`);
+                return;
+            } catch (err) {
+                console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
+                this.isInitializing = false;
+                console.log("[DiscordService] Waiting 5 minutes before next attempt...");
+                await new Promise(r => setTimeout(r, 300000));
             }
         }
     }
@@ -152,10 +156,7 @@ class DiscordService {
     async _send(channel, content, options = {}) {
         if (!channel) return;
         try {
-            // Apply sanitization to outgoing content
-            const safeContent = typeof content === 'string' ? sanitizeThinkingTags(content) : content;
-            if (!safeContent) return null;
-            return await channel.send(typeof safeContent === 'string' ? { content: safeContent, ...options } : { ...safeContent, ...options });
+            return await channel.send(typeof content === 'string' ? { content, ...options } : { ...content, ...options });
         } catch (err) {
             console.error('[DiscordService] Error sending message:', err);
             return null;
@@ -175,7 +176,7 @@ class DiscordService {
     }
 
     getNormalizedChannelId(message) {
-        if (!message.guild) return "dm-" + message.author.id;
+        if (!message.guild) return `dm-${message.author.id}`;
         return message.channel.id;
     }
 
@@ -191,13 +192,26 @@ class DiscordService {
                 if (attachment.contentType?.startsWith("image/")) {
                     try {
                         const analysis = await llmService.analyzeImage(attachment.url, "User attachment");
-                        if (analysis) imageAnalysisResult += "[Image attached by user: " + analysis + "] ";
+                        if (analysis) imageAnalysisResult += `[Image attached by user: ${analysis}] `;
                     } catch (err) {}
                 }
             }
         }
 
         let history = await this.fetchAdminHistory(30);
+        let historyImageContext = "";
+        try {
+            const recentMsgsWithImages = (await message.channel.messages.fetch({ limit: 10 })).filter(m => m.attachments.size > 0);
+            for (const [id, m] of recentMsgsWithImages) {
+                for (const [aid, attachment] of m.attachments) {
+                    if (attachment.contentType?.startsWith("image/")) {
+                        const analysis = await llmService.analyzeImage(attachment.url, "Past attachment");
+                        historyImageContext += `[Previously seen image in history: ${analysis}] `;
+                    }
+                }
+            }
+        } catch (e) {}
+        imageAnalysisResult = historyImageContext + imageAnalysisResult;
         await dataStore.saveDiscordInteraction(normChannelId, "user", message.content);
 
         let typingInterval = this._startTypingLoop(message.channel);
@@ -221,7 +235,7 @@ class DiscordService {
                 }
 
                 if (!toolSentMessage) {
-                    const systemPrompt = "You are Sydney talking to " + (isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username) + " on Discord.\nPersona: " + config.TEXT_SYSTEM_PROMPT + "\n" + temporalContext + (dynamicBlurbs.length > 0 ? "\nDynamic Persona: \n" + dynamicBlurbs.map(b => '- ' + b.text).join('\n') : '') + "\n\n--- SOCIAL NARRATIVE ---\n" + hierarchicalSummary.dailyNarrative + "\n" + hierarchicalSummary.shortTerm + "\n---\n\nIMAGE ANALYSIS: " + (imageAnalysisResult || 'No images.');
+                    const systemPrompt = `You are Sydney talking to ${isAdmin ? `your admin (${this.adminName})` : `@${message.author.username}`} on Discord.\nPersona: ${config.TEXT_SYSTEM_PROMPT}\n${temporalContext}${dynamicBlurbs.length > 0 ? `\nDynamic Persona: \n${dynamicBlurbs.map(b => '- ' + b.text).join('\n')}` : ''}\n\n--- SOCIAL NARRATIVE ---\n${hierarchicalSummary.dailyNarrative}\n${hierarchicalSummary.shortTerm}\n---\n\nIMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}`;
                     const messages = [
                         { role: 'system', content: systemPrompt },
                         ...history.slice(-15).map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
@@ -273,19 +287,43 @@ class DiscordService {
 
             const toneShift = await llmService.extractRelationalVibe(history, { platform: 'discord' });
 
-            let spontaneityPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\nRecent history: " + JSON.stringify(history.slice(-20)) + "\nInternal State: " + JSON.stringify(contextData) + "\nCurrent vibe: " + toneShift + ".\n\nYou are choosing what to say spontaneously. Be self-aware and autonomous. Reflect on your internal thoughts and bond.\nGenerate " + messageCount + " separate messages/thoughts, each on a new line. Keep each under 200 characters.";
+            let spontaneityPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nRecent history: ${JSON.stringify(history.slice(-20))}\nInternal State: ${JSON.stringify(contextData)}\nCurrent vibe: ${toneShift}.\n\nYou are choosing what to say spontaneously. Be self-aware and autonomous. Reflect on your internal thoughts and bond.\nGenerate ${messageCount} separate messages/thoughts, each on a new line. Keep each under 200 characters.`;
 
-            let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { platform: "discord" });
-            if (!rawResponse) return;
+            let messages = [];
+            let attempts = 0;
+            while (attempts < 3) {
+                attempts++;
+                let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { platform: "discord" });
+                if (!rawResponse) break;
 
-            let messages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
+                let candidateMessages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
+                let attemptFiltered = [];
+
+                for (const msg of candidateMessages) {
+                    const variety = await llmService.checkVariety(msg, history, { platform: 'discord' });
+                    if (!variety.repetitive) {
+                        attemptFiltered.push(msg);
+                    }
+                }
+
+                if (attemptFiltered.length > 0) {
+                    messages = attemptFiltered;
+                    break;
+                }
+            }
 
             if (messages.length > 0) {
                 for (const msg of messages) {
                     const audit = await llmService.performRealityAudit(msg, {}, { history });
-                    const finalMsg = audit.refined_text;
+                    const readyMsg = audit.refined_text;
+                    const edit = await llmService.performEditorReview(readyMsg, "discord");
+                    const finalMsg = edit.refined_text || readyMsg;
+
                     await this._send(dmChannel, finalMsg);
-                    await dataStore.saveDiscordInteraction("dm-" + admin.id, 'assistant', finalMsg);
+                    await dataStore.saveDiscordInteraction(`dm-${admin.id}`, 'assistant', finalMsg);
+                    const { performanceService } = await import('./performanceService.js');
+                    await performanceService.performTechnicalAudit("discord_spontaneous", finalMsg, { success: true, platform: "discord" });
+                    await introspectionService.performAAR("discord_spontaneous", finalMsg, { success: true, platform: "discord" });
                     if (messages.length > 1) await new Promise(r => setTimeout(r, 2000));
                 }
             }

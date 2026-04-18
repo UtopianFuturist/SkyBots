@@ -9,7 +9,7 @@ import { introspectionService } from './introspectionService.js';
 import { imageService } from './imageService.js';
 import { openClawService } from './openClawService.js';
 import config from '../../config.js';
-import { isStylizedImagePrompt, checkHardCodedBoundaries, isSlop } from '../utils/textUtils.js';
+import { isLiteralVisualPrompt, isSlop } from '../utils/textUtils.js';
 import path from 'path';
 import fs from 'fs/promises';
 
@@ -18,7 +18,6 @@ class OrchestratorService {
         this.taskQueue = [];
         this.isProcessingQueue = false;
         this.bot = null;
-        this.lastScoutMission = Date.now() - 3600000;
     }
 
     setBotInstance(bot) { this.bot = bot; }
@@ -33,7 +32,7 @@ class OrchestratorService {
         this.isProcessingQueue = true;
         while (this.taskQueue.length > 0) {
             const task = this.taskQueue.shift();
-            try { await task.fn(); } catch (e) { console.error("[Orchestrator] Task failed: " + task.name, e); }
+            try { await task.fn(); } catch (e) { console.error(`[Orchestrator] Task failed: ${task.name}`, e); }
         }
         this.isProcessingQueue = false;
     }
@@ -48,18 +47,7 @@ class OrchestratorService {
         if (now - lastPostMs >= cooldown) {
             this.addTaskToQueue(() => this.performAutonomousPost(), "autonomous_post");
         }
-        this.addTaskToQueue(() => this.checkMaintenanceTasks(), "maintenance_tasks");
     }
-
-    async checkMaintenanceTasks() {
-        const now = Date.now();
-        if (now - this.lastScoutMission >= 2 * 3600000) {
-            this.addTaskToQueue(() => this.performScoutMission(), "scout_mission");
-            this.lastScoutMission = now;
-        }
-    }
-
-    async performScoutMission() {}
 
     async performAutonomousPost(options = {}) {
         const dailyStats = dataStore.getDailyStats();
@@ -76,7 +64,7 @@ class OrchestratorService {
                 const timeline = await blueskyService.getTimeline(20);
                 const allContent = (timeline?.data?.feed || []).map(f => f.post.record.text).join('\n');
                 if (allContent) {
-                    const resonancePrompt = "Identify 3 topics. Respond with ONLY comma-separated topics. Text: " + allContent.substring(0, 1000);
+                    const resonancePrompt = "Identify 3 deep topics. Respond with ONLY comma-separated topics. Text: " + allContent.substring(0, 1000);
                     const res = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true });
                     if (res) resonanceTopics = res.split(",").map(t => t.trim());
                 }
@@ -96,7 +84,7 @@ class OrchestratorService {
                     const result = await blueskyService.post(content);
                     if (result) {
                         await dataStore.updateLastAutonomousPostTime(new Date().toISOString());
-                        if (dataStore.incrementDailyTextPosts) await dataStore.incrementDailyTextPosts();
+                        await dataStore.incrementDailyTextPosts();
                         await introspectionService.performAAR("autonomous_text_post", content, { success: true });
                     }
                 }
@@ -111,7 +99,7 @@ class OrchestratorService {
             const postResult = await blueskyService.post(result.caption, { image: result.buffer });
             if (postResult) {
                 await dataStore.updateLastBlueskyImagePostTime(new Date().toISOString());
-                if (dataStore.incrementDailyImagePosts) await dataStore.incrementDailyImagePosts();
+                await dataStore.incrementDailyImagePosts();
                 return postResult;
             }
         }
@@ -123,17 +111,17 @@ class OrchestratorService {
         let imagePrompt = topic;
         while (attempts < 5) {
             attempts++;
-            console.log("[Orchestrator] Image post attempt " + attempts + " for topic: " + topic);
+            console.log(`[Orchestrator] Image post attempt ${attempts} for topic: ${topic}`);
             const slopInfo = isSlop(imagePrompt);
-            const literalCheck = isStylizedImagePrompt(imagePrompt);
-            // Fix: slopInfo is an object, use slopInfo.isSlop
-            if (!slopInfo.isSlop && literalCheck.isStylized && imagePrompt.length >= 15) {
+            const literalCheck = isLiteralVisualPrompt(imagePrompt);
+            if (!slopInfo && literalCheck.isLiteral && imagePrompt.length >= 15) {
                 const gen = await imageService.generateImage(imagePrompt);
                 if (gen && gen.buffer) return { buffer: gen.buffer, caption: topic, finalPrompt: imagePrompt };
             }
             const retryPrompt = "Adopt persona. Provide a literal artistic visual description. Topic: " + topic + ". Generate NEW artistic image prompt:";
             imagePrompt = await llmService.generateResponse([{ role: "system", content: retryPrompt }], { useStep: true }) || topic;
         }
+        // Force attempt if loop fails
         const finalPrompt = topic + ", cinematic oil painting, artstation style, high detail";
         const gen = await imageService.generateImage(finalPrompt);
         if (gen && gen.buffer) return { buffer: gen.buffer, caption: topic, finalPrompt };

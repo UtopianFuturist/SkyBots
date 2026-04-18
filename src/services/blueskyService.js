@@ -1,41 +1,53 @@
-import { BskyAgent } from '@atproto/api';
+import { AtpAgent } from '@atproto/api';
 import config from '../../config.js';
 
 class BlueskyService {
   constructor() {
-    this.agent = new BskyAgent({ service: 'https://bsky.social' });
+    this.agent = new AtpAgent({ service: 'https://bsky.social' });
     this.did = null;
     this.handle = config.BLUESKY_IDENTIFIER;
+    this.password = config.BLUESKY_APP_PASSWORD;
   }
 
   async init() {
-    if (!config.BLUESKY_IDENTIFIER || !config.BLUESKY_PASSWORD) {
-        console.warn('[BlueskyService] Missing credentials. Service disabled.');
-        return;
+    if (!this.handle || !this.password) {
+      console.warn('[BlueskyService] Credentials missing. Bluesky integration disabled.');
+      return;
     }
     try {
-      await this.agent.login({ identifier: config.BLUESKY_IDENTIFIER, password: config.BLUESKY_PASSWORD });
-      this.did = this.agent.session.did;
-      console.log('[BlueskyService] Logged in as: ' + this.did);
+      console.log(`[BlueskyService] Authenticating as ${this.handle}...`);
+      const response = await this.agent.login({ identifier: this.handle, password: this.password });
+      this.did = response.data.did;
+      console.log('[BlueskyService] Authenticated successfully');
     } catch (error) {
-      console.error('[BlueskyService] Login failed:', error.message);
+      console.error('[BlueskyService] Authentication failed:', error.message);
     }
   }
 
-  async post(text, embed = null) {
-    if (!text || !text.trim()) {
-      console.warn("[BlueskyService] Attempted to post blank text. Aborting.");
-      return null;
+  async getNotifications(cursor) {
+    if (!this.did) return { notifications: [], cursor: null };
+    try {
+      const params = { limit: 50 };
+      if (cursor) params.cursor = cursor;
+      const { data } = await this.agent.listNotifications(params);
+      return data;
+    } catch (error) {
+      console.error('[BlueskyService] Error fetching notifications:', error);
+      return { notifications: [], cursor: cursor };
     }
-    // Prevent dot-only or whitespace-only posts
-    if (text.trim().replace(/[.\s]/g, '').length === 0 && text.trim().length > 0) {
-       console.warn("[BlueskyService] Attempted to post punctuation-only text. Aborting.");
-       return null;
-    }
+  }
 
+  async updateSeen(seenAt) {
+    try {
+      if (seenAt && typeof seenAt !== 'string') seenAt = String(seenAt);
+      await this.agent.updateSeenNotifications(seenAt);
+    } catch (error) { console.error('[BlueskyService] Error updating seen status:', error); }
+  }
+
+  async post(text, embed = null, options = {}) {
     if (!this.did) return null;
     try {
-      const maxGraphemes = 280;
+      const maxGraphemes = 300;
       const chunks = this.splitIntoGraphemeChunks(text, maxGraphemes);
 
       let root = null;
@@ -64,6 +76,7 @@ class BlueskyService {
           parent = response;
         }
 
+        // Brief pause between chunks to ensure indexing order
         if (chunks.length > 1 && i < chunks.length - 1) {
             await new Promise(r => setTimeout(r, 1000));
         }
@@ -80,43 +93,22 @@ class BlueskyService {
     if (text.length <= limit) return [text];
     const chunks = [];
     let current = text;
-    const ellipsis = "...";
-    const chunkLimit = limit - ellipsis.length;
-
     while (current.length > limit) {
-      let splitPos = current.lastIndexOf('\n', chunkLimit);
-      if (splitPos === -1) splitPos = current.lastIndexOf('. ', chunkLimit);
-      if (splitPos === -1) splitPos = current.lastIndexOf(' ', chunkLimit);
-      if (splitPos <= 0) splitPos = chunkLimit;
-
-      const chunkText = current.substring(0, splitPos).trim();
-      if (chunkText) {
-          chunks.push(chunkText + ellipsis);
-          current = current.substring(splitPos).trim();
-      } else {
-          chunks.push(current.substring(0, chunkLimit) + ellipsis);
-          current = current.substring(chunkLimit).trim();
-      }
-      if (!current) break;
+      let splitPos = current.lastIndexOf('\n', limit);
+      if (splitPos === -1) splitPos = current.lastIndexOf('. ', limit);
+      if (splitPos === -1) splitPos = current.lastIndexOf(' ', limit);
+      if (splitPos === -1) splitPos = limit;
+      chunks.push(current.substring(0, splitPos).trim());
+      current = current.substring(splitPos).trim();
     }
     if (current) chunks.push(current);
     return chunks;
   }
 
   async postReply(parent, text, options = {}) {
-    if (!text || !text.trim()) {
-      console.warn("[BlueskyService] Attempted to post blank reply. Aborting.");
-      return null;
-    }
-    // Prevent dot-only or whitespace-only replies (unless explicitly intended which is rare)
-    if (text.trim().replace(/[.\s]/g, '').length === 0 && text.trim().length > 0) {
-       console.warn("[BlueskyService] Attempted to post punctuation-only reply. Aborting.");
-       return null;
-    }
-
     if (!this.did) return null;
     try {
-      const maxGraphemes = 280;
+      const maxGraphemes = 300;
       const chunks = this.splitIntoGraphemeChunks(text, maxGraphemes);
 
       let root = parent.record?.reply?.root || { uri: parent.uri, cid: parent.cid };
@@ -182,20 +174,19 @@ class BlueskyService {
     }
   }
 
-  async getNotifications(cursor = null) {
+  /**
+   * Enhanced searchPosts to handle both object options and legacy positional arguments.
+   */
+  async searchPosts(query, optionsOrSort = {}, limit = 20) {
       try {
-          const { data } = await this.agent.listNotifications({ limit: 50, cursor });
-          return data;
-      } catch (e) { return null; }
-  }
-
-  async updateSeen(timestamp) {
-      try { await this.agent.updateSeenNotifications({ seenAt: timestamp }); } catch (e) {}
-  }
-
-  async searchPosts(query, params = {}) {
-      try {
-          const { data } = await this.agent.app.bsky.feed.searchPosts({ q: query, ...params });
+          let params = { q: query };
+          if (typeof optionsOrSort === 'string') {
+              params.sort = optionsOrSort;
+              params.limit = limit;
+          } else {
+              Object.assign(params, optionsOrSort);
+          }
+          const { data } = await this.agent.app.bsky.feed.searchPosts(params);
           return data.posts;
       } catch (e) {
           console.error('[BlueskyService] Error searching posts:', e);
@@ -203,12 +194,8 @@ class BlueskyService {
       }
   }
 
-  async deletePost(uri) {
-      try {
-          const rkey = uri.split('/').pop();
-          await this.agent.deletePost({ repo: this.did, rkey });
-          return true;
-      } catch (e) { return false; }
+  async uploadBlob(data, encoding) {
+      return await this.agent.uploadBlob(data, { encoding });
   }
 
   async getDetailedThread(uri) {
@@ -227,6 +214,21 @@ class BlueskyService {
           return thread.reverse();
       } catch (e) { return []; }
   }
+
+  async hasBotRepliedTo(uri) {
+      try {
+          const { data } = await this.agent.app.bsky.feed.getPostThread({ uri }).catch(e => {
+              if (e.message && e.message.includes('Forbidden')) return { data: {} };
+              throw e;
+          });
+          if (!data || !data.thread || !data.thread.replies) return false;
+          return data.thread.replies.some(r => r.post && r.post.author && r.post.author.did === this.did);
+      } catch (e) {
+          console.warn('[BlueskyService] Error checking if replied to:', uri, e.message);
+          return false;
+      }
+  }
 }
+
 
 export const blueskyService = new BlueskyService();

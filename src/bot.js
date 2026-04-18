@@ -50,11 +50,17 @@ export class Bot {
 
         if (config.DISCORD_BOT_TOKEN) {
             try {
-                console.log('[Bot] Initializing Discord Service...');
-                await discordService.init(this);
-                // Restore delayed startup catch-up for Discord
-                setTimeout(() => discordService.performStartupCatchup(), 5000);
-            } catch (e) { console.error("[Bot] Discord init failed:", e); }
+                console.log('[Bot] Initializing Discord Service (Non-blocking)...');
+                // No await here so Discord doesn't hang the rest of the bot
+                discordService.init(this).catch(e => console.error("[Bot] Discord init error:", e));
+                
+                // Catch-up should only happen once ready, but we'll queue it here with a longer delay
+                setTimeout(() => {
+                    if (discordService.client?.isReady()) {
+                        discordService.performStartupCatchup().catch(e => console.error('[Bot] Discord catchup error:', e));
+                    }
+                }, 15000);
+            } catch (e) { console.error("[Bot] Discord service setup error:", e); }
         }
 
         if (config.ADMIN_BLUESKY_HANDLE) {

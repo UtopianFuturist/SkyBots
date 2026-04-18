@@ -60,11 +60,16 @@ class DiscordService {
         console.log('[DiscordService] Starting initialization...');
 
         if (this.client) {
-            try { await this.client.destroy(); } catch (e) {}
+            try { 
+                console.log('[DiscordService] Destroying existing client...');
+                await this.client.destroy(); 
+            } catch (e) {
+                console.error('[DiscordService] Error destroying client:', e.message);
+            }
         }
 
-        // Standard initialization with minimal options to avoid internal conflicts
         try {
+            console.log('[DiscordService] Creating new Client instance...');
             this.client = new Client({
                 partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
                 intents: [
@@ -79,7 +84,10 @@ class DiscordService {
             this.client.on("ready", () => {
                 this.isInitializing = false;
                 console.log("[DiscordService] SUCCESS: Logged in as " + this.client.user.tag);
-                // Re-attach message listener on every ready event
+                
+                // Remove any existing listeners to prevent duplicates
+                this.client.removeAllListeners("messageCreate");
+                
                 this.client.on("messageCreate", (msg) => {
                     console.log(`[DiscordService] Received message from ${msg.author.tag}: ${msg.content.substring(0, 50)}...`);
                     this.handleMessage(msg).catch(err => console.error("[DiscordService] handleMessage error:", err));
@@ -94,7 +102,15 @@ class DiscordService {
                 console.error("[DiscordService] Shard error:", err.message);
             });
 
-            await this.loginLoop();
+            this.client.on("debug", (info) => {
+                if (info.includes("heartbeat") || info.includes("latency")) return;
+                console.log("[DiscordService][Debug] " + info);
+            });
+
+            // Trigger login without awaiting it to prevent blocking the main bot init
+            this.loginLoop().catch(err => console.error("[DiscordService] Fatal loginLoop error:", err));
+            
+            console.log('[DiscordService] Initialization call finished (login running in background).');
         } catch (err) {
             console.error("[DiscordService] Critical init error:", err);
             this.isInitializing = false;

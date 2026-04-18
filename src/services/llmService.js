@@ -3,12 +3,22 @@ import * as prompts from "../prompts/index.js";
 import fetch from 'node-fetch';
 import { checkExactRepetition, getSimilarityInfo, isSlop, sanitizeThinkingTags } from "../utils/textUtils.js";
 import https from 'https';
+import dns from 'dns';
 import config from '../../config.js';
 import fs from 'fs/promises';
 import path from 'path';
 import { temporalService } from "./temporalService.js";
 
-export const persistentAgent = new https.Agent({ keepAlive: true });
+// Force IPv4 for NVIDIA NIM API to resolve ETIMEDOUT issues on Render
+if (dns.setDefaultResultOrder) {
+    dns.setDefaultResultOrder('ipv4first');
+}
+
+export const persistentAgent = new https.Agent({ 
+    keepAlive: true,
+    maxSockets: 50,
+    timeout: 30000 
+});
 
 class LLMService {
   static lastRequestTime = 0;
@@ -111,7 +121,11 @@ class LLMService {
             await this._throttle(isPriority);
             const response = await fetch(this.endpoint, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.NVIDIA_NIM_API_KEY },
+                headers: { 
+                    'Content-Type': 'application/json', 
+                    'Authorization': 'Bearer ' + config.NVIDIA_NIM_API_KEY,
+                    'Connection': 'keep-alive'
+                },
                 body: JSON.stringify({
                     model: model,
                     messages: this._prepareMessages(messages, systemPrompt, options),
@@ -119,7 +133,7 @@ class LLMService {
                     max_tokens: options.max_tokens || 1024
                 }),
                 agent: persistentAgent,
-                timeout: 60000 // Shorter timeout for faster failover
+                timeout: 45000 // Slightly more aggressive timeout
             });
 
             if (!response.ok) {

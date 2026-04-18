@@ -83,11 +83,14 @@ class DiscordService {
                 ws: {
                     properties: { $os: 'linux', $browser: 'discord.js', $device: 'discord.js' },
                     large_threshold: 50,
-                    compress: false // Disable compression to reduce handshake complexity
+                    compress: false, // Disable compression to reduce handshake complexity
+                    // Use a specific gateway version and force IPv4 via DNS
+                    version: 10
                 },
                 rest: {
                     timeout: 60000,
-                    retries: 5
+                    retries: 5,
+                    api: 'https://discord.com/api'
                 }
             });
 

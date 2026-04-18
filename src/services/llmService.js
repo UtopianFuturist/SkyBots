@@ -119,7 +119,7 @@ class LLMService {
                     max_tokens: options.max_tokens || 1024
                 }),
                 agent: persistentAgent,
-                timeout: 180000
+                timeout: 60000 // Shorter timeout for faster failover
             });
 
             if (!response.ok) {

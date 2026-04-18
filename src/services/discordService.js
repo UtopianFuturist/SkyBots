@@ -69,7 +69,7 @@ class DiscordService {
         }
 
         try {
-            console.log('[DiscordService] Creating new Client instance...');
+            console.log('[DiscordService] Creating new Client instance with resilient config...');
             this.client = new Client({
                 partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
                 intents: [
@@ -78,7 +78,17 @@ class DiscordService {
                     GatewayIntentBits.DirectMessages,
                     GatewayIntentBits.GuildMembers,
                     GatewayIntentBits.MessageContent
-                ]
+                ],
+                // Resilient WebSocket and REST configuration for cloud environments
+                ws: {
+                    properties: { $os: 'linux', $browser: 'discord.js', $device: 'discord.js' },
+                    large_threshold: 50,
+                    compress: false // Disable compression to reduce handshake complexity
+                },
+                rest: {
+                    timeout: 60000,
+                    retries: 5
+                }
             });
 
             this.client.on("ready", () => {

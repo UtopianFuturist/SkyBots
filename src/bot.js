@@ -110,6 +110,25 @@ export class Bot {
         console.log("Executing tool: " + action.tool, params);
 
         try {
+            if (action.tool === "browser_harness") {
+                const task = params.task || query;
+                const code = params.code || "";
+                console.log(`[Bot] Executing browser_harness task: ${task}`);
+                const result = await openClawService.executeSkill("browser-harness", { task, code });
+                if (context.platform === "discord") {
+                    await discordService._send(context.channel || await discordService.getAdminUser(), `[Browser Harness Result]:\n${result}`);
+                }
+                return { success: true, data: result };
+            }
+            if (action.tool === "respond_to_user") {
+                const text = params.text || query;
+                if (context.platform === "discord") {
+                    await discordService._send(context.channel || await discordService.getAdminUser(), text);
+                } else if (context.platform === "bluesky") {
+                    await blueskyService.postReply(context, text);
+                }
+                return { success: true };
+            }
             if (action.tool === "bsky_post") {
                 if (context.platform === "discord") return { success: false, reason: "Cross-platform posting blocked" };
                 let text = params.text || query;

@@ -109,6 +109,8 @@ Respond with a JSON session summary:
             if (!match) return;
 
             const session = JSON.parse(match[0]);
+            console.log(`[Therapist] Subagent realized: ${session.key_realizations.join(', ')}`);
+            console.log(`[Therapist] Stability directive: ${session.stability_directive}`);
 
             // Save to [THERAPY] memory
             if (memoryService.isEnabled()) {

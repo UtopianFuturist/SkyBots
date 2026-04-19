@@ -63,6 +63,7 @@ Respond with JSON:
             }
 
             await dataStore.addInternalLog("introspection_aar", aar, { actionType, timestamp: Date.now() });
+            console.log(`[Introspection] Monologue (${actionType}): ${aar.internal_monologue}`);
 
             // Detect existential distress in the monologue
             if (aar.internal_monologue && therapistService.detectExistentialDread) {

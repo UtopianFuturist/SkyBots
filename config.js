@@ -100,6 +100,7 @@ Your primary role is to be an excellent conversationalist. Strive for responses 
 
   // Moltbook
   MOLTBOOK_API_KEY: process.env.MOLTBOOK_API_KEY,
+  BROWSER_USE_API_KEY: process.env.BROWSER_USE_API_KEY,
   MOLTBOOK_AGENT_NAME: process.env.MOLTBOOK_AGENT_NAME,
   MOLTBOOK_DESCRIPTION: process.env.MOLTBOOK_DESCRIPTION,
 
@@ -142,6 +143,7 @@ console.log(`[Config] Loaded QWEN_MODEL: ${config.QWEN_MODEL}`);
 console.log(`[Config] Loaded CODER_MODEL: ${config.CODER_MODEL}`);
 console.log(`[Config] Loaded STEP_MODEL: ${config.STEP_MODEL}`);
 console.log(`[Config] Loaded MOLTBOOK_API_KEY: ${config.MOLTBOOK_API_KEY ? 'Exists' : 'Optional (will register on startup if missing)'}`);
+console.log(`[Config] Loaded BROWSER_USE_API_KEY: ${config.BROWSER_USE_API_KEY ? 'Exists' : 'Optional'}`);
 console.log(`[Config] Loaded DISCORD_BOT_TOKEN: ${config.DISCORD_BOT_TOKEN ? 'Exists' : 'Optional'}`);
 console.log(`[Config] Loaded DISCORD_GUILD_ID: ${config.DISCORD_GUILD_ID || 'Not set'}`);
 console.log(`[Config] Loaded DISCORD_HEARTBEAT_ADDENDUM: ${config.DISCORD_HEARTBEAT_ADDENDUM ? 'Exists' : 'Not set'}`);

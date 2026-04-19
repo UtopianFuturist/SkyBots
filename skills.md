@@ -27,6 +27,7 @@ This file is the authoritative source for all tools available to the bot. It use
 | `anchor_stability` | Reset your internal mood to a neutral baseline (requires consent). |
 | `mutate_style` | Temporarily adopt a different "analytical lens" or stylistic filter. |
 | `call_skill` | Invoke an external OpenClaw skill from the `skills/` directory. |
+| `browser_harness` | Execute browser-based tasks (automation, scraping) using a self-healing harness. |
 
 ---
 
@@ -205,6 +206,23 @@ Invoke an external OpenClaw skill.
       "parameters": { "type": "object", "description": "The parameters expected by the skill." }
     },
     "required": ["name", "parameters"]
+  }
+}
+```
+
+### browser_harness
+Execute browser-based tasks using the self-healing harness.
+```json
+{
+  "name": "browser_harness",
+  "description": "Executes a browser automation task using the browser-harness. Provide a high-level task description or raw Python code for the harness.",
+  "parameters": {
+    "type": "object",
+    "properties": {
+      "task": { "type": "string", "description": "The high-level browser task to perform." },
+      "code": { "type": "string", "description": "Optional: Raw Python code to execute within the harness helpers context." }
+    },
+    "required": ["task"]
   }
 }
 ```

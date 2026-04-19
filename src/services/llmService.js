@@ -150,16 +150,28 @@ class LLMService {
     return null;
   }
 
-  async performPrePlanning(text, history, vision, platform, mood, refusalCounts, options = {}) {
-    const prompt = "Analyze intent for: \"" + text + "\". JSON: { \"intent\": \"string\", \"flags\": [] }";
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
-    return this.extractJson(res) || { intent: "conversational", flags: [] };
+  async performPrePlanning(messages, context = {}) {
+    const prompt = `Analyze the user's intent and provide a plan.
+CONTEXT: ${JSON.stringify(context)}
+AVAILABLE TOOLS:
+- bsky_post: Post to Bluesky. Parameters: { "text": "string" }
+- browser_harness: Control a remote browser. Parameters: { "task": "string", "code": "string (optional)" }
+- search_google: Search the web. Parameters: { "query": "string" }
+- respond_to_user: Send a direct response. Parameters: { "text": "string" }
+
+Respond with JSON:
+{
+  "intent": "string",
+  "plan_description": "string",
+  "actions": [{ "tool": "string", "parameters": {} }]
+}`;
+    const res = await this.generateResponse([...messages, { role: 'system', content: prompt }], { useStep: true, task: 'pre_planning' });
+    return this.extractJson(res) || { intent: "conversational", actions: [] };
   }
 
   async performAgenticPlanning(text, history, vision, isAdmin, platform, exhaustedThemes, userStance, userPortraits, userSummary, relationshipWarmth, adminEnergy, prePlan, options = {}) {
-    const prompt = "Plan actions for: \"" + text + "\". JSON: { \"actions\": [{ \"tool\": \"name\", \"parameters\": {} }] }";
-    const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true, platform: platform });
-    return this.extractJson(res) || { actions: [] };
+    // This is a legacy method kept for compatibility, mapping to performPrePlanning
+    return this.performPrePlanning([{ role: 'user', content: text }], { platform, isAdmin, ...options });
   }
 
   async evaluateAndRefinePlan(plan, context, options = {}) {

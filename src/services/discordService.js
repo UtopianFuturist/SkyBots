@@ -107,7 +107,10 @@ class DiscordService {
         const isReplyToMe = message.reference && (await message.channel.messages.fetch(message.reference.messageId)).author.id === this.client.user.id;
 
         if (isDM || isMentioned || isReplyToMe) {
+            console.log(`[DiscordService] Triggering response for message from ${message.author.username}: ${text.substring(0, 50)}...`);
             await this.respond(message);
+        } else {
+            console.log(`[DiscordService] Ignoring message from ${message.author.username} (not mentioned/DM)`);
         }
     }
 
@@ -177,9 +180,13 @@ class DiscordService {
             const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
             if (evaluation.decision === "proceed") {
                 const actions = evaluation.refined_actions || plan.actions;
+                console.log(`[DiscordService] Executing ${actions.length} planned actions.`);
                 for (const action of actions) {
-                    await this.botInstance.executeAction(action, { ...message, platform: "discord" });
+                    const result = await this.botInstance.executeAction(action, { channel: message.channel, author: message.author, platform: "discord" });
+                    console.log(`[DiscordService] Action ${action.tool} result: ${result.success ? 'SUCCESS' : 'FAILED'}`);
                 }
+            } else {
+                console.log(`[DiscordService] Plan evaluation rejected: ${evaluation.reason || 'No reason provided'}`);
             }
         } catch (error) {
             console.error("[DiscordService] Error:", error);

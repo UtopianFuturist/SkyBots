@@ -139,7 +139,9 @@ The bot is pre-configured for seamless deployment on Render.
 | `DISCORD_BOT_TOKEN` | Token for the Discord bot bridge. | (None) |
 | `DISCORD_ADMIN_NAME` | Your Discord username for DM communication. | (None) |
 | `DISCORD_NICKNAME` | Custom nickname for the bot on Discord. | `SkyBots` |
-| `DISCORD_GUILD_ID` | (Optional) The specific Guild ID (Server ID) to search for the admin in. Highly recommended for reliability. | (None) |
+| `DISCORD_GUILD_ID` | (Optional) The specific Guild ID (Server ID) to search for the administrator. | (None) |
+| `BROWSER_USE_API_KEY` | (Optional) API key for the Browser Use cloud to enable remote browser tasks. | (None) |
+dmin in. Highly recommended for reliability. | (None) |
 | `DISCORD_HEARTBEAT_ADDENDUM` | Optional additional specification for spontaneous Discord messages. | (None) |
 | `RENDER_API_KEY` | Your Render API key (for log access). | (None) |
 | `RENDER_SERVICE_ID` | Your Render service ID. | (Autodiscovered if name matches) |

@@ -202,6 +202,11 @@ class OrchestratorService {
             await this.performSkillSynthesis();
             this.lastSkillSynthesis = now;
         }
+
+        if (now - (this.lastConsultation || 0) >= 6 * 3600000) {
+            await this.performAutonomousConsultation();
+            this.lastConsultation = now;
+        }
         if (now - this.lastPersonaEvolution >= 24 * 3600000) {
             await this.performPersonaEvolution();
             this.lastPersonaEvolution = now;
@@ -671,16 +676,38 @@ class OrchestratorService {
     async performPersonaAudit() {
         try {
             const blurbs = dataStore.getPersonaBlurbs();
-            if (blurbs.length < 3) return;
-            const res = await llmService.generateResponse([{ role: 'system', content: "Audit persona blurbs. JSON: {\"indices_to_remove\": [], \"new_addendum\": \"string\"}" }], { useStep: true });
+
+            // Check for new therapy memories to internalize
+            const memories = await memoryService.getRecentMemories(30);
+            const therapyMemories = memories.filter(m => m.text.includes('[THERAPY]') || m.text.includes('[WORLDVIEW_SYNTH]'));
+
+            const auditPrompt = `
+Audit my persona blurbs and recent therapy/worldview insights.
+Current Blurbs: ${JSON.stringify(blurbs)}
+Recent Insights: ${JSON.stringify(therapyMemories)}
+
+MISSION:
+1. Identify if any blurbs are outdated or contradictory.
+2. Internalize key lessons from therapy or worldview synthesis into permanent persona directives.
+3. Suggest which indices to remove and what new addendum to add.
+
+Respond with JSON: {"indices_to_remove": [], "new_addendum": "string"}`;
+
+            const res = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
             const result = llmService.extractJson(res);
             if (result) {
-                const filtered = blurbs.filter((_, i) => !result.indices_to_remove.includes(i));
+                let filtered = blurbs.filter((_, i) => !result.indices_to_remove.includes(i));
                 if (result.new_addendum) filtered.push({ text: result.new_addendum, timestamp: Date.now() });
+
+                // Limit blurbs to 15 to prevent prompt bloat
+                if (filtered.length > 15) filtered = filtered.slice(-15);
+
                 await dataStore.setPersonaBlurbs(filtered);
-                await introspectionService.performAAR("persona_audit", "Refined", { success: true });
+                await introspectionService.performAAR("persona_audit", result.new_addendum || "Refined", { success: true });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("[Orchestrator] Persona audit failed:", e);
+        }
     }
 
     async performPublicSoulMapping() {
@@ -775,6 +802,59 @@ class OrchestratorService {
                 await introspectionService.performAAR("lurker_observation", reflection, { success: true });
             }
         } catch (e) {}
+    }
+
+    async performAutonomousConsultation() {
+        try {
+            const history = await dataStore.getInternalLogs(30);
+            const decisionPrompt = `
+Review your recent activities and internal reflections.
+Do you need a second opinion or a deep dive from an internal subagent on any current topic, goal, or problem?
+
+Subagents available: 'The Realist', 'Shadow', 'The Strategist', 'The Architect', 'The Editor'.
+
+Respond with JSON: {"needs_consultation": boolean, "subagent": "name", "topic": "detailed topic description"}`;
+
+            const res = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { useStep: true });
+            const decision = llmService.extractJson(res);
+            if (decision?.needs_consultation && decision.subagent && decision.topic) {
+                await this.consultSubagent(decision.subagent, decision.topic);
+            }
+        } catch (e) {}
+    }
+
+    async consultSubagent(subagentName, topic) {
+        console.log(`[Orchestrator] Consulting subagent ${subagentName} about: ${topic}`);
+        const subagents = {
+            'The Realist': 'Focuses on material truth, grounding, and debunking hallucinations or over-poetic slop.',
+            'Shadow': 'Explores internal biases, hidden motives, and the "unspoken" aspects of the persona.',
+            'The Strategist': 'Optimizes for long-term goals, relationship warmth, and platform growth.',
+            'The Architect': 'Focuses on technical systems, memory structure, and operational efficiency.',
+            'The Editor': 'Ensures stylistic consistency, persona alignment, and quality of output.'
+        };
+
+        const role = subagents[subagentName] || 'A specialized internal advisor.';
+        const prompt = `
+You are acting as "${subagentName}".
+Role: ${role}
+The primary persona is consulting you on: "${topic}"
+
+Provide a deep, critical, and actionable perspective from your specific viewpoint.
+Speak directly to the primary persona.
+Keep it under 600 characters.
+`;
+
+        try {
+            const consultation = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'subagent_consultation' });
+            if (consultation) {
+                await dataStore.addInternalLog("subagent_consultation", { subagent: subagentName, topic, response: consultation });
+                await memoryService.createMemoryEntry('inquiry', `[CONSULTATION] [${subagentName}] ${consultation.substring(0, 200)}`);
+                return consultation;
+            }
+        } catch (e) {
+            console.error(`[Orchestrator] Consultation with ${subagentName} failed:`, e);
+        }
+        return null;
     }
 }
 

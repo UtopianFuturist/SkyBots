@@ -177,7 +177,7 @@ CRITICAL:
 
         // Enforce Format: [TAG] [m/d/year] Content
         const tag = type.toUpperCase();
-        const finalEntry = (entryText.includes(`[${tag}]`) && /\[\d+\/\d+\/\d+\]/.test(entryText)) ? entryText : `[${tag}] [${dateStr}] ${entryText.replace(/^\[.*?\]\s*(\[\d+\/\d+\/\d+\])?\s*/, "")}`;
+        let finalEntry = (entryText.includes(`[${tag}]`) && /\[\d+\/\d+\/\d+\]/.test(entryText)) ? entryText : `[${tag}] [${dateStr}] ${entryText.replace(/^\[.*?\]\s*(\[\d+\/\d+\/\d+\])?\s*/, "")}`;
 
         // Final Quality & Substance Check (Old filter logic integration)
         const evaluationPrompt = `
@@ -221,15 +221,24 @@ CRITICAL:
             }
         }
 
-        const latestPost = await this.findLatestMemoryPost();
+        // Unified Threading Logic: Always find the root of the thread or start a new one
+        const memories = await this.fetchRecentMemories(this.hashtag, 1);
         let result = null;
 
-        if (latestPost) {
-            console.log(`[MemoryService] Replying to latest memory post: ${latestPost.uri}`);
-            const parentPost = { uri: latestPost.uri, cid: latestPost.cid, record: latestPost.record };
-            result = await blueskyService.postReply(parentPost, finalEntry);
+        if (memories.length > 0) {
+            const latest = memories[0].originalPost;
+            console.log(`[MemoryService] Threading memory under: ${latest.uri}`);
+
+            // Ensure we use the root URI for the thread if it exists, otherwise use the post itself
+            const parent = {
+                uri: latest.uri,
+                cid: latest.cid,
+                record: latest.record
+            };
+
+            result = await blueskyService.postReply(parent, finalEntry);
         } else {
-            console.log(`[MemoryService] No existing thread found. Initializing new memory thread.`);
+            console.log(`[MemoryService] Initializing new memory thread for ${this.hashtag}`);
             result = await blueskyService.post(finalEntry);
             if (result) this.rootPost = result;
         }

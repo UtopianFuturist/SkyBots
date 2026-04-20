@@ -14,7 +14,7 @@ class DiscordService {
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
         this.nickname = config.BOT_NAME || 'Bot';
-        this.isResponding = false;
+        this.respondingChannels = new Set();
         this.client = null;
         this.botInstance = null;
         this.isInitializing = false;
@@ -66,22 +66,29 @@ class DiscordService {
 
     async loginLoop() {
         let attempts = 0;
-        const maxAttempts = 5;
+        const maxAttempts = 10;
         while (attempts < maxAttempts) {
             attempts++;
             try {
                 console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
+                // Increased timeout to 180s and added more logging
                 const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 120s")), 120000));
-                await Promise.race([loginPromise, timeoutPromise]);
-                console.log(`[DiscordService] SUCCESS: Login complete!`);
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 180s")), 180000));
+
+                const result = await Promise.race([loginPromise, timeoutPromise]);
+                console.log(`[DiscordService] SUCCESS: Login complete! Bot DID: ${this.client.user.id}`);
                 this.isInitializing = false;
                 return;
             } catch (err) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
+                if (err.message.includes('TOKEN_INVALID')) {
+                    console.error('[DiscordService] FATAL: Invalid token provided.');
+                    break;
+                }
                 if (attempts < maxAttempts) {
-                    console.log(`[DiscordService] Waiting 300s before retry...`);
-                    await new Promise(r => setTimeout(r, 300000));
+                    const backoff = Math.min(30000 * Math.pow(2, attempts), 300000); // Exponential backoff up to 5 mins
+                    console.log(`[DiscordService] Waiting ${backoff/1000}s before retry...`);
+                    await new Promise(r => setTimeout(r, backoff));
                 }
             }
         }
@@ -143,14 +150,15 @@ class DiscordService {
     }
 
     async respond(message) {
-        if (this.isResponding) {
-            console.log("[DiscordService] Already responding to a message in this session. Skipping.");
+        const channelId = message.channel.id;
+        if (this.respondingChannels.has(channelId)) {
+            console.log(`[DiscordService] Already responding in channel ${channelId}. Skipping.`);
             return;
         }
         
         const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
-        this.isResponding = true;
+        this.respondingChannels.add(channelId);
         const normChannelId = this.getNormalizedChannelId(message);
         let imageAnalysisResult = "";
         
@@ -175,7 +183,7 @@ class DiscordService {
                 }
             }
 
-            const history = await this.fetchAdminHistory(15);
+            const history = await this.fetchChannelHistory(message.channel, 15);
             const temporalContext = await temporalService.getEnhancedTemporalContext();
             const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
             const dynamicBlurbs = dataStore.getPersonaBlurbs();
@@ -221,7 +229,7 @@ class DiscordService {
             } catch (e) {}
         } finally {
             this._stopTypingLoop(typingInterval);
-            this.isResponding = false;
+            this.respondingChannels.delete(channelId);
         }
     }
 
@@ -317,13 +325,23 @@ class DiscordService {
         if (!admin) return [];
         try {
             const dmChannel = admin.dmChannel || await admin.createDM();
-            const messages = await dmChannel.messages.fetch({ limit });
+            return await this.fetchChannelHistory(dmChannel, limit);
+        } catch (e) { return []; }
+    }
+
+    async fetchChannelHistory(channel, limit = 50) {
+        try {
+            const messages = await channel.messages.fetch({ limit });
             return messages.map(m => ({
                 role: m.author.id === this.client.user.id ? 'assistant' : 'user',
                 content: m.content,
+                author: m.author.username,
                 timestamp: m.createdTimestamp
             })).reverse();
-        } catch (e) { return []; }
+        } catch (e) {
+            console.error(`[DiscordService] Error fetching history for channel ${channel.id}:`, e.message);
+            return [];
+        }
     }
 
     get status() { return this.isEnabled && this.client?.isReady() ? "online" : "offline"; }

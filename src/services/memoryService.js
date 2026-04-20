@@ -177,7 +177,7 @@ CRITICAL:
 
         // Enforce Format: [TAG] [m/d/year] Content
         const tag = type.toUpperCase();
-        const finalEntry = (entryText.includes(`[${tag}]`) && /\[\d+\/\d+\/\d+\]/.test(entryText)) ? entryText : `[${tag}] [${dateStr}] ${entryText.replace(/^\[.*?\]\s*(\[\d+\/\d+\/\d+\])?\s*/, "")}`;
+        let finalEntry = (entryText.includes(`[${tag}]`) && /\[\d+\/\d+\/\d+\]/.test(entryText)) ? entryText : `[${tag}] [${dateStr}] ${entryText.replace(/^\[.*?\]\s*(\[\d+\/\d+\/\d+\])?\s*/, "")}`;
 
         // Final Quality & Substance Check (Old filter logic integration)
         const evaluationPrompt = `

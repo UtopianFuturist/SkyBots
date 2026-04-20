@@ -145,7 +145,10 @@ class MemoryService {
     if (!consistency.consistent) return null;
 
     const history = await this.fetchRecentMemories(this.hashtag, 20);
-    if (checkExactRepetition(cleanContext, history, 20)) return;
+    if (checkExactRepetition(cleanContext, history, 20)) {
+        console.log(`[MemoryService] Skipping duplicate memory entry for ${this.hashtag}`);
+        return;
+    }
 
     try {
       const dateStr = new Date().toLocaleDateString('en-US'); // m/d/year
@@ -201,9 +204,10 @@ CRITICAL:
         const hashtagStr = `\n\n${this.hashtag}`;
         const maxChars = 295;
 
+        // Ensure we are using the configured hashtag dynamically
         if (!finalEntry.includes(this.hashtag)) {
             if (finalEntry.length + hashtagStr.length > maxChars) {
-                console.log(`[MemoryService] Entry too long. Truncating to fit hashtag.`);
+                console.log(`[MemoryService] Entry too long. Truncating to fit ${this.hashtag}.`);
                 const allowedLength = maxChars - hashtagStr.length;
                 finalEntry = finalEntry.substring(0, allowedLength).trim() + "...";
             }
@@ -231,13 +235,16 @@ CRITICAL:
         }
 
         if (result) {
+            console.log(`[MemoryService] SUCCESS: Created memory entry on Bluesky: ${result.uri}`);
             await dataStore.addInternalLog("memory_entry", finalEntry);
             this.recentMemories.push({ text: finalEntry, indexedAt: new Date().toISOString() });
             if (this.recentMemories.length > 15) this.recentMemories.shift();
         }
         return result;
       }
-    } catch (error) {}
+    } catch (error) {
+        console.error("[MemoryService] Error in _createMemoryEntryInternal:", error.message);
+    }
     return null;
   }
 

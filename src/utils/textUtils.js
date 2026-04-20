@@ -31,7 +31,25 @@ export const sanitizeThinkingTags = (text) => {
   result = result.replace(/\[(varied|meta)\]/gi, '');
   result = result.replace(/\n\n(This combines|Draft \d)[\s\S]*$/gi, '');
 
-  return result.trim().replace(/\n{3,}/g, '\n\n');
+  let cleaned = result.trim().replace(/\n{3,}/g, '\n\n');
+  
+  // Stop threaded comments from starting with a single period
+  if (cleaned.startsWith('.')) {
+      cleaned = cleaned.substring(1).trim();
+  }
+  
+  return cleaned;
+};
+
+export const containsInternalFilterTalk = (text) => {
+    if (!text) return false;
+    const lower = text.toLowerCase();
+    const markers = [
+        "internal filter", "safety filter", "content filter", "ai safety", 
+        "refusal to answer", "policy violation", "guidelines prevent me",
+        "as an ai", "persona alignment", "unethical and harmful"
+    ];
+    return markers.some(m => lower.includes(m));
 };
 
 export const sanitizeCharacterCount = (text, limit = 300) => {

@@ -120,6 +120,18 @@ class OrchestratorService {
         this.addTaskToQueue(() => this.checkBlueskySpontaneity(), "bluesky_spontaneity");
         this.addTaskToQueue(() => this.checkMaintenanceTasks(), "maintenance_tasks");
         this.addTaskToQueue(() => this.performTemporalMaintenance(), "temporal_maintenance");
+        
+        // Reimplement making memoryservice entry posts on Bluesky
+        if (memoryService.isEnabled()) {
+            this.addTaskToQueue(async () => {
+                const recentLogs = await dataStore.getInternalLogs(50);
+                const contextualSummary = recentLogs.map(l => l.text).join("\n").substring(0, 1000);
+                if (contextualSummary.length > 100) {
+                    await memoryService.createMemoryEntry("reflection", contextualSummary);
+                }
+            }, "memory_entry_generation");
+        }
+
         if (now - this.lastScoutMission >= 2 * 3600000) {
             this.addTaskToQueue(() => this.performScoutMission(), "scout_mission");
             this.lastScoutMission = now;

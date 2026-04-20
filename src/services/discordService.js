@@ -54,6 +54,7 @@ class DiscordService {
 
         this.client.on('messageCreate', async (message) => {
             try {
+                console.log(`[DiscordService] Inbound message from ${message.author.tag}: ${message.content.substring(0, 50)}...`);
                 await this.handleMessage(message);
             } catch (err) {
                 console.error('[DiscordService] Error in messageCreate listener:', err);
@@ -142,6 +143,11 @@ class DiscordService {
     }
 
     async respond(message) {
+        if (this.isResponding) {
+            console.log("[DiscordService] Already responding to a message in this session. Skipping.");
+            return;
+        }
+        
         const text = message.content.toLowerCase();
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         this.isResponding = true;
@@ -152,12 +158,19 @@ class DiscordService {
 
         try {
             if (message.attachments.size > 0) {
+                console.log(`[DiscordService] Processing ${message.attachments.size} attachments...`);
                 for (const [id, attachment] of message.attachments) {
                     if (attachment.contentType?.startsWith("image/")) {
                         try {
+                            console.log(`[DiscordService] Analyzing image: ${attachment.url}`);
                             const analysis = await llmService.analyzeImage(attachment.url, "User attachment");
-                            if (analysis) imageAnalysisResult += `[Image attached by user: ${analysis}] `;
-                        } catch (err) {}
+                            if (analysis) {
+                                console.log(`[DiscordService] Vision Analysis: ${analysis.substring(0, 100)}...`);
+                                imageAnalysisResult += `[Image attached by user: ${analysis}] `;
+                            }
+                        } catch (err) {
+                            console.error("[DiscordService] Vision analysis failed:", err.message);
+                        }
                     }
                 }
             }
@@ -167,7 +180,7 @@ class DiscordService {
             const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
             const dynamicBlurbs = dataStore.getPersonaBlurbs();
 
-            const systemPrompt = "You are talking to " + (isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username) + " on Discord.\nPersona: " + config.TEXT_SYSTEM_PROMPT + "\n" + temporalContext + (dynamicBlurbs.length > 0 ? "\nDynamic Persona: \n" + dynamicBlurbs.map(b => '- ' + b.text).join('\n') : '') + "\n\n--- SOCIAL NARRATIVE ---\n" + hierarchicalSummary.dailyNarrative + "\n" + hierarchicalSummary.shortTerm + "\n---\n\nIMAGE ANALYSIS: " + (imageAnalysisResult || 'No images.');
+            const systemPrompt = "You are talking to " + (isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username) + " on Discord.\nPersona: " + config.TEXT_SYSTEM_PROMPT + "\n" + temporalContext + (dynamicBlurbs.length > 0 ? "\nDynamic Persona: \n" + dynamicBlurbs.map(b => '- ' + b.text).join('\n') : '') + "\n\n--- SOCIAL NARRATIVE ---\n" + (hierarchicalSummary.dailyNarrative || "") + "\n" + (hierarchicalSummary.shortTerm || "") + "\n---\n\nIMAGE ANALYSIS: " + (imageAnalysisResult || 'No images.');
             
             const messages = [
                 { role: 'system', content: systemPrompt },
@@ -175,21 +188,37 @@ class DiscordService {
                 { role: 'user', content: message.content }
             ];
 
+            console.log("[DiscordService] Generating plan...");
             const plan = await llmService.performPrePlanning(messages, { platform: "discord", isAdmin });
             
+            console.log("[DiscordService] Evaluating plan...");
             const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
+            
             if (evaluation.decision === "proceed") {
                 const actions = evaluation.refined_actions || plan.actions;
-                console.log(`[DiscordService] Executing ${actions.length} planned actions.`);
-                for (const action of actions) {
-                    const result = await this.botInstance.executeAction(action, { channel: message.channel, author: message.author, platform: "discord" });
-                    console.log(`[DiscordService] Action ${action.tool} result: ${result.success ? 'SUCCESS' : 'FAILED'}`);
+                if (!actions || actions.length === 0) {
+                    console.log("[DiscordService] No actions planned. Sending default response.");
+                    const fallbackRes = await llmService.generateResponse(messages, { platform: "discord" });
+                    if (fallbackRes) await this._send(message.channel, fallbackRes);
+                } else {
+                    console.log(`[DiscordService] Executing ${actions.length} planned actions.`);
+                    for (const action of actions) {
+                        const result = await this.botInstance.executeAction(action, { channel: message.channel, author: message.author, platform: "discord" });
+                        console.log(`[DiscordService] Action ${action.tool} result: ${result.success ? 'SUCCESS' : 'FAILED'}`);
+                    }
                 }
             } else {
-                console.log(`[DiscordService] Plan evaluation rejected: ${evaluation.reason || 'No reason provided'}`);
+                console.log(`[DiscordService] Plan evaluation rejected: ${evaluation.reason || 'No reason provided'}. Sending fallback.`);
+                const fallbackRes = await llmService.generateResponse(messages, { platform: "discord" });
+                if (fallbackRes) await this._send(message.channel, fallbackRes);
             }
         } catch (error) {
-            console.error("[DiscordService] Error:", error);
+            console.error("[DiscordService] Error in respond():", error);
+            // Attempt a simple fallback response on error
+            try {
+                const fallbackRes = await llmService.generateResponse([{ role: 'user', content: message.content }], { platform: "discord" });
+                if (fallbackRes) await this._send(message.channel, fallbackRes);
+            } catch (e) {}
         } finally {
             this._stopTypingLoop(typingInterval);
             this.isResponding = false;

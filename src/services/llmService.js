@@ -131,6 +131,13 @@ class LLMService {
             let content = data.choices?.[0]?.message?.content || "";
             if (!content || this._isRefusal(content)) continue;
 
+            // Stop the bot from posting on Bluesky about our bot's internal filters
+            const { containsInternalFilterTalk } = await import("../utils/textUtils.js");
+            if (containsInternalFilterTalk(content)) {
+                console.warn("[LLMService] Filtered response containing internal filter talk.");
+                continue;
+            }
+
             if (this.ds) await this.ds.addInternalLog("llm_response" + (options.task ? ":" + options.task : ""), content);
 
             if ((options.platform === "discord" || options.platform === "bluesky") && !isTechnical) {
@@ -195,28 +202,65 @@ Respond with JSON:
 
   async analyzeImage(image, alt, options = {}) {
     if (!image) return "No image provided.";
-    let base64 = typeof image === 'string' ? image : image.toString('base64');
-    if (typeof image === 'string' && image.startsWith('http')) {
-        try {
+    let base64 = "";
+    try {
+        if (Buffer.isBuffer(image)) {
+            base64 = image.toString('base64');
+        } else if (typeof image === 'string' && (image.startsWith('http://') || image.startsWith('https://'))) {
+            console.log(`[LLMService] Fetching image from URL for vision analysis: ${image}`);
             const res = await fetch(image);
             const buffer = await res.buffer();
             base64 = buffer.toString('base64');
-        } catch (e) { return "Image fetch failed."; }
+        } else if (typeof image === 'string') {
+            base64 = image; // Assume it's already base64
+        } else {
+            return "Unsupported image format.";
+        }
+    } catch (e) {
+        console.error("[LLMService] Image fetch/conversion failed:", e.message);
+        return "Image processing failed.";
     }
+
     const payload = {
-      model: config.VISION_MODEL,
-      messages: [ { role: "user", content: [ { type: "text", text: options.prompt || "Describe this image." }, { type: "image_url", image_url: { url: "data:image/png;base64," + base64 } } ] } ],
-      max_tokens: 1024, temperature: 0.2
+      model: config.VISION_MODEL || "nvidia/llama-3.2-11b-vision-instruct",
+      messages: [ 
+        { 
+          role: "user", 
+          content: [ 
+            { type: "text", text: options.prompt || "Describe this image in detail, focusing on subjects, mood, and any text present." }, 
+            { type: "image_url", image_url: { url: "data:image/png;base64," + base64 } } 
+          ] 
+        } 
+      ],
+      max_tokens: 1024, 
+      temperature: 0.2
     };
+
     try {
+      console.log(`[LLMService] Sending vision analysis request to ${config.VISION_MODEL}...`);
       const response = await fetch("https://integrate.api.nvidia.com/v1/chat/completions", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": "Bearer " + config.NVIDIA_NIM_API_KEY },
+        headers: { 
+            "Content-Type": "application/json", 
+            "Authorization": "Bearer " + config.NVIDIA_NIM_API_KEY 
+        },
         body: JSON.stringify(payload)
       });
+      
+      if (!response.ok) {
+          const errText = await response.text();
+          console.error(`[LLMService] Vision API error (${response.status}):`, errText);
+          return "Vision API returned an error.";
+      }
+
       const data = await response.json();
-      return data.choices?.[0]?.message?.content || "";
-    } catch (err) { return "Vision analysis failed."; }
+      const result = data.choices?.[0]?.message?.content || "";
+      console.log(`[LLMService] Vision analysis complete. Length: ${result.length}`);
+      return result;
+    } catch (err) { 
+      console.error("[LLMService] Vision analysis exception:", err.message);
+      return "Vision analysis failed due to an exception."; 
+    }
   }
 
   async generateAltText(visionAnalysis, topic, options = {}) {

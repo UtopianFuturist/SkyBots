@@ -10,7 +10,7 @@ import { isSlop, checkSimilarity } from '../utils/textUtils.js';
 class DiscordService {
     constructor() {
         this.isEnabled = !!config.DISCORD_BOT_TOKEN;
-        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '');
+        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
         this.nickname = config.BOT_NAME || 'Bot';
@@ -30,14 +30,19 @@ class DiscordService {
     }
 
     _createClient() {
+        // Most stable config for Render environments
         const client = new Client({
-            partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
+            partials: [Partials.Channel, Partials.Message],
             intents: [
                 GatewayIntentBits.Guilds,
-                GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.MessageContent
-            ]
+            ],
+            // Hardcode some rest options that help with proxy/timeout issues
+            rest: {
+                timeout: 60000,
+                retries: 5
+            }
         });
 
         client.on('ready', () => {
@@ -46,15 +51,29 @@ class DiscordService {
         });
 
         client.on('debug', m => {
-            if (m.includes('Session Limit') || m.includes('Heartbeat') || m.includes('Identified') || m.includes('Ready')) {
+            if (m.includes('Session Limit') || m.includes('Heartbeat') || m.includes('Identified') || m.includes('Ready') || m.includes('gateway')) {
                 console.log(`[DiscordService] [DEBUG] ${m}`);
             }
         });
+
         client.on('error', e => console.error(`[DiscordService] [ERROR] ${e.message}`, e));
         client.on('warn', w => console.warn(`[DiscordService] [WARN] ${w}`));
+
+        client.on('shardReady', (id) => console.log(`[DiscordService] [SHARD ${id}] READY`));
         client.on('shardError', (e, id) => console.error(`[DiscordService] [SHARD ${id} ERROR] ${e.message}`));
-        client.on('shardDisconnect', (e, id) => console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] ${e?.message || 'Unknown'}`));
+        client.on('shardDisconnect', (e, id) => {
+            console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] ${e?.message || 'Unknown'}`);
+            // If we disconnect during init, we might need a push
+            if (this.isInitializing) {
+                console.log('[DiscordService] Disconnected during initialization. Will retry...');
+            }
+        });
         client.on('shardReconnecting', id => console.log(`[DiscordService] [SHARD ${id} RECONNECTING...]`));
+        client.on('shardResume', (id, replayed) => console.log(`[DiscordService] [SHARD ${id}] RESUMED (replayed ${replayed} events)`));
+
+        client.on('invalidated', () => {
+            console.error('[DiscordService] Session invalidated. Token might be compromised or session was forcefully closed.');
+        });
 
         client.on('messageCreate', async (message) => {
             try {
@@ -87,21 +106,20 @@ class DiscordService {
                 console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
                 this.client = this._createClient();
 
-                const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
+                // We use client.login but also wrap the whole wait for ready in a timeout
+                await new Promise((resolve, reject) => {
+                    const timeout = setTimeout(() => reject(new Error("Discord login/ready timed out after 180s")), 180000);
 
-                await Promise.race([loginPromise, timeoutPromise]);
-
-                // Wait for ready event if not already ready
-                if (!this.client.isReady()) {
-                    await new Promise((resolve, reject) => {
-                        const timeout = setTimeout(() => reject(new Error("Timed out waiting for Ready event")), 30000);
-                        this.client.once('ready', () => {
-                            clearTimeout(timeout);
-                            resolve();
-                        });
+                    this.client.once('ready', () => {
+                        clearTimeout(timeout);
+                        resolve();
                     });
-                }
+
+                    this.client.login(this.token).catch(err => {
+                        clearTimeout(timeout);
+                        reject(err);
+                    });
+                });
 
                 console.log(`[DiscordService] SUCCESS: Login complete! Bot User: ${this.client.user.tag}`);
                 this.isInitializing = false;

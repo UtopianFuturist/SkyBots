@@ -35,6 +35,7 @@ class OrchestratorService {
         this.lastKeywordEvolution = Date.now();
         this.lastDiscordGiftImage = Date.now();
         this.lastPostPostReflection = Date.now();
+        this.lastMemoryGeneration = 0;
     }
 
     setBotInstance(bot) { this.bot = bot; }
@@ -126,7 +127,7 @@ class OrchestratorService {
             this.addTaskToQueue(async () => {
                 const recentLogs = await dataStore.getInternalLogs(50);
                 const contextualSummary = recentLogs.map(l => l.text).join("\n").substring(0, 1000);
-                if (contextualSummary.length > 100) {
+                if (contextualSummary.length > 200) {
                     await memoryService.createMemoryEntry("reflection", contextualSummary);
                 }
             }, "memory_entry_generation");

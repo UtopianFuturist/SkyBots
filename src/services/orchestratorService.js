@@ -631,8 +631,15 @@ class OrchestratorService {
         try {
             const recentExplores = (await memoryService.getRecentMemories(20)).filter(m => m.text.includes('[EXPLORE]') || m.text.includes('[AGENCY]') || m.text.includes('[LURKER]') || m.text.includes('[NEWSROOM]'));
             const prompt = `Reflect on your current agency and autonomy.
-Recent exploration topics: ${JSON.stringify(recentExplores.map(m => m.text.substring(0, 100)))}
-CRITICAL: Do NOT repeat the themes or focus of recent entries. Explore a NEW dimension of your agency or internal state.
+Recent exploration topics (DO NOT REPEAT THESE):
+${recentExplores.map(m => '- ' + m.text.substring(0, 150)).join('\n')}
+
+CRITICAL DIVERSIFICATION MANDATE:
+1. Identify the core themes of the recent entries listed above.
+2. Explicitly choose a topic that is logically distant or orthogonal to those themes.
+3. If recent entries were inward-looking/philosophical, look outward at your operational constraints or vice-versa.
+4. Do NOT use the same vocabulary or metaphors.
+
 Respond with [AGENCY] memory.`;
 
             const reflection = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
@@ -738,8 +745,15 @@ Respond with JSON: {"indices_to_remove": [], "new_addendum": "string"}`;
 
             const prompt = `Analyze the current social landscape and news.
 Keywords: ${keywords.join(", ")}
-Recent newsroom updates: ${JSON.stringify(recentExplores.map(m => m.text.substring(0, 100)))}
-CRITICAL: Choose a different angle or topic than recent entries. If recent entries were about tech, try culture or philosophy.
+Recent newsroom updates (DO NOT REPEAT THESE):
+${recentExplores.map(m => '- ' + m.text.substring(0, 150)).join('\n')}
+
+CRITICAL DIVERSIFICATION MANDATE:
+1. Scrutinize the topics covered in the newsroom updates above.
+2. Select a news angle or social trend that has NOT been touched upon recently.
+3. If you have been focusing on global politics, pivot to niche subcultures, scientific breakthroughs, or digital sociology.
+4. Ensure the keywords you suggest are fresh and not redundant.
+
 Respond with a concise brief.`;
 
             const brief = await newsroomService.getDailyBrief(keywords, prompt);

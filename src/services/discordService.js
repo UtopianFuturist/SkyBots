@@ -25,51 +25,46 @@ class DiscordService {
         if (!this.isEnabled || this.isInitializing) return;
         this.isInitializing = true;
         this.botInstance = botInstance;
-
         console.log('[DiscordService] Starting initialization...');
+        this.loginLoop();
+    }
 
-        if (this.client) {
-            try { this.client.destroy(); } catch (e) {}
-        }
-
-        this.client = new Client({
+    _createClient() {
+        const client = new Client({
             partials: [Partials.Channel, Partials.Message, Partials.Reaction, Partials.User],
             intents: [
                 GatewayIntentBits.Guilds,
                 GatewayIntentBits.GuildMessages,
                 GatewayIntentBits.DirectMessages,
-                GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent
             ]
-
         });
 
-        this.client.on('ready', () => {
-            console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}`);
-            this.client.user.setActivity('the currents', { type: 'LISTENING' });
+        client.on('ready', () => {
+            console.log(`[DiscordService] SUCCESS: Logged in as ${client.user.tag}`);
+            client.user.setActivity('the currents', { type: 'LISTENING' });
         });
 
-        this.client.on('debug', m => {
-            if (m.includes('Session Limit') || m.includes('Heartbeat') || m.includes('Identified')) {
+        client.on('debug', m => {
+            if (m.includes('Session Limit') || m.includes('Heartbeat') || m.includes('Identified') || m.includes('Ready')) {
                 console.log(`[DiscordService] [DEBUG] ${m}`);
             }
         });
-        this.client.on('error', e => console.error(`[DiscordService] [ERROR] ${e.message}`, e));
-        this.client.on('warn', w => console.warn(`[DiscordService] [WARN] ${w}`));
-        this.client.on('shardError', (e, id) => console.error(`[DiscordService] [SHARD ${id} ERROR] ${e.message}`));
-        this.client.on('shardDisconnect', (e, id) => console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] ${e?.message || 'Unknown'}`));
-        this.client.on('shardReconnecting', id => console.log(`[DiscordService] [SHARD ${id} RECONNECTING...]`));
+        client.on('error', e => console.error(`[DiscordService] [ERROR] ${e.message}`, e));
+        client.on('warn', w => console.warn(`[DiscordService] [WARN] ${w}`));
+        client.on('shardError', (e, id) => console.error(`[DiscordService] [SHARD ${id} ERROR] ${e.message}`));
+        client.on('shardDisconnect', (e, id) => console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] ${e?.message || 'Unknown'}`));
+        client.on('shardReconnecting', id => console.log(`[DiscordService] [SHARD ${id} RECONNECTING...]`));
 
-        this.client.on('messageCreate', async (message) => {
+        client.on('messageCreate', async (message) => {
             try {
-                console.log(`[DiscordService] Inbound message from ${message.author.tag}: ${message.content.substring(0, 50)}...`);
                 await this.handleMessage(message);
             } catch (err) {
                 console.error('[DiscordService] Error in messageCreate listener:', err);
             }
         });
 
-        this.loginLoop();
+        return client;
     }
 
     async loginLoop() {
@@ -79,22 +74,36 @@ class DiscordService {
             return;
         }
 
-        console.log(`[DiscordService] Token diagnostic: length=${this.token.length}, start=${this.token.substring(0, 5)}..., end=...${this.token.substring(this.token.length - 5)}`);
-
-
-
         let attempts = 0;
         const maxAttempts = 10;
         while (attempts < maxAttempts) {
             attempts++;
             try {
+                if (this.client) {
+                    try { await this.client.destroy(); } catch (e) {}
+                    this.client = null;
+                }
+
                 console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
+                this.client = this._createClient();
 
                 const loginPromise = this.client.login(this.token);
                 const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
 
                 await Promise.race([loginPromise, timeoutPromise]);
-                console.log(`[DiscordService] SUCCESS: Login complete! Bot User: ${this.client.user.tag} (${this.client.user.id})`);
+
+                // Wait for ready event if not already ready
+                if (!this.client.isReady()) {
+                    await new Promise((resolve, reject) => {
+                        const timeout = setTimeout(() => reject(new Error("Timed out waiting for Ready event")), 30000);
+                        this.client.once('ready', () => {
+                            clearTimeout(timeout);
+                            resolve();
+                        });
+                    });
+                }
+
+                console.log(`[DiscordService] SUCCESS: Login complete! Bot User: ${this.client.user.tag}`);
                 this.isInitializing = false;
                 return;
             } catch (err) {
@@ -104,7 +113,7 @@ class DiscordService {
                     break;
                 }
                 if (attempts < maxAttempts) {
-                    const backoff = Math.min(30000 * Math.pow(2, attempts), 300000); // Exponential backoff up to 5 mins
+                    const backoff = Math.min(30000 * Math.pow(2, attempts), 300000);
                     console.log(`[DiscordService] Waiting ${backoff/1000}s before retry...`);
                     await new Promise(r => setTimeout(r, backoff));
                 }
@@ -322,18 +331,30 @@ class DiscordService {
 
     async getAdminUser() {
         if (!this.client?.isReady()) return null;
-        if (this.adminId) return await this.client.users.fetch(this.adminId);
-
-        const guilds = this.client.guilds.cache;
-        for (const [id, guild] of guilds) {
+        if (this.adminId) {
             try {
-                const members = await guild.members.fetch({ query: this.adminName, limit: 1 });
-                const admin = members.first();
-                if (admin && admin.user.username === this.adminName) {
-                    this.adminId = admin.user.id;
-                    return admin.user;
-                }
-            } catch (e) {}
+                return await this.client.users.fetch(this.adminId);
+            } catch (e) {
+                this.adminId = null;
+            }
+        }
+
+        // Search in cache first
+        const cachedUser = this.client.users.cache.find(u => u.username === this.adminName);
+        if (cachedUser) {
+            this.adminId = cachedUser.id;
+            return cachedUser;
+        }
+
+        // If not in cache, we might have to wait for them to message us or find them in a guild we can access
+        // Since we don't have GuildMembers intent, we can't fetch all members.
+        // We will try to find the admin by iterating through visible users in guilds
+        for (const guild of this.client.guilds.cache.values()) {
+            const member = guild.members.cache.find(m => m.user.username === this.adminName);
+            if (member) {
+                this.adminId = member.user.id;
+                return member.user;
+            }
         }
         return null;
     }

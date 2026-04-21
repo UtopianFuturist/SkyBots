@@ -118,7 +118,11 @@ Respond with JSON:
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: synthPrompt }], { useStep: true, task: 'core_self_synthesis' });
             const coreSelf = llmService.extractJson(res);
-            if (!coreSelf) throw new Error("No JSON found in Core Self synthesis");
+            if (!coreSelf) {
+                console.warn("[Introspection] No JSON found in Core Self synthesis. Using raw response.");
+                await dataStore.addInternalLog("core_self_state", { raw: res });
+                return { raw: res };
+            }
             await dataStore.addInternalLog("core_self_state", coreSelf);
             return coreSelf;
         } catch (e) {

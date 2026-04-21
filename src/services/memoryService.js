@@ -221,26 +221,31 @@ CRITICAL:
             }
         }
 
-        // Unified Threading Logic: Always find the root of the thread or start a new one
-        const memories = await this.fetchRecentMemories(this.hashtag, 1);
+        // Unified Threading Logic: Priority to DataStore root, fallback to search, otherwise start new
+        let threadRoot = await dataStore.getMemoryThreadRoot(this.hashtag);
         let result = null;
 
-        if (memories.length > 0) {
-            const latest = memories[0].originalPost;
-            console.log(`[MemoryService] Threading memory under: ${latest.uri}`);
-
-            // Ensure we use the root URI for the thread if it exists, otherwise use the post itself
-            const parent = {
-                uri: latest.uri,
-                cid: latest.cid,
-                record: latest.record
-            };
-
-            result = await blueskyService.postReply(parent, finalEntry);
+        if (threadRoot) {
+            console.log(`[MemoryService] Threading memory under stored root: ${threadRoot.uri}`);
+            result = await blueskyService.postReply(threadRoot, finalEntry);
         } else {
-            console.log(`[MemoryService] Initializing new memory thread for ${this.hashtag}`);
-            result = await blueskyService.post(finalEntry);
-            if (result) this.rootPost = result;
+            const memories = await this.fetchRecentMemories(this.hashtag, 1);
+            if (memories.length > 0) {
+                const latest = memories[0].originalPost;
+                const parent = { uri: latest.uri, cid: latest.cid, record: latest.record };
+                const root = latest.record.reply?.root || { uri: latest.uri, cid: latest.cid };
+
+                console.log(`[MemoryService] Threading memory under latest: ${latest.uri}`);
+                result = await blueskyService.postReply(parent, finalEntry);
+                if (result) await dataStore.setMemoryThreadRoot(this.hashtag, root);
+            } else {
+                console.log(`[MemoryService] Initializing new memory thread for ${this.hashtag}`);
+                result = await blueskyService.post(finalEntry);
+                if (result) {
+                    this.rootPost = result;
+                    await dataStore.setMemoryThreadRoot(this.hashtag, { uri: result.uri, cid: result.cid });
+                }
+            }
         }
 
         if (result) {

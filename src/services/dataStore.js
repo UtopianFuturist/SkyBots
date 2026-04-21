@@ -288,6 +288,8 @@ class DataStore {
   getRefusalCounts() { return { total: (this.db.data.refusal_logs || []).length }; }
   getDiscordConversation(channelId) { return (this.db.data.interactions || []).filter(i => i.platform === "discord" && i.channelId === channelId); }
   getLastDiscordGiftTime() { return this.db.data.last_discord_gift_time || 0; }
+  getMemoryThreadRoot(hashtag) { if (!this.db.data.memory_threads) return null; return this.db.data.memory_threads[hashtag]; }
+  async setMemoryThreadRoot(hashtag, root) { if (!this.db.data.memory_threads) this.db.data.memory_threads = {}; this.db.data.memory_threads[hashtag] = root; await this.write(); }
 }
 
 export const dataStore = new DataStore();

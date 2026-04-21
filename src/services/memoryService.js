@@ -51,7 +51,7 @@ class MemoryService {
     try {
       console.log(`[MemoryService] Fetching memories for ${hashtag}...`);
       // Use getAuthorFeed (Reliable) instead of search (Unreliable/403)
-      const posts = await blueskyService.getUserPosts(blueskyService.did, limit * 3);
+      const posts = await blueskyService.getUserPosts(blueskyService.did, Math.min(limit * 3, 100));
 
       this.recentMemories = posts
         .filter(p => p.post.record.text.includes(hashtag))

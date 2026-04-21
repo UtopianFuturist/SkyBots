@@ -166,7 +166,7 @@ class OrchestratorService {
 
     async checkMaintenanceTasks() {
         const now = Date.now();
-        if (now - this.lastCoreSelfSynthesis >= 4 * 3600000) {
+        if (now - this.lastCoreSelfSynthesis >= 12 * 3600000) {
             await introspectionService.synthesizeCoreSelf();
             this.lastCoreSelfSynthesis = now;
         }

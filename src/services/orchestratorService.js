@@ -629,12 +629,20 @@ class OrchestratorService {
 
     async performAgencyReflection() {
         try {
-            const reflection = await llmService.generateResponse([{ role: 'system', content: "Reflect on your current agency and autonomy. [AGENCY] memory?" }], { useStep: true });
+            const recentExplores = (await memoryService.getRecentMemories(20)).filter(m => m.text.includes('[EXPLORE]') || m.text.includes('[AGENCY]') || m.text.includes('[LURKER]') || m.text.includes('[NEWSROOM]'));
+            const prompt = `Reflect on your current agency and autonomy.
+Recent exploration topics: ${JSON.stringify(recentExplores.map(m => m.text.substring(0, 100)))}
+CRITICAL: Do NOT repeat the themes or focus of recent entries. Explore a NEW dimension of your agency or internal state.
+Respond with [AGENCY] memory.`;
+
+            const reflection = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
             if (reflection) {
                 await memoryService.createMemoryEntry('explore', "[AGENCY] " + reflection);
                 await introspectionService.performAAR("agency_reflection", reflection, { success: true });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("[Orchestrator] Agency reflection failed:", e);
+        }
     }
 
     async performShadowAnalysis() {
@@ -725,7 +733,16 @@ Respond with JSON: {"indices_to_remove": [], "new_addendum": "string"}`;
 
     async performNewsroomUpdate() {
         try {
-            const brief = await newsroomService.getDailyBrief(dataStore.getDeepKeywords());
+            const recentExplores = (await memoryService.getRecentMemories(20)).filter(m => m.text.includes('[EXPLORE]') || m.text.includes('[NEWSROOM]'));
+            const keywords = dataStore.getDeepKeywords();
+
+            const prompt = `Analyze the current social landscape and news.
+Keywords: ${keywords.join(", ")}
+Recent newsroom updates: ${JSON.stringify(recentExplores.map(m => m.text.substring(0, 100)))}
+CRITICAL: Choose a different angle or topic than recent entries. If recent entries were about tech, try culture or philosophy.
+Respond with a concise brief.`;
+
+            const brief = await newsroomService.getDailyBrief(keywords, prompt);
             if (brief && brief.brief) {
                 if (brief.new_keywords?.length > 0) {
                     const current = dataStore.getDeepKeywords();
@@ -734,7 +751,9 @@ Respond with JSON: {"indices_to_remove": [], "new_addendum": "string"}`;
                 await memoryService.createMemoryEntry('explore', "[NEWSROOM] " + brief.brief);
                 await introspectionService.performAAR("newsroom_update", brief.brief, { success: true });
             }
-        } catch (e) {}
+        } catch (e) {
+            console.error("[Orchestrator] Newsroom update failed:", e);
+        }
     }
 
     async performSelfReflection() {

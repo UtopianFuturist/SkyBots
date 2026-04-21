@@ -40,14 +40,8 @@ class DiscordService {
                 GatewayIntentBits.DirectMessages,
                 GatewayIntentBits.GuildMembers,
                 GatewayIntentBits.MessageContent
-            ],
-            rest: {
-                timeout: 90000,
-                retries: 10,
-                offset: 500,
-                // Appending a common UA string to see if it helps with any environment blocks
-                userAgentAppended: 'Mozilla/5.0 (compatible; SydneyBot/1.0; +https://github.com/render-examples/bot)'
-            }
+            ]
+
         });
 
         this.client.on('ready', () => {
@@ -87,22 +81,7 @@ class DiscordService {
 
         console.log(`[DiscordService] Token diagnostic: length=${this.token.length}, start=${this.token.substring(0, 5)}..., end=...${this.token.substring(this.token.length - 5)}`);
 
-        // Manual token/connectivity check
-        try {
-            console.log('[DiscordService] Testing Discord API connectivity manually...');
-            const fetch = (await import('node-fetch')).default;
-            const res = await fetch('https://discord.com/api/v10/users/@me', {
-                headers: { 'Authorization': `Bot ${this.token}`, 'User-Agent': 'SydneyBot (https://github.com/render-examples/bot, 1.0.0)' }
-            });
-            const data = await res.json();
-            if (res.ok) {
-                console.log(`[DiscordService] Manual API check SUCCESS: ${data.username}#${data.discriminator}`);
-            } else {
-                console.error(`[DiscordService] Manual API check FAILED: ${res.status} ${JSON.stringify(data)}`);
-            }
-        } catch (e) {
-            console.error(`[DiscordService] Manual API check ERROR: ${e.message}`);
-        }
+
 
         let attempts = 0;
         const maxAttempts = 10;

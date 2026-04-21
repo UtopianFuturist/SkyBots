@@ -9,6 +9,26 @@ class BlueskyService {
     this.password = config.BLUESKY_APP_PASSWORD;
   }
 
+  async _withRetry(fn, label = "Bluesky", maxRetries = 3) {
+    let lastError;
+    for (let i = 0; i < maxRetries; i++) {
+      try {
+        return await fn();
+      } catch (error) {
+        lastError = error;
+        // 503 NotEnoughResources or 429 Rate Limit
+        if (error.status === 503 || (error.message && error.message.includes('NotEnoughResources')) || error.status === 429) {
+          const delay = Math.pow(2, i) * 2000;
+          console.warn(`[${label}] Retrying after ${delay}ms due to error: ${error.message || error.status}`);
+          await new Promise(r => setTimeout(r, delay));
+          continue;
+        }
+        throw error;
+      }
+    }
+    throw lastError;
+  }
+
   async init() {
     if (!this.handle || !this.password) {
       console.warn('[BlueskyService] Credentials missing. Bluesky integration disabled.');
@@ -29,7 +49,7 @@ class BlueskyService {
     try {
       const params = { limit: 50 };
       if (cursor) params.cursor = cursor;
-      const { data } = await this.agent.listNotifications(params);
+      const { data } = await this._withRetry(() => this.agent.listNotifications(params), "listNotifications");
       return data;
     } catch (error) {
       console.error('[BlueskyService] Error fetching notifications:', error);
@@ -76,7 +96,7 @@ class BlueskyService {
           };
         }
 
-        const response = await this.agent.post(record);
+        const response = await this._withRetry(() => this.agent.post(record), "post");
         if (i === 0) {
           root = response;
           parent = response;
@@ -129,10 +149,6 @@ class BlueskyService {
         console.warn("[BlueskyService] Attempted to post only ellipses reply. Aborting.");
         return null;
       }
-      if (text.trim() === "...") {
-        console.warn("[BlueskyService] Attempted to post only ellipses. Aborting.");
-        return null;
-      }
       console.warn("[BlueskyService] Attempted to post blank reply. Aborting.");
       return null;
     }
@@ -154,7 +170,7 @@ class BlueskyService {
 
         if (i === 0 && options.embed) record.embed = options.embed;
 
-        const response = await this.agent.post(record);
+        const response = await this._withRetry(() => this.agent.post(record), "postReply");
         currentParent = { uri: response.uri, cid: response.cid };
 
         if (chunks.length > 1 && i < chunks.length - 1) {
@@ -170,7 +186,7 @@ class BlueskyService {
 
   async getProfile(actor) {
     try {
-      const { data } = await this.agent.getProfile({ actor }).catch(e => {
+      const { data } = await this._withRetry(() => this.agent.getProfile({ actor }), "getProfile").catch(e => {
           if (e.message && e.message.includes('Forbidden')) return { data: { handle: actor, did: null } };
           throw e;
       });
@@ -183,7 +199,7 @@ class BlueskyService {
 
   async getUserPosts(actor, limit = 20) {
     try {
-      const { data } = await this.agent.getAuthorFeed({ actor, limit }).catch(e => {
+      const { data } = await this._withRetry(() => this.agent.getAuthorFeed({ actor, limit }), "getAuthorFeed").catch(e => {
           if (e.message && e.message.includes('Forbidden')) return { data: { feed: [] } };
           throw e;
       });
@@ -197,7 +213,7 @@ class BlueskyService {
   async getTimeline(limit = 30) {
     if (!this.did) return { data: { feed: [] } };
     try {
-      return await this.agent.getTimeline({ limit }).catch(e => { console.warn("[BlueskyService] Timeline 403 fallback"); return { data: { feed: [] } }; });
+      return await this._withRetry(() => this.agent.getTimeline({ limit }), "getTimeline").catch(e => { console.warn("[BlueskyService] Timeline 403 fallback"); return { data: { feed: [] } }; });
     } catch (e) {
       console.error('[BlueskyService] Error fetching timeline:', e);
       return { data: { feed: [] } };
@@ -213,7 +229,7 @@ class BlueskyService {
           } else {
               Object.assign(params, optionsOrSort);
           }
-          const { data } = await this.agent.app.bsky.feed.searchPosts(params);
+          const { data } = await this._withRetry(() => this.agent.app.bsky.feed.searchPosts(params), "searchPosts");
           return data.posts;
       } catch (e) {
           console.error('[BlueskyService] Error searching posts:', e);
@@ -222,12 +238,12 @@ class BlueskyService {
   }
 
   async uploadBlob(data, encoding) {
-      return await this.agent.uploadBlob(data, { encoding });
+      return await this._withRetry(() => this.agent.uploadBlob(data, { encoding }), "uploadBlob");
   }
 
   async getDetailedThread(uri) {
       try {
-          const { data } = await this.agent.app.bsky.feed.getPostThread({ uri }).catch(e => {
+          const { data } = await this._withRetry(() => this.agent.app.bsky.feed.getPostThread({ uri }), "getPostThread").catch(e => {
               if (e.message && e.message.includes('Forbidden')) return { data: {} };
               throw e;
           });
@@ -244,7 +260,7 @@ class BlueskyService {
 
   async hasBotRepliedTo(uri) {
       try {
-          const { data } = await this.agent.app.bsky.feed.getPostThread({ uri }).catch(e => {
+          const { data } = await this._withRetry(() => this.agent.app.bsky.feed.getPostThread({ uri }), "hasBotRepliedTo").catch(e => {
               if (e.message && e.message.includes('Forbidden')) return { data: {} };
               throw e;
           });

@@ -41,6 +41,9 @@ class MemoryService {
     this.recentMemories = [];
     this.processingQueue = Promise.resolve();
     this.rootPost = null;
+    this._memoryCache = null;
+    this._lastFetchTime = 0;
+    this._cacheTTL = 30000; // 30 seconds
   }
 
   get js() { return this; }
@@ -48,12 +51,18 @@ class MemoryService {
 
   async fetchRecentMemories(hashtag, limit = 15) {
     if (!this.isEnabled()) return [];
+
+    // Simple cache to prevent redundant fetches within the same heartbeat cycle
+    const now = Date.now();
+    if (this._memoryCache && (now - this._lastFetchTime < this._cacheTTL) && limit <= this._memoryCache.length) {
+      return this._memoryCache.slice(0, limit);
+    }
+
     try {
       console.log(`[MemoryService] Fetching memories for ${hashtag}...`);
-      // Use getAuthorFeed (Reliable) instead of search (Unreliable/403)
-      const posts = await blueskyService.getUserPosts(blueskyService.did, Math.min(limit * 3, 100));
+      const posts = await blueskyService.getUserPosts(blueskyService.did, Math.max(limit * 3, 50));
 
-      this.recentMemories = posts
+      const memories = posts
         .filter(p => p.post.record.text.includes(hashtag))
         .map(p => ({
             uri: p.post.uri, cid: p.post.cid, text: p.post.record.text.replace(hashtag, '').trim(),
@@ -61,7 +70,11 @@ class MemoryService {
             timestamp: new Date(p.post.record.createdAt).getTime(),
             indexedAt: p.post.record.createdAt,
             originalPost: p.post
-        })).slice(0, limit);
+        }));
+
+      this.recentMemories = memories.slice(0, limit);
+      this._memoryCache = memories;
+      this._lastFetchTime = now;
 
       if (this.recentMemories.length > 0) {
         const first = this.recentMemories[0].originalPost;
@@ -70,7 +83,7 @@ class MemoryService {
       return this.recentMemories;
     } catch (error) {
         console.error('[MemoryService] Error fetching memories:', error.message);
-        return [];
+        return this._memoryCache ? this._memoryCache.slice(0, limit) : [];
     }
   }
 

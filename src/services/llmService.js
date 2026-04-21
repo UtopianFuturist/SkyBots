@@ -164,7 +164,8 @@ AVAILABLE TOOLS:
 - bsky_post: Post to Bluesky. Parameters: { "text": "string" }
 - browser_harness: Control a remote browser. Parameters: { "task": "string", "code": "string (optional)" }
 - search_google: Search the web. Parameters: { "query": "string" }
-- respond_to_user: Send a direct response. Parameters: { "text": "string" }
+- respond_to_user: Send a direct response back to the user on the current platform (${context.platform}). Parameters: { "text": "string" }
+- discord_message: Send a message to the Discord admin. Parameters: { "message": "string" }
 
 Respond with JSON:
 {

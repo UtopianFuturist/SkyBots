@@ -107,8 +107,9 @@ class DiscordService {
                 this.client = this._createClient();
 
                 // We use client.login but also wrap the whole wait for ready in a timeout
+                // Some environments have issues with Promise.race on login, so we use a more robust approach
                 await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => reject(new Error("Discord login/ready timed out after 180s")), 180000);
+                    const timeout = setTimeout(() => reject(new Error("Discord login/ready timed out after 300s")), 300000);
 
                     this.client.once('ready', () => {
                         clearTimeout(timeout);
@@ -126,12 +127,19 @@ class DiscordService {
                 return;
             } catch (err) {
                 console.error(`[DiscordService] Login attempt ${attempts} failed:`, err.message);
+                
                 if (err.message.includes('TOKEN_INVALID')) {
                     console.error('[DiscordService] FATAL: Invalid token provided.');
                     break;
                 }
+
+                // If it's a "this.dispatch" error, we might need a full client recreation
+                if (err.message.includes('dispatch')) {
+                    console.log('[DiscordService] Dispatch error detected. Re-initializing client...');
+                }
+
                 if (attempts < maxAttempts) {
-                    const backoff = Math.min(30000 * Math.pow(2, attempts), 300000);
+                    const backoff = Math.min(30000 * attempts, 300000); // Gradual backoff up to 5 mins
                     console.log(`[DiscordService] Waiting ${backoff/1000}s before retry...`);
                     await new Promise(r => setTimeout(r, backoff));
                 }
@@ -213,17 +221,14 @@ class DiscordService {
             if (message.attachments.size > 0) {
                 console.log(`[DiscordService] Processing ${message.attachments.size} attachments...`);
                 for (const [id, attachment] of message.attachments) {
-                    if (attachment.contentType?.startsWith("image/")) {
-                        try {
-                            console.log(`[DiscordService] Analyzing image: ${attachment.url}`);
-                            const analysis = await llmService.analyzeImage(attachment.url, "User attachment");
-                            if (analysis) {
-                                console.log(`[DiscordService] Vision Analysis: ${analysis.substring(0, 100)}...`);
-                                imageAnalysisResult += `[Image attached by user: ${analysis}] `;
-                            }
-                        } catch (err) {
-                            console.error("[DiscordService] Vision analysis failed:", err.message);
+                    try {
+                        const analysis = await llmService.analyzeImage(attachment.url, "User attachment");
+                        if (analysis) {
+                            console.log(`[DiscordService] Vision Analysis: ${analysis.substring(0, 100)}...`);
+                            imageAnalysisResult += `[Image attached by user: ${analysis}] `;
                         }
+                    } catch (err) {
+                        console.error("[DiscordService] Vision analysis failed:", err.message);
                     }
                 }
             }
@@ -247,23 +252,34 @@ class DiscordService {
             console.log("[DiscordService] Evaluating plan...");
             const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
             
-            if (evaluation.decision === "proceed") {
-                const actions = evaluation.refined_actions || plan.actions;
-                if (!actions || actions.length === 0) {
-                    console.log("[DiscordService] No actions planned. Sending default response.");
-                    const fallbackRes = await llmService.generateResponse(messages, { platform: "discord" });
-                    if (fallbackRes) await this._send(message.channel, fallbackRes);
-                } else {
-                    console.log(`[DiscordService] Executing ${actions.length} planned actions.`);
-                    for (const action of actions) {
-                        const result = await this.botInstance.executeAction(action, { channel: message.channel, author: message.author, platform: "discord" });
-                        console.log(`[DiscordService] Action ${action.tool} result: ${result.success ? 'SUCCESS' : 'FAILED'}`);
-                    }
+            // Check if there are any specific tool-based actions planned
+            const actions = (evaluation.decision === "proceed" ? (evaluation.refined_actions || plan.actions) : []) || [];
+            
+            // Filter out 'respond_to_user' from the tool execution if it's the only action, 
+            // or handle it explicitly.
+            const toolActions = actions.filter(a => a.tool !== 'respond_to_user');
+            const responseAction = actions.find(a => a.tool === 'respond_to_user');
+
+            if (toolActions.length > 0) {
+                console.log(`[DiscordService] Executing ${toolActions.length} tool actions.`);
+                for (const action of toolActions) {
+                    await this.botInstance.executeAction(action, { channel: message.channel, author: message.author, platform: "discord" });
                 }
+            }
+
+            // Always ensure a text response is sent
+            let finalResponse = "";
+            if (responseAction?.parameters?.text) {
+                finalResponse = responseAction.parameters.text;
             } else {
-                console.log(`[DiscordService] Plan evaluation rejected: ${evaluation.reason || 'No reason provided'}. Sending fallback.`);
-                const fallbackRes = await llmService.generateResponse(messages, { platform: "discord" });
-                if (fallbackRes) await this._send(message.channel, fallbackRes);
+                console.log("[DiscordService] No explicit response tool found. Generating conversational reply...");
+                finalResponse = await llmService.generateResponse(messages, { platform: "discord" });
+            }
+
+            if (finalResponse) {
+                await this._send(message.channel, finalResponse);
+            } else {
+                console.log("[DiscordService] Failed to generate any response.");
             }
         } catch (error) {
             console.error("[DiscordService] Error in respond():", error);

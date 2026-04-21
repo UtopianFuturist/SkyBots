@@ -42,8 +42,9 @@ class DiscordService {
                 GatewayIntentBits.MessageContent
             ],
             rest: {
-                timeout: 60000,
-                retries: 5
+                timeout: 90000,
+                retries: 10,
+                offset: 500
             }
         });
 
@@ -51,6 +52,13 @@ class DiscordService {
             console.log(`[DiscordService] SUCCESS: Logged in as ${this.client.user.tag}`);
             this.client.user.setActivity('the currents', { type: 'LISTENING' });
         });
+
+        this.client.on('debug', m => console.log(`[DiscordService] [DEBUG] ${m}`));
+        this.client.on('error', e => console.error(`[DiscordService] [ERROR] ${e.message}`, e));
+        this.client.on('warn', w => console.warn(`[DiscordService] [WARN] ${w}`));
+        this.client.on('shardError', (e, id) => console.error(`[DiscordService] [SHARD ${id} ERROR] ${e.message}`));
+        this.client.on('shardDisconnect', (e, id) => console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] ${e?.message || 'Unknown'}`));
+        this.client.on('shardReconnecting', id => console.log(`[DiscordService] [SHARD ${id} RECONNECTING...]`));
 
         this.client.on('messageCreate', async (message) => {
             try {
@@ -65,18 +73,26 @@ class DiscordService {
     }
 
     async loginLoop() {
+        if (!this.token) {
+            console.error('[DiscordService] No token found in config.');
+            this.isInitializing = false;
+            return;
+        }
+
+        console.log(`[DiscordService] Token diagnostic: length=${this.token.length}, start=${this.token.substring(0, 5)}..., end=...${this.token.substring(this.token.length - 5)}`);
+
         let attempts = 0;
         const maxAttempts = 10;
         while (attempts < maxAttempts) {
             attempts++;
             try {
                 console.log(`[DiscordService] Login attempt ${attempts}/${maxAttempts}...`);
-                // Increased timeout to 180s and added more logging
-                const loginPromise = this.client.login(this.token);
-                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 180s")), 180000));
 
-                const result = await Promise.race([loginPromise, timeoutPromise]);
-                console.log(`[DiscordService] SUCCESS: Login complete! Bot DID: ${this.client.user.id}`);
+                const loginPromise = this.client.login(this.token);
+                const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Discord login timed out after 240s")), 240000));
+
+                await Promise.race([loginPromise, timeoutPromise]);
+                console.log(`[DiscordService] SUCCESS: Login complete! Bot User: ${this.client.user.tag} (${this.client.user.id})`);
                 this.isInitializing = false;
                 return;
             } catch (err) {

@@ -17,7 +17,7 @@ class BlueskyService {
       } catch (error) {
         lastError = error;
         // 503 NotEnoughResources or 429 Rate Limit
-        if (error.status === 503 || (error.message && error.message.includes('NotEnoughResources')) || error.status === 429) {
+        if (error.status === 503 || (error.message && error.message.includes('NotEnoughResources')) || error.error === 'NotEnoughResources' || error.status === 429) {
           const delay = Math.pow(2, i) * 2000;
           console.warn(`[${label}] Retrying after ${delay}ms due to error: ${error.message || error.status}`);
           await new Promise(r => setTimeout(r, delay));

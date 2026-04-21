@@ -10,7 +10,7 @@ import { isSlop, checkSimilarity } from '../utils/textUtils.js';
 class DiscordService {
     constructor() {
         this.isEnabled = !!config.DISCORD_BOT_TOKEN;
-        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '');
+        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
         this.nickname = config.BOT_NAME || 'Bot';
@@ -61,9 +61,19 @@ class DiscordService {
 
         client.on('shardReady', (id) => console.log(`[DiscordService] [SHARD ${id}] READY`));
         client.on('shardError', (e, id) => console.error(`[DiscordService] [SHARD ${id} ERROR] ${e.message}`));
-        client.on('shardDisconnect', (e, id) => console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] ${e?.message || 'Unknown'}`));
+        client.on('shardDisconnect', (e, id) => {
+            console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] ${e?.message || 'Unknown'}`);
+            // If we disconnect during init, we might need a push
+            if (this.isInitializing) {
+                console.log('[DiscordService] Disconnected during initialization. Will retry...');
+            }
+        });
         client.on('shardReconnecting', id => console.log(`[DiscordService] [SHARD ${id} RECONNECTING...]`));
         client.on('shardResume', (id, replayed) => console.log(`[DiscordService] [SHARD ${id}] RESUMED (replayed ${replayed} events)`));
+
+        client.on('invalidated', () => {
+            console.error('[DiscordService] Session invalidated. Token might be compromised or session was forcefully closed.');
+        });
 
         client.on('messageCreate', async (message) => {
             try {

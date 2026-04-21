@@ -122,14 +122,13 @@ class OrchestratorService {
         this.addTaskToQueue(() => this.checkMaintenanceTasks(), "maintenance_tasks");
         this.addTaskToQueue(() => this.performTemporalMaintenance(), "temporal_maintenance");
         
-        // Memory generation limited to once per 2 hours to avoid spam/rate limits
-        if (memoryService.isEnabled() && (now - this.lastMemoryGeneration >= 2 * 3600000)) {
+        // Reimplement making memoryservice entry posts on Bluesky
+        if (memoryService.isEnabled()) {
             this.addTaskToQueue(async () => {
                 const recentLogs = await dataStore.getInternalLogs(50);
                 const contextualSummary = recentLogs.map(l => l.text).join("\n").substring(0, 1000);
                 if (contextualSummary.length > 200) {
                     await memoryService.createMemoryEntry("reflection", contextualSummary);
-                    this.lastMemoryGeneration = Date.now();
                 }
             }, "memory_entry_generation");
         }

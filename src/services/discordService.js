@@ -86,6 +86,53 @@ class DiscordService {
         return client;
     }
 
+    async _checkConnectivity() {
+        try {
+            console.log('[DiscordService] Pre-flight connectivity check...');
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 10000);
+
+            const response = await fetch('https://discord.com/api/v10/gateway', {
+                signal: controller.signal
+            });
+            clearTimeout(timeoutId);
+
+            if (response.ok) {
+                console.log('[DiscordService] Connectivity check PASSED');
+                return true;
+            } else {
+                console.warn(`[DiscordService] Connectivity check returned status: ${response.status}`);
+                return false;
+            }
+        } catch (err) {
+            console.error('[DiscordService] Connectivity check FAILED:', err.message);
+            return false;
+        }
+    }
+
+    async _checkInternalServices() {
+        try {
+            console.log('[DiscordService] Checking internal service health...');
+
+            // Check LLM Service
+            const llmHealth = await llmService.generateResponse([{ role: 'user', content: 'healthcheck' }], { temperature: 0, max_tokens: 1, useStep: true }).catch(() => null);
+
+            // Check DataStore
+            const dbHealth = dataStore.getMood() ? true : false;
+
+            if (llmHealth && dbHealth) {
+                console.log('[DiscordService] Internal services are HEALTHY');
+                return true;
+            } else {
+                console.warn('[DiscordService] Internal services check FAILED', { llm: !!llmHealth, db: dbHealth });
+                return false;
+            }
+        } catch (err) {
+            console.error('[DiscordService] Health check error:', err.message);
+            return false;
+        }
+    }
+
     async loginLoop() {
         if (!this.token) {
             console.error('[DiscordService] No token found in config.');
@@ -100,15 +147,31 @@ class DiscordService {
 
             console.log(`[DiscordService] Starting a new 10-minute login window...`);
 
+            const hasConnectivity = await this._checkConnectivity();
+            if (hasConnectivity) {
+                const servicesHealthy = await this._checkInternalServices();
+                if (!servicesHealthy) {
+                    console.error('[DiscordService] Internal services not ready. Waiting...');
+                    await new Promise(r => setTimeout(r, 60000));
+                    continue;
+                }
+            }
+            if (!hasConnectivity) {
+                console.error('[DiscordService] No connectivity to Discord API. Waiting for cooldown...');
+                await new Promise(r => setTimeout(r, 5 * 60 * 1000)); // Wait 5 mins before next attempt if no internet
+                continue;
+            }
+
             while (Date.now() - startTime < attemptWindowMs) {
                 attemptCount++;
                 try {
                     if (this.client) {
                         try {
-                            console.log('[DiscordService] Destroying existing client before retry...');
+                            console.log('[DiscordService] Hard-resetting client state...');
+                            this.client.removeAllListeners();
                             await this.client.destroy();
                         } catch (e) {
-                            console.warn('[DiscordService] Error destroying client:', e.message);
+                            console.warn('[DiscordService] Error during client cleanup:', e.message);
                         }
                         this.client = null;
                     }

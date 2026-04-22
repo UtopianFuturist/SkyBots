@@ -25,7 +25,8 @@ class DiscordService {
         if (!this.isEnabled || this.isInitializing) return;
         this.isInitializing = true;
         this.botInstance = botInstance;
-        console.log('[DiscordService] Starting initialization...');
+        console.log('[DiscordService] Starting initialization on Render...');
+        console.log(`[DiscordService] [ENV] NODE_ENV: ${process.env.NODE_ENV}, PORT: ${process.env.PORT}`);
         this.loginLoop();
     }
 
@@ -108,7 +109,11 @@ class DiscordService {
 
                 // We use client.login but also wrap the whole wait for ready in a timeout
                 await new Promise((resolve, reject) => {
-                    const timeout = setTimeout(() => reject(new Error("Discord login/ready timed out after 180s")), 180000);
+                                    const timeout = setTimeout(() => {
+                    const mem = process.memoryUsage();
+                    console.log(`[DiscordService] [DIAGNOSTIC] Memory: rss=${(mem.rss/1024/1024).toFixed(2)}MB, heap=${(mem.heapUsed/1024/1024).toFixed(2)}MB`);
+                    reject(new Error("Discord login/ready timed out after 10 minutes"));
+                }, 600000);
 
                     this.client.once('ready', () => {
                         clearTimeout(timeout);

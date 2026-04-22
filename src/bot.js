@@ -413,6 +413,7 @@ export class Bot {
         unreadActionable.reverse();
         for (const notif of unreadActionable) {
             if (notif.author.did !== blueskyService.agent?.session?.did && !await blueskyService.hasBotRepliedTo(notif.uri)) {
+                console.log(`[Bot] Processing notification from @${notif.author.handle}: reason=${notif.reason}`);
                 try { await this.processNotification(notif); } catch (error) {}
             }
             await blueskyService.updateSeen(notif.indexedAt);
@@ -420,6 +421,7 @@ export class Bot {
     }
 
     async processNotification(notif) {
+        console.log(`[Bot] Starting processNotification for ${notif.uri} (reason: ${notif.reason})`);
         if (this._detectInfiniteLoop(notif.uri)) return;
         const history = await this._getThreadHistory(notif.uri);
         const text = notif.record.text || "";
@@ -428,7 +430,7 @@ export class Bot {
         if (dataStore.isUserLockedOut(notif.author.did)) return;
         const isSelf = notif.author.did === blueskyService.agent?.session?.did;
         if (isSelf) {
-            const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
+            const prePlan = await llmService.performPrePlanning([{ role: "user", content: text }], { platform: "bluesky", history, isReply: notif.reason === "reply" });
             if (!["informational", "analytical", "critical_analysis"].includes(prePlan.intent)) return;
         }
 
@@ -439,8 +441,8 @@ export class Bot {
             await discordService.sendSpontaneousMessage(pivotMsg);
         }
 
-        const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
-        let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, "bluesky", dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories: await memoryService.getRecentMemories(20) });
+        const prePlan = await llmService.performPrePlanning([{ role: "user", content: text }], { platform: "bluesky", history, isReply: notif.reason === "reply" });
+        let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, "bluesky", dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories: await memoryService.getRecentMemories(20), isReply: notif.reason === "reply" });
         const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "bluesky", isAdmin });
         if (evaluation.decision === "proceed") {
             for (const action of (evaluation.refined_actions || plan.actions)) await this.executeAction(action, { ...notif, platform: "bluesky" });

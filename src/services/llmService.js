@@ -109,18 +109,24 @@ class LLMService {
         try {
             const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.priority === "high";
             await this._throttle(isPriority);
-            const response = await fetch(this.endpoint, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.NVIDIA_NIM_API_KEY },
-                body: JSON.stringify({
-                    model: model,
-                    messages: this._prepareMessages(messages, systemPrompt, options),
-                    temperature: options.temperature || 0.7,
-                    max_tokens: options.max_tokens || 1024
-                }),
-                agent: persistentAgent,
-                timeout: 180000
-            });
+            let response;
+            try {
+                response = await fetch(this.endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.NVIDIA_NIM_API_KEY },
+                    body: JSON.stringify({
+                        model: model,
+                        messages: this._prepareMessages(messages, systemPrompt, options),
+                        temperature: options.temperature || 0.7,
+                        max_tokens: options.max_tokens || 1024
+                    }),
+                    agent: persistentAgent,
+                    timeout: 60000 // Reduced from 180s to 60s for faster failover
+                });
+            } catch (fetchError) {
+                console.error(`[LLMService] Request error (${model}): ${fetchError.message}`);
+                continue; // Move to next model immediately on timeout
+            }
 
             if (!response.ok) {
                 console.warn("[LLMService] API error: " + response.status + " for " + model);
@@ -245,7 +251,8 @@ Respond with JSON:
             "Content-Type": "application/json", 
             "Authorization": "Bearer " + config.NVIDIA_NIM_API_KEY 
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify(payload),
+        timeout: 60000
       });
       
       if (!response.ok) {

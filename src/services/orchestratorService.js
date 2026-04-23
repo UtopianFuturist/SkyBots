@@ -126,7 +126,7 @@ class OrchestratorService {
         if (memoryService.isEnabled()) {
             this.addTaskToQueue(async () => {
                 const recentLogs = await dataStore.getInternalLogs(50);
-                const contextualSummary = recentLogs.map(l => l.text).join("\n").substring(0, 1000);
+                const contextualSummary = recentLogs.map(l => l.text).join("\n").substring(0, 5000);
                 if (contextualSummary.length > 200) {
                     await memoryService.createMemoryEntry("reflection", contextualSummary);
                 }
@@ -262,7 +262,7 @@ class OrchestratorService {
                 const allContent = [...(timeline?.data?.feed || []).map(f => f.post.record.text), ...firehoseMatches.map(m => m.text), newsBrief?.brief].filter(Boolean).join('\n');
                 if (allContent && allContent.trim()) {
                     const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\n");
-                    const resonancePrompt = "Identify 5 topics from this text AND from these recent observations that resonate with your persona. \nText: " + allContent.substring(0, 3000) + " \nObservations: " + lurkerMemories + " \nRespond with ONLY the comma-separated topics.";
+                    const resonancePrompt = "Identify 5 topics from this text AND from these recent observations that resonate with your persona. \nText: " + allContent.substring(0, 8000) + " \nObservations: " + lurkerMemories + " \nRespond with ONLY the comma-separated topics.";
                     const res = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true , task: 'social_resonance' });
                     if (res) {
                         resonanceTopics = res.split(",").map(t => t.trim()).filter(t => t.length > 2);
@@ -633,7 +633,7 @@ class OrchestratorService {
             const recentExplores = (await memoryService.getRecentMemories(20)).filter(m => m.text.includes('[EXPLORE]') || m.text.includes('[AGENCY]') || m.text.includes('[LURKER]') || m.text.includes('[NEWSROOM]'));
             const prompt = `Reflect on your current agency and autonomy.
 Recent exploration topics (DO NOT REPEAT THESE):
-${recentExplores.map(m => '- ' + m.text.substring(0, 150)).join('\n')}
+${recentExplores.map(m => '- ' + m.text.substring(0, 500)).join('\n')}
 
 CRITICAL DIVERSIFICATION MANDATE:
 1. Identify the core themes of the recent entries listed above.
@@ -747,7 +747,7 @@ Respond with JSON: {"indices_to_remove": [], "new_addendum": "string"}`;
             const prompt = `Analyze the current social landscape and news.
 Keywords: ${keywords.join(", ")}
 Recent newsroom updates (DO NOT REPEAT THESE):
-${recentExplores.map(m => '- ' + m.text.substring(0, 150)).join('\n')}
+${recentExplores.map(m => '- ' + m.text.substring(0, 500)).join('\n')}
 
 CRITICAL DIVERSIFICATION MANDATE:
 1. Scrutinize the topics covered in the newsroom updates above.
@@ -829,7 +829,7 @@ Respond with a concise brief.`;
         try {
             const timeline = await blueskyService.getTimeline(50);
             const feeds = (timeline?.data?.feed || []).map(f => f.post.record.text).join("\n");
-            const prompt = "Observe social feeds without pressure. \n\n" + feeds.substring(0, 4000) + "\n\nWhat patterns do you notice? [LURKER] reflection.";
+            const prompt = "Observe social feeds without pressure. \n\n" + feeds.substring(0, 8000) + "\n\nWhat patterns do you notice? [LURKER] reflection.";
             const reflection = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'lurker_observation' });
             if (reflection) {
                 await memoryService.createMemoryEntry('explore', "[LURKER] " + reflection);
@@ -882,7 +882,7 @@ Keep it under 600 characters.
             const consultation = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'subagent_consultation' });
             if (consultation) {
                 await dataStore.addInternalLog("subagent_consultation", { subagent: subagentName, topic, response: consultation });
-                await memoryService.createMemoryEntry('inquiry', `[CONSULTATION] [${subagentName}] ${consultation.substring(0, 200)}`);
+                await memoryService.createMemoryEntry('inquiry', `[CONSULTATION] [${subagentName}] ${consultation.substring(0, 600)}`);
                 return consultation;
             }
         } catch (e) {

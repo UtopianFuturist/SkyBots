@@ -96,13 +96,13 @@ class DiscordService {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
 
-            const response = await fetch('https://discord.com/api/v10/gateway', {
+            const response = await fetch('https://discord.com', { method: 'HEAD',
                 signal: controller.signal
             });
             clearTimeout(timeoutId);
 
-            if (response.ok) {
-                console.log('[DiscordService] Connectivity check PASSED');
+            if (response.ok || response.status === 429) {
+                console.log(`[DiscordService] Connectivity check PASSED (Status: ${response.status})`);
                 return true;
             } else {
                 console.warn(`[DiscordService] Connectivity check returned status: ${response.status}`);

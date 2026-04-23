@@ -72,7 +72,11 @@ class DiscordService {
         client.on('shardResume', (id, replayed) => console.log(`[DiscordService] [SHARD ${id}] RESUMED (replayed ${replayed} events)`));
 
         client.on('invalidated', () => {
-            console.error('[DiscordService] Session invalidated. Token might be compromised or session was forcefully closed.');
+            console.error('[DiscordService] Session invalidated. Triggering re-initialization...');
+            if (!this.isInitializing) {
+                this.isInitializing = true;
+                setTimeout(() => this.loginLoop(), 5000);
+            }
         });
 
         client.on('messageCreate', async (message) => {

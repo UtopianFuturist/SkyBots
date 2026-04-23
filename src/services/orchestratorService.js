@@ -50,7 +50,7 @@ class OrchestratorService {
         this.isProcessingQueue = true;
         while (this.taskQueue.length > 0) {
             const task = this.taskQueue.shift();
-            try { await task.fn(); } catch (e) { console.error("[Orchestrator] Task failed: " + task.name, e); }
+            try { await task.fn(); await new Promise(r => setTimeout(r, 2000)); } catch (e) { console.error("[Orchestrator] Task failed: " + task.name, e); }
         }
         this.isProcessingQueue = false;
     }

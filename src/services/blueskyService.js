@@ -271,8 +271,6 @@ class BlueskyService {
           return false;
       }
   }
-}
-
   async upsertThreadgate(uri, rules = {}) {
     if (!this.did) return;
     try {
@@ -296,5 +294,7 @@ class BlueskyService {
       console.error('[BlueskyService] Error upserting threadgate:', error.message);
     }
   }
+
+}
 
 export const blueskyService = new BlueskyService();

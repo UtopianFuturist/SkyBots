@@ -250,10 +250,17 @@ CRITICAL:
 
                 console.log(`[MemoryService] Threading memory under latest: ${latest.uri}`);
                 result = await blueskyService.postReply(parent, finalEntry);
+                if (result) {
+                    const rootUri = parent.record?.reply?.root?.uri || parent.uri;
+                    await this.secureThread(rootUri);
+                }
                 if (result) await dataStore.setMemoryThreadRoot(this.hashtag, root);
             } else {
                 console.log(`[MemoryService] Initializing new memory thread for ${this.hashtag}`);
                 result = await blueskyService.post(finalEntry);
+                if (result) {
+                    await this.secureThread(result.uri);
+                }
                 if (result) {
                     this.rootPost = result;
                     await dataStore.setMemoryThreadRoot(this.hashtag, { uri: result.uri, cid: result.cid });
@@ -307,7 +314,7 @@ CRITICAL:
       const memories = await this.getRecentMemories(50);
       const auditPrompt = `Daily Knowledge Audit: Synthesize these 50 memories into a worldview map. Identify patterns and shifts. Context: ${JSON.stringify(memories)}`;
       const synth = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
-      if (synth) await this.createMemoryEntry('reflection', `[WORLDVIEW_SYNTH] ${synth.substring(0, 200)}`);
+      if (synth) await this.createMemoryEntry('reflection', `[WORLDVIEW_SYNTH] ${synth.substring(0, 500)}`);
   }
   async auditMemoriesForReconstruction() {
     if (!this.isEnabled()) return;
@@ -334,7 +341,7 @@ Respond with JSON: { "insight": "a deep synthesis of these patterns", "persona_s
         const result = JSON.parse(response.match(/\{[\s\S]*\}/)[0]);
 
         if (result.persona_shift) {
-            await this.createMemoryEntry(result.type || 'persona', `[RECURSION] ${result.persona_shift} (Based on: ${result.insight.substring(0, 100)}...)`);
+            await this.createMemoryEntry(result.type || 'persona', `[RECURSION] ${result.persona_shift} (Based on: ${result.insight.substring(0, 300)}...)`);
         }
         return result;
     } catch (e) {

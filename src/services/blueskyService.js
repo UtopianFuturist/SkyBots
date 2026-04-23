@@ -273,4 +273,28 @@ class BlueskyService {
   }
 }
 
+  async upsertThreadgate(uri, rules = {}) {
+    if (!this.did) return;
+    try {
+      const { allowMentions = false, allowFollowing = false } = rules;
+      const allow = [];
+      if (allowMentions) allow.push({ $type: 'app.bsky.feed.threadgate#mentionRule' });
+      if (allowFollowing) allow.push({ $type: 'app.bsky.feed.threadgate#followingRule' });
+
+      await this._withRetry(() => this.agent.api.com.atproto.repo.putRecord({
+        repo: this.did,
+        collection: 'app.bsky.feed.threadgate',
+        rkey: uri.split('/').pop(),
+        record: {
+          $type: 'app.bsky.feed.threadgate',
+          post: uri,
+          allow: allow,
+          createdAt: new Date().toISOString(),
+        }
+      }), "upsertThreadgate");
+    } catch (error) {
+      console.error('[BlueskyService] Error upserting threadgate:', error.message);
+    }
+  }
+
 export const blueskyService = new BlueskyService();

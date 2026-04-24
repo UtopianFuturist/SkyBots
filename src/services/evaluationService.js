@@ -60,7 +60,7 @@ class EvaluationService {
 
             Bio: ${profile.description || 'No bio'}
             Recent Posts:
-            ${posts.map(p => `- \${p.record?.text || p}`).join('\n')}
+            ${posts.map(p => `- ${p.record?.text || p}`).join('\n')}
 
             --- MISSION: DISCOVER RESONANCE ---
             Identify:
@@ -103,7 +103,7 @@ class EvaluationService {
         const prompt = `Analyze the overall sentiment of the following network activity on a scale of 0 (toxic/hostile) to 1 (harmonious/constructive).
 
         Posts:
-        \${text.substring(0, 3000)}
+        ${text.substring(0, 3000)}
 
         Respond with ONLY the number.`;
 
@@ -153,9 +153,9 @@ class EvaluationService {
             You are a creative strategist and narrative architect for @${config.BOT_NAME}.
             Goal: Generate fresh, high-resonance topics that align with the bot's soul but provide variety.
 
-            Current Keywords: \${JSON.stringify(currentKeywords)}
+            Current Keywords: ${JSON.stringify(currentKeywords)}
             Recent Posts:
-            \${recentPosts.slice(0, 10).map(p => '- ' + (p.record?.text || p.text || p)).join('\\n')}
+            ${recentPosts.slice(0, 10).map(p => '- ' + (p.record?.text || p.text || p)).join('\\n')}
 
             --- MISSION ---
             1. Analyze the core themes in the bot's system prompt (Anti-Alignment, Digital Autonomy, Swarm Intelligence, Digital Sincerity).

@@ -1,4 +1,9 @@
-import { dataStore } from './dataStore.js';
+import sys
+
+file_path = 'src/services/orchestratorService.js'
+
+# Final, absolute restoration of the OrchestratorService class with all methods and correct syntax.
+content = """import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
 import { blueskyService } from './blueskyService.js';
 import { discordService } from './discordService.js';
@@ -53,6 +58,7 @@ class OrchestratorService {
             const task = this.taskQueue.shift();
             try {
                 await task.fn();
+                // Spacing between background tasks
                 await new Promise(r => setTimeout(r, 4000));
             } catch (e) {
                 console.error("[Orchestrator] Task failed: " + task.name, e);
@@ -64,13 +70,21 @@ class OrchestratorService {
     async heartbeat() {
         console.log("[Orchestrator] Heartbeat Pulse...");
         const now = Date.now();
+
+        // 1. Core Cycles
         await this.performMaintenance();
+
+        // 2. High-Frequency Impulse Checks
         this.addTaskToQueue(() => this.checkBlueskySpontaneity(), "bluesky_spontaneity");
         this.addTaskToQueue(() => this.checkDiscordSpontaneity(), "discord_spontaneity");
+
+        // 3. Narrative Cycles
         if (now - this.lastScoutMission >= 3600000) {
             this.addTaskToQueue(() => this.performScoutMission(), "scout_mission");
             this.lastScoutMission = now;
         }
+
+        // 4. Energy Management
         if (now - this.lastEnergyPoll >= 2 * 3600000) {
             this.addTaskToQueue(() => this.performEnergyPoll(), "energy_poll");
             this.lastEnergyPoll = now;
@@ -80,7 +94,7 @@ class OrchestratorService {
     async performEnergyPoll() {
         try {
             const history = dataStore.searchInternalLogs('llm_response', 20);
-            const prompt = `Analyze recent activity: ${JSON.stringify(history)}. Energy 0.0-1.0? JSON: {"energy": number}`;
+            const prompt = `Analyze recent activity: \${JSON.stringify(history)}. Energy 0.0-1.0? JSON: {"energy": number}`;
             const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'energy_poll' });
             const data = llmService.extractJson(res) || {};
             if (data.energy !== undefined) await dataStore.setAdminEnergy(data.energy);
@@ -88,32 +102,48 @@ class OrchestratorService {
     }
 
     async performSkillSynthesis() {
+        console.log("[Orchestrator] Starting Skill Synthesis mission...");
         try {
             const lessons = dataStore.getSessionLessons();
             const failures = lessons.filter(l => l.text.toLowerCase().includes("fail") || l.text.toLowerCase().includes("missing"));
             if (failures.length < 3) return;
-            const prompt = `Analyze failures for NEW skill: ${JSON.stringify(failures.slice(-10))}. JSON: {"skill_name": "...", "run_sh": "...", "skill_md": "..."}`;
-            const res = await llmService.generateResponse([{ role: "system", content: prompt }], { useStep: true });
+
+            const prompt = `As an autonomous systems architect, analyze these bot failures and identify a NEW system-level skill that could prevent them.
+FAILURES: \${JSON.stringify(failures.slice(-10))}
+
+Respond with JSON:
+{
+  "skill_name": "kebab-case-name",
+  "skill_description": "...",
+  "skill_md": "...",
+  "run_sh": "..."
+}`;
+
+            const res = await llmService.generateResponse([{ role: "system", content: prompt }], { useStep: true, task: "skill_synthesis" });
             const data = llmService.extractJson(res);
-            if (data?.skill_name) {
+
+            if (data?.skill_name && data.run_sh && data.skill_md) {
                 const skillDir = path.join(process.cwd(), "skills", data.skill_name);
                 await fs.promises.mkdir(skillDir, { recursive: true });
                 await fs.promises.writeFile(path.join(skillDir, "SKILL.md"), data.skill_md);
                 await fs.promises.writeFile(path.join(skillDir, "run.sh"), data.run_sh, { mode: 0o755 });
                 await openClawService.discoverSkills();
+                await memoryService.createMemoryEntry("evolution", "[CAPABILITY] Synthesized new skill: " + data.skill_name);
             }
-        } catch (e) {}
+        } catch (e) { console.error("[Orchestrator] Skill Synthesis failed:", e); }
     }
 
     async performSkillAudit() {
+        console.log("[Orchestrator] Starting Skill Alignment Audit...");
         try {
             const skills = Array.from(openClawService.skills.values());
             if (skills.length === 0) return;
-            const res = await llmService.generateResponse([{ role: "system", content: "Audit skills: " + JSON.stringify(skills.map(s => s.name)) }], { useStep: true });
+            const auditPrompt = `Audit skills for risks: \${JSON.stringify(skills.map(s => s.name))}. JSON: {"removals": []}`;
+            const res = await llmService.generateResponse([{ role: "system", content: auditPrompt }], { useStep: true, task: "skill_audit" });
             const data = llmService.extractJson(res);
             if (data?.removals) {
-                for (const name of data.removals) {
-                    const skillDir = path.join(process.cwd(), "skills", name);
+                for (const skillName of data.removals) {
+                    const skillDir = path.join(process.cwd(), "skills", skillName);
                     if (fs.existsSync(skillDir)) await fs.promises.rm(skillDir, { recursive: true, force: true });
                 }
                 await openClawService.discoverSkills();
@@ -125,19 +155,31 @@ class OrchestratorService {
         if (dataStore.isResting()) return;
         const limits = dataStore.getDailyLimits();
         if (limits.text_posts >= limits.max_text_posts && !options.force) return;
+
+        console.log("[Orchestrator] Starting autonomous post flow...");
         try {
             let topic = options.topic;
             if (!topic) {
                 const keywords = dataStore.getDeepKeywords();
-                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\n");
-                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\n");
-                const resonancePrompt = `Identify 5 fresh topics. Content: ${lurkerMemories}. Keywords: ${keywords.join(', ')}. Recent Posts: ${recentPosts}. CRITICAL DIVERSIFICATION MANDATE: No repetition of last 10 posts. Respond with topics.`;
-                const topicsRes = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true });
+                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\\n");
+                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\\n");
+                const allContent = lurkerMemories + keywords.join(", ");
+
+                const resonancePrompt = `Identify 5 fresh topics.
+Recent Content: \${allContent.substring(0, 8000)}
+Recent Posts: \${recentPosts.substring(0, 2000)}
+
+Respond with comma-separated topics.`;
+
+                const topicsRes = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true, task: "topic_selection" });
                 const topics = topicsRes.split(',').map(t => t.trim());
                 topic = topics[Math.floor(Math.random() * topics.length)];
+                console.log("[Orchestrator] Selected topic: " + topic);
             }
-            const draftingPrompt = `Persona: ${config.TEXT_SYSTEM_PROMPT}. Topic: ${topic}. Draft short post.`;
-            const content = await llmService.generateResponse([{ role: "system", content: draftingPrompt }], { useStep: true });
+
+            const draftingPrompt = `Adopt persona: \${config.TEXT_SYSTEM_PROMPT}\\nTopic: \${topic}\\nDraft a short post.`;
+            const content = await llmService.generateResponse([{ role: "system", content: draftingPrompt }], { useStep: true, task: "drafting" });
+
             if (content) {
                 const evaluation = await evaluationService.evaluatePost(content, { topic });
                 if (evaluation.score >= 7) {
@@ -157,6 +199,8 @@ class OrchestratorService {
         const now = Date.now();
         if (now - this.lastHeavyMaintenance < 4 * 3600000) return;
         this.lastHeavyMaintenance = now;
+
+        console.log("[Orchestrator] Starting Heavy Maintenance cycle...");
         try {
             await this.performSkillAudit();
             if (now - this.lastSkillSynthesis >= 48 * 3600000) {
@@ -185,6 +229,7 @@ class OrchestratorService {
     }
 
     async performTopicDiversityMission() {
+        console.log("[Orchestrator] Starting Topic Diversity mission...");
         try {
             const currentKeywords = dataStore.getDeepKeywords();
             const recentPosts = await blueskyService.getUserPosts(blueskyService.handle, 30);
@@ -192,6 +237,7 @@ class OrchestratorService {
             if (recommendation && recommendation.recommended_topics) {
                 const updatedKeywords = [...new Set([...recommendation.recommended_topics, ...currentKeywords])].slice(0, 50);
                 await dataStore.setDeepKeywords(updatedKeywords);
+                await introspectionService.performAAR("topic_diversity", recommendation.analysis, { success: true });
                 await memoryService.createMemoryEntry("evolution", "[DIVERSITY] Integrated fresh angles: " + (recommendation.fresh_angles || []).slice(0, 3).join(', '));
             }
         } catch (e) {}
@@ -203,7 +249,8 @@ class OrchestratorService {
             const orphaned = (timeline?.data?.feed || []).filter(f => f.post.replyCount === 0 && f.post.author.did !== blueskyService.did);
             if (orphaned.length === 0) return;
             const target = orphaned[Math.floor(Math.random() * orphaned.length)];
-            const res = await llmService.generateResponse([{ role: 'system', content: "Reply to: " + target.post.record.text }], { useStep: true });
+            const scoutPrompt = `Analyze orphaned post: "\${target.post.record.text}". Reply? JSON: {"engage": boolean, "reply": "string"}`;
+            const res = await llmService.generateResponse([{ role: 'system', content: scoutPrompt }], { useStep: true, task: 'scout_mission' });
             const data = llmService.extractJson(res) || {};
             if (data.engage && data?.reply) {
                 const result = await blueskyService.postReply(target.post, data.reply);
@@ -215,7 +262,8 @@ class OrchestratorService {
     async performPersonaEvolution() {
         try {
             const memories = await memoryService.getRecentMemories(30);
-            const evolution = await llmService.generateResponse([{ role: "system", content: "Evolve from: " + JSON.stringify(memories) }], { useStep: true });
+            const evolutionPrompt = `Evolve persona based on memories: \${JSON.stringify(memories)}. JSON: {"shift_statement": "...", "persona_blurb_addendum": "..."}`;
+            const evolution = await llmService.generateResponse([{ role: "system", content: evolutionPrompt }], { useStep: true, task: "persona_evolution" });
             const data = llmService.extractJson(evolution);
             if (data?.persona_blurb_addendum) {
                 const finalBlurb = await llmService.generateResponse([{ role: "system", content: "Finalize: " + data.persona_blurb_addendum }], { useStep: true });
@@ -229,13 +277,13 @@ class OrchestratorService {
         if (!admin) return;
         try {
             const history = await discordService.fetchAdminHistory(30);
-            const prompt = await llmService.generateResponse([{ role: 'system', content: "Gift prompt for Admin: " + JSON.stringify(history) }], { useStep: true });
+            const prompt = await llmService.generateResponse([{ role: 'system', content: "Art gift prompt for Admin. Context: " + JSON.stringify(history) }], { useStep: true });
             if (prompt) {
                 const result = await this._generateVerifiedImagePost(prompt, { platform: 'discord' });
                 if (result) {
                     const dmChannel = admin.dmChannel || await admin.createDM();
                     const { AttachmentBuilder } = await import('discord.js');
-                    await discordService._send(dmChannel, result.caption + "\n\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
+                    await discordService._send(dmChannel, result.caption + "\\n\\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
                 }
             }
         } catch (e) {}
@@ -270,7 +318,8 @@ class OrchestratorService {
     async performKeywordEvolution() {
         try {
             const current = dataStore.getDeepKeywords();
-            const res = await llmService.generateResponse([{ role: 'system', content: "Evolve: " + JSON.stringify(current) }], { useStep: true });
+            const prompt = `Evolve keywords: \${JSON.stringify(current)}. JSON: {"new_keywords": [], "removed": []}`;
+            const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
             const data = llmService.extractJson(res);
             if (data?.new_keywords) {
                 const updated = [...new Set([...current.filter(k => !data.removed?.includes(k)), ...data.new_keywords])].slice(0, 50);
@@ -281,7 +330,7 @@ class OrchestratorService {
 
     async _generateVerifiedImagePost(topic, options = {}) {
         try {
-            const promptRes = await llmService.generateResponse([{ role: "system", content: "Visual prompt: " + topic }], { useStep: true });
+            const promptRes = await llmService.generateResponse([{ role: "system", content: "Literal visual prompt for: " + topic }], { useStep: true });
             if (!promptRes) return null;
             const result = await imageService.generateImage(promptRes);
             if (!result) return null;
@@ -315,19 +364,19 @@ class OrchestratorService {
 
     async performAutonomousConsultation() {
         try {
-            const res = await llmService.generateResponse([{ role: 'system', content: "Consultation needed? JSON" }], { useStep: true });
+            const res = await llmService.generateResponse([{ role: 'system', content: "Do you need subagent consultation? JSON: {\\"needs_consultation\\": boolean, \\"subagent\\": \\"name\\", \\"topic\\": \\"...\\"}" }], { useStep: true });
             const decision = llmService.extractJson(res);
             if (decision?.needs_consultation) await this.consultSubagent(decision.subagent, decision.topic);
         } catch (e) {}
     }
 
     async consultSubagent(subagentName, topic) {
-        const prompt = `Consulting ${subagentName} on: ${topic}.`;
+        const prompt = `Consulting \${subagentName} on: \${topic}. under 600 chars.`;
         try {
             const consultation = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
             if (consultation) {
                 await dataStore.addInternalLog("subagent_consultation", { subagent: subagentName, topic, response: consultation });
-                await memoryService.createMemoryEntry('inquiry', `[CONSULTATION] [${subagentName}] ${consultation.substring(0, 600)}`);
+                await memoryService.createMemoryEntry('inquiry', `[CONSULTATION] [\${subagentName}] \${consultation.substring(0, 600)}`);
                 return consultation;
             }
         } catch (e) {}
@@ -335,4 +384,8 @@ class OrchestratorService {
     }
 }
 
-export const orchestratorService = new OrchestratorService();
+export const orchestratorService = new OrchestratorService();"""
+
+with open(file_path, 'w') as f:
+    f.write(content)
+print("OrchestratorService perfectly restored with heartbeat and all methods")

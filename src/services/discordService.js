@@ -18,7 +18,6 @@ class DiscordService {
         this.client = null;
         this.botInstance = null;
         this.isInitializing = false;
-        this._lastHeavyAdminSearch = 0;
     }
 
     async init(botInstance) {
@@ -38,10 +37,7 @@ class DiscordService {
                 GatewayIntentBits.MessageContent,
                 GatewayIntentBits.GuildMessages
             ],
-            rest: {
-                timeout: 60000,
-                retries: 5
-            }
+            rest: { timeout: 60000, retries: 5 }
         });
 
         client.on('ready', () => {
@@ -49,28 +45,11 @@ class DiscordService {
             client.user.setActivity('the currents', { type: 'LISTENING' });
         });
 
-        client.on('debug', m => {
-            if (m.includes('Session Limit') || m.includes('Heartbeat') || m.includes('Identified') || m.includes('Ready') || m.includes('gateway')) {
-                console.log(`[DiscordService] [DEBUG] ${m}`);
-            }
-        });
-
-        client.on('error', e => console.error(`[DiscordService] [ERROR] ${e.message}`, e));
+        client.on('error', e => console.error(`[DiscordService] [ERROR] ${e.message}`));
         client.on('warn', w => console.warn(`[DiscordService] [WARN] ${w}`));
 
-        client.on('shardReady', (id) => console.log(`[DiscordService] [SHARD ${id}] READY`));
-        client.on('shardError', (e, id) => console.error(`[DiscordService] [SHARD ${id} ERROR] ${e.message}`));
-        client.on('shardDisconnect', (e, id) => {
-            console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] ${e?.message || "Unknown"}`);
-            if (this.isInitializing) {
-                console.log('[DiscordService] Disconnected during initialization. Will retry...');
-            }
-        });
-        client.on('shardReconnecting', id => console.log(`[DiscordService] [SHARD ${id} RECONNECTING...]`));
-        client.on('shardResume', (id, replayed) => console.log(`[DiscordService] [SHARD ${id}] RESUMED (replayed ${replayed} events)`));
-
         client.on('invalidated', () => {
-            console.error('[DiscordService] Session invalidated. Triggering re-initialization...');
+            console.error('[DiscordService] Session invalidated. Retrying...');
             if (!this.isInitializing) {
                 this.isInitializing = true;
                 setTimeout(() => this.loginLoop(), 5000);
@@ -78,11 +57,7 @@ class DiscordService {
         });
 
         client.on('messageCreate', async (message) => {
-            try {
-                await this.handleMessage(message);
-            } catch (err) {
-                console.error('[DiscordService] Error in messageCreate listener:', err);
-            }
+            try { await this.handleMessage(message); } catch (err) { console.error('[DiscordService] Error:', err); }
         });
 
         return client;
@@ -93,69 +68,36 @@ class DiscordService {
             console.log('[DiscordService] Pre-flight connectivity check...');
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000);
-
-            const response = await fetch('https://discord.com', { method: 'HEAD',
-                signal: controller.signal
-            });
+            const response = await fetch('https://discord.com', { method: 'HEAD', signal: controller.signal });
             clearTimeout(timeoutId);
-
-            if (response.ok || response.status === 429) {
-                console.log(`[DiscordService] Connectivity check PASSED (Status: ${response.status})`);
-                return true;
-            } else {
-                console.warn(`[DiscordService] Connectivity check returned status: ${response.status}`);
-                return false;
-            }
-        } catch (err) {
-            console.error('[DiscordService] Connectivity check FAILED:', err.message);
+            if (response.ok || response.status === 429) return true;
             return false;
-        }
+        } catch (err) { return false; }
     }
 
     async _checkInternalServices() {
         try {
-            console.log('[DiscordService] Checking internal service health...');
             const llmHealth = await llmService.generateResponse([{ role: 'user', content: 'healthcheck' }], { temperature: 0, max_tokens: 1, useStep: true }).catch(() => null);
-            const dbHealth = dataStore.getMood() ? true : false;
-            if (llmHealth && dbHealth) {
-                console.log('[DiscordService] Internal services are HEALTHY');
-                return true;
-            } else {
-                console.warn('[DiscordService] Internal services check FAILED', { llm: !!llmHealth, db: dbHealth });
-                return false;
-            }
-        } catch (err) {
-            console.error('[DiscordService] Health check error:', err.message);
-            return false;
-        }
+            return !!llmHealth;
+        } catch (err) { return false; }
     }
 
     async loginLoop() {
-        if (!this.token) {
-            console.error('[DiscordService] No token found in config.');
-            this.isInitializing = false;
-            return;
-        }
-
+        if (!this.token) return;
         while (true) {
             const attemptWindowMs = 10 * 60 * 1000;
             const startTime = Date.now();
             let attemptCount = 0;
 
-            console.log(`[DiscordService] Starting a new 10-minute login window...`);
-
             const hasConnectivity = await this._checkConnectivity();
-            if (hasConnectivity) {
-                const servicesHealthy = await this._checkInternalServices();
-                if (!servicesHealthy) {
-                    console.error('[DiscordService] Internal services not ready. Waiting...');
-                    await new Promise(r => setTimeout(r, 60000));
-                    continue;
-                }
-            }
             if (!hasConnectivity) {
-                console.error('[DiscordService] No connectivity to Discord API. Waiting for cooldown...');
                 await new Promise(r => setTimeout(r, 5 * 60 * 1000));
+                continue;
+            }
+
+            const servicesHealthy = await this._checkInternalServices();
+            if (!servicesHealthy) {
+                await new Promise(r => setTimeout(r, 60000));
                 continue;
             }
 
@@ -163,72 +105,34 @@ class DiscordService {
                 attemptCount++;
                 try {
                     if (this.client) {
-                        try {
-                            console.log('[DiscordService] Hard-resetting client state...');
-                            this.client.removeAllListeners();
-                            await this.client.destroy();
-                        } catch (e) {
-                            console.warn('[DiscordService] Error during client cleanup:', e.message);
-                        }
-                        this.client = null;
+                        this.client.removeAllListeners();
+                        try { await this.client.destroy(); } catch (e) {}
                     }
-
-                    console.log(`[DiscordService] Login attempt ${attemptCount} (Elapsed: ${Math.round((Date.now() - startTime) / 1000)}s)...`);
+                    console.log(`[DiscordService] Login attempt ${attemptCount}...`);
                     this.client = this._createClient();
-
                     await new Promise((resolve, reject) => {
-                        const individualTimeout = setTimeout(() => {
-                            reject(new Error("Individual login attempt timed out after 300s"));
-                        }, 300000);
-
-                        this.client.once('ready', () => {
-                            clearTimeout(individualTimeout);
-                            resolve();
-                        });
-
-                        this.client.login(this.token).catch(err => {
-                            clearTimeout(individualTimeout);
-                            reject(err);
-                        });
+                        const timeout = setTimeout(() => reject(new Error("Timeout")), 300000);
+                        this.client.once('ready', () => { clearTimeout(timeout); resolve(); });
+                        this.client.login(this.token).catch(err => { clearTimeout(timeout); reject(err); });
                     });
-
-                    console.log(`[DiscordService] SUCCESS: Login complete! Bot User: ${this.client.user.tag}`);
                     this.isInitializing = false;
                     return;
                 } catch (err) {
-                    console.error(`[DiscordService] Login attempt ${attemptCount} failed with error:`, err);
-                    if (err.message && err.message.includes('TOKEN_INVALID')) {
-                        console.error('[DiscordService] FATAL: Invalid token provided. Stopping login loop.');
-                        this.isInitializing = false;
-                        return;
-                    }
-                    if (err.code) console.log(`[DiscordService] Error Code: ${err.code}`);
-                    if (err.status) console.log(`[DiscordService] HTTP Status: ${err.status}`);
-
                     const backoff = Math.min(30000 * attemptCount, 60000);
-                    const remainingWindow = attemptWindowMs - (Date.now() - startTime);
-                    if (remainingWindow > backoff) {
-                        console.log(`[DiscordService] Waiting ${backoff / 1000}s before next attempt within window...`);
+                    if (attemptWindowMs - (Date.now() - startTime) > backoff) {
                         await new Promise(r => setTimeout(r, backoff));
-                    } else {
-                        break;
-                    }
+                    } else break;
                 }
             }
-
-            console.error(`[DiscordService] 10-minute login window exhausted. Waiting 15 minutes before restarting loop...`);
             await new Promise(r => setTimeout(r, 15 * 60 * 1000));
         }
     }
 
     async handleMessage(message) {
         if (message.author.bot) return;
-
         const isDM = !message.guild;
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         const text = message.content.trim();
-
-        console.log(`[DiscordService] Message received from ${message.author.username} in ${isDM ? 'DM' : 'Guild'}`);
 
         if (text.startsWith("!")) {
             if (!isAdmin) return;
@@ -239,58 +143,35 @@ class DiscordService {
         }
 
         const isMentioned = message.mentions.has(this.client.user) || message.content.toLowerCase().includes(this.nickname.toLowerCase());
-
         let isReplyToMe = false;
         if (message.reference) {
             try {
                 const referenced = await message.channel.messages.fetch(message.reference.messageId);
                 if (referenced.author.id === this.client.user.id) isReplyToMe = true;
-            } catch (e) {
-                console.warn('[DiscordService] Failed to fetch referenced message:', e.message);
-            }
+            } catch (e) {}
         }
 
         if (isDM || isMentioned || isReplyToMe) {
-            console.log(`[DiscordService] Triggering response for ${message.author.username}. Mention: ${isMentioned}, Reply: ${isReplyToMe}, DM: ${isDM}`);
             await this.respond(message);
-        } else {
-            console.log(`[DiscordService] Ignoring message from ${message.author.username} (not mentioned/DM/reply)`);
         }
     }
 
     async _send(channel, content, options = {}) {
         if (!channel) return;
-        try {
-            return await channel.send({ content, ...options });
-        } catch (err) {
-            console.error('[DiscordService] Error sending message:', err);
-            return null;
-        }
+        try { return await channel.send({ content, ...options }); } catch (err) { return null; }
     }
 
     _startTypingLoop(channel) {
         if (!channel) return null;
         channel.sendTyping().catch(() => {});
-        return setInterval(() => {
-            channel.sendTyping().catch(() => {});
-        }, 5000);
+        return setInterval(() => { channel.sendTyping().catch(() => {}); }, 5000);
     }
 
-    _stopTypingLoop(interval) {
-        if (interval) clearInterval(interval);
-    }
-
-    getNormalizedChannelId(message) {
-        if (!message.guild) return `dm-${message.author.id}`;
-        return message.channel.id;
-    }
+    _stopTypingLoop(interval) { if (interval) clearInterval(interval); }
 
     async respond(message) {
         const channelId = message.channel.id;
-        if (this.respondingChannels.has(channelId)) {
-            console.log(`[DiscordService] Already responding in channel ${channelId}. Skipping.`);
-            return;
-        }
+        if (this.respondingChannels.has(channelId)) return;
         
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         this.respondingChannels.add(channelId);
@@ -299,17 +180,11 @@ class DiscordService {
         try {
             let imageAnalysisResult = "";
             if (message.attachments.size > 0) {
-                console.log(`[DiscordService] Processing ${message.attachments.size} attachments...`);
                 for (const [id, attachment] of message.attachments) {
                     try {
                         const analysis = await llmService.analyzeImage(attachment.url, "User attachment");
-                        if (analysis) {
-                            console.log(`[DiscordService] Vision Analysis: ${analysis.substring(0, 100)}...`);
-                            imageAnalysisResult += `[Image attached by user: ${analysis}] `;
-                        }
-                    } catch (err) {
-                        console.error("[DiscordService] Vision analysis failed:", err.message);
-                    }
+                        if (analysis) imageAnalysisResult += `[Image attached by user: ${analysis}] `;
+                    } catch (err) {}
                 }
             }
 
@@ -326,42 +201,26 @@ class DiscordService {
                 { role: 'user', content: message.content }
             ];
 
-            console.log("[DiscordService] Generating plan...");
             const plan = await llmService.performPrePlanning(messages, { platform: "discord", isAdmin });
-            
-            console.log("[DiscordService] Evaluating plan...");
             const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
             
             const actions = (evaluation.decision === "proceed" ? (evaluation.refined_actions || plan.actions) : []) || [];
-            const toolActions = actions.filter(a => a.tool !== 'respond_to_user');
             const responseAction = actions.find(a => a.tool === 'respond_to_user');
 
-            if (toolActions.length > 0) {
-                console.log(`[DiscordService] Executing ${toolActions.length} tool actions.`);
-                for (const action of toolActions) {
-                    await this.botInstance.executeAction(action, { channel: message.channel, author: message.author, platform: "discord" });
-                }
+            for (const action of actions.filter(a => a.tool !== 'respond_to_user')) {
+                await this.botInstance.executeAction(action, { channel: message.channel, author: message.author, platform: "discord" });
             }
 
-            let finalResponse = "";
-            if (responseAction?.parameters?.text) {
-                finalResponse = responseAction.parameters.text;
-            } else {
-                console.log("[DiscordService] No explicit response tool found. Generating conversational reply...");
-                finalResponse = await llmService.generateResponse(messages, { platform: "discord" });
-            }
+            let finalResponse = responseAction?.parameters?.text || await llmService.generateResponse(messages, { platform: "discord" });
 
             if (finalResponse) {
                 const mainMsg = await this._send(message.channel, finalResponse);
                 if (mainMsg && isAdmin && (finalResponse.toLowerCase().includes("remember") || finalResponse.toLowerCase().includes("important"))) {
                     try { await mainMsg.pin(); } catch (e) {}
                 }
-            } else {
-                console.log("[DiscordService] Failed to generate any response.");
             }
-        } catch (error) {
-            console.error("[DiscordService] Error in respond():", error);
-        } finally {
+        } catch (error) { console.error("[DiscordService] Error:", error); }
+        finally {
             this._stopTypingLoop(typingInterval);
             this.respondingChannels.delete(channelId);
         }
@@ -375,11 +234,8 @@ class DiscordService {
             const dmChannel = admin.dmChannel || await admin.createDM();
             const messages = await dmChannel.messages.fetch({ limit: 10 });
             const unread = messages.filter(m => !m.author.bot && m.createdTimestamp > (Date.now() - 3600000)).first();
-            if (unread) {
-                console.log("[DiscordService] Startup catch-up: Found unread message from Admin.");
-                await this.respond(unread);
-            }
-        } catch (e) { console.error("[DiscordService] Startup catch-up failed:", e.message); }
+            if (unread) await this.respond(unread);
+        } catch (e) {}
     }
 
     async sendSpontaneousMessage(message = null, messageCount = 1) {
@@ -388,23 +244,16 @@ class DiscordService {
             const admin = await this.getAdminUser();
             if (!admin) return;
             const dmChannel = admin.dmChannel || await admin.createDM();
-
-            if (message) {
-                await this._send(dmChannel, message);
-                return;
-            }
+            if (message) { await this._send(dmChannel, message); return; }
 
             const history = await this.fetchAdminHistory(50);
             const contextData = {
                 mood: dataStore.getMood().label,
-                goal: dataStore.getCurrentGoal().goal,
                 warmth: dataStore.getRelationshipWarmth(),
                 energy: dataStore.getAdminEnergy()
             };
 
-            let spontaneityPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\nRecent history: " + JSON.stringify(history.slice(-20)) + "\nInternal State: " + JSON.stringify(contextData) + ".\n\nYou are choosing what to say spontaneously. Be self-aware and autonomous.\nGenerate " + messageCount + " separate messages/thoughts, each on a new line. Keep each under 200 characters.";
-
-            let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { useStep: true, platform: "discord" });
+            let rawResponse = await llmService.generateResponse([{ role: "user", content: "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + ". Recent: " + JSON.stringify(history.slice(-20)) + ". Spontaneous messages?" }], { useStep: true, platform: "discord" });
             if (!rawResponse) return;
 
             let candidateMessages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
@@ -413,40 +262,21 @@ class DiscordService {
                 const readyMsg = audit.refined_text;
                 const edit = await llmService.performEditorReview(readyMsg, "discord");
                 const finalMsg = edit.refined_text || readyMsg;
-
                 await this._send(dmChannel, finalMsg);
                 await dataStore.saveDiscordInteraction("dm-" + admin.id, 'assistant', finalMsg);
-                await introspectionService.performAAR("discord_spontaneous", finalMsg, { success: true, platform: "discord" });
-
                 if (candidateMessages.length > 1) await new Promise(r => setTimeout(r, 2000));
             }
-        } catch (err) {
-            console.error("[DiscordService] Spontaneous error:", err);
-        }
+        } catch (err) {}
     }
 
     async getAdminUser() {
         if (!this.client?.isReady()) return null;
-        if (this.adminId) {
-            try {
-                return await this.client.users.fetch(this.adminId);
-            } catch (e) {
-                this.adminId = null;
-            }
-        }
-
+        if (this.adminId) { try { return await this.client.users.fetch(this.adminId); } catch (e) { this.adminId = null; } }
         const cachedUser = this.client.users.cache.find(u => u.username === this.adminName);
-        if (cachedUser) {
-            this.adminId = cachedUser.id;
-            return cachedUser;
-        }
-
+        if (cachedUser) { this.adminId = cachedUser.id; return cachedUser; }
         for (const guild of this.client.guilds.cache.values()) {
             const member = guild.members.cache.find(m => m.user.username === this.adminName);
-            if (member) {
-                this.adminId = member.user.id;
-                return member.user;
-            }
+            if (member) { this.adminId = member.user.id; return member.user; }
         }
         return null;
     }
@@ -469,10 +299,7 @@ class DiscordService {
                 author: m.author.username,
                 timestamp: m.createdTimestamp
             })).reverse();
-        } catch (e) {
-            console.error(`[DiscordService] Error fetching history for channel ${channel.id}:`, e.message);
-            return [];
-        }
+        } catch (e) { return []; }
     }
 
     get status() { return this.isEnabled && this.client?.isReady() ? "online" : "offline"; }

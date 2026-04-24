@@ -104,7 +104,7 @@ class LLMService {
         systemPrompt = "Persona: " + basePersona + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + memoriesBlock + (sessionLessons ? "\n\n**RECENT LESSONS:**\n" + sessionLessons : "") + skillsContext + "\nGuidelines: Be direct. No slop.";
     }
 
-    let models = [config.STEP_MODEL, config.LLM_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean);
+    let models = [config.STEP_MODEL, config.LLM_MODEL].filter(Boolean);
     for (const model of models) {
         try {
             const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.priority === "high";

@@ -15,7 +15,7 @@ class LLMService {
 
   async _throttle(priority = false) {
     const now = Date.now();
-    const minDelay = priority ? 2500 : 14000;
+    const minDelay = priority ? 2500 : 28000;
     const targetStartTime = Math.max(now, LLMService.lastRequestTime + minDelay);
     LLMService.lastRequestTime = targetStartTime;
     const waitTime = targetStartTime - now;

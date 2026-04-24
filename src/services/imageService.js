@@ -9,7 +9,7 @@ class ImageService {
     console.log(`[ImageService] Generating image for: ${prompt}`);
     try {
         // Updated to use Nvidia NIM Stable Diffusion 3 Medium
-        const response = await fetch('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux.2-klein-4b', {
+        const response = await fetch('https://ai.api.nvidia.com/v1/genai/black-forest-labs/flux-1-schnell', {
             method: 'POST',
             headers: {
                 'Content-Type': 'application/json',

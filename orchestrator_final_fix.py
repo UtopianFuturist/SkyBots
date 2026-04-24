@@ -1,4 +1,8 @@
-import { dataStore } from './dataStore.js';
+import sys
+
+file_path = 'src/services/orchestratorService.js'
+
+content = """import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
 import { blueskyService } from './blueskyService.js';
 import { discordService } from './discordService.js';
@@ -88,6 +92,7 @@ class OrchestratorService {
     }
 
     async performSkillSynthesis() {
+        console.log("[Orchestrator] Starting Skill Synthesis mission...");
         try {
             const lessons = dataStore.getSessionLessons();
             const failures = lessons.filter(l => l.text.toLowerCase().includes("fail") || l.text.toLowerCase().includes("missing"));
@@ -129,14 +134,14 @@ class OrchestratorService {
             let topic = options.topic;
             if (!topic) {
                 const keywords = dataStore.getDeepKeywords();
-                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\n");
-                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\n");
-                const resonancePrompt = `Identify 5 fresh topics. Content: ${lurkerMemories}. Keywords: ${keywords.join(', ')}. Recent Posts: ${recentPosts}. CRITICAL DIVERSIFICATION MANDATE: No repetition of last 10 posts. Respond with topics.`;
+                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\\n");
+                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\\n");
+                const resonancePrompt = `Fresh topics from Content: ${lurkerMemories} and Keywords: ${keywords.join(', ')}. Recent Posts: ${recentPosts}. Respond with topics.`;
                 const topicsRes = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true });
                 const topics = topicsRes.split(',').map(t => t.trim());
                 topic = topics[Math.floor(Math.random() * topics.length)];
             }
-            const draftingPrompt = `Persona: ${config.TEXT_SYSTEM_PROMPT}. Topic: ${topic}. Draft short post.`;
+            const draftingPrompt = `Persona: ${config.TEXT_SYSTEM_PROMPT}. Topic: ${topic}. Draft post.`;
             const content = await llmService.generateResponse([{ role: "system", content: draftingPrompt }], { useStep: true });
             if (content) {
                 const evaluation = await evaluationService.evaluatePost(content, { topic });
@@ -192,6 +197,7 @@ class OrchestratorService {
             if (recommendation && recommendation.recommended_topics) {
                 const updatedKeywords = [...new Set([...recommendation.recommended_topics, ...currentKeywords])].slice(0, 50);
                 await dataStore.setDeepKeywords(updatedKeywords);
+                await introspectionService.performAAR("topic_diversity", recommendation.analysis, { success: true });
                 await memoryService.createMemoryEntry("evolution", "[DIVERSITY] Integrated fresh angles: " + (recommendation.fresh_angles || []).slice(0, 3).join(', '));
             }
         } catch (e) {}
@@ -235,7 +241,7 @@ class OrchestratorService {
                 if (result) {
                     const dmChannel = admin.dmChannel || await admin.createDM();
                     const { AttachmentBuilder } = await import('discord.js');
-                    await discordService._send(dmChannel, result.caption + "\n\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
+                    await discordService._send(dmChannel, result.caption + "\\n\\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
                 }
             }
         } catch (e) {}
@@ -335,4 +341,8 @@ class OrchestratorService {
     }
 }
 
-export const orchestratorService = new OrchestratorService();
+export const orchestratorService = new OrchestratorService();"""
+
+with open(file_path, 'w') as f:
+    f.write(content)
+print("OrchestratorService fixed and restored")

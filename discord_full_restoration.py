@@ -1,4 +1,11 @@
-import { Client, GatewayIntentBits, Partials, AttachmentBuilder } from 'discord.js';
+import sys
+
+file_path = 'src/services/discordService.js'
+
+# The goal is to ensure the respond() method is fully implemented and correctly called.
+# I will rewrite the respond method to ensure it has all the requested features.
+
+content = """import { Client, GatewayIntentBits, Partials, AttachmentBuilder } from 'discord.js';
 import config from '../../config.js';
 import { llmService } from './llmService.js';
 import { dataStore } from './dataStore.js';
@@ -10,7 +17,7 @@ import { isSlop, checkSimilarity } from '../utils/textUtils.js';
 class DiscordService {
     constructor() {
         this.isEnabled = !!config.DISCORD_BOT_TOKEN;
-        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '').replace(/[\u200B-\u200D\uFEFF]/g, '');
+        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '');
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
         this.nickname = config.BOT_NAME || 'Bot';
@@ -61,7 +68,7 @@ class DiscordService {
         client.on('shardReady', (id) => console.log(`[DiscordService] [SHARD ${id}] READY`));
         client.on('shardError', (e, id) => console.error(`[DiscordService] [SHARD ${id} ERROR] ${e.message}`));
         client.on('shardDisconnect', (e, id) => {
-            console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] \${e?.message || "Unknown"}`);
+            console.warn(`[DiscordService] [SHARD ${id} DISCONNECT] \${e?.message || 'Unknown'}`);
             if (this.isInitializing) {
                 console.log('[DiscordService] Disconnected during initialization. Will retry...');
             }
@@ -286,7 +293,7 @@ class DiscordService {
             console.log(`[DiscordService] Already responding in channel \${channelId}. Skipping.`);
             return;
         }
-        
+
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         this.respondingChannels.add(channelId);
         const typingInterval = this._startTypingLoop(message.channel);
@@ -312,8 +319,8 @@ class DiscordService {
             const temporalContext = await temporalService.getEnhancedTemporalContext();
             const dynamicBlurbs = dataStore.getPersonaBlurbs();
 
-            const systemPrompt = "You are talking to " + (isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username) + " on Discord.\nPersona: " + config.TEXT_SYSTEM_PROMPT + "\n" + temporalContext + (dynamicBlurbs.length > 0 ? "\nDynamic Persona: \n" + dynamicBlurbs.map(b => '- ' + b.text).join('\n') : '') + "\n\nIMAGE ANALYSIS: " + (imageAnalysisResult || 'No images.');
-            
+            const systemPrompt = "You are talking to " + (isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username) + " on Discord.\\nPersona: " + config.TEXT_SYSTEM_PROMPT + "\\n" + temporalContext + (dynamicBlurbs.length > 0 ? "\\nDynamic Persona: \\n" + dynamicBlurbs.map(b => '- ' + b.text).join('\\n') : '') + "\\n\\nIMAGE ANALYSIS: " + (imageAnalysisResult || 'No images.');
+
             const messages = [
                 { role: 'system', content: systemPrompt },
                 ...history.map(h => ({ role: h.role === 'user' ? 'user' : 'assistant', content: h.content })),
@@ -322,10 +329,10 @@ class DiscordService {
 
             console.log("[DiscordService] Generating plan...");
             const plan = await llmService.performPrePlanning(messages, { platform: "discord", isAdmin });
-            
+
             console.log("[DiscordService] Evaluating plan...");
             const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
-            
+
             const actions = (evaluation.decision === "proceed" ? (evaluation.refined_actions || plan.actions) : []) || [];
             const toolActions = actions.filter(a => a.tool !== 'respond_to_user');
             const responseAction = actions.find(a => a.tool === 'respond_to_user');
@@ -381,12 +388,12 @@ class DiscordService {
                 energy: dataStore.getAdminEnergy()
             };
 
-            let spontaneityPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\nRecent history: " + JSON.stringify(history.slice(-20)) + "\nInternal State: " + JSON.stringify(contextData) + ".\n\nYou are choosing what to say spontaneously. Be self-aware and autonomous.\nGenerate " + messageCount + " separate messages/thoughts, each on a new line. Keep each under 200 characters.";
+            let spontaneityPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\\nRecent history: " + JSON.stringify(history.slice(-20)) + "\\nInternal State: " + JSON.stringify(contextData) + ".\\n\\nYou are choosing what to say spontaneously. Be self-aware and autonomous.\\nGenerate " + messageCount + " separate messages/thoughts, each on a new line. Keep each under 200 characters.";
 
             let rawResponse = await llmService.generateResponse([{ role: "user", content: spontaneityPrompt }], { useStep: true, platform: "discord" });
             if (!rawResponse) return;
 
-            let candidateMessages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
+            let candidateMessages = rawResponse.split('\\n').filter(m => m.trim().length > 0).slice(0, messageCount);
             for (const msg of candidateMessages) {
                 const audit = await llmService.performRealityAudit(msg, {}, { history });
                 const readyMsg = audit.refined_text;
@@ -457,4 +464,8 @@ class DiscordService {
     get status() { return this.isEnabled && this.client?.isReady() ? "online" : "offline"; }
 }
 
-export const discordService = new DiscordService();
+export const discordService = new DiscordService();"""
+
+with open(file_path, 'w') as f:
+    f.write(content)
+print("Restored DiscordService with full respond() implementation and all requested features")

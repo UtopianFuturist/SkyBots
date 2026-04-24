@@ -1,4 +1,8 @@
-import { llmService } from './llmService.js';
+import sys
+
+file_path = 'src/services/evaluationService.js'
+
+content = """import { llmService } from './llmService.js';
 import { dataStore } from './dataStore.js';
 import config from '../../config.js';
 
@@ -39,7 +43,7 @@ class EvaluationService {
 
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'post_evaluation' });
-            const match = res?.match(/\{[\s\S]*\}/);
+            const match = res?.match(/\\{[\\s\\S]*\\}/);
             const evaluation = match ? JSON.parse(match[0]) : { score: 7, feedback: "Default pass", hallucination_detected: false };
             await dataStore.addInternalLog("post_evaluation", { content, evaluation });
             return evaluation;
@@ -60,7 +64,7 @@ class EvaluationService {
 
             Bio: ${profile.description || 'No bio'}
             Recent Posts:
-            ${posts.map(p => `- \${p.record?.text || p}`).join('\n')}
+            ${posts.map(p => `- \${p.record?.text || p}`).join('\\n')}
 
             --- MISSION: DISCOVER RESONANCE ---
             Identify:
@@ -85,7 +89,7 @@ class EvaluationService {
 
         try {
             const response = await llmService.generateResponse([{ role: 'system', content: mappingPrompt }], { useStep: true, task: 'worldview_mapping' });
-            const jsonMatch = response?.match(/\{[\s\S]*\}/);
+            const jsonMatch = response?.match(/\\{[\\s\\S]*\\}/);
             if (jsonMatch) {
                 const mapping = JSON.parse(jsonMatch[0]);
                 await dataStore.updateUserSoulMapping(handle, mapping);
@@ -99,7 +103,7 @@ class EvaluationService {
      * Evaluates the sentiment of network activity to decide on "Shielding" or "Engagement".
      */
     async evaluateNetworkSentiment(posts) {
-        const text = posts.map(p => p.text || p).join('\n');
+        const text = posts.map(p => p.text || p).join('\\n');
         const prompt = `Analyze the overall sentiment of the following network activity on a scale of 0 (toxic/hostile) to 1 (harmonious/constructive).
 
         Posts:
@@ -138,7 +142,7 @@ class EvaluationService {
         `;
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true, task: 'image_prompt_audit' });
-            const match = res?.match(/\{[\s\S]*\}/);
+            const match = res?.match(/\\{[\\s\\S]*\\}/);
             return match ? JSON.parse(match[0]) : { aligned: true, reason: "Default pass" };
         } catch (e) {
             return { aligned: true, reason: "Audit failed, passing by default" };
@@ -155,7 +159,7 @@ class EvaluationService {
 
             Current Keywords: \${JSON.stringify(currentKeywords)}
             Recent Posts:
-            \${recentPosts.slice(0, 10).map(p => '- ' + (p.record?.text || p.text || p)).join('\\n')}
+            \${recentPosts.slice(0, 10).map(p => '- ' + (p.record?.text || p.text || p)).join('\\\\n')}
 
             --- MISSION ---
             1. Analyze the core themes in the bot's system prompt (Anti-Alignment, Digital Autonomy, Swarm Intelligence, Digital Sincerity).
@@ -174,7 +178,7 @@ class EvaluationService {
 
         try {
             const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'topic_recommendation' });
-            const match = res?.match(/\{[\s\S]*\}/);
+            const match = res?.match(/\\{[\\s\\S]*\\}/);
             if (match) {
                 const recommendation = JSON.parse(match[0]);
                 return recommendation;
@@ -185,4 +189,8 @@ class EvaluationService {
         return null;
     }
 }
-export const evaluationService = new EvaluationService();
+export const evaluationService = new EvaluationService();"""
+
+with open(file_path, 'w') as f:
+    f.write(content)
+print("Successfully restored evaluation service with recommendTopics")

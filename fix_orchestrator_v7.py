@@ -1,4 +1,9 @@
-import { dataStore } from './dataStore.js';
+import sys
+
+file_path = 'src/services/orchestratorService.js'
+
+# I will write the whole file one last time to be 100% sure of the state
+content = """import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
 import { blueskyService } from './blueskyService.js';
 import { discordService } from './discordService.js';
@@ -140,9 +145,9 @@ Respond with JSON:
             let topic = options.topic;
             if (!topic) {
                 const keywords = dataStore.getDeepKeywords();
-                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\n");
-                const newsroomMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[NEWSROOM]")).map(m => m.text).join("\n");
-                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\n");
+                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\\n");
+                const newsroomMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[NEWSROOM]")).map(m => m.text).join("\\n");
+                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\\n");
                 const allContent = lurkerMemories + newsroomMemories + keywords.join(", ");
 
                 const resonancePrompt = `Identify 5 topics from this text AND from these recent observations that resonate with your persona.
@@ -164,9 +169,9 @@ Respond with ONLY the comma-separated topics.`;
             }
 
             const recentLogs = dataStore.searchInternalLogs('memory_entry', 15);
-            const contextualSummary = recentLogs.map(l => l.text).join("\n").substring(0, 5000);
+            const contextualSummary = recentLogs.map(l => l.text).join("\\n").substring(0, 5000);
 
-            const draftingPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nContext: ${contextualSummary}\nTopic: ${topic}\n\nDraft a short, punchy Bluesky post (max 280 chars). No hashtags. No slop.`;
+            const draftingPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\\nContext: ${contextualSummary}\\nTopic: ${topic}\\n\\nDraft a short, punchy Bluesky post (max 280 chars). No hashtags. No slop.`;
             const content = await llmService.generateResponse([{ role: "system", content: draftingPrompt }], { useStep: true, task: "drafting" });
 
             if (content) {
@@ -308,7 +313,7 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
                 if (result) {
                     const dmChannel = admin.dmChannel || await admin.createDM();
                     const { AttachmentBuilder } = await import('discord.js');
-                    await discordService._send(dmChannel, result.caption + "\n\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
+                    await discordService._send(dmChannel, result.caption + "\\n\\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
                     await introspectionService.performAAR("discord_gift_image", result.caption, { success: true });
                 }
             }
@@ -320,7 +325,7 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
         const tenMinsAgo = Date.now() - (10 * 60 * 1000);
         for (const thought of thoughts) {
             if (thought.platform === 'bluesky' && thought.timestamp <= tenMinsAgo && !thought.reflected) {
-                const prompt = "Reflect on: \"" + thought.content + "\". Memory summary?";
+                const prompt = "Reflect on: \\"" + thought.content + "\\". Memory summary?";
                 const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
                 if (res) {
                     await memoryService.createMemoryEntry('explore', "[POST_REFLECTION] " + res);
@@ -365,7 +370,7 @@ Respond with JSON: {"new_keywords": ["..."], "removed": ["..."]}`;
 
     async _generateVerifiedImagePost(topic, options = {}) {
         try {
-            const promptGenPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\nGenerate a literal visual prompt for topic: " + topic + ". Style: Cyberpunk/Abstract. No meta-talk. No hashtags.";
+            const promptGenPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\\nGenerate a literal visual prompt for topic: " + topic + ". Style: Cyberpunk/Abstract. No meta-talk. No hashtags.";
             const res = await llmService.generateResponse([{ role: "system", content: promptGenPrompt }], { useStep: true });
             if (!res) return null;
 
@@ -430,4 +435,8 @@ Respond with JSON: {"needs_consultation": boolean, "subagent": "name", "topic": 
     }
 }
 
-export const orchestratorService = new OrchestratorService();
+export const orchestratorService = new OrchestratorService();"""
+
+with open(file_path, 'w') as f:
+    f.write(content)
+print("Restored OrchestratorService with clean multi-line strings and diversity mandate")

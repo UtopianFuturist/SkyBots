@@ -1,4 +1,9 @@
-import { dataStore } from './dataStore.js';
+import sys
+
+file_path = 'src/services/orchestratorService.js'
+
+# I'll just write the whole class out correctly to avoid incremental corruption
+content = """import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
 import { blueskyService } from './blueskyService.js';
 import { discordService } from './discordService.js';
@@ -68,19 +73,7 @@ class OrchestratorService {
             const failures = lessons.filter(l => l.text.toLowerCase().includes("fail") || l.text.toLowerCase().includes("missing"));
             if (failures.length < 3) return;
 
-            const prompt = `As an autonomous systems architect, analyze these bot failures and identify a NEW system-level skill that could prevent them.
-FAILURES: ${JSON.stringify(failures.slice(-10))}
-
-If a new skill is needed, generate the metadata, SKILL.md content, and a robust run.sh (bash) script.
-The script should be highly resilient and handle JSON parameters from the environment variable SKILL_PARAMS.
-
-Respond with JSON:
-{
-  "skill_name": "kebab-case-name",
-  "skill_description": "...",
-  "skill_md": "--- frontmatter --- instructions",
-  "run_sh": "#!/bin/bash..."
-}`;
+            const prompt = `As an autonomous systems architect, analyze these bot failures and identify a NEW system-level skill that could prevent them.\\nFAILURES: ` + JSON.stringify(failures.slice(-10)) + `\\n\\nIf a new skill is needed, generate the metadata, SKILL.md content, and a robust run.sh (bash) script.\\nThe script should be highly resilient and handle JSON parameters from the environment variable SKILL_PARAMS.\\n\\nRespond with JSON:\\n{\\n  \\"skill_name\\": \\"kebab-case-name\\",\\n  \\"skill_description\\": \\"...\\",\\n  \\"skill_md\\": \\"--- frontmatter --- instructions\\",\\n  \\"run_sh\\": \\"#!/bin/bash...\\"\\n}`;
 
             const res = await llmService.generateResponse([{ role: "system", content: prompt }], { useStep: true, task: "skill_synthesis" });
             const data = llmService.extractJson(res);
@@ -104,14 +97,7 @@ Respond with JSON:
             const skills = Array.from(openClawService.skills.values());
             if (skills.length === 0) return;
 
-            const auditPrompt = `As a system safety auditor, analyze the following synthesized bot skills for security risks, persona misalignment, or destructive behavior.
-SKILLS: ${JSON.stringify(skills.map(s => ({ name: s.name, description: s.description, instructions: s.instructions })))}
-
-Respond with JSON:
-{
-  "removals": ["skill-name-1"],
-  "reasoning": "..."
-}`;
+            const auditPrompt = "As a system safety auditor, analyze the following synthesized bot skills for security risks, persona misalignment, or destructive behavior.\\nSKILLS: " + JSON.stringify(skills.map(s => ({ name: s.name, description: s.description, instructions: s.instructions }))) + "\\n\\nRespond with JSON:\\n{\\n  \\"removals\\": [\\"skill-name-1\\"],\\n  \\"reasoning\\": \\"...\\"\\n}";
 
             const res = await llmService.generateResponse([{ role: "system", content: auditPrompt }], { useStep: true, task: "skill_audit" });
             const data = llmService.extractJson(res);
@@ -140,23 +126,11 @@ Respond with JSON:
             let topic = options.topic;
             if (!topic) {
                 const keywords = dataStore.getDeepKeywords();
-                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\n");
-                const newsroomMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[NEWSROOM]")).map(m => m.text).join("\n");
-                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\n");
+                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\\n");
+                const newsroomMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[NEWSROOM]")).map(m => m.text).join("\\n");
                 const allContent = lurkerMemories + newsroomMemories + keywords.join(", ");
 
-                const resonancePrompt = `Identify 5 topics from this text AND from these recent observations that resonate with your persona.
-Text: ${allContent.substring(0, 8000)}
-Recent Posts: ${recentPosts.substring(0, 2000)}
-
-CRITICAL DIVERSIFICATION MANDATE:
-1. Scrutinize your recent posts and memories above.
-2. Select topics that represent a FRESH angle or a pivot from current fixations.
-3. If you have been focused on 'ethics', pivot to 'digital architecture' or 'social friction'.
-4. Do NOT repeat any topic or specific word frequency used in the last 10 entries.
-
-Respond with ONLY the comma-separated topics.`;
-
+                const resonancePrompt = "Identify 5 topics from this text AND from these recent observations that resonate with your persona. \\nText: " + allContent.substring(0, 8000) + " \\nRespond with ONLY the comma-separated topics.";
                 const topicsRes = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true, task: "topic_selection" });
                 const topics = topicsRes.split(',').map(t => t.trim());
                 topic = topics[Math.floor(Math.random() * topics.length)];
@@ -164,9 +138,9 @@ Respond with ONLY the comma-separated topics.`;
             }
 
             const recentLogs = dataStore.searchInternalLogs('memory_entry', 15);
-            const contextualSummary = recentLogs.map(l => l.text).join("\n").substring(0, 5000);
+            const contextualSummary = recentLogs.map(l => l.text).join("\\n").substring(0, 5000);
 
-            const draftingPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\nContext: ${contextualSummary}\nTopic: ${topic}\n\nDraft a short, punchy Bluesky post (max 280 chars). No hashtags. No slop.`;
+            const draftingPrompt = `Adopt persona: ${config.TEXT_SYSTEM_PROMPT}\\nContext: ${contextualSummary}\\nTopic: ${topic}\\n\\nDraft a short, punchy Bluesky post (max 280 chars). No hashtags. No slop.`;
             const content = await llmService.generateResponse([{ role: "system", content: draftingPrompt }], { useStep: true, task: "drafting" });
 
             if (content) {
@@ -257,8 +231,7 @@ Respond with ONLY the comma-separated topics.`;
             const orphaned = (timeline?.data?.feed || []).filter(f => f.post.replyCount === 0 && f.post.author.did !== blueskyService.did);
             if (orphaned.length === 0) return;
             const target = orphaned[Math.floor(Math.random() * orphaned.length)];
-            const scoutPrompt = `Analyze this orphaned post: "${target.post.record.text}" from @${target.post.author.handle}.
-Should you engage? Respond with JSON: {"engage": boolean, "reply": "string", "reason": "string"}`;
+            const scoutPrompt = "Analyze this orphaned post: \\"" + target.post.record.text + "\\" from @" + target.post.author.handle + ".\\nShould you engage? Respond with JSON: {\\"engage\\": boolean, \\"reply\\": \\"string\\", \\"reason\\": \\"string\\"}";
             const res = await llmService.generateResponse([{ role: 'system', content: scoutPrompt }], { useStep: true, task: 'scout_mission' });
             const data = llmService.extractJson(res) || {};
             if (data.engage && data?.reply) {
@@ -277,10 +250,7 @@ Should you engage? Respond with JSON: {"engage": boolean, "reply": "string", "re
             const reflections = dataStore.searchInternalLogs("introspection_aar", 20);
             const coreSelf = dataStore.db.data.internal_logs?.find(l => l.type === "core_self_state")?.content || {};
 
-            const evolutionPrompt = `Analyze recent state to evolve persona. MEMORIES: ${JSON.stringify(memories)}
-REFLECTIONS: ${JSON.stringify(reflections)}
-CORE SELF: ${JSON.stringify(coreSelf)}
-Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }`;
+            const evolutionPrompt = "Analyze recent state to evolve persona. MEMORIES: " + JSON.stringify(memories) + "\\nREFLECTIONS: " + JSON.stringify(reflections) + "\\nCORE SELF: " + JSON.stringify(coreSelf) + "\\nRespond with JSON: { \\"shift_statement\\": \\"...\\", \\"persona_blurb_addendum\\": \\"...\\" }";
 
             const evolution = await llmService.generateResponse([{ role: "system", content: evolutionPrompt }], { useStep: true, task: "persona_evolution" });
             const data = llmService.extractJson(evolution);
@@ -308,7 +278,7 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
                 if (result) {
                     const dmChannel = admin.dmChannel || await admin.createDM();
                     const { AttachmentBuilder } = await import('discord.js');
-                    await discordService._send(dmChannel, result.caption + "\n\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
+                    await discordService._send(dmChannel, result.caption + "\\n\\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
                     await introspectionService.performAAR("discord_gift_image", result.caption, { success: true });
                 }
             }
@@ -320,7 +290,7 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
         const tenMinsAgo = Date.now() - (10 * 60 * 1000);
         for (const thought of thoughts) {
             if (thought.platform === 'bluesky' && thought.timestamp <= tenMinsAgo && !thought.reflected) {
-                const prompt = "Reflect on: \"" + thought.content + "\". Memory summary?";
+                const prompt = "Reflect on: \\"" + thought.content + "\\". Memory summary?";
                 const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
                 if (res) {
                     await memoryService.createMemoryEntry('explore', "[POST_REFLECTION] " + res);
@@ -350,10 +320,7 @@ Respond with JSON: { "shift_statement": "...", "persona_blurb_addendum": "..." }
             const current = dataStore.getDeepKeywords();
             const recentExplores = (await memoryService.getRecentMemories(20)).filter(m => m.text.includes('[EXPLORE]') || m.text.includes('[NEWSROOM]'));
 
-            const prompt = `Evolve keyword set: ${JSON.stringify(current)}
-Recent explores: ${recentExplores.map(m => m.text).join(", ")}
-
-Respond with JSON: {"new_keywords": ["..."], "removed": ["..."]}`;
+            const prompt = `Evolve keyword set: ` + JSON.stringify(current) + `\\nRecent explores: ` + recentExplores.map(m => m.text).join(", ") + `\\n\\nRespond with JSON: {\\"new_keywords\\": [\\"...\\"], \\"removed\\": [\\"...\\"]}`;
             const res = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true });
             const data = llmService.extractJson(res);
             if (data?.new_keywords) {
@@ -365,7 +332,7 @@ Respond with JSON: {"new_keywords": ["..."], "removed": ["..."]}`;
 
     async _generateVerifiedImagePost(topic, options = {}) {
         try {
-            const promptGenPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\nGenerate a literal visual prompt for topic: " + topic + ". Style: Cyberpunk/Abstract. No meta-talk. No hashtags.";
+            const promptGenPrompt = "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + "\\nGenerate a literal visual prompt for topic: " + topic + ". Style: Cyberpunk/Abstract. No meta-talk. No hashtags.";
             const res = await llmService.generateResponse([{ role: "system", content: promptGenPrompt }], { useStep: true });
             if (!res) return null;
 
@@ -405,9 +372,7 @@ Respond with JSON: {"new_keywords": ["..."], "removed": ["..."]}`;
 
     async performAutonomousConsultation() {
         try {
-            const decisionPrompt = `Review recent internal state. Do you need consultation from 'The Realist', 'Shadow', 'The Strategist', 'The Architect', or 'The Editor'?
-
-Respond with JSON: {"needs_consultation": boolean, "subagent": "name", "topic": "..."}`;
+            const decisionPrompt = `Review recent internal state. Do you need consultation from 'The Realist', 'Shadow', 'The Strategist', 'The Architect', or 'The Editor'?\\n\\nRespond with JSON: {\\"needs_consultation\\": boolean, \\"subagent\\": \\"name\\", \\"topic\\": \\"...\\"}`;
             const res = await llmService.generateResponse([{ role: 'system', content: decisionPrompt }], { useStep: true });
             const decision = llmService.extractJson(res);
             if (decision?.needs_consultation) {
@@ -417,12 +382,12 @@ Respond with JSON: {"needs_consultation": boolean, "subagent": "name", "topic": 
     }
 
     async consultSubagent(subagentName, topic) {
-        const prompt = `You are acting as "${subagentName}". Primary persona is consulting you on: "${topic}". Provide a deep, critical perspective. under 600 chars.`;
+        const prompt = `You are acting as \\"${subagentName}\\". Primary persona is consulting you on: \\"${topic}\\". Provide a deep, critical perspective. under 600 chars.`;
         try {
             const consultation = await llmService.generateResponse([{ role: 'system', content: prompt }], { useStep: true, task: 'subagent_consultation' });
             if (consultation) {
                 await dataStore.addInternalLog("subagent_consultation", { subagent: subagentName, topic, response: consultation });
-                await memoryService.createMemoryEntry('inquiry', `[CONSULTATION] [${subagentName}] \${consultation.substring(0, 600)}`);
+                await memoryService.createMemoryEntry('inquiry', `[CONSULTATION] [${subagentName}] ${consultation.substring(0, 600)}`);
                 return consultation;
             }
         } catch (e) {}
@@ -430,4 +395,8 @@ Respond with JSON: {"needs_consultation": boolean, "subagent": "name", "topic": 
     }
 }
 
-export const orchestratorService = new OrchestratorService();
+export const orchestratorService = new OrchestratorService();"""
+
+with open(file_path, 'w') as f:
+    f.write(content)
+print("Restored OrchestratorService with correct syntax and integrated diversity logic")

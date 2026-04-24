@@ -121,7 +121,7 @@ class LLMService {
                         max_tokens: options.max_tokens || 1024
                     }),
                     agent: persistentAgent,
-                    timeout: 60000 // Reduced from 180s to 60s for faster failover
+                    timeout: 90000 // from 180s to 60s for faster failover
                 });
             } catch (fetchError) {
                 console.error(`[LLMService] Request error (${model}): ${fetchError.message}`);
@@ -252,7 +252,7 @@ Respond with JSON:
             "Authorization": "Bearer " + config.NVIDIA_NIM_API_KEY 
         },
         body: JSON.stringify(payload),
-        timeout: 60000
+        timeout: 90000
       });
       
       if (!response.ok) {

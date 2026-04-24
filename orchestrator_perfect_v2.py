@@ -1,4 +1,8 @@
-import { dataStore } from './dataStore.js';
+import sys
+
+file_path = 'src/services/orchestratorService.js'
+
+content = """import { dataStore } from './dataStore.js';
 import { llmService } from './llmService.js';
 import { blueskyService } from './blueskyService.js';
 import { discordService } from './discordService.js';
@@ -121,8 +125,8 @@ class OrchestratorService {
             let topic = options.topic;
             if (!topic) {
                 const keywords = dataStore.getDeepKeywords();
-                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\n");
-                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\n");
+                const lurkerMemories = (await memoryService.getRecentMemories(10)).filter(m => m.text.includes("[LURKER]")).map(m => m.text).join("\\n");
+                const recentPosts = (await blueskyService.getUserPosts(blueskyService.handle, 10)).map(p => p.record?.text || "").join("\\n");
                 const resonancePrompt = `Identify 5 fresh topics. Content: ${lurkerMemories}. Keywords: ${keywords.join(', ')}. Recent Posts: ${recentPosts}. CRITICAL DIVERSIFICATION MANDATE: No repetition. Respond with topics.`;
                 const topicsRes = await llmService.generateResponse([{ role: "system", content: resonancePrompt }], { useStep: true });
                 const topics = topicsRes.split(',').map(t => t.trim());
@@ -228,7 +232,7 @@ class OrchestratorService {
                 if (result) {
                     const dmChannel = admin.dmChannel || await admin.createDM();
                     const { AttachmentBuilder } = await import('discord.js');
-                    await discordService._send(dmChannel, result.caption + "\n\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
+                    await discordService._send(dmChannel, result.caption + "\\n\\n[GIFT]", { files: [new AttachmentBuilder(result.buffer, { name: 'gift.jpg' })] });
                 }
             }
         } catch (e) {}
@@ -328,4 +332,8 @@ class OrchestratorService {
     }
 }
 
-export const orchestratorService = new OrchestratorService();
+export const orchestratorService = new OrchestratorService();"""
+
+with open(file_path, 'w') as f:
+    f.write(content)
+print("OrchestratorService restored cleanly")

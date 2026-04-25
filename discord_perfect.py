@@ -1,4 +1,8 @@
-import { Client, GatewayIntentBits, Partials, AttachmentBuilder } from 'discord.js';
+import sys
+
+file_path = 'src/services/discordService.js'
+
+content = """import { Client, GatewayIntentBits, Partials, AttachmentBuilder } from 'discord.js';
 import config from '../../config.js';
 import { llmService } from './llmService.js';
 import { dataStore } from './dataStore.js';
@@ -10,7 +14,7 @@ import { isSlop, checkSimilarity } from '../utils/textUtils.js';
 class DiscordService {
     constructor() {
         this.isEnabled = !!config.DISCORD_BOT_TOKEN;
-        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '').replace(/[\\u200B-\\u200D\\uFEFF]/g, '');
+        this.token = config.DISCORD_BOT_TOKEN?.trim().replace(/['"]/g, '').replace(/[\\\\u200B-\\\\u200D\\\\uFEFF]/g, '');
         this.adminName = config.DISCORD_ADMIN_NAME;
         this.adminId = null;
         this.nickname = config.BOT_NAME || 'Bot';
@@ -37,7 +41,7 @@ class DiscordService {
                 GatewayIntentBits.MessageContent,
                 GatewayIntentBits.GuildMessages
             ],
-            rest: { timeout: 60000, retries: 15 }
+            rest: { timeout: 60000, retries: 5 }
         });
 
         client.on('ready', () => {
@@ -103,7 +107,7 @@ class DiscordService {
                         this.client.removeAllListeners();
                         try { await this.client.destroy(); } catch (e) {}
                     }
-                    console.log(`[DiscordService] Login attempt ${attemptCount}...`);
+                    console.log(`[DiscordService] Login attempt \${attemptCount}...`);
                     this.client = this._createClient();
                     await new Promise((resolve, reject) => {
                         const timeout = setTimeout(() => reject(new Error("Timeout")), 300000);
@@ -167,7 +171,7 @@ class DiscordService {
     async respond(message) {
         const channelId = message.channel.id;
         if (this.respondingChannels.has(channelId)) return;
-        
+
         const isAdmin = message.author.username === this.adminName || (this.adminId && message.author.id === this.adminId);
         this.respondingChannels.add(channelId);
         const typingInterval = this._startTypingLoop(message.channel);
@@ -178,7 +182,7 @@ class DiscordService {
                 for (const [id, attachment] of message.attachments) {
                     try {
                         const analysis = await llmService.analyzeImage(attachment.url, "User attachment");
-                        if (analysis) imageAnalysisResult += `[Image attached by user: ${analysis}] `;
+                        if (analysis) imageAnalysisResult += `[Image attached by user: \${analysis}] `;
                     } catch (err) {}
                 }
             }
@@ -188,16 +192,16 @@ class DiscordService {
             const dynamicBlurbs = dataStore.getPersonaBlurbs();
             const hierarchicalSummary = await socialHistoryService.getHierarchicalSummary();
 
-            const systemPrompt = `You are talking to ${isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username} on Discord.
-Persona: ${config.TEXT_SYSTEM_PROMPT}
-${temporalContext}${dynamicBlurbs.length > 0 ? "\nDynamic Persona: \n" + dynamicBlurbs.map(b => '- ' + b.text).join('\n') : ''}
+            const systemPrompt = `You are talking to \${isAdmin ? "your admin (" + this.adminName + ")" : "@" + message.author.username} on Discord.
+Persona: \${config.TEXT_SYSTEM_PROMPT}
+\${temporalContext}\${dynamicBlurbs.length > 0 ? "\\nDynamic Persona: \\n" + dynamicBlurbs.map(b => '- ' + b.text).join('\\n') : ''}
 
 --- SOCIAL NARRATIVE ---
-${hierarchicalSummary.dailyNarrative || ""}
-${hierarchicalSummary.shortTerm || ""}
+\${hierarchicalSummary.dailyNarrative || ""}
+\${hierarchicalSummary.shortTerm || ""}
 ---
 
-IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}`;
+IMAGE ANALYSIS: \${imageAnalysisResult || 'No images.'}`;
 
             const messages = [
                 { role: 'system', content: systemPrompt },
@@ -259,7 +263,7 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}`;
             let rawResponse = await llmService.generateResponse([{ role: "user", content: "Adopt persona: " + config.TEXT_SYSTEM_PROMPT + ". Recent: " + JSON.stringify(history.slice(-20)) + ". Spontaneous messages?" }], { useStep: true, platform: "discord" });
             if (!rawResponse) return;
 
-            let candidateMessages = rawResponse.split('\n').filter(m => m.trim().length > 0).slice(0, messageCount);
+            let candidateMessages = rawResponse.split('\\n').filter(m => m.trim().length > 0).slice(0, messageCount);
             for (const msg of candidateMessages) {
                 const audit = await llmService.performRealityAudit(msg, {}, { history });
                 const readyMsg = audit.refined_text;
@@ -308,4 +312,13 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}`;
     get status() { return this.isEnabled && this.client?.isReady() ? "online" : "offline"; }
 }
 
-export const discordService = new DiscordService();
+export const discordService = new DiscordService();"""
+
+# Helper to write and fix template literals
+def write_fixed(path, content):
+    content = content.replace('\\${', '${')
+    with open(path, 'w') as f:
+        f.write(content)
+
+write_fixed('src/services/discordService.js', content)
+print("DiscordService restored cleanly")

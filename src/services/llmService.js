@@ -189,7 +189,7 @@ Respond with JSON:
   }
 
   async evaluateAndRefinePlan(plan, context, options = {}) {
-    const prompt = "Refine plan: " + JSON.stringify(plan) + ". JSON: { \"decision\": \"proceed\", \"refined_actions\": [] }";
+    const prompt = `Refine or Refuse plan: ${JSON.stringify(plan)}.\nContext: ${JSON.stringify(context)}\nEvaluate for persona alignment, safety, and operational boundaries.\nJSON: { "decision": "proceed" | "refuse", "reason": "string", "refined_actions": [] }`;
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     return this.extractJson(res) || { decision: "proceed", refined_actions: plan?.actions || [] };
   }

@@ -119,7 +119,7 @@ class DiscordService {
                     } else break;
                 }
             }
-            await new Promise(r => setTimeout(r, 15 * 60 * 1000));
+            await new Promise(r => setTimeout(r, 30 * 60 * 1000));
         }
     }
 
@@ -207,6 +207,11 @@ IMAGE ANALYSIS: ${imageAnalysisResult || 'No images.'}`;
 
             const plan = await llmService.performPrePlanning(messages, { platform: "discord", isAdmin });
             const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
+            if (evaluation.decision === "refuse") {
+                console.log(`[DiscordService] Plan refused: ${evaluation.reason || "No reason given"}`);
+                this.respondingChannels.delete(channelId);
+                return;
+            }
             const actions = (evaluation.decision === "proceed" ? (evaluation.refined_actions || plan.actions) : []) || [];
             const responseAction = actions.find(a => a.tool === 'respond_to_user');
 

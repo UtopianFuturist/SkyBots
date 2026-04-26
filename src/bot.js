@@ -465,6 +465,10 @@ export class Bot {
         const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
         let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, "bluesky", dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories: await memoryService.getRecentMemories(20) });
         const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "bluesky", isAdmin });
+        if (evaluation.decision === "refuse") {
+            console.log(`[Bot] Plan refused: ${evaluation.reason || "No reason given"}`);
+            return;
+        }
         if (evaluation.decision === "proceed") {
             for (const action of (evaluation.refined_actions || plan.actions)) await this.executeAction(action, { ...notif, platform: "bluesky" });
         }

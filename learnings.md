@@ -20,3 +20,6 @@ Increased background LLM throttling to 28s and queue item spacing to 4s. This mi
 
 ## Template Literal Corruption Mitigation
 Used Python scripts with double-escaping (`\\${`) to restore JS files safely without corrupting template literals `${}` during `cat` or `sed` operations.
+
+## Orchestrator Refusal Mandate
+Enhanced the `evaluateAndRefinePlan` loop to explicitly evaluate plans for persona alignment and safety. The Orchestrator can now return a `refuse` decision with a reason, which is caught and logged by both the Bluesky and Discord interaction handlers, preventing the execution of misaligned actions.

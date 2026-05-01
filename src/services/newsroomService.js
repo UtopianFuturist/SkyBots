@@ -8,7 +8,7 @@ class NewsroomService {
         this.sources = ['apnews.bsky.social', 'reuters.com']; // Standard trusted news on Bsky
     }
 
-    async getDailyBrief(topics, customPrompt = null) {
+    async getDailyBrief(topics) {
         console.log('[Newsroom] Generating daily brief for topics:', topics.join(', '));
         try {
             let newsText = "";
@@ -17,7 +17,7 @@ class NewsroomService {
                 newsText += `--- SOURCE: @${source} ---\n` + posts.slice(0, 10).join('\n') + '\n';
             }
 
-            const prompt = customPrompt || `
+            const prompt = `
                 You are "The Newsroom". Analyze the following recent news from AP and Reuters on Bluesky.
                 Filter for information relevant to these interests: ${topics.join(', ')}.
 

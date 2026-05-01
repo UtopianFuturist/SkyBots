@@ -5,20 +5,29 @@ import { llmService } from './llmService.js';
 class SocialHistoryService {
   get js() { return this; }
 
-  async getRecentSocialContext(limit = 15) {
+  async getRecentSocialContext(limit = 20) {
     const interactions = dataStore.getRecentInteractions();
     return interactions.slice(-limit);
   }
 
-  async getHierarchicalSummary(limit = 20) {
-    const interactions = dataStore.getRecentInteractions();
+  async getHierarchicalSummary(limit = 30) {
+    // Get more interactions to provide better context for the summary
+    const interactions = dataStore.getRecentInteractions(null, limit);
+    console.log(`[SocialHistory] Generating summary from ${interactions.length} interactions.`);
+    if (interactions.length > 0) {
+        const last = interactions[interactions.length - 1];
+        console.log(`[SocialHistory] Last interaction: [${last.platform}] ${last.role}: ${last.content.substring(0, 50)}...`);
+    }
     const reflections = dataStore.getInternalLogs().filter(l => l.type === 'reflection').slice(-10);
     const goals = dataStore.getInternalLogs().filter(l => l.type === 'goal').slice(-5);
     const maintenance = dataStore.getInternalLogs().filter(l => l.type === 'maintenance_report').slice(-3);
 
     const summaryPrompt = `
       You are the "Archivist". Synthesize the current social and internal state into a hierarchical summary.
-      Recent Interactions: ${JSON.stringify(interactions.slice(-10))}
+      
+      CRITICAL: You must provide a complete and accurate narrative. Do not truncate or summarize your own responses into partial thoughts. If you see a conversation, represent its full emotional and topical arc.
+
+      Recent Interactions: ${JSON.stringify(interactions)}
       Recent Internal Reflections: ${JSON.stringify(reflections)}
       Recent Goals: ${JSON.stringify(goals)}
       Recent Maintenance: ${JSON.stringify(maintenance)}

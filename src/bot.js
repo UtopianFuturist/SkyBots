@@ -383,23 +383,6 @@ export class Bot {
                                 orchestratorService.addTaskToQueue(() => orchestratorService.performAutonomousPost({ topic: match.matched_keywords?.[0] || "trending" }), "firehose_impulse");
                             }
 
-                            if (match.type === "firehose_mention") {
-                                console.log(`[Bot] Firehose interaction detected from ${match.author?.did}. Checking for existing response...`);
-                                if (!await blueskyService.hasBotRepliedTo(match.uri)) {
-                                    const notif = {
-                                        uri: match.uri,
-                                        cid: match.cid,
-                                        author: match.author,
-                                        record: match.record,
-                                        reason: match.reason || "mention",
-                                        indexedAt: new Date().toISOString()
-                                    };
-                                    this.processNotification(notif).catch(e => console.error("[Bot] Firehose interaction processing failed:", e));
-                                } else {
-                                    console.log(`[Bot] Already responded to ${match.uri}. Skipping.`);
-                                }
-                            }
-
                         } catch (e) {}
                     }
                 });
@@ -438,12 +421,6 @@ export class Bot {
 
     async processNotification(notif) {
         if (this._detectInfiniteLoop(notif.uri)) return;
-
-        // Resolve handle if missing (e.g. from firehose)
-        if (notif.author && !notif.author.handle) {
-            const profile = await blueskyService.getProfile(notif.author.did);
-            if (profile) notif.author.handle = profile.handle;
-        }
         const history = await this._getThreadHistory(notif.uri);
         const text = notif.record.text || "";
         const commandResponse = await handleCommand(this, notif, text); if (commandResponse) { await blueskyService.postReply(notif, commandResponse); return; }
@@ -465,10 +442,6 @@ export class Bot {
         const prePlan = await llmService.performPrePlanning(text, history, null, "bluesky", dataStore.getMood(), {});
         let plan = await llmService.performAgenticPlanning(text, history, null, isAdmin, "bluesky", dataStore.getExhaustedThemes(), {}, {}, {}, {}, null, prePlan, { memories: await memoryService.getRecentMemories(20) });
         const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "bluesky", isAdmin });
-        if (evaluation.decision === "refuse") {
-            console.log(`[Bot] Plan refused: ${evaluation.reason || "No reason given"}`);
-            return;
-        }
         if (evaluation.decision === "proceed") {
             for (const action of (evaluation.refined_actions || plan.actions)) await this.executeAction(action, { ...notif, platform: "bluesky" });
         }

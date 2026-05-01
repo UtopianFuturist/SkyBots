@@ -1,5 +1,0 @@
-Learnings:
-- Dynamic Lurker mode improves bot statefulness.
-- Categorizing topic sources in prompts helps the LLM balance between pre-configured interests and real-time feed resonance.
-- Strict anti-slop directives are necessary to prevent philosophical 'poetic' looping.
-- Heartbeat jitter needs to be balanced with desired posting frequency.

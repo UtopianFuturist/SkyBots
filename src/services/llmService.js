@@ -15,7 +15,7 @@ class LLMService {
 
   async _throttle(priority = false) {
     const now = Date.now();
-    const minDelay = priority ? 2500 : 28000;
+    const minDelay = priority ? 1000 : 3000;
     const targetStartTime = Math.max(now, LLMService.lastRequestTime + minDelay);
     LLMService.lastRequestTime = targetStartTime;
     const waitTime = targetStartTime - now;
@@ -104,29 +104,23 @@ class LLMService {
         systemPrompt = "Persona: " + basePersona + "\n" + this.soulContent + "\n" + this.agentsContent + "\n" + this.statusContent + "\n" + temporalContext + "\n" + dynamicPersonaBlock + memoriesBlock + (sessionLessons ? "\n\n**RECENT LESSONS:**\n" + sessionLessons : "") + skillsContext + "\nGuidelines: Be direct. No slop.";
     }
 
-    let models = [config.STEP_MODEL, config.LLM_MODEL].filter(Boolean);
+    let models = [config.STEP_MODEL, config.LLM_MODEL, 'deepseek-ai/deepseek-v3.2'].filter(Boolean);
     for (const model of models) {
         try {
             const isPriority = options.platform === "discord" || options.platform === "bluesky" || options.priority === "high";
             await this._throttle(isPriority);
-            let response;
-            try {
-                response = await fetch(this.endpoint, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.NVIDIA_NIM_API_KEY },
-                    body: JSON.stringify({
-                        model: model,
-                        messages: this._prepareMessages(messages, systemPrompt, options),
-                        temperature: options.temperature || 0.7,
-                        max_tokens: options.max_tokens || 1024
-                    }),
-                    agent: persistentAgent,
-                    timeout: 90000 // from 180s to 60s for faster failover
-                });
-            } catch (fetchError) {
-                console.error(`[LLMService] Request error (${model}): ${fetchError.message}`);
-                continue; // Move to next model immediately on timeout
-            }
+            const response = await fetch(this.endpoint, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': 'Bearer ' + config.NVIDIA_NIM_API_KEY },
+                body: JSON.stringify({
+                    model: model,
+                    messages: this._prepareMessages(messages, systemPrompt, options),
+                    temperature: options.temperature || 0.7,
+                    max_tokens: options.max_tokens || 1024
+                }),
+                agent: persistentAgent,
+                timeout: 180000
+            });
 
             if (!response.ok) {
                 console.warn("[LLMService] API error: " + response.status + " for " + model);
@@ -189,7 +183,7 @@ Respond with JSON:
   }
 
   async evaluateAndRefinePlan(plan, context, options = {}) {
-    const prompt = `Refine or Refuse plan: ${JSON.stringify(plan)}.\nContext: ${JSON.stringify(context)}\nEvaluate for persona alignment, safety, and operational boundaries.\nJSON: { "decision": "proceed" | "refuse", "reason": "string", "refined_actions": [] }`;
+    const prompt = "Refine plan: " + JSON.stringify(plan) + ". JSON: { \"decision\": \"proceed\", \"refined_actions\": [] }";
     const res = await this.generateResponse([{ role: 'user', content: prompt }], { ...options, useStep: true });
     return this.extractJson(res) || { decision: "proceed", refined_actions: plan?.actions || [] };
   }
@@ -251,8 +245,7 @@ Respond with JSON:
             "Content-Type": "application/json", 
             "Authorization": "Bearer " + config.NVIDIA_NIM_API_KEY 
         },
-        body: JSON.stringify(payload),
-        timeout: 90000
+        body: JSON.stringify(payload)
       });
       
       if (!response.ok) {

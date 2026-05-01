@@ -41,9 +41,6 @@ class MemoryService {
     this.recentMemories = [];
     this.processingQueue = Promise.resolve();
     this.rootPost = null;
-    this._memoryCache = null;
-    this._lastFetchTime = 0;
-    this._cacheTTL = 30000; // 30 seconds
   }
 
   get js() { return this; }
@@ -51,18 +48,12 @@ class MemoryService {
 
   async fetchRecentMemories(hashtag, limit = 15) {
     if (!this.isEnabled()) return [];
-
-    // Simple cache to prevent redundant fetches within the same heartbeat cycle
-    const now = Date.now();
-    if (this._memoryCache && (now - this._lastFetchTime < this._cacheTTL) && limit <= this._memoryCache.length) {
-      return this._memoryCache.slice(0, limit);
-    }
-
     try {
       console.log(`[MemoryService] Fetching memories for ${hashtag}...`);
-      const posts = await blueskyService.getUserPosts(blueskyService.did, Math.max(limit * 3, 50));
+      // Use getAuthorFeed (Reliable) instead of search (Unreliable/403)
+      const posts = await blueskyService.getUserPosts(blueskyService.did, limit * 3);
 
-      const memories = posts
+      this.recentMemories = posts
         .filter(p => p.post.record.text.includes(hashtag))
         .map(p => ({
             uri: p.post.uri, cid: p.post.cid, text: p.post.record.text.replace(hashtag, '').trim(),
@@ -70,11 +61,7 @@ class MemoryService {
             timestamp: new Date(p.post.record.createdAt).getTime(),
             indexedAt: p.post.record.createdAt,
             originalPost: p.post
-        }));
-
-      this.recentMemories = memories.slice(0, limit);
-      this._memoryCache = memories;
-      this._lastFetchTime = now;
+        })).slice(0, limit);
 
       if (this.recentMemories.length > 0) {
         const first = this.recentMemories[0].originalPost;
@@ -83,7 +70,7 @@ class MemoryService {
       return this.recentMemories;
     } catch (error) {
         console.error('[MemoryService] Error fetching memories:', error.message);
-        return this._memoryCache ? this._memoryCache.slice(0, limit) : [];
+        return [];
     }
   }
 
@@ -190,7 +177,7 @@ CRITICAL:
 
         // Enforce Format: [TAG] [m/d/year] Content
         const tag = type.toUpperCase();
-        let finalEntry = (entryText.includes(`[${tag}]`) && /\[\d+\/\d+\/\d+\]/.test(entryText)) ? entryText : `[${tag}] [${dateStr}] ${entryText.replace(/^\[.*?\]\s*(\[\d+\/\d+\/\d+\])?\s*/, "")}`;
+        const finalEntry = (entryText.includes(`[${tag}]`) && /\[\d+\/\d+\/\d+\]/.test(entryText)) ? entryText : `[${tag}] [${dateStr}] ${entryText.replace(/^\[.*?\]\s*(\[\d+\/\d+\/\d+\])?\s*/, "")}`;
 
         // Final Quality & Substance Check (Old filter logic integration)
         const evaluationPrompt = `
@@ -234,38 +221,17 @@ CRITICAL:
             }
         }
 
-        // Unified Threading Logic: Priority to DataStore root, fallback to search, otherwise start new
-        let threadRoot = await dataStore.getMemoryThreadRoot(this.hashtag);
+        const latestPost = await this.findLatestMemoryPost();
         let result = null;
 
-        if (threadRoot) {
-            console.log(`[MemoryService] Threading memory under stored root: ${threadRoot.uri}`);
-            result = await blueskyService.postReply(threadRoot, finalEntry);
+        if (latestPost) {
+            console.log(`[MemoryService] Replying to latest memory post: ${latestPost.uri}`);
+            const parentPost = { uri: latestPost.uri, cid: latestPost.cid, record: latestPost.record };
+            result = await blueskyService.postReply(parentPost, finalEntry);
         } else {
-            const memories = await this.fetchRecentMemories(this.hashtag, 1);
-            if (memories.length > 0) {
-                const latest = memories[0].originalPost;
-                const parent = { uri: latest.uri, cid: latest.cid, record: latest.record };
-                const root = latest.record.reply?.root || { uri: latest.uri, cid: latest.cid };
-
-                console.log(`[MemoryService] Threading memory under latest: ${latest.uri}`);
-                result = await blueskyService.postReply(parent, finalEntry);
-                if (result) {
-                    const rootUri = parent.record?.reply?.root?.uri || parent.uri;
-                    await this.secureThread(rootUri);
-                }
-                if (result) await dataStore.setMemoryThreadRoot(this.hashtag, root);
-            } else {
-                console.log(`[MemoryService] Initializing new memory thread for ${this.hashtag}`);
-                result = await blueskyService.post(finalEntry);
-                if (result) {
-                    await this.secureThread(result.uri);
-                }
-                if (result) {
-                    this.rootPost = result;
-                    await dataStore.setMemoryThreadRoot(this.hashtag, { uri: result.uri, cid: result.cid });
-                }
-            }
+            console.log(`[MemoryService] No existing thread found. Initializing new memory thread.`);
+            result = await blueskyService.post(finalEntry);
+            if (result) this.rootPost = result;
         }
 
         if (result) {
@@ -314,7 +280,7 @@ CRITICAL:
       const memories = await this.getRecentMemories(50);
       const auditPrompt = `Daily Knowledge Audit: Synthesize these 50 memories into a worldview map. Identify patterns and shifts. Context: ${JSON.stringify(memories)}`;
       const synth = await llmService.generateResponse([{ role: 'system', content: auditPrompt }], { useStep: true });
-      if (synth) await this.createMemoryEntry('reflection', `[WORLDVIEW_SYNTH] ${synth.substring(0, 500)}`);
+      if (synth) await this.createMemoryEntry('reflection', `[WORLDVIEW_SYNTH] ${synth.substring(0, 200)}`);
   }
   async auditMemoriesForReconstruction() {
     if (!this.isEnabled()) return;
@@ -341,7 +307,7 @@ Respond with JSON: { "insight": "a deep synthesis of these patterns", "persona_s
         const result = JSON.parse(response.match(/\{[\s\S]*\}/)[0]);
 
         if (result.persona_shift) {
-            await this.createMemoryEntry(result.type || 'persona', `[RECURSION] ${result.persona_shift} (Based on: ${result.insight.substring(0, 300)}...)`);
+            await this.createMemoryEntry(result.type || 'persona', `[RECURSION] ${result.persona_shift} (Based on: ${result.insight.substring(0, 100)}...)`);
         }
         return result;
     } catch (e) {

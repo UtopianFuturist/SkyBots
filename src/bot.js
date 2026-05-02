@@ -6,15 +6,11 @@ import { llmService } from './services/llmService.js';
 import { dataStore } from './services/dataStore.js';
 import { memoryService } from './services/memoryService.js';
 import { orchestratorService } from './services/orchestratorService.js';
-import { renderService } from './services/renderService.js';
 import { socialHistoryService } from './services/socialHistoryService.js';
 import { newsroomService } from './services/newsroomService.js';
 import { imageService } from './services/imageService.js';
 import { introspectionService } from './services/introspectionService.js';
-import { evaluationService } from './services/evaluationService.js';
 import { openClawService } from './services/openClawService.js';
-import { cronService } from './services/cronService.js';
-import { nodeGatewayService } from './services/nodeGatewayService.js';
 import toolService from './services/toolService.js';
 import { checkHardCodedBoundaries } from './utils/textUtils.js';
 import { handleCommand } from "./utils/commandHandler.js";
@@ -76,12 +72,6 @@ export class Bot {
 
         try { await openClawService.init(); } catch (e) { console.error('[Bot] OpenClaw init failed:', e); }
         try { await toolService.init(); } catch (e) { console.error('[Bot] ToolService init failed:', e); }
-        try { await nodeGatewayService.init(); } catch (e) { console.error('[Bot] NodeGateway init failed:', e); }
-        try { await cronService.init(); } catch (e) { console.error('[Bot] CronService init failed:', e); }
-
-        if (config.RENDER_API_KEY) {
-            try { await renderService.discoverServiceId(); } catch (e) { console.warn('[Bot] Render service discovery failed'); }
-        }
 
         this.startNotificationPoll();
         this.startFirehose();

@@ -245,9 +245,8 @@ class DiscordService {
             console.log("[DiscordService] Evaluating plan...");
             const evaluation = await llmService.evaluateAndRefinePlan(plan, { platform: "discord", isAdmin });
             
-            // Check if there are any specific tool-based actions planned
-            const actions = (evaluation.decision === "proceed" ? (evaluation.refined_actions || plan.actions) : []) || [];
-            
+            const actions = evaluation.refined_actions || plan.actions || [];
+
             // Filter out 'respond_to_user' from the tool execution if it's the only action, 
             // or handle it explicitly.
             const toolActions = actions.filter(a => a.tool !== 'respond_to_user');

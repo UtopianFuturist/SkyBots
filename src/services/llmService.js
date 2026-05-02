@@ -280,10 +280,6 @@ Respond with JSON:
     return this.extractJson(res) || { relevant: true };
   }
 
-  async isPersonaAligned(text, platform, context) {
-      return { aligned: true };
-  }
-
   async isAutonomousPostCoherent() { return { score: 10 }; }
   async extractRelationalVibe() { return "neutral"; }
   async isUrlSafe() { return { safe: true }; }

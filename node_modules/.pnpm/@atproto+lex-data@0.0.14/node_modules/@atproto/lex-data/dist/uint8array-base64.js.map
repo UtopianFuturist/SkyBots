@@ -1,0 +1,1 @@
+{"version":3,"file":"uint8array-base64.js","sourceRoot":"","sources":["../src/uint8array-base64.ts"],"names":[],"mappings":"","sourcesContent":["/** @default 'base64' */\nexport type Base64Alphabet = 'base64' | 'base64url'\n"]}

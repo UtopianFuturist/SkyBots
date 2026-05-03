@@ -4,7 +4,7 @@ import { blueskyService } from './blueskyService.js';
 import { discordService } from './discordService.js';
 import { memoryService } from './memoryService.js';
 import { newsroomService } from './newsroomService.js';
-import { evaluationService } from './evaluationService.js';
+// import { evaluationService } from './evaluationService.js';
 import { introspectionService } from './introspectionService.js';
 import { imageService } from './imageService.js';
 import { openClawService } from './openClawService.js';

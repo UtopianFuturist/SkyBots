@@ -1,0 +1,1 @@
+{"version":3,"file":"session-manager.js","sourceRoot":"","sources":["../src/session-manager.ts"],"names":[],"mappings":"","sourcesContent":["import { FetchHandlerObject } from '@atproto/xrpc'\n\nexport interface SessionManager extends FetchHandlerObject {\n  readonly did?: string\n}\n"]}

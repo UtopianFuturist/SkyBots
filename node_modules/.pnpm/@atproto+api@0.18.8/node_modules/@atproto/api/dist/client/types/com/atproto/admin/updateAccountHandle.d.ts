@@ -1,0 +1,21 @@
+/**
+ * GENERATED CODE - DO NOT MODIFY
+ */
+import { HeadersMap } from '@atproto/xrpc';
+export type QueryParams = {};
+export interface InputSchema {
+    did: string;
+    handle: string;
+}
+export interface CallOptions {
+    signal?: AbortSignal;
+    headers?: HeadersMap;
+    qp?: QueryParams;
+    encoding?: 'application/json';
+}
+export interface Response {
+    success: boolean;
+    headers: HeadersMap;
+}
+export declare function toKnownErr(e: any): any;
+//# sourceMappingURL=updateAccountHandle.d.ts.map

@@ -22,7 +22,7 @@ export class Bot {
         this.paused = false;
         this.lastFirehoseImpulse = 0;
         this.readmeContent = "";
-        if (llmService.setDataStore) llmService.setDataStore(dataStore);
+
         if (llmService.setMemoryProvider) llmService.setMemoryProvider(memoryService);
         orchestratorService.setBotInstance(this);
     }
@@ -33,6 +33,7 @@ export class Bot {
         try {
             console.log('[Bot] Initializing DataStore...');
             await dataStore.init();
+            if (llmService.setDataStore) llmService.setDataStore(dataStore);
         } catch (e) { console.error('[Bot] DataStore init failed:', e); }
 
         try {

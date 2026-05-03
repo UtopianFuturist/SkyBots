@@ -1,6 +1,6 @@
 import { dataStore } from '../services/dataStore.js';
-import { googleSearchService } from '../services/googleSearchService.js';
-import { youtubeService } from '../services/youtubeService.js';
+// import { googleSearchService } from '../services/googleSearchService.js';
+// import { youtubeService } from '../services/youtubeService.js';
 import { imageService } from '../services/imageService.js';
 import { blueskyService } from '../services/blueskyService.js';
 import { llmService } from '../services/llmService.js';
@@ -88,11 +88,12 @@ export const handleCommand = async (bot, post, text) => {
     return await llmService.generateResponse(messages);
   }
 
-  if (lowerText.startsWith('!search') || lowerText.startsWith('!google')) {
+  /*
+  if (lowerText.startsWith("!search") || lowerText.startsWith("!google")) {
     if (!config.GOOGLE_CUSTOM_SEARCH_API_KEY || !config.GOOGLE_CUSTOM_SEARCH_CX_ID) {
       return "I'm sorry, my Google Search API key is not currently configured.";
     }
-    const query = lowerText.replace('!search', '').replace('!google', '').trim();
+    const query = lowerText.replace("!search", "").replace("!google", "").trim();
     if (!query) return "Please provide a search term.";
 
     console.log(`[CommandHandler] Received !search command with query: "${query}"`);
@@ -106,7 +107,7 @@ export const handleCommand = async (bot, post, text) => {
       }
 
       if (validatedResults.length > 0) {
-        const searchContext = validatedResults.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join('\n');
+        const searchContext = validatedResults.map((r, i) => `${i + 1}. ${r.title}: ${r.snippet}`).join("\n");
         const summaryPrompt = `Based on search results for "${query}", write a concise summary.\n\n${searchContext}`;
         const summary = await llmService.generateResponse([{ role: 'system', content: summaryPrompt }]);
 
@@ -128,9 +129,11 @@ export const handleCommand = async (bot, post, text) => {
     }
     return `I couldn't find any relevant results for "${query}".`;
   }
+  */
 
-  if (lowerText.startsWith('!video') || lowerText.startsWith('!youtube')) {
-    const query = lowerText.replace('!video', '').replace('!youtube', '').trim();
+  /*
+  if (lowerText.startsWith("!video") || lowerText.startsWith("!youtube")) {
+    const query = lowerText.replace("!video", "").replace("!youtube", "").trim();
     if (!query) return "Please provide a video search term.";
     const results = await youtubeService.search(query);
     const bestResult = await llmService.selectBestResult(query, results, 'youtube');
@@ -153,6 +156,7 @@ export const handleCommand = async (bot, post, text) => {
     }
     return `I couldn't find a relevant video for "${query}".`;
   }
+  */
 
   if (lowerText.startsWith('!generate-image')) {
     const prompt = lowerText.replace('!generate-image', '').trim();
@@ -180,8 +184,9 @@ export const handleCommand = async (bot, post, text) => {
     return "I wasn't able to create an image for that.";
   }
 
-  if (lowerText.startsWith('!image-search')) {
-    const imageQuery = lowerText.replace('!image-search', '').trim();
+  /*
+  if (lowerText.startsWith("!image-search")) {
+    const imageQuery = lowerText.replace("!image-search", "").trim();
     if (!imageQuery) return "Please provide a search term.";
     const imageResults = await googleSearchService.searchImages(imageQuery);
 
@@ -193,6 +198,7 @@ export const handleCommand = async (bot, post, text) => {
     }
     return `I couldn't find any images for "${imageQuery}".`;
   }
+  */
 
   return null;
 };

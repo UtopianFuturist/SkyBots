@@ -1,5 +1,5 @@
 import { checkExactRepetition, checkSimilarity } from "../utils/textUtils.js";
-import { ensureStandardTag } from "../utils/tagUtils.js";
+// import { ensureStandardTag } from "../utils/tagUtils.js";
 import { blueskyService } from './blueskyService.js';
 import { llmService } from './llmService.js';
 import config from '../../config.js';

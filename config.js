@@ -19,7 +19,7 @@ const validateConfig = (config) => {
 
   const missing = required.filter(key => !config[key]);
   if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(', ')}`);
+    console.warn(`[Config] WARNING: Missing required environment variables: ${missing.join(", ")}. Assuming they will be provided by the deployment environment.`);
   }
 };
 

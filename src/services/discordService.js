@@ -104,19 +104,19 @@ class DiscordService {
                     this.client = null;
                 }
 
-                console.log(`[DiscordService] [Attempt ${attempts}] Starting login process...`);
+                console.log(`[DiscordService] [Attempt ${attempts}] Starting login process... (Timeout set to 300s)`);
                 this.client = this._createClient();
 
                 await new Promise((resolve, reject) => {
                     const timeout = setTimeout(() => {
                         reject(new Error("Discord login/ready timed out after 300s"));
                     }, 300000);
-
                     this.client.once('ready', () => {
-                        clearTimeout(timeout);
+                        console.log(`[DiscordService] [Attempt ${attempts}] Discord client reported READY.`);                        clearTimeout(timeout);
                         resolve();
                     });
 
+                    console.log(`[DiscordService] [Attempt ${attempts}] Calling client.login()...`);
                     this.client.login(this.token).catch(err => {
                         clearTimeout(timeout);
                         reject(err);

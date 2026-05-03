@@ -1,0 +1,107 @@
+import { AppBskyActorDefs } from './client';
+import { ModerationPrefs } from './moderation/types';
+export type UnknownServiceType = string & NonNullable<unknown>;
+export type AtprotoServiceType = 'atproto_labeler' | UnknownServiceType;
+export declare function isAtprotoServiceType<T extends string>(input: T): input is T & AtprotoServiceType;
+export type Did = `did:${string}:${string}`;
+export declare function isDid<T extends string>(input: T): input is T & Did;
+export declare function assertDid(input: string): asserts input is Did;
+export declare function asDid<T extends string>(input: T): T & `did:${string}:${string}`;
+export type AtprotoProxy = `${Did}#${AtprotoServiceType}`;
+export declare function isAtprotoProxy(input: string): input is AtprotoProxy;
+export declare function assertAtprotoProxy(input: string): asserts input is AtprotoProxy;
+export declare function asAtprotoProxy<T extends string>(input: T): (T & `did:${string}:${string}#${UnknownServiceType}`) | (T & `did:${string}:${string}#atproto_labeler`);
+/**
+ * Used by the PersistSessionHandler to indicate what change occurred
+ */
+export type AtpSessionEvent = 'create' | 'create-failed' | 'update' | 'expired' | 'network-error';
+/**
+ * Used by AtpAgent to store active sessions
+ */
+export interface AtpSessionData {
+    refreshJwt: string;
+    accessJwt: string;
+    handle: string;
+    did: string;
+    email?: string;
+    emailConfirmed?: boolean;
+    emailAuthFactor?: boolean;
+    active: boolean;
+    status?: string;
+}
+/**
+ * Handler signature passed to AtpAgent to store session data
+ */
+export type AtpPersistSessionHandler = (evt: AtpSessionEvent, session: AtpSessionData | undefined) => void | Promise<void>;
+/**
+ * AtpAgent login() opts
+ */
+export interface AtpAgentLoginOpts {
+    identifier: string;
+    password: string;
+    authFactorToken?: string | undefined;
+    allowTakendown?: boolean;
+}
+/**
+ * AtpAgent global config opts
+ */
+export interface AtpAgentGlobalOpts {
+    appLabelers?: string[];
+}
+/**
+ * Bluesky feed view preferences
+ */
+export interface BskyFeedViewPreference {
+    hideReplies: boolean;
+    hideRepliesByUnfollowed: boolean;
+    hideRepliesByLikeCount: number;
+    hideReposts: boolean;
+    hideQuotePosts: boolean;
+    [key: string]: any;
+}
+/**
+ * Bluesky thread view preferences
+ */
+export interface BskyThreadViewPreference {
+    sort: string;
+    [key: string]: any;
+}
+/**
+ * Bluesky interests preferences
+ */
+export interface BskyInterestsPreference {
+    tags: string[];
+    [key: string]: any;
+}
+/**
+ * Bluesky preferences
+ */
+export interface BskyPreferences {
+    /**
+     * @deprecated use `savedFeeds`
+     */
+    feeds: {
+        saved?: string[];
+        pinned?: string[];
+    };
+    savedFeeds: AppBskyActorDefs.SavedFeed[];
+    feedViewPrefs: Record<string, BskyFeedViewPreference>;
+    threadViewPrefs: BskyThreadViewPreference;
+    moderationPrefs: ModerationPrefs;
+    birthDate: Date | undefined;
+    /**
+     * Read-only preference containing value(s) inferred from the user's declared
+     * birthdate. Absence of this preference object in the response indicates
+     * that the user has not made a declaration.
+     */
+    declaredAge?: AppBskyActorDefs.DeclaredAgePref;
+    interests: BskyInterestsPreference;
+    bskyAppState: {
+        queuedNudges: string[];
+        activeProgressGuide: AppBskyActorDefs.BskyAppProgressGuide | undefined;
+        nuxs: AppBskyActorDefs.Nux[];
+    };
+    postInteractionSettings: AppBskyActorDefs.PostInteractionSettingsPref;
+    verificationPrefs: AppBskyActorDefs.VerificationPrefs;
+}
+//# sourceMappingURL=types.d.ts.map

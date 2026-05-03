@@ -1,0 +1,178 @@
+{
+  "name": "unicode-segmenter",
+  "version": "0.14.5",
+  "type": "module",
+  "description": "A lightweight implementation of the Unicode Text Segmentation (UAX #29)",
+  "license": "MIT",
+  "homepage": "https://github.com/cometkim/unicode-segmenter",
+  "keywords": [
+    "unicode",
+    "uax29",
+    "text-segmentation",
+    "grapheme",
+    "grapheme-cluster",
+    "emoji",
+    "intl",
+    "polyfill"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/cometkim/unicode-segmenter.git"
+  },
+  "maintainers": [
+    {
+      "email": "hey@hyeseong.kim",
+      "name": "Hyeseong Kim"
+    }
+  ],
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./index.js",
+      "require": "./index.cjs"
+    },
+    "./emoji": {
+      "types": "./emoji.d.ts",
+      "import": "./emoji.js",
+      "require": "./emoji.cjs"
+    },
+    "./general": {
+      "types": "./general.d.ts",
+      "import": "./general.js",
+      "require": "./general.cjs"
+    },
+    "./grapheme": {
+      "types": "./grapheme.d.ts",
+      "import": "./grapheme.js",
+      "require": "./grapheme.cjs"
+    },
+    "./utils": {
+      "types": "./utils.d.ts",
+      "import": "./utils.js",
+      "require": "./utils.cjs"
+    },
+    "./intl-adapter": {
+      "types": "./intl-adapter.d.ts",
+      "import": "./intl-adapter.js",
+      "require": "./intl-adapter.cjs"
+    },
+    "./intl-polyfill": {
+      "types": "./intl-polyfill.d.ts",
+      "import": "./intl-polyfill.js",
+      "require": "./intl-polyfill.cjs"
+    },
+    "./bundle/*": "./bundle/*.js",
+    "./package.json": "./package.json"
+  },
+  "imports": {
+    "#src/*": "./src/*"
+  },
+  "sideEffects": [
+    "./intl-polyfill.js",
+    "./intl-polyfill.cjs"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "main": "./index.js",
+    "types": "./index.d.ts",
+    "exports": {
+      ".": {
+        "types": "./index.d.ts",
+        "import": "./index.js",
+        "require": "./index.cjs"
+      },
+      "./emoji": {
+        "types": "./emoji.d.ts",
+        "import": "./emoji.js",
+        "require": "./emoji.cjs"
+      },
+      "./general": {
+        "types": "./general.d.ts",
+        "import": "./general.js",
+        "require": "./general.cjs"
+      },
+      "./grapheme": {
+        "types": "./grapheme.d.ts",
+        "import": "./grapheme.js",
+        "require": "./grapheme.cjs"
+      },
+      "./utils": {
+        "types": "./utils.d.ts",
+        "import": "./utils.js",
+        "require": "./utils.cjs"
+      },
+      "./intl-adapter": {
+        "types": "./intl-adapter.d.ts",
+        "import": "./intl-adapter.js",
+        "require": "./intl-adapter.cjs"
+      },
+      "./intl-polyfill": {
+        "types": "./intl-polyfill.d.ts",
+        "import": "./intl-polyfill.js",
+        "require": "./intl-polyfill.cjs"
+      },
+      "./bundle/*": "./bundle/*.js",
+      "./package.json": "./package.json"
+    }
+  },
+  "files": [
+    "/*.js",
+    "/*.cjs",
+    "/*.d.ts",
+    "/licenses",
+    "/bundle"
+  ],
+  "scripts": {
+    "prepack": "yarn clean && yarn build",
+    "clean": "rimraf -g \"*.js\" \"*.cjs\" \"*.map\" \"*.d.ts\" \"bundle\"",
+    "build": "node scripts/build-exports.js && tsc -p tsconfig.build.json",
+    "test": "node --test --test-reporter spec --test-reporter-destination=stdout",
+    "test:coverage": "yarn test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=lcov.info",
+    "bundle-stats:emoji": "node benchmark/emoji/bundle-stats.js",
+    "bundle-stats:general": "node benchmark/general/bundle-stats.js",
+    "bundle-stats:grapheme": "node benchmark/grapheme/bundle-stats.js",
+    "bundle-stats:grapheme:hermes": "node benchmark/grapheme/bundle-stats-hermes.js",
+    "perf:emoji": "node --expose-gc benchmark/emoji/perf.js",
+    "perf:general": "node --expose-gc benchmark/general/perf.js",
+    "perf:grapheme": "node --expose-gc benchmark/grapheme/perf.js",
+    "perf:grapheme:browser": "vite -c benchmark/grapheme/vite.config.js",
+    "perf:grapheme:hermes": "node benchmark/grapheme/perf-hermes.js",
+    "perf:grapheme:quickjs": "node benchmark/grapheme/perf-quickjs.js"
+  },
+  "alias": {
+    "process": false
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.5",
+    "@babel/plugin-transform-modules-commonjs": "^7.27.1",
+    "@changesets/cli": "^2.29.8",
+    "@codspeed/tinybench-plugin": "^5.0.1",
+    "@formatjs/intl-segmenter": "11.7.12",
+    "@mitata/counters": "^0.0.8",
+    "@react-native/metro-babel-transformer": "^0.82.1",
+    "@types/babel__core": "^7.20.5",
+    "@types/node": "^24.10.1",
+    "emoji-regex": "10.6.0",
+    "emojibase-regex": "17.0.0",
+    "esbuild": "^0.27.1",
+    "fast-check": "^4.3.0",
+    "grapheme-splitter": "1.0.4",
+    "graphemer": "1.4.0",
+    "metro": "^0.83.3",
+    "mitata": "^1.0.34",
+    "os-browserify": "^0.3.0",
+    "pretty-bytes": "^7.1.0",
+    "rimraf": "^6.1.2",
+    "tinybench": "^5.1.0",
+    "typescript": "^5.9.3",
+    "unicode-segmentation-wasm": "github:cometkim/unicode-segmentation-wasm#230eb74d320ea2f31f95b74ddb2567186d496587",
+    "vite": "^7.2.6",
+    "vite-plugin-externals": "^0.6.2",
+    "xregexp": "5.1.2",
+    "zx": "^8.8.5"
+  },
+  "packageManager": "yarn@4.12.0",
+  "main": "./index.js",
+  "types": "./index.d.ts"
+}

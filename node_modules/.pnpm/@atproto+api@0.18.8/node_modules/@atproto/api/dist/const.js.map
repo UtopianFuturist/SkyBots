@@ -1,0 +1,1 @@
+{"version":3,"file":"const.js","sourceRoot":"","sources":["../src/const.ts"],"names":[],"mappings":";;;AAAa,QAAA,gBAAgB,GAAG,kCAAkC,CAAA","sourcesContent":["export const BSKY_LABELER_DID = 'did:plc:ar7c4by46qjdydhdevvrndac'\n"]}

@@ -1,0 +1,36 @@
+/**
+ * GENERATED CODE - DO NOT MODIFY
+ */
+import { HeadersMap, XRPCError } from '@atproto/xrpc';
+export type QueryParams = {};
+export interface InputSchema {
+    /** The phone number to receive the code via SMS. */
+    phone: string;
+}
+export interface OutputSchema {
+}
+export interface CallOptions {
+    signal?: AbortSignal;
+    headers?: HeadersMap;
+    qp?: QueryParams;
+    encoding?: 'application/json';
+}
+export interface Response {
+    success: boolean;
+    headers: HeadersMap;
+    data: OutputSchema;
+}
+export declare class RateLimitExceededError extends XRPCError {
+    constructor(src: XRPCError);
+}
+export declare class InvalidDidError extends XRPCError {
+    constructor(src: XRPCError);
+}
+export declare class InvalidPhoneError extends XRPCError {
+    constructor(src: XRPCError);
+}
+export declare class InternalError extends XRPCError {
+    constructor(src: XRPCError);
+}
+export declare function toKnownErr(e: any): any;
+//# sourceMappingURL=startPhoneVerification.d.ts.map

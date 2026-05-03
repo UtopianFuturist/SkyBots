@@ -64,9 +64,10 @@ class LLMService {
     const now = Date.now();
     if (this.lastLoad && now - this.lastLoad < this.cacheExpiry) return;
     try {
-        this.soulContent = await fs.readFile('SOUL.md', 'utf-8').catch(() => "");
-        this.agentsContent = await fs.readFile('AGENTS.md', 'utf-8').catch(() => "");
-        this.statusContent = await fs.readFile('STATUS.md', 'utf-8').catch(() => "");
+        const rootDir = process.cwd();
+        this.soulContent = await fs.readFile(path.join(rootDir, 'SOUL.md'), 'utf-8').catch(() => "");
+        this.agentsContent = await fs.readFile(path.join(rootDir, 'AGENTS.md'), 'utf-8').catch(() => "");
+        this.statusContent = await fs.readFile(path.join(rootDir, 'STATUS.md'), 'utf-8').catch(() => "");
         this.lastLoad = now;
     } catch (e) {}
   }

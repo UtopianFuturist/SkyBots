@@ -117,7 +117,10 @@ class DiscordService {
                     });
 
                     console.log(`[DiscordService] [Attempt ${attempts}] Calling client.login()...`);
-                    this.client.login(this.token).catch(err => {
+                    this.client.login(this.token).then(() => {
+                        console.log(`[DiscordService] [Attempt ${attempts}] client.login() promise resolved.`);
+                    }).catch(err => {
+                        console.error(`[DiscordService] [Attempt ${attempts}] client.login() failed:`, err);
                         clearTimeout(timeout);
                         reject(err);
                     });

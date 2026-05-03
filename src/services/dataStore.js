@@ -1,14 +1,19 @@
 import { JSONFilePreset } from 'lowdb/node';
 import path from 'path';
+import fs from 'fs';
 import config from '../../config.js';
 
 class DataStore {
   constructor() {
     this.db = null;
-    this.dbPath = process.env.DATA_PATH || path.resolve(process.cwd(), 'src/data/db.json');
+    const rootDir = process.cwd();
+    this.dbPath = process.env.DATA_PATH ? path.resolve(process.env.DATA_PATH) : path.join(rootDir, 'src/data/db.json');
+    this.dbDir = path.dirname(this.dbPath);
   }
 
   async init() {
+    // Ensure the directory for the database exists
+    await fs.promises.mkdir(this.dbDir, { recursive: true }).catch(e => console.error(`[DataStore] Error creating DB directory ${this.dbDir}:`, e));
     const defaultData = {
       internal_logs: [],
       current_mood: { label: 'balanced', score: 0.5 },
